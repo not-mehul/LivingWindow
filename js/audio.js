@@ -103,13 +103,21 @@ class AudioEngine {
     this.loopNoise().connect(tlp); tlp.connect(this.trafficGain);
     this.trafficGain.connect(this.master);
 
-    // surf bed
+    // surf bed — the low body of the sea (approach and drag-back)
     this.surfGain = ac.createGain(); this.surfGain.gain.value = 0;
     this.surfFilter = ac.createBiquadFilter();
     this.surfFilter.type = "lowpass"; this.surfFilter.frequency.value = 400;
     this.loopNoise().connect(this.surfFilter);
     this.surfFilter.connect(this.surfGain);
     this.surfGain.connect(this.master);
+
+    // surf foam — the bright hiss of a wave breaking and washing back
+    this.surfFoamGain = ac.createGain(); this.surfFoamGain.gain.value = 0;
+    this.surfFoamFilter = ac.createBiquadFilter();
+    this.surfFoamFilter.type = "highpass"; this.surfFoamFilter.frequency.value = 1200;
+    this.loopNoise().connect(this.surfFoamFilter);
+    this.surfFoamFilter.connect(this.surfFoamGain);
+    this.surfFoamGain.connect(this.master);
 
     this.surfFloor = 0;
     this.applyConditions();
@@ -133,11 +141,16 @@ class AudioEngine {
     this.aeoBase = aeoT[w] * locAeo[L] * 0.16;
     this.set(this.aeoGain.gain, this.aeoBase, 2);
     this.set(this.rainGain.gain, w === "rain" ? 0.20 : 0);
-    const lv = (L === "forest" ? 0.11 : L === "wetland" ? 0.06 : 0) * (w === "breeze" ? 1.7 : 1);
-    this.set(this.leavesGain.gain, lv);
+    // Leaf hiss follows the wind: a still, clear day in the wood is quiet.
+    const leafBase = L === "forest" ? 0.10 : L === "wetland" ? 0.05 : 0;
+    const leafWeather = { clear: 0.4, breeze: 1.7, rain: 1.1, fog: 0.7 }[w] || 1;
+    this.set(this.leavesGain.gain, leafBase * leafWeather);
     this.set(this.trafficGain.gain, L === "city" ? 0.05 : 0);
-    this.surfFloor = L === "beach" ? 0.06 : 0;
+    // The sea's resting hiss between waves — kept low so the waves themselves carry.
+    const surfWeather = { clear: 1, breeze: 1.5, rain: 1.3, fog: 0.9 }[w] || 1;
+    this.surfFloor = L === "beach" ? 0.022 * surfWeather : 0;
     this.set(this.surfGain.gain, this.surfFloor);
+    if (this.surfFoamGain && L !== "beach") this.set(this.surfFoamGain.gain, 0, 0.4);
     this.set(this.voiceFilter.frequency, w === "fog" ? 3000 : 12000, 0.8);
   }
 
@@ -163,24 +176,27 @@ class AudioEngine {
     const lp = ac.createBiquadFilter();
     lp.type = "lowpass";
     lp.frequency.value = 16000 / (1 + depth*0.12);
+    // A single distance-loudness stage for both listening modes: near voices are
+    // clearly louder than far ones, so distance reads whether or not spatial is on.
+    const dg = ac.createGain();
+    dg.gain.value = Math.max(0.2, Math.min(1, 5 / (3.2 + depth)));
+    lp.connect(dg);
     if (state.spatial && ac.createPanner) {
       const p = ac.createPanner();
       p.panningModel = "HRTF";
       p.distanceModel = "inverse";
-      p.refDistance = 3;
+      p.refDistance = 1; p.rolloffFactor = 0;   // loudness is handled by dg above
       const ang = az * Math.PI / 2;
       const x = Math.sin(ang) * depth, z = -Math.cos(ang) * depth, y = el * 2;
       if (p.positionX) {
         p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z;
       } else p.setPosition(x, y, z);
-      lp.connect(p);
+      dg.connect(p);
       return { node: lp, out: p };
     }
     const sp = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
     if (sp.pan) sp.pan.value = az * 0.8;
-    const g = ac.createGain();
-    g.gain.value = 1 / (1 + depth*0.15);
-    lp.connect(g); g.connect(sp);
+    dg.connect(sp);
     return { node: lp, out: sp };
   }
 
@@ -201,14 +217,27 @@ class AudioEngine {
       }
       if (state.location === "beach" && this.scene.shoreY) y01 = this.scene.shoreY + 0.03 + r()*0.08;
     }
+    // A little natural spread so callers aren't all at the same distance.
+    depth = Math.max(1.5, depth + (r() - 0.5) * depth * 0.35);
     const az = Math.max(-1, Math.min(1, (x01*2 - 1) * 0.9));
     const pan = this.makePanner(az, sp.layer === "air" ? 1.5 : 0.3, depth);
     pan.out.connect(this.voiceGain);
-    const dur = sp.synth(ac, pan.node, ac.currentTime + 0.02, r) || 1;
-    this.scene.addRipple(x01, y01, sp.tone);
-    this.scene.spawnForCall(sp, x01, y01, depth, dur);
-    this.emit(sp, az, depth, dur);
-    return dur;
+    // Animals that appear on-canvas ease in, settle, and only then call. Fliers
+    // (already on the wing) and voice-only species call without a staged entrance.
+    const noActor = sp.layer === "air" || sp.layer === "far" ||
+                    sp.id === "cricket" || sp.id === "cuckoo" ||
+                    sp.id === "curlew" || sp.id === "rooster";
+    const enter = noActor ? 0 : 0.9 + r()*0.9;
+    const dur = sp.synth(ac, pan.node, ac.currentTime + 0.02 + enter, r) || 1;
+    this.scene.spawnForCall(sp, x01, y01, depth, dur, enter);
+    const announce = () => {
+      if (!this.running) return;
+      this.scene.addRipple(x01, y01, sp.tone);
+      this.emit(sp, az, depth, dur);
+    };
+    if (enter > 0) this.timers.push(setTimeout(announce, enter * 1000));
+    else announce();
+    return dur + enter;
   }
 
   startSchedulers() {
@@ -287,21 +316,38 @@ class AudioEngine {
       if (!this.running) return;
       if (state.location === "beach" && this.ac) {
         const t = this.ac.currentTime;
-        const dur = 7 + this.rng()*4;
-        const peak = this.surfFloor * (2.4 + this.rng()*1.6) + 0.02;
-        const crest = t + dur * (0.34 + this.rng()*0.14);
+        const big = 0.6 + this.rng()*0.9;                 // how large this wave is
+        const dur = 6 + this.rng()*5;                     // whole approach-to-wash cycle
+        const crest = t + dur * (0.42 + this.rng()*0.12); // the moment it breaks
+        const bodyPeak = this.surfFloor + (0.05 + this.rng()*0.04) * big;
+        const foamPeak = (0.045 + this.rng()*0.035) * big;
+
+        // Body: the swell rolls in, then drags back out (a low roar).
         const g = this.surfGain.gain;
         g.cancelScheduledValues(t);
         g.setValueAtTime(Math.max(0.001, this.surfFloor), t);
-        g.linearRampToValueAtTime(peak, crest);
-        g.linearRampToValueAtTime(this.surfFloor*0.6 + 0.001, t + dur);
+        g.linearRampToValueAtTime(bodyPeak, crest);
+        g.setTargetAtTime(Math.max(0.001, this.surfFloor), crest, dur*0.28);
         const ff = this.surfFilter.frequency;
         ff.cancelScheduledValues(t);
-        ff.setValueAtTime(320, t);
-        ff.linearRampToValueAtTime(950, crest);
-        ff.linearRampToValueAtTime(320, t + dur);
-        this.timers.push(setTimeout(() => this.scene.foamPulse(), (crest - t)*1000));
-        this.timers.push(setTimeout(wave, dur * 1000 * (0.85 + this.rng()*0.4)));
+        ff.setValueAtTime(190, t);
+        ff.linearRampToValueAtTime(760, crest);
+        ff.setTargetAtTime(240, crest, dur*0.25);
+
+        // Foam: silent on the approach, then the break and a hissing wash-back.
+        const fg = this.surfFoamGain.gain;
+        fg.cancelScheduledValues(t);
+        fg.setValueAtTime(0.0001, t);
+        fg.setValueAtTime(0.0001, Math.max(t, crest - 0.18));
+        fg.linearRampToValueAtTime(foamPeak, crest + 0.12);
+        fg.exponentialRampToValueAtTime(0.0001, crest + 1.8 + this.rng()*1.3);
+        const fff = this.surfFoamFilter.frequency;
+        fff.cancelScheduledValues(t);
+        fff.setValueAtTime(1700, t);
+        fff.linearRampToValueAtTime(850, crest + 1.6);    // foam settles lower as it recedes
+
+        this.timers.push(setTimeout(() => this.scene.foamPulse(), (crest - t + 0.12)*1000));
+        this.timers.push(setTimeout(wave, dur * 1000 * (0.7 + this.rng()*0.4)));
       } else {
         this.timers.push(setTimeout(wave, 5000));
       }

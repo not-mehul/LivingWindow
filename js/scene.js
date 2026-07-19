@@ -230,7 +230,7 @@ class Scene {
   }
 
   /* A voice becomes a visible animal at its own coordinates. */
-  spawnForCall(sp, x01, y01, depth, dur) {
+  spawnForCall(sp, x01, y01, depth, dur, enter = 0) {
     const id = sp.id;
     if (id === "cricket" || id === "cuckoo" || id === "curlew" || id === "rooster") return;
     if (sp.layer === "air") {
@@ -254,7 +254,7 @@ class Scene {
     const hs = Math.max(0.75, Math.min(1.6, this.H / 430));
     const a = {
       id, x: x01, y: y01,
-      s: Math.max(5, Math.min(15, 16 - depth*0.55)) * hs,
+      s: Math.max(3.5, Math.min(16, 15.5 - depth*0.62)) * hs,   // far = smaller, near = bigger
       t: 0, dur, alpha: 1, flip: x01 > 0.55,
       linger: 1.2 + Math.random()*1.6, leave: null,
       depthMix: Math.min(0.4, 0.10 + depth*0.012), data: {}
@@ -281,6 +281,27 @@ class Scene {
       a.data.dir = Math.random() < 0.5 ? 1 : -1;
     }
     else a.beh = "perch";
+
+    // Entrance: the behaviour branch has fixed the resting spot; arrive there by
+    // gliding (fliers) or hopping in from the side (ground), fading up as we go,
+    // and only begin the call once settled (a.singAt).
+    a.restX = a.x; a.restY = a.y;
+    a.enter = enter; a.singAt = enter;
+    a.enterFromX = a.x; a.enterFromY = a.y;
+    if (enter > 0) {
+      a.alpha = 0;
+      const ground = a.beh === "frog" || a.beh === "wader" || a.beh === "duck";
+      const side = a.flip ? 1 : -1;
+      if (ground) {
+        a.enterFromX = a.restX + side * (0.06 + Math.random()*0.05);
+        a.enterFromY = a.restY;
+      } else {
+        a.enterFromX = a.restX + side * (0.04 + Math.random()*0.04);
+        a.enterFromY = a.restY - (0.06 + Math.random()*0.06);
+      }
+      a.x = a.enterFromX; a.y = a.enterFromY;
+    }
+
     this.actors.push(a);
     if (this.actors.length > 6) this.actors.shift();
   }
@@ -683,10 +704,24 @@ class Scene {
     for (let i = this.actors.length - 1; i >= 0; i--) {
       const a = this.actors[i];
       a.t += dt;
-      const singing = a.t < a.dur;
-      const sing = singing ? 0.3 + 0.7*Math.abs(Math.sin(a.t*11)) : 0;
-      if (!a.leave && a.t > a.dur + a.linger) {
-        if (a.beh === "perch" && Math.random() < 0.6) {
+
+      // Entrance: glide/hop from the arrival offset to the resting spot, fading in.
+      if (a.enter > 0 && a.t < a.enter) {
+        const k = a.t / a.enter, e = k*k*(3 - 2*k);   // smoothstep
+        a.x = a.enterFromX + (a.restX - a.enterFromX) * e;
+        a.y = a.enterFromY + (a.restY - a.enterFromY) * e;
+        a.alpha = Math.min(1, e * 1.3);
+      } else if (a.enter > 0 && !a.leave && a.alpha < 1) {
+        a.x = a.restX; a.y = a.restY; a.alpha = 1;
+      }
+
+      const st = a.t - a.singAt;                       // time since the call began
+      const singing = st >= 0 && st < a.dur;
+      const sing = singing ? 0.3 + 0.7*Math.abs(Math.sin(st*11)) : 0;
+      const sungEnd = a.singAt + a.dur;
+
+      if (!a.leave && a.t > sungEnd + a.linger) {
+        if (a.beh === "perch" && Math.random() < 0.7) {
           this.flyers.push({ kind: "bird", x: a.x, y: a.y, age: 0,
             vx: (a.flip ? -1 : 1) * (0.03 + Math.random()*0.02),
             ph: Math.random()*6, size: Math.max(2.5, a.s*0.35) });
@@ -695,14 +730,15 @@ class Scene {
         a.leave = "fade";
       }
       if (a.leave === "fade") {
-        a.alpha -= dt * 1.5;
+        a.alpha -= dt * 1.3;
+        a.x += (a.flip ? 1 : -1) * 0.012 * dt;         // drift off rather than dissolve in place
         if (a.alpha <= 0) { this.actors.splice(i, 1); continue; }
       }
-      if (a.beh === "wader" && a.t > a.dur) {
+      if (a.beh === "wader" && a.t > sungEnd) {
         a.x += a.data.dir * 0.015 * dt;
         if (a.x < -0.05 || a.x > 1.05) { this.actors.splice(i, 1); continue; }
       }
-      if (a.beh === "duck") a.x += a.data.dir * 0.006 * dt;
+      if (a.beh === "duck" && a.t > a.enter) a.x += a.data.dir * 0.006 * dt;
 
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
