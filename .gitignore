@@ -1,0 +1,14 @@
+# Dependencies (should none ever be added)
+node_modules/
+
+# Editor / OS cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs and local scratch
+*.log
+.cache/
