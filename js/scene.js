@@ -21,6 +21,7 @@ class Scene {
     this.meteors = [];
     this.lastDeer = -999; this.lastCat = -999; this.lastSkein = -999;
     this.lastFox = -999; this.lastRabbit = -999; this.lastHeron = -999;
+    this.lastPorpoise = -999;
     this.timeMix = { dawn: 1, day: 0, dusk: 0, night: 0 };
     this.refreshTokens();
     this.reseed(state.seed);
@@ -64,6 +65,7 @@ class Scene {
     this.fishRings = []; this.meteors = [];
     this.lastDeer = this.t - 60; this.lastCat = this.t - 40; this.lastSkein = this.t - 20;
     this.lastFox = this.t - 55; this.lastRabbit = this.t - 30; this.lastHeron = this.t - 50;
+    this.lastPorpoise = this.t - 40;
 
     this.clouds = [];
     const nc = 2 + Math.floor(rng()*3);
@@ -100,6 +102,27 @@ class Scene {
     for (let i = 0; i < nsb; i++) {
       this.skyBirds.push({ x: rng(), y: 0.09 + rng()*0.22,
         sp: (rng() < 0.5 ? -1 : 1)*(0.006 + rng()*0.012), size: 2.6 + rng()*3, ph: rng()*Math.PI*2 });
+    }
+    // How lively the air feels this session, and a phase so the wind rolls
+    // across the plants in travelling waves rather than swaying as one.
+    this.gustPh = rng()*Math.PI*2;
+    this.airiness = 0.7 + rng()*0.7;
+    // Motes of pollen/dust adrift in the green places by day.
+    this.motes = [];
+    if (loc === "meadow" || loc === "forest" || loc === "wetland") {
+      const nm = REDUCED ? 6 : Math.floor((12 + rng()*16) * this.airiness);
+      for (let i = 0; i < nm; i++) {
+        this.motes.push({ x: rng(), y: 0.3 + rng()*0.62, r: 0.6 + rng()*1.3,
+          ph: rng()*Math.PI*2, sp: 0.004 + rng()*0.009, drift: (rng()-0.5)*0.012 });
+      }
+    }
+    // Points of light glinting off moving water.
+    this.glints = [];
+    if (loc === "beach" || loc === "wetland") {
+      const ngl = REDUCED ? 8 : 16 + Math.floor(rng()*18);
+      for (let i = 0; i < ngl; i++) {
+        this.glints.push({ x: rng(), yy: rng(), ph: rng()*Math.PI*2, sp: 0.8 + rng()*2.2 });
+      }
     }
 
     if (loc === "meadow") {
@@ -181,14 +204,14 @@ class Scene {
         const gx = this.duneSide === 0 ? rng()*0.26 : 0.74 + rng()*0.26;
         this.duneGrass.push({ x: gx, h: 0.05 + rng()*0.07, ph: rng()*Math.PI*2, lean: (rng()-0.5)*0.8 });
       }
-      // pebbles and shells on the wet sand, a sail far out, a piece of driftwood
+      // pebbles and shells on the wet sand, a rock islet offshore, driftwood
       this.pebbles = [];
       for (let i = 0; i < 18 + Math.floor(rng()*12); i++) {
         this.pebbles.push({ x: rng(), y: this.shoreY + 0.04 + rng()*(0.98 - this.shoreY - 0.04),
           r: 0.004 + rng()*0.011, shade: rng(), shell: rng() < 0.18 });
       }
-      this.sail = rng() < 0.72 ? { x: rng(), size: 0.02 + rng()*0.016,
-        dir: rng() < 0.5 ? 1 : -1, sp: 0.0016 + rng()*0.002 } : null;
+      // a natural rock islet out on the water (no boats — this is a wild place)
+      this.islet = rng() < 0.65 ? { x: 0.12 + rng()*0.76, w: 0.05 + rng()*0.07, h: 0.018 + rng()*0.022 } : null;
       this.driftwood = rng() < 0.6 ? { x: 0.18 + rng()*0.6, w: 0.05 + rng()*0.06, ang: (rng()-0.5)*0.4 } : null;
       this.posts = [];
       const npost = 2 + Math.floor(rng()*2);
@@ -506,6 +529,7 @@ class Scene {
         }
       }
     }
+    const breathe = 0.86 + 0.14*Math.sin(this.t*0.28);   // a slow living glow
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
     const sunA = (m.dawn*0.9 + m.day + m.dusk*0.8) / total;
     if (sunA > 0.03) {
@@ -514,7 +538,7 @@ class Scene {
       const sy = H * (0.42*m.dawn + 0.16*m.day + 0.46*m.dusk) / denom;
       const rr = Math.min(W,H)*0.05;
       const halo = c.createRadialGradient(sx, sy, 0, sx, sy, rr*5);
-      halo.addColorStop(0, `rgba(${this.tok.amberRGB}, ${0.30*sunA})`);
+      halo.addColorStop(0, `rgba(${this.tok.amberRGB}, ${0.30*sunA*breathe})`);
       halo.addColorStop(1, `rgba(${this.tok.amberRGB}, 0)`);
       c.fillStyle = halo;
       c.fillRect(sx-rr*5, sy-rr*5, rr*10, rr*10);
@@ -527,7 +551,7 @@ class Scene {
     if (moonA > 0.03) {
       const mx = W*0.72, my = H*0.2, rr = Math.min(W,H)*0.04;
       const halo = c.createRadialGradient(mx, my, 0, mx, my, rr*6);
-      halo.addColorStop(0, `rgba(${this.tok.cloudRGB}, ${0.12*moonA})`);
+      halo.addColorStop(0, `rgba(${this.tok.cloudRGB}, ${0.12*moonA*breathe})`);
       halo.addColorStop(1, `rgba(${this.tok.cloudRGB}, 0)`);
       c.fillStyle = halo;
       c.fillRect(mx-rr*6, my-rr*6, rr*12, rr*12);
@@ -580,7 +604,7 @@ class Scene {
     for (const gr of grass) {
       const gx = gr.x * W;
       const gy = baseYfn(gr.x) * H;
-      const sway = Math.sin(this.t*1.8 + gr.ph) * 6 * wa + gr.lean*4;
+      const sway = Math.sin(this.t*1.8 + gr.ph) * 6 * wa * this.windWave(gr.x) + gr.lean*4;
       c.beginPath();
       c.moveTo(gx, gy + 4);
       c.quadraticCurveTo(gx + sway*0.4, gy - gr.h*H*0.6, gx + sway, gy - gr.h*H);
@@ -642,6 +666,54 @@ class Scene {
     }
   }
 
+  /* Roughly how bright the day is — for daytime-only touches like motes. */
+  dayness() {
+    const m = this.timeMix, total = m.dawn + m.day + m.dusk + m.night || 1;
+    return (m.day + m.dawn*0.7 + m.dusk*0.45) / total;
+  }
+
+  /* A gentle travelling wind, so plants sway in rolling waves, not in unison. */
+  windWave(x) {
+    return 1 + 0.35*Math.sin(this.t*0.55 - x*5 + (this.gustPh || 0))
+             + 0.12*Math.sin(this.t*1.2 - x*11);
+  }
+
+  /* Slow motes of pollen or dust adrift in the daytime air. */
+  drawMotes(c, W, H, dt, dayish) {
+    if (!this.motes) return;
+    const a0 = dayish*0.55;
+    if (a0 < 0.03) return;
+    c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+    for (const m of this.motes) {
+      m.y -= m.sp*dt;
+      m.x += (m.drift + Math.sin(this.t*0.3 + m.ph)*0.006)*dt;
+      if (m.y < 0.24) { m.y = 0.96; m.x = Math.random(); }
+      else if (m.x < -0.02) m.x = 1.02; else if (m.x > 1.02) m.x = -0.02;
+      const tw = 0.5 + 0.5*Math.sin(this.t*0.8 + m.ph);
+      const a = a0*tw*0.5;
+      if (a < 0.02) continue;
+      c.globalAlpha = a;
+      c.beginPath(); c.arc(m.x*W, m.y*H, m.r, 0, Math.PI*2); c.fill();
+    }
+    c.globalAlpha = 1;
+  }
+
+  /* Sparse points of light flashing off moving water. */
+  drawWaterGlints(c, W, H, y0, y1, night) {
+    if (!this.glints) return;
+    const base = 0.55*(1 - night*0.45);
+    if (base < 0.03) return;
+    c.strokeStyle = `rgba(${this.tok.foamRGB}, 1)`; c.lineWidth = 1; c.lineCap = "round";
+    for (const g of this.glints) {
+      const tw = Math.sin(this.t*g.sp + g.ph);
+      if (tw < 0.62) continue;
+      const gx = g.x*W, gy = y0 + (y1 - y0)*(0.12 + 0.84*g.yy);
+      c.globalAlpha = base*((tw - 0.62)/0.38);
+      c.beginPath(); c.moveTo(gx - 3, gy); c.lineTo(gx + 3, gy); c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
+
   drawMeadow(c, W, H, dt, bot) {
     this.drawSkyBirds(c, W, H, dt, bot, this.nightness());
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.45), W, H);
@@ -653,9 +725,11 @@ class Scene {
     const baseY = this.hillB(this.treeX) * H;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.06));
     c.lineCap = "round";
+    const treeWind = this.windWave(this.treeX);
     for (const s of this.tree) {
       c.lineWidth = 0.8 + s.w * 1.1;
-      const sway = state.weather === "breeze" ? Math.sin(this.t*1.4 + s.y1*8) * (4 - s.w) * 0.8 : 0;
+      const sway = Math.sin(this.t*1.1 + s.y1*8) * (4 - s.w) *
+        (state.weather === "breeze" ? 0.85 : 0.22) * treeWind;
       c.beginPath();
       c.moveTo(this.treeX*W + s.x1*W*0.5 + sway*0.4, baseY + s.y1*H*0.9);
       c.lineTo(this.treeX*W + s.x2*W*0.5 + sway, baseY + s.y2*H*0.9);
@@ -674,6 +748,7 @@ class Scene {
     }
     this.drawFlowers(c, W, H, groundYn, bot);
     this.drawGrassTufts(c, W, H, this.grass, groundYn, css(mix(this.tok.inkDeep, bot, 0.10)));
+    this.drawMotes(c, W, H, dt, this.dayness());
   }
 
   drawFlowers(c, W, H, baseYfn, bot) {
@@ -682,7 +757,7 @@ class Scene {
     c.lineWidth = 1;
     for (const f of this.flowers) {
       const gx = f.x*W, gy = baseYfn(f.x)*H;
-      const sway = Math.sin(this.t*1.6 + f.ph)*5*wa;
+      const sway = Math.sin(this.t*1.6 + f.ph)*5*wa*this.windWave(f.x);
       const tx = gx + sway, ty = gy - f.h*H;
       c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.16));
       c.beginPath(); c.moveTo(gx, gy + 3); c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, tx, ty); c.stroke();
@@ -698,7 +773,7 @@ class Scene {
     const drawTrunk = (tr, color) => {
       const groundY = H * 0.93;
       const topY = H * tr.top;
-      const sway = Math.sin(this.t*1.1 + tr.x*9) * 2.2 * wa;
+      const sway = Math.sin(this.t*1.1 + tr.x*9) * 2.2 * wa * this.windWave(tr.x);
       c.strokeStyle = css(color);
       c.lineCap = "round";
       c.lineWidth = tr.w;
@@ -728,6 +803,7 @@ class Scene {
     this.drawMushrooms(c, W, H, bot);
     this.drawGrassTufts(c, W, H, this.grass, () => 0.93,
       css(mix(this.tok.inkDeep, bot, 0.12)));
+    this.drawMotes(c, W, H, dt, this.dayness());
     this.drawFallingLeaves(c, W, H, dt, bot);
   }
 
@@ -737,7 +813,7 @@ class Scene {
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.13)); c.lineCap = "round";
     for (const f of this.ferns) {
       const gx = f.x*W, gy = 0.93*H, len = f.size*H;
-      const sway = Math.sin(this.t*1.4 + f.x*10)*4*wa + f.lean*6;
+      const sway = Math.sin(this.t*1.4 + f.x*10)*4*wa*this.windWave(f.x) + f.lean*6;
       c.lineWidth = 1.5;
       c.beginPath(); c.moveTo(gx, gy + 3);
       c.quadraticCurveTo(gx + sway*0.5, gy - len*0.5, gx + sway, gy - len); c.stroke();
@@ -789,20 +865,17 @@ class Scene {
     c.fillRect(0, hy, W, sy - hy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.14)`;
     c.fillRect(0, hy, W, 1);
-    if (this.sail) {
-      this.sail.x += this.sail.sp*this.sail.dir*dt;
-      if (this.sail.x > 1.1) this.sail.x = -0.1; else if (this.sail.x < -0.1) this.sail.x = 1.1;
-      const bx = this.sail.x*W, byy = hy + (sy - hy)*0.16, ss = this.sail.size*Math.min(W, H);
-      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.30));
+    if (this.islet) {
+      const ix = this.islet.x*W, iy = hy + (sy - hy)*0.14;
+      const iw = this.islet.w*W, ih = this.islet.h*H;
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.26));
       c.beginPath();
-      c.moveTo(bx, byy - ss*1.7);
-      c.lineTo(bx + this.sail.dir*ss*0.72, byy);
-      c.lineTo(bx, byy);
-      c.closePath(); c.fill();
-      c.beginPath();
-      c.moveTo(bx - ss*0.5, byy); c.quadraticCurveTo(bx, byy + ss*0.42, bx + ss*0.5, byy);
+      c.moveTo(ix - iw*0.5, iy);
+      c.bezierCurveTo(ix - iw*0.3, iy - ih, ix - iw*0.05, iy - ih*1.25, ix + iw*0.12, iy - ih*0.9);
+      c.bezierCurveTo(ix + iw*0.32, iy - ih*1.15, ix + iw*0.5, iy - ih*0.5, ix + iw*0.5, iy);
       c.closePath(); c.fill();
     }
+    this.drawWaterGlints(c, W, H, hy, sy, night);
     if (this.celX !== undefined) {
       const lx = this.celX * W;
       const lg = c.createLinearGradient(0, hy, 0, sy);
@@ -878,6 +951,7 @@ class Scene {
     wg.addColorStop(1, css(mix(this.tok.sea, bot, 0.20)));
     c.fillStyle = wg;
     c.fillRect(0, wy, W, by - wy);
+    this.drawWaterGlints(c, W, H, wy, by, night);
     if (this.celX !== undefined) {
       const lx = this.celX * W;
       const lg = c.createLinearGradient(0, wy, 0, by);
@@ -930,7 +1004,7 @@ class Scene {
       c.beginPath();
       c.ellipse(fr.x*W, fr.y*H, p*34, p*34*0.3, 0, 0, Math.PI*2);
       c.stroke();
-      if (p < 0.15) {
+      if (p < 0.15 && !fr.quiet) {
         c.fillStyle = `rgba(${this.tok.foamRGB}, 0.5)`;
         c.beginPath(); c.arc(fr.x*W, fr.y*H, 2, 0, Math.PI*2); c.fill();
       }
@@ -943,7 +1017,7 @@ class Scene {
     const wa = this.windAmt();
     for (const r of this.reeds) {
       const rx = r.x * W;
-      const sway = Math.sin(this.t*1.3 + r.ph) * 7 * wa + r.lean*5;
+      const sway = Math.sin(this.t*1.3 + r.ph) * 7 * wa * this.windWave(r.x) + r.lean*5;
       const topX = rx + sway, topY = by - r.h*H;
       c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.10));
       c.lineWidth = 1.3;
@@ -960,6 +1034,7 @@ class Scene {
         c.restore();
       }
     }
+    this.drawMotes(c, W, H, dt, this.dayness());
   }
 
   drawCity(c, W, H, dt, bot, night) {
@@ -1508,6 +1583,20 @@ class Scene {
       this.critters.push({ kind: "heron", x: 0.25 + Math.random()*0.5, y: edge, dir,
         mode: "stand", timer: 4 + Math.random()*5, t: 0, vx: 0, flap: 0 });
     }
+    // a porpoise arcing through the surf — rare, unhurried
+    if (this.loc === "beach" && state.weather !== "rain" && n("porpoise") === 0
+        && this.t - this.lastPorpoise > 55 && P(0.02)) {
+      this.lastPorpoise = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "porpoise", x: dir > 0 ? -0.05 : 1.05, dir,
+        base: (this.horizonY + this.shoreY)/2 + 0.02, t: 0, phase: 0 });
+    }
+    // the water stirs on its own now and then — an insect, a breath of wind
+    if (this.loc === "wetland" && state.weather !== "rain" && Math.random() < 0.14*dt) {
+      const x = 0.08 + Math.random()*0.84;
+      const y = this.waterY + 0.06 + Math.random()*(this.bankY - this.waterY - 0.12);
+      this.fishRings.push({ x, y, age: 0, quiet: true });
+    }
     if (duskdawn > 0.55 && n("skein") === 0 && this.t - this.lastSkein > 45 && P(0.02)) {
       this.lastSkein = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -1708,6 +1797,21 @@ class Scene {
           }
           this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: H*0.085, dir: cr.dir,
             flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0), color: colDark, t: cr.t });
+          break;
+        }
+        case "porpoise": {
+          cr.x += cr.dir*0.05*dt;
+          cr.phase += dt*2.1;
+          if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
+          const arc = Math.sin(cr.phase);          // one hump = one breach
+          if (arc > 0.03) {
+            const py = (cr.base - arc*0.05)*H;
+            this.paintPorpoise(c, { x: cr.x*W, y: py, dir: cr.dir, arc, color: colDark });
+          } else if (arc > -0.06 && Math.random() < 0.4) {
+            // a small splash ring as it slips back under
+            c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
+            c.beginPath(); c.ellipse(cr.x*W, cr.base*H, 10, 3, 0, 0, Math.PI*2); c.stroke();
+          }
           break;
         }
         case "skein": {
@@ -1931,6 +2035,28 @@ class Scene {
       c.beginPath(); c.moveTo(s*0.42, 0); c.lineTo(s*0.9, s*0.03); c.stroke();
       c.beginPath(); c.moveTo(-s*0.42, s*0.02); c.lineTo(-s*0.95, s*0.12); c.stroke();
     }
+    c.restore();
+  }
+
+  paintPorpoise(c, o) {
+    const s = this.H*0.05, a = o.arc;   // a: 0..1, how far clear of the water
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineCap = "round";
+    // the smooth curve of the back breaking the surface
+    c.lineWidth = Math.max(2, s*0.5);
+    c.beginPath();
+    c.moveTo(-s*0.95, s*0.2);
+    c.quadraticCurveTo(0, -s*0.55*a - s*0.12, s*0.95, s*0.2);
+    c.stroke();
+    // dorsal fin
+    c.beginPath();
+    c.moveTo(-s*0.08, -s*0.32*a - s*0.05);
+    c.lineTo(-s*0.34, -s*0.66*a - s*0.1);
+    c.lineTo(s*0.16, -s*0.28*a);
+    c.closePath(); c.fill();
     c.restore();
   }
 
