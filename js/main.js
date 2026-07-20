@@ -164,8 +164,19 @@ pauseBtn.addEventListener("click", () => {
 document.getElementById("reseedBtn").addEventListener("click", () => {
   state.seed = (Math.random() * 0xFFFFFFFF) >>> 0;
   document.getElementById("sessionNo").textContent = sessionSerial(state.seed);
+  // A new session is a genuinely new day: roll the hour, the weather and how
+  // busy the land is, then reflect the new conditions back in the controls.
+  const pick = (arr) => arr[Math.floor(Math.random()*arr.length)];
+  state.time = pick(["dawn", "day", "dusk", "night"]);
+  state.weather = pick(["clear", "clear", "breeze", "rain", "fog"]);   // clear a touch more likely
+  state.activity = 0.25 + Math.random()*0.6;
+  syncSeg(document.getElementById("timeSeg"), state.time);
+  syncSeg(document.getElementById("weatherSeg"), state.weather);
+  const av = Math.round(state.activity*100);
+  activitySlider.value = av; activityVal.textContent = av;
   scene.reseed(state.seed);
   audio.retune();
+  audio.applyConditions();
   audio.quietUntil = 0;
 });
 

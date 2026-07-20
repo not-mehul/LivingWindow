@@ -88,13 +88,45 @@ class Scene {
         this.fireflies.push({ x: rng(), y: 0.70 + rng()*0.2, ph: rng()*Math.PI*2, sp: 0.5 + rng(), dx: (rng()-0.5)*0.01 });
       }
     }
+    // A seed-stable starfield for the night sky, everywhere.
+    this.stars = [];
+    for (let i = 0; i < (REDUCED ? 34 : 78); i++) {
+      this.stars.push({ x: rng(), y: rng()*0.56, r: 0.4 + rng()*1.0,
+        ph: rng()*Math.PI*2, tw: 0.6 + rng()*2.2, bright: rng() < 0.14 });
+    }
+    // A few far-off birds adrift, so the sky is never quite empty.
+    this.skyBirds = [];
+    const nsb = REDUCED ? 1 : 3 + Math.floor(rng()*3);
+    for (let i = 0; i < nsb; i++) {
+      this.skyBirds.push({ x: rng(), y: 0.09 + rng()*0.22,
+        sp: (rng() < 0.5 ? -1 : 1)*(0.006 + rng()*0.012), size: 2.6 + rng()*3, ph: rng()*Math.PI*2 });
+    }
 
     if (loc === "meadow") {
       this.hillA = this.makeRidge(rng, 0.62, 0.10);
       this.hillB = this.makeRidge(rng, 0.78, 0.07);
       this.treeX = rng() < 0.5 ? 0.12 + rng()*0.1 : 0.78 + rng()*0.1;
       this.tree = this.makeTree(rng);
-      this.grass = this.makeGrass(rng, 70, 0.03, 0.05);
+      this.grass = this.makeGrass(rng, 110, 0.03, 0.05);
+      // shrubs on the near hill, a couple of far trees, wildflowers and stones
+      this.bushes = [];
+      for (let i = 0; i < 5 + Math.floor(rng()*4); i++) {
+        const x = rng();
+        this.bushes.push({ x, y: this.hillB(x), r: 0.018 + rng()*0.03, lobes: 3 + Math.floor(rng()*3) });
+      }
+      this.distantTrees = [];
+      for (let i = 0; i < 2 + Math.floor(rng()*2); i++) {
+        const x = 0.08 + rng()*0.84;
+        this.distantTrees.push({ x, y: this.hillA(x), h: 0.05 + rng()*0.05, r: 0.018 + rng()*0.022 });
+      }
+      this.flowers = [];
+      for (let i = 0; i < 18 + Math.floor(rng()*12); i++) {
+        this.flowers.push({ x: rng(), h: 0.018 + rng()*0.028, tone: rng(), ph: rng()*Math.PI*2 });
+      }
+      this.rocks = [];
+      for (let i = 0; i < 3 + Math.floor(rng()*4); i++) {
+        this.rocks.push({ x: 0.04 + rng()*0.92, r: 0.008 + rng()*0.016, shade: rng() });
+      }
       // Perches derived from the tree's real branch tips, so a bird lands on a
       // branch that is actually drawn — never floating in mid-air.
       const baseYn = this.hillB(this.treeX);
@@ -114,10 +146,25 @@ class Scene {
       this.perches.push({ x: hx, y: this.hillB(hx) - 0.004, depth: 8 + rng()*3, type: "ground" });
     } else if (loc === "forest") {
       this.hillA = this.makeRidge(rng, 0.55, 0.06);
-      this.trunksFar = []; this.trunksNear = [];
-      for (let i = 0; i < 7; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 1.6 + rng()*1.4));
-      for (let i = 0; i < 5; i++) this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 3.5 + rng()*3));
-      this.grass = this.makeGrass(rng, 46, 0.04, 0.07);
+      this.trunksFar = []; this.trunksMid = []; this.trunksNear = [];
+      for (let i = 0; i < 11; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 1.6 + rng()*1.4));
+      for (let i = 0; i < 7; i++)  this.trunksMid.push(this.makeTrunk(rng, 0.23 + rng()*0.10, 2.4 + rng()*1.8));
+      for (let i = 0; i < 6; i++)  this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 3.5 + rng()*3));
+      this.grass = this.makeGrass(rng, 64, 0.04, 0.07);
+      // undergrowth: ferns, mushrooms and a slow drift of falling leaves
+      this.ferns = [];
+      for (let i = 0; i < 16; i++) {
+        this.ferns.push({ x: rng(), size: 0.03 + rng()*0.045, lean: (rng()-0.5)*0.7, blades: 4 + Math.floor(rng()*3) });
+      }
+      this.mushrooms = [];
+      for (let i = 0; i < 6 + Math.floor(rng()*5); i++) {
+        this.mushrooms.push({ x: rng(), size: 0.006 + rng()*0.011, tall: rng() < 0.5, tone: rng() });
+      }
+      this.leaves = [];
+      for (let i = 0; i < (REDUCED ? 4 : 13); i++) {
+        this.leaves.push({ x: rng(), y: rng(), sp: 0.012 + rng()*0.022,
+          drift: (rng()-0.5)*0.035, ph: rng()*Math.PI*2, rot: rng()*Math.PI*2 });
+      }
       // A perch sits at the leaning top of a near trunk, just under its canopy.
       this.perches = this.trunksNear.slice(0, 4).map(tr => (
         { x: tr.x + tr.lean*2, y: tr.top + 0.07 + rng()*0.05, depth: 3 + rng()*4, type: "branch" }
@@ -130,10 +177,19 @@ class Scene {
       this.foam = [{ p: rng() }, { p: rng() }, { p: rng() }];
       this.duneSide = rng() < 0.5 ? 0 : 1;
       this.duneGrass = [];
-      for (let i = 0; i < 20; i++) {
-        const gx = this.duneSide === 0 ? rng()*0.22 : 0.78 + rng()*0.22;
-        this.duneGrass.push({ x: gx, h: 0.05 + rng()*0.06, ph: rng()*Math.PI*2, lean: (rng()-0.5)*0.8 });
+      for (let i = 0; i < 32; i++) {
+        const gx = this.duneSide === 0 ? rng()*0.26 : 0.74 + rng()*0.26;
+        this.duneGrass.push({ x: gx, h: 0.05 + rng()*0.07, ph: rng()*Math.PI*2, lean: (rng()-0.5)*0.8 });
       }
+      // pebbles and shells on the wet sand, a sail far out, a piece of driftwood
+      this.pebbles = [];
+      for (let i = 0; i < 18 + Math.floor(rng()*12); i++) {
+        this.pebbles.push({ x: rng(), y: this.shoreY + 0.04 + rng()*(0.98 - this.shoreY - 0.04),
+          r: 0.004 + rng()*0.011, shade: rng(), shell: rng() < 0.18 });
+      }
+      this.sail = rng() < 0.72 ? { x: rng(), size: 0.02 + rng()*0.016,
+        dir: rng() < 0.5 ? 1 : -1, sp: 0.0016 + rng()*0.002 } : null;
+      this.driftwood = rng() < 0.6 ? { x: 0.18 + rng()*0.6, w: 0.05 + rng()*0.06, ang: (rng()-0.5)*0.4 } : null;
       this.posts = [];
       const npost = 2 + Math.floor(rng()*2);
       for (let i = 0; i < npost; i++) this.posts.push({ x: 0.2 + rng()*0.6, h: 0.05 + rng()*0.03 });
@@ -148,10 +204,24 @@ class Scene {
         this.rippleLines.push({ y: this.waterY + 0.05 + rng()*(this.bankY - this.waterY - 0.08), ph: rng()*Math.PI*2, sp: 0.06 + rng()*0.08 });
       }
       this.reeds = [];
-      for (let i = 0; i < 28; i++) {
+      for (let i = 0; i < 42; i++) {
         const side = rng();
-        const x = side < 0.55 ? rng()*0.30 : 0.70 + rng()*0.30;
+        const x = side < 0.55 ? rng()*0.34 : 0.66 + rng()*0.34;
         this.reeds.push({ x, h: 0.14 + rng()*0.14, ph: rng()*Math.PI*2, head: rng() < 0.45, lean: (rng()-0.5)*0.5 });
+      }
+      // lily pads on the open water, a half-sunk log, trees along the far bank
+      this.lilies = [];
+      for (let i = 0; i < 7 + Math.floor(rng()*5); i++) {
+        this.lilies.push({ x: 0.12 + rng()*0.76,
+          y: this.waterY + 0.06 + rng()*(this.bankY - this.waterY - 0.1),
+          r: 0.014 + rng()*0.022, bloom: rng() < 0.4, ph: rng()*Math.PI*2 });
+      }
+      this.log = rng() < 0.6 ? { x: 0.14 + rng()*0.5,
+        y: this.waterY + 0.05 + rng()*0.06, w: 0.12 + rng()*0.1, ang: (rng()-0.5)*0.24 } : null;
+      this.distantTrees = [];
+      for (let i = 0; i < 3 + Math.floor(rng()*3); i++) {
+        const x = rng();
+        this.distantTrees.push({ x, y: this.treeline(x), h: 0.045 + rng()*0.055, r: 0.02 + rng()*0.022 });
       }
       const tall = this.reeds.filter(r => r.h > 0.2);
       this.perches = tall.slice(0, 4).map(r => ({ x: r.x, y: this.bankY - r.h, depth: 3 + rng()*4, type: "reed", reedH: r.h }));
@@ -160,10 +230,19 @@ class Scene {
       this.backBlocks = this.makeSkyline(rng, 0.30, 0.28, 0.05, 0.10);
       this.frontBlocks = this.makeSkyline(rng, 0.55, 0.30, 0.07, 0.13);
       for (const b of this.frontBlocks) {
-        b.antenna = rng() < 0.35;
+        b.antenna = rng() < 0.30;
+        b.roof = ["none", "none", "tower", "chimney", "box", "dish"][Math.floor(rng()*6)];
+        b.roofU = 0.22 + rng()*0.56;              // where the rooftop feature sits
+        b.cols = 2 + Math.floor(rng()*4);          // window grid for daylight
+        b.smoke = rng()*Math.PI*2;
         b.lit = [];
         const n = 3 + Math.floor(rng() * 9);
         for (let i = 0; i < n; i++) b.lit.push({ u: 0.12 + rng()*0.76, v: 0.08 + rng()*0.8, ph: rng()*Math.PI*2 });
+      }
+      // street-level lamps that warm the pavement after dark
+      this.streetlamps = [];
+      for (let i = 0; i < 5 + Math.floor(rng()*5); i++) {
+        this.streetlamps.push({ x: 0.03 + rng()*0.94, ph: rng()*Math.PI*2 });
       }
       this.perches = [];
       for (let i = 0; i < 4 && this.frontBlocks.length; i++) {
@@ -410,6 +489,23 @@ class Scene {
   }
 
   drawCelestial(c, W, H, top, night, dt) {
+    // Stars, brightening as the light fails.
+    if (night > 0.05 && this.stars) {
+      for (const st of this.stars) {
+        const tw = 0.55 + 0.45*Math.sin(this.t*st.tw + st.ph);
+        const a = (st.bright ? 0.6 : 0.34) * night * tw;
+        if (a < 0.03) continue;
+        const sx = st.x*W, sy = st.y*H, r = st.r*(st.bright ? 1.5 : 1);
+        c.fillStyle = `rgba(${this.tok.cloudRGB}, ${a})`;
+        c.fillRect(sx, sy, r, r);
+        if (st.bright) {
+          c.globalAlpha = a*0.45;
+          c.fillRect(sx - r, sy + r*0.3, r*3, r*0.5);
+          c.fillRect(sx + r*0.3, sy - r, r*0.5, r*3);
+          c.globalAlpha = 1;
+        }
+      }
+    }
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
     const sunA = (m.dawn*0.9 + m.day + m.dusk*0.8) / total;
     if (sunA > 0.03) {
@@ -440,17 +536,6 @@ class Scene {
       c.beginPath(); c.arc(mx, my, rr, 0, Math.PI*2); c.fill();
       c.fillStyle = css(mix(top, this.tok.moon, 0.08).slice(0,3).concat([moonA]));
       c.beginPath(); c.arc(mx - rr*0.42, my - rr*0.18, rr*0.85, 0, Math.PI*2); c.fill();
-      if (moonA > 0.4) {
-        const srng = mulberry32(state.seed ^ 0x5EED);
-        for (let i = 0; i < 40; i++) {
-          const x = srng()*W, y = srng()*H*0.5;
-          const tw = 0.5 + 0.5*Math.sin(this.t*(1+srng()*2) + i);
-          c.globalAlpha = 0.25 * moonA * tw;
-          c.fillStyle = `rgba(${this.tok.cloudRGB}, 0.5)`;
-          c.fillRect(x, y, 1.2, 1.2);
-        }
-        c.globalAlpha = 1;
-      }
       // shooting stars
       for (let i = this.meteors.length - 1; i >= 0; i--) {
         const mt = this.meteors[i];
@@ -514,9 +599,57 @@ class Scene {
     c.fill();
   }
 
+  /* Far-off birds adrift in the upper sky — a couple of quiet wingbeats. */
+  drawSkyBirds(c, W, H, dt, bot, night) {
+    if (!this.skyBirds) return;
+    const col = css(mix(this.tok.ink, bot, 0.45));
+    c.strokeStyle = col; c.lineCap = "round"; c.lineWidth = 1.1;
+    for (const b of this.skyBirds) {
+      b.x += b.sp*dt; b.ph += dt*4;
+      if (b.x > 1.15) b.x -= 1.3; else if (b.x < -0.15) b.x += 1.3;
+      const a = 0.5 * (1 - night*0.7);
+      if (a < 0.04) continue;
+      const px = b.x*W, py = (b.y + Math.sin(b.ph*0.3)*0.004)*H, s = b.size;
+      const flap = 0.5 + 0.5*Math.sin(b.ph);
+      c.globalAlpha = a;
+      c.beginPath();
+      c.moveTo(px - s, py + flap*s*0.5);
+      c.quadraticCurveTo(px, py - s*0.35, px + s, py + flap*s*0.5);
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+  }
+
+  /* A small distant tree — trunk plus a clump of canopy. */
+  smallTree(c, x, yBase, h, r, W, H, color) {
+    const px = x*W, py = yBase*H, rr = r*Math.min(W, H), hh = h*H;
+    c.fillStyle = color; c.strokeStyle = color; c.lineCap = "round";
+    c.lineWidth = Math.max(1, rr*0.34);
+    c.beginPath(); c.moveTo(px, py); c.lineTo(px, py - hh*0.72); c.stroke();
+    c.beginPath(); c.arc(px, py - hh, rr, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(px - rr*0.72, py - hh*0.82, rr*0.68, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(px + rr*0.72, py - hh*0.86, rr*0.68, 0, Math.PI*2); c.fill();
+  }
+
+  /* A low shrub — a run of overlapping lobes sitting on the ground line. */
+  bushShape(c, x, yBase, r, lobes, W, H, color) {
+    const px = x*W, py = yBase*H, rr = r*Math.min(W, H);
+    c.fillStyle = color;
+    for (let i = 0; i < lobes; i++) {
+      const dx = (i/Math.max(1, lobes-1) - 0.5)*rr*2.1;
+      const rad = rr*(0.68 + 0.42*Math.sin(i*1.7 + x*7));
+      c.beginPath(); c.arc(px + dx, py - rad*0.42, rad, 0, Math.PI*2); c.fill();
+    }
+  }
+
   drawMeadow(c, W, H, dt, bot) {
+    this.drawSkyBirds(c, W, H, dt, bot, this.nightness());
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.45), W, H);
+    const farTree = css(mix(this.tok.ink, bot, 0.38));
+    for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
     this.drawRidge(c, this.hillB, mix(this.tok.ink, bot, 0.18), W, H);
+    const bushCol = css(mix(this.tok.inkDeep, bot, 0.15));
+    for (const bu of (this.bushes || [])) this.bushShape(c, bu.x, bu.y, bu.r, bu.lobes, W, H, bushCol);
     const baseY = this.hillB(this.treeX) * H;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.06));
     c.lineCap = "round";
@@ -533,9 +666,30 @@ class Scene {
     c.moveTo(0, H); c.lineTo(0, H*0.92);
     c.quadraticCurveTo(W*0.5, H*0.88, W, H*0.93);
     c.lineTo(W, H); c.closePath(); c.fill();
-    this.drawGrassTufts(c, W, H, this.grass,
-      (x) => 0.92 - (x*0.5 - 0.25)*(x*0.5-0.25)*0.1,
-      css(mix(this.tok.inkDeep, bot, 0.10)));
+    const groundYn = (x) => 0.92 - (x*0.5 - 0.25)*(x*0.5 - 0.25)*0.1;
+    for (const rk of (this.rocks || [])) {
+      const rr = rk.r*Math.min(W, H);
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05 + rk.shade*0.07));
+      c.beginPath(); c.ellipse(rk.x*W, groundYn(rk.x)*H + 5, rr, rr*0.6, 0, Math.PI, 0); c.fill();
+    }
+    this.drawFlowers(c, W, H, groundYn, bot);
+    this.drawGrassTufts(c, W, H, this.grass, groundYn, css(mix(this.tok.inkDeep, bot, 0.10)));
+  }
+
+  drawFlowers(c, W, H, baseYfn, bot) {
+    if (!this.flowers) return;
+    const wa = this.windAmt();
+    c.lineWidth = 1;
+    for (const f of this.flowers) {
+      const gx = f.x*W, gy = baseYfn(f.x)*H;
+      const sway = Math.sin(this.t*1.6 + f.ph)*5*wa;
+      const tx = gx + sway, ty = gy - f.h*H;
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.16));
+      c.beginPath(); c.moveTo(gx, gy + 3); c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, tx, ty); c.stroke();
+      const rgb = f.tone < 0.4 ? this.tok.amberRGB : f.tone < 0.72 ? this.tok.sageRGB : this.tok.cloudRGB;
+      c.fillStyle = `rgba(${rgb}, 0.82)`;
+      c.beginPath(); c.arc(tx, ty, Math.max(1.3, f.h*H*0.11), 0, Math.PI*2); c.fill();
+    }
   }
 
   drawForest(c, W, H, dt, bot) {
@@ -559,15 +713,74 @@ class Scene {
         c.fill();
       }
     };
-    for (const tr of this.trunksFar) drawTrunk(tr, mix(this.tok.ink, bot, 0.34));
+    for (const tr of this.trunksFar) drawTrunk(tr, mix(this.tok.ink, bot, 0.36));
+    for (const tr of (this.trunksMid || [])) drawTrunk(tr, mix(this.tok.ink, bot, 0.20));
+    // a band of soft haze hanging between the trees
+    const haze = c.createLinearGradient(0, H*0.42, 0, H*0.82);
+    haze.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
+    haze.addColorStop(0.5, `rgba(${this.tok.fogRGB}, 0.05)`);
+    haze.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
+    c.fillStyle = haze; c.fillRect(0, H*0.42, W, H*0.4);
     for (const tr of this.trunksNear) drawTrunk(tr, mix(this.tok.inkDeep, bot, 0.10));
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05));
     c.fillRect(0, H*0.93, W, H*0.07);
+    this.drawFerns(c, W, H, bot);
+    this.drawMushrooms(c, W, H, bot);
     this.drawGrassTufts(c, W, H, this.grass, () => 0.93,
       css(mix(this.tok.inkDeep, bot, 0.12)));
+    this.drawFallingLeaves(c, W, H, dt, bot);
+  }
+
+  drawFerns(c, W, H, bot) {
+    if (!this.ferns) return;
+    const wa = this.windAmt();
+    c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.13)); c.lineCap = "round";
+    for (const f of this.ferns) {
+      const gx = f.x*W, gy = 0.93*H, len = f.size*H;
+      const sway = Math.sin(this.t*1.4 + f.x*10)*4*wa + f.lean*6;
+      c.lineWidth = 1.5;
+      c.beginPath(); c.moveTo(gx, gy + 3);
+      c.quadraticCurveTo(gx + sway*0.5, gy - len*0.5, gx + sway, gy - len); c.stroke();
+      c.lineWidth = 1;
+      for (let i = 1; i <= f.blades; i++) {
+        const t = i/(f.blades + 1), bx = gx + sway*t, by = gy - len*t, bl = len*0.28*(1 - t*0.5);
+        c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5); c.stroke();
+        c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5); c.stroke();
+      }
+    }
+  }
+
+  drawMushrooms(c, W, H, bot) {
+    if (!this.mushrooms) return;
+    c.lineCap = "round";
+    for (const m of this.mushrooms) {
+      const gx = m.x*W, gy = 0.945*H, r = m.size*Math.min(W, H);
+      const stemH = m.tall ? r*2.4 : r*1.3;
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.24));
+      c.lineWidth = Math.max(1.3, r*0.7);
+      c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx, gy - stemH); c.stroke();
+      const rgb = m.tone < 0.5 ? this.tok.amberRGB : this.tok.foamRGB;
+      c.fillStyle = `rgba(${rgb}, 0.78)`;
+      c.beginPath(); c.ellipse(gx, gy - stemH, r, r*0.7, 0, Math.PI, 0); c.fill();
+    }
+  }
+
+  drawFallingLeaves(c, W, H, dt, bot) {
+    if (!this.leaves) return;
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.18));
+    for (const l of this.leaves) {
+      l.y += l.sp*dt;
+      l.x += (l.drift + Math.sin(this.t*1.2 + l.ph)*0.02)*dt;
+      l.rot += dt*1.6;
+      if (l.y > 0.96) { l.y = 0.28 + Math.random()*0.12; l.x = Math.random(); }
+      c.save(); c.translate(l.x*W, l.y*H); c.rotate(l.rot);
+      c.beginPath(); c.ellipse(0, 0, 3.2, 1.4, 0, 0, Math.PI*2); c.fill();
+      c.restore();
+    }
   }
 
   drawBeach(c, W, H, dt, top, bot, night) {
+    this.drawSkyBirds(c, W, H, dt, bot, night);
     const hy = this.horizonY * H, sy = this.shoreY * H;
     const sg = c.createLinearGradient(0, hy, 0, sy);
     sg.addColorStop(0, css(mix(this.tok.sea, top, 0.40)));
@@ -576,6 +789,20 @@ class Scene {
     c.fillRect(0, hy, W, sy - hy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.14)`;
     c.fillRect(0, hy, W, 1);
+    if (this.sail) {
+      this.sail.x += this.sail.sp*this.sail.dir*dt;
+      if (this.sail.x > 1.1) this.sail.x = -0.1; else if (this.sail.x < -0.1) this.sail.x = 1.1;
+      const bx = this.sail.x*W, byy = hy + (sy - hy)*0.16, ss = this.sail.size*Math.min(W, H);
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.30));
+      c.beginPath();
+      c.moveTo(bx, byy - ss*1.7);
+      c.lineTo(bx + this.sail.dir*ss*0.72, byy);
+      c.lineTo(bx, byy);
+      c.closePath(); c.fill();
+      c.beginPath();
+      c.moveTo(bx - ss*0.5, byy); c.quadraticCurveTo(bx, byy + ss*0.42, bx + ss*0.5, byy);
+      c.closePath(); c.fill();
+    }
     if (this.celX !== undefined) {
       const lx = this.celX * W;
       const lg = c.createLinearGradient(0, hy, 0, sy);
@@ -609,6 +836,25 @@ class Scene {
     c.fillRect(0, sy, W, H - sy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.10)`;
     c.fillRect(0, sy, W, 3);
+    // pebbles and the odd shell strewn along the tide line
+    for (const pb of (this.pebbles || [])) {
+      const r = pb.r*Math.min(W, H);
+      if (pb.shell) {
+        c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.5)`; c.lineWidth = 1.1;
+        c.beginPath(); c.arc(pb.x*W, pb.y*H, r*1.2, Math.PI*0.12, Math.PI*0.88); c.stroke();
+      } else {
+        c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05 + pb.shade*0.08));
+        c.beginPath(); c.ellipse(pb.x*W, pb.y*H, r, r*0.68, 0, 0, Math.PI*2); c.fill();
+      }
+    }
+    if (this.driftwood) {
+      const dw = this.driftwood, ww = dw.w*W;
+      c.save(); c.translate(dw.x*W, (this.shoreY + 0.1)*H); c.rotate(dw.ang);
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.13)); c.lineCap = "round";
+      c.lineWidth = 4; c.beginPath(); c.moveTo(-ww/2, 0); c.lineTo(ww/2, 0); c.stroke();
+      c.lineWidth = 2.4; c.beginPath(); c.moveTo(ww*0.1, 0); c.lineTo(ww*0.24, -ww*0.13); c.stroke();
+      c.restore();
+    }
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.12));
     c.lineWidth = 3; c.lineCap = "round";
     for (const p of this.posts) {
@@ -622,7 +868,10 @@ class Scene {
   }
 
   drawWetland(c, W, H, dt, top, bot, night) {
+    this.drawSkyBirds(c, W, H, dt, bot, night);
     this.drawRidge(c, this.treeline, mix(this.tok.ink, bot, 0.42), W, H);
+    const farTree = css(mix(this.tok.ink, bot, 0.36));
+    for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
     const wy = this.waterY * H, by = this.bankY * H;
     const wg = c.createLinearGradient(0, wy, 0, by);
     wg.addColorStop(0, css(mix(this.tok.sea, top, 0.45)));
@@ -647,6 +896,28 @@ class Scene {
       c.moveTo(W*0.08 + drift, ry);
       c.bezierCurveTo(W*0.35 + drift, ry - 1.5, W*0.65 + drift, ry + 1.5, W*0.92 + drift, ry);
       c.stroke();
+    }
+    // a half-sunk log resting in the shallows
+    if (this.log) {
+      const lg = this.log, ww = lg.w*W;
+      c.save(); c.translate(lg.x*W, lg.y*H); c.rotate(lg.ang);
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.12));
+      c.beginPath(); c.ellipse(0, 0, ww/2, ww*0.06, 0, 0, Math.PI*2); c.fill();
+      c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.2)`; c.lineWidth = 1;
+      c.beginPath(); c.ellipse(0, ww*0.1, ww*0.6, ww*0.05, 0, 0, Math.PI); c.stroke();
+      c.restore();
+    }
+    // lily pads floating on the open water
+    for (const li of (this.lilies || [])) {
+      const lx = li.x*W, ly = li.y*H + Math.sin(this.t*0.6 + li.ph)*1.5, r = li.r*Math.min(W, H);
+      c.fillStyle = css(mix(this.tok.sea, this.tok.inkDeep, 0.4));
+      c.beginPath(); c.ellipse(lx, ly, r, r*0.5, 0, 0, Math.PI*2); c.fill();
+      c.strokeStyle = css(mix(this.tok.sea, top, 0.42)); c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(lx, ly); c.lineTo(lx + r, ly); c.stroke();
+      if (li.bloom) {
+        c.fillStyle = `rgba(${this.tok.foamRGB}, 0.8)`;
+        c.beginPath(); c.arc(lx - r*0.2, ly - r*0.22, Math.max(1.4, r*0.3), 0, Math.PI*2); c.fill();
+      }
     }
     // fish rises
     for (let i = this.fishRings.length - 1; i >= 0; i--) {
@@ -692,24 +963,39 @@ class Scene {
   }
 
   drawCity(c, W, H, dt, bot, night) {
+    this.drawSkyBirds(c, W, H, dt, bot, night);
     const groundY = H * 0.95;
     c.fillStyle = css(mix(this.tok.ink, bot, 0.42));
     for (const b of this.backBlocks) {
       c.fillRect(b.x*W, groundY - (b.h + 0.18)*H, b.w*W, (b.h + 0.18)*H);
     }
     const frontColor = mix(this.tok.inkDeep, bot, 0.10);
-    c.fillStyle = css(frontColor);
+    const frontStr = css(frontColor);
+    c.fillStyle = frontStr;
     for (const b of this.frontBlocks) {
       const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = groundY - bh;
       c.fillRect(bx, byTop, bw, bh);
       if (b.antenna) {
-        c.strokeStyle = css(frontColor);
-        c.lineWidth = 1.2;
-        c.beginPath();
-        c.moveTo(bx + bw*0.5, byTop);
-        c.lineTo(bx + bw*0.5, byTop - H*0.035);
-        c.stroke();
+        c.strokeStyle = frontStr; c.lineWidth = 1.2;
+        c.beginPath(); c.moveTo(bx + bw*0.5, byTop); c.lineTo(bx + bw*0.5, byTop - H*0.035); c.stroke();
       }
+      this.drawRoofFeature(c, b, W, H, groundY, frontStr);
+    }
+    // daytime window grids — faint, so the fronts aren't blank slabs
+    if (night < 0.7) {
+      c.fillStyle = css(mix(frontColor, this.tok.inkDeep, 0.55));
+      c.globalAlpha = (1 - night)*0.5;
+      for (const b of this.frontBlocks) {
+        const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = groundY - bh;
+        if (bw < 26) continue;
+        const cols = b.cols, rows = Math.max(2, Math.floor(bh/24));
+        const mx = bw*0.18, my = 10;
+        const gapx = (bw - mx*2)/cols, gapy = (bh - my*1.6)/rows;
+        for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
+          c.fillRect(bx + mx + k*gapx, byTop + my + r*gapy, Math.min(gapx*0.5, 5), 5);
+        }
+      }
+      c.globalAlpha = 1;
     }
     if (night > 0.12) {
       const fc = this.tok.firefly;
@@ -724,6 +1010,58 @@ class Scene {
     }
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.04));
     c.fillRect(0, groundY, W, H - groundY);
+    // street lamps warming the pavement after dark
+    if (night > 0.2 && this.streetlamps) {
+      const fc = this.tok.firefly;
+      for (const L of this.streetlamps) {
+        const lx = L.x*W, flick = 0.8 + 0.2*Math.sin(this.t*0.7 + L.ph);
+        const g = c.createRadialGradient(lx, groundY, 0, lx, groundY, 24);
+        g.addColorStop(0, `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.38*night*flick})`);
+        g.addColorStop(1, `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},0)`);
+        c.fillStyle = g; c.beginPath(); c.arc(lx, groundY, 24, 0, Math.PI*2); c.fill();
+        c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.22)); c.lineWidth = 1.4; c.lineCap = "round";
+        c.beginPath(); c.moveTo(lx, groundY + 2); c.lineTo(lx, groundY - 11); c.stroke();
+        c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.75*night*flick})`;
+        c.beginPath(); c.arc(lx, groundY - 12, 1.7, 0, Math.PI*2); c.fill();
+      }
+    }
+  }
+
+  drawRoofFeature(c, b, W, H, groundY, color) {
+    if (!b.roof || b.roof === "none") return;
+    const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = groundY - bh;
+    const rx = bx + b.roofU*bw;
+    c.fillStyle = color; c.strokeStyle = color; c.lineCap = "round";
+    if (b.roof === "tower") {
+      const tw = Math.min(bw*0.3, 15), th = tw*0.95;
+      c.lineWidth = 1.4;
+      c.beginPath();
+      c.moveTo(rx - tw*0.4, byTop); c.lineTo(rx - tw*0.28, byTop - th*0.7);
+      c.moveTo(rx + tw*0.4, byTop); c.lineTo(rx + tw*0.28, byTop - th*0.7);
+      c.stroke();
+      c.fillRect(rx - tw*0.5, byTop - th*1.15, tw, th*0.5);
+      c.beginPath();
+      c.moveTo(rx - tw*0.5, byTop - th*1.15); c.lineTo(rx, byTop - th*1.45); c.lineTo(rx + tw*0.5, byTop - th*1.15);
+      c.closePath(); c.fill();
+    } else if (b.roof === "chimney") {
+      const cw = Math.max(3, bw*0.09), ch = Math.min(bh*0.3, 17);
+      c.fillRect(rx, byTop - ch, cw, ch);
+      c.save(); c.globalAlpha = 0.13; c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+      for (let i = 0; i < 3; i++) {
+        const rise = (this.t*9 + b.smoke*10) % 26;
+        const sy = byTop - ch - i*9 - rise*0.5;
+        const sx = rx + cw*0.5 + Math.sin(this.t*0.8 + b.smoke + i)*4;
+        c.beginPath(); c.arc(sx, sy, 3 + i*1.6, 0, Math.PI*2); c.fill();
+      }
+      c.restore();
+    } else if (b.roof === "box") {
+      const boxw = Math.min(bw*0.42, 20), boxh = boxw*0.5;
+      c.fillRect(rx - boxw*0.5, byTop - boxh, boxw, boxh);
+    } else if (b.roof === "dish") {
+      c.lineWidth = 1.4;
+      c.beginPath(); c.moveTo(rx, byTop); c.lineTo(rx, byTop - 7); c.stroke();
+      c.beginPath(); c.arc(rx, byTop - 8, 4.2, Math.PI*1.12, Math.PI*1.98); c.stroke();
+    }
   }
 
   /* ---- the singers, drawn where they sing ---- */
