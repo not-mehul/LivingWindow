@@ -20,6 +20,7 @@ class Scene {
     this.fishRings = [];
     this.meteors = [];
     this.lastDeer = -999; this.lastCat = -999; this.lastSkein = -999;
+    this.lastFox = -999; this.lastRabbit = -999; this.lastHeron = -999;
     this.timeMix = { dawn: 1, day: 0, dusk: 0, night: 0 };
     this.refreshTokens();
     this.reseed(state.seed);
@@ -62,6 +63,7 @@ class Scene {
     this.actors = []; this.critters = [];
     this.fishRings = []; this.meteors = [];
     this.lastDeer = this.t - 60; this.lastCat = this.t - 40; this.lastSkein = this.t - 20;
+    this.lastFox = this.t - 55; this.lastRabbit = this.t - 30; this.lastHeron = this.t - 50;
 
     this.clouds = [];
     const nc = 2 + Math.floor(rng()*3);
@@ -93,23 +95,35 @@ class Scene {
       this.treeX = rng() < 0.5 ? 0.12 + rng()*0.1 : 0.78 + rng()*0.1;
       this.tree = this.makeTree(rng);
       this.grass = this.makeGrass(rng, 70, 0.03, 0.05);
-      this.perches = [
-        { x: this.treeX + 0.02, y: 0.36, depth: 4 },
-        { x: this.treeX - 0.04, y: 0.44, depth: 4 },
-        { x: 0.5 + (rng()-0.5)*0.3, y: 0.66, depth: 10 },
-        { x: 0.3 + rng()*0.4, y: 0.86, depth: 3 },
-        { x: rng()*0.9 + 0.05, y: 0.74, depth: 7 }
-      ];
+      // Perches derived from the tree's real branch tips, so a bird lands on a
+      // branch that is actually drawn — never floating in mid-air.
+      const baseYn = this.hillB(this.treeX);
+      const tips = this.tree
+        .filter(sg => sg.w <= 1)
+        .map(sg => ({ x: this.treeX + sg.x2*0.5, y: baseYn + sg.y2*0.9 }))
+        .filter(p => p.y < baseYn - 0.04 && p.x > 0.04 && p.x < 0.96)
+        .sort((a, b) => a.y - b.y);
+      this.perches = [];
+      for (const idx of [0, Math.floor(tips.length*0.35), Math.floor(tips.length*0.7)]) {
+        if (tips[idx]) this.perches.push({ x: tips[idx].x, y: tips[idx].y, depth: 3 + rng()*2, type: "branch" });
+      }
+      const groundYn = (x) => 0.92 - (x*0.5 - 0.25)*(x*0.5 - 0.25)*0.1;   // the grass line
+      const gx1 = 0.30 + rng()*0.45;
+      this.perches.push({ x: gx1, y: groundYn(gx1), depth: 2 + rng()*2, type: "ground" });
+      const hx = 0.28 + rng()*0.44;
+      this.perches.push({ x: hx, y: this.hillB(hx) - 0.004, depth: 8 + rng()*3, type: "ground" });
     } else if (loc === "forest") {
       this.hillA = this.makeRidge(rng, 0.55, 0.06);
       this.trunksFar = []; this.trunksNear = [];
       for (let i = 0; i < 7; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 1.6 + rng()*1.4));
       for (let i = 0; i < 5; i++) this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 3.5 + rng()*3));
       this.grass = this.makeGrass(rng, 46, 0.04, 0.07);
+      // A perch sits at the leaning top of a near trunk, just under its canopy.
       this.perches = this.trunksNear.slice(0, 4).map(tr => (
-        { x: tr.x, y: tr.top + 0.06 + rng()*0.06, depth: 3 + rng()*4 }
+        { x: tr.x + tr.lean*2, y: tr.top + 0.07 + rng()*0.05, depth: 3 + rng()*4, type: "branch" }
       ));
-      this.perches.push({ x: 0.5 + (rng()-0.5)*0.6, y: 0.42, depth: 11 });
+      const fpx = 0.3 + rng()*0.4;
+      this.perches.push({ x: fpx, y: 0.9, depth: 5 + rng()*3, type: "ground" });
     } else if (loc === "beach") {
       this.horizonY = 0.50 + rng()*0.05;
       this.shoreY = 0.80 + rng()*0.03;
@@ -123,8 +137,8 @@ class Scene {
       this.posts = [];
       const npost = 2 + Math.floor(rng()*2);
       for (let i = 0; i < npost; i++) this.posts.push({ x: 0.2 + rng()*0.6, h: 0.05 + rng()*0.03 });
-      this.perches = this.posts.map(p => ({ x: p.x, y: this.shoreY - p.h, depth: 5 + rng()*4 }));
-      this.perches.push({ x: 0.3 + rng()*0.4, y: this.shoreY + 0.08, depth: 3 });
+      this.perches = this.posts.map(p => ({ x: p.x, y: this.shoreY - p.h, depth: 5 + rng()*4, type: "post" }));
+      this.perches.push({ x: 0.3 + rng()*0.4, y: this.shoreY + 0.08, depth: 3, type: "ground" });
     } else if (loc === "wetland") {
       this.treeline = this.makeRidge(rng, 0.50, 0.03);
       this.waterY = 0.56 + rng()*0.03;
@@ -140,8 +154,8 @@ class Scene {
         this.reeds.push({ x, h: 0.14 + rng()*0.14, ph: rng()*Math.PI*2, head: rng() < 0.45, lean: (rng()-0.5)*0.5 });
       }
       const tall = this.reeds.filter(r => r.h > 0.2);
-      this.perches = tall.slice(0, 4).map(r => ({ x: r.x, y: this.bankY - r.h, depth: 3 + rng()*4 }));
-      this.perches.push({ x: 0.4 + rng()*0.2, y: this.waterY + 0.1, depth: 12 });
+      this.perches = tall.slice(0, 4).map(r => ({ x: r.x, y: this.bankY - r.h, depth: 3 + rng()*4, type: "reed", reedH: r.h }));
+      this.perches.push({ x: 0.4 + rng()*0.2, y: this.bankY - 0.004, depth: 6 + rng()*3, type: "ground" });
     } else {
       this.backBlocks = this.makeSkyline(rng, 0.30, 0.28, 0.05, 0.10);
       this.frontBlocks = this.makeSkyline(rng, 0.55, 0.30, 0.07, 0.13);
@@ -154,7 +168,7 @@ class Scene {
       this.perches = [];
       for (let i = 0; i < 4 && this.frontBlocks.length; i++) {
         const b = this.frontBlocks[Math.floor(rng()*this.frontBlocks.length)];
-        this.perches.push({ x: b.x + b.w * rng(), y: 0.95 - b.h, depth: 4 + rng()*5 });
+        this.perches.push({ x: b.x + b.w * rng(), y: 0.95 - b.h, depth: 4 + rng()*5, type: "roof" });
       }
     }
   }
@@ -230,7 +244,7 @@ class Scene {
   }
 
   /* A voice becomes a visible animal at its own coordinates. */
-  spawnForCall(sp, x01, y01, depth, dur, enter = 0) {
+  spawnForCall(sp, x01, y01, depth, dur, enter = 0, perchType = null) {
     const id = sp.id;
     if (id === "cricket" || id === "cuckoo" || id === "curlew" || id === "rooster") return;
     if (sp.layer === "air") {
@@ -252,12 +266,25 @@ class Scene {
       return;
     }
     const hs = Math.max(0.75, Math.min(1.6, this.H / 430));
+    // Every individual is a little different — size, plumpness, a rare crest,
+    // its own idle rhythm — so no two callers feel stamped from one mould.
+    const ivar = {
+      scale: 0.88 + Math.random()*0.28,
+      puff: 0.92 + Math.random()*0.22,
+      crest: Math.random() < 0.28,
+      tail: 0.9 + Math.random()*0.5,
+      headPh: Math.random()*Math.PI*2,
+      tailPh: Math.random()*Math.PI*2,
+      breathPh: Math.random()*Math.PI*2,
+      lookEvery: 2.2 + Math.random()*2.6,
+      rim: Math.random() < 0.5
+    };
     const a = {
-      id, x: x01, y: y01,
-      s: Math.max(3.5, Math.min(16, 15.5 - depth*0.62)) * hs,   // far = smaller, near = bigger
-      t: 0, dur, alpha: 1, flip: x01 > 0.55,
-      linger: 1.2 + Math.random()*1.6, leave: null,
-      depthMix: Math.min(0.4, 0.10 + depth*0.012), data: {}
+      id, x: x01, y: y01, perchType,
+      s: Math.max(3.5, Math.min(16, 15.5 - depth*0.62)) * hs * ivar.scale,   // far = smaller, near = bigger
+      t: 0, dur, alpha: 1, flip: x01 > 0.55, ivar,
+      linger: 1.4 + Math.random()*1.8, leave: null,
+      depthMix: Math.min(0.42, 0.10 + depth*0.013), data: {}
     };
     if (id === "owl") { a.beh = "owl"; a.linger = 3 + Math.random()*2; a.s *= 1.25; }
     else if (id === "frog") { a.beh = "frog"; a.s *= 0.9; }
@@ -742,58 +769,175 @@ class Scene {
 
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
+      const rimStr = css(mix(col, bot, 0.6));            // a touch lighter, for rim/eye
       const x = a.x*W, y = a.y*H;
+
+      // Idle life: breathing, the odd glance and tail-flick, a wing-settle on arrival.
+      const iv = a.ivar || {};
+      const settled = a.enter > 0 ? Math.max(0, a.t - a.enter) : a.t;
+      const breath = Math.sin(a.t*2.0 + (iv.breathPh || 0));
+      const headTurn = Math.sin(a.t*0.8 + (iv.headPh || 0)) * 0.20
+                     + Math.pow(Math.max(0, Math.sin(a.t*0.5 + (iv.headPh || 0)*1.7)), 6) * 0.5;
+      const tailFlick = Math.pow(Math.max(0, Math.sin(a.t*1.15 + (iv.tailPh || 0))), 8);
+      const wingSettle = Math.max(0, 1 - settled/0.55);
+      const hopBob = (a.enter > 0 && a.t < a.enter && a.beh === "perch")
+        ? Math.abs(Math.sin(a.t*13)) * a.s * 0.12 : 0;
+
       switch (a.beh) {
         case "perch": {
-          const st = PSTYLE[a.id] || {};
-          this.paintBird(c, { x, y, s: a.s*(st.sc || 1), flip: a.flip, alpha: a.alpha,
-            color: colStr, plump: st.plump || 1, tailLen: st.tail || 1.1,
-            tailUp: !!st.tailUp, billLen: st.bill || 0.5, sing });
+          const ps = PSTYLE[a.id] || {};
+          this.drawPerchFooting(c, x, y, a.s, a.perchType, bot, a.alpha);
+          this.paintBird(c, {
+            x, y: y - hopBob, s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
+            color: colStr, rim: rimStr, plump: (ps.plump || 1) * (iv.puff || 1),
+            tailLen: (ps.tail || 1.1) * (iv.tail || 1), tailUp: !!ps.tailUp,
+            billLen: ps.bill || 0.5, crest: iv.crest && !ps.tailUp, rimLight: iv.rim,
+            sing, breath, headTurn, tailFlick, wingSettle
+          });
           break;
         }
-        case "owl": this.paintOwl(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, night, t: a.t }); break;
+        case "owl": this.paintOwl(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, rim: rimStr, night, t: a.t, headTurn }); break;
         case "duck": this.paintDuck(c, { x, y: y + Math.sin(a.t*1.3)*1.5, s: a.s,
-          flip: a.data.dir < 0, alpha: a.alpha, color: colStr, sing }); break;
+          flip: a.data.dir < 0, alpha: a.alpha, color: colStr, rim: rimStr, sing, breath }); break;
         case "pecker": this.paintWoodpecker(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, sing, t: a.t }); break;
         case "wader": this.paintWader(c, { x, y, s: a.s, flip: a.data.dir < 0,
-          alpha: a.alpha, color: colStr, sing, walking: a.t > a.dur, t: a.t }); break;
-        case "frog": this.paintFrog(c, { x, y, s: a.s, alpha: a.alpha, color: col, bot, sing }); break;
+          alpha: a.alpha, color: colStr, rim: rimStr, sing, walking: a.t > sungEnd, t: a.t }); break;
+        case "frog": this.paintFrog(c, { x, y, s: a.s, alpha: a.alpha, color: col, bot, sing, breath }); break;
       }
     }
   }
 
+  /* A little something under the feet so no bird stands on empty air. */
+  drawPerchFooting(c, x, y, s, type, bot, alpha) {
+    if (!type || type === "post" || type === "roof") return;   // already a solid edge
+    c.save();
+    c.globalAlpha = alpha;
+    c.lineCap = "round";
+    if (type === "branch") {
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.06));
+      c.lineWidth = Math.max(1.4, s*0.17);
+      c.beginPath();
+      c.moveTo(x - s*1.4, y + s*0.20);
+      c.quadraticCurveTo(x - s*0.2, y + s*0.05, x + s*1.6, y - s*0.18);
+      c.stroke();
+    } else if (type === "reed") {
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.10));
+      c.lineWidth = Math.max(1.2, s*0.11);
+      c.beginPath();
+      c.moveTo(x + s*0.35, y + s*4.4);
+      c.quadraticCurveTo(x + s*0.12, y + s*1.9, x, y + s*0.12);
+      c.stroke();
+    } else if (type === "ground") {
+      c.globalAlpha = alpha*0.26;
+      c.fillStyle = css(this.tok.inkDeep);
+      c.beginPath(); c.ellipse(x, y + s*0.14, s*0.85, s*0.2, 0, 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+  }
+
+  /* A perched songbird, anchored by its feet at (x, y) and built above them,
+     so it stands on the perch instead of hovering over it. */
   paintBird(c, o) {
     const s = o.s;
+    const plump = o.plump || 1;
+    const sing = o.sing || 0;
+    const breath = o.breath || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.flip) c.scale(-1, 1);
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
-    c.lineWidth = Math.max(1, s*0.14); c.lineCap = "round";
-    const ry = s*0.62*(o.plump || 1);
-    const tAng = o.tailUp ? -0.9 : 0.38;
-    const tl = (o.tailLen || 1.1) * s;
+    c.lineCap = "round"; c.lineJoin = "round";
+
+    const legLen = s*0.52;
+    const bodyRx = s*0.98;
+    const bodyRy = s*0.72 * plump * (1 + breath*0.03 + sing*0.05);
+    const cy = -(legLen + bodyRy*0.72);           // body centre, above the feet
+    const bellyY = cy + bodyRy*0.7;
+
+    // Tail — a tapered blade off the lower back; flicks up now and then.
+    const tAng = (o.tailUp ? -0.72 : 0.42) - (o.tailFlick || 0)*0.5;
+    const tl = (o.tailLen || 1.1) * s * 1.15;
+    const tx0 = -bodyRx*0.6, ty0 = cy + bodyRy*0.12;
+    const txE = tx0 - Math.cos(tAng)*tl, tyE = ty0 + Math.sin(tAng)*tl;
     c.beginPath();
-    c.moveTo(-s*0.85, -ry*0.15);
-    c.lineTo(-s*0.85 - Math.cos(tAng)*tl, -ry*0.15 + Math.sin(tAng)*tl);
+    c.moveTo(tx0, ty0 - bodyRy*0.24);
+    c.lineTo(txE, tyE - s*0.05);
+    c.lineTo(txE, tyE + s*0.16);
+    c.lineTo(tx0, ty0 + bodyRy*0.24);
+    c.closePath(); c.fill();
+
+    // Legs and toes.
+    c.lineWidth = Math.max(1, s*0.1);
+    c.beginPath();
+    c.moveTo(-s*0.12, 0); c.lineTo(-s*0.04, bellyY);
+    c.moveTo(s*0.2, 0);   c.lineTo(s*0.09, bellyY);
+    c.moveTo(-s*0.12, 0); c.lineTo(-s*0.26, s*0.02);
+    c.moveTo(-s*0.12, 0); c.lineTo(0, s*0.02);
+    c.moveTo(s*0.2, 0);   c.lineTo(s*0.06, s*0.02);
+    c.moveTo(s*0.2, 0);   c.lineTo(s*0.32, s*0.02);
     c.stroke();
-    c.beginPath(); c.ellipse(0, 0, s, ry, 0, 0, Math.PI*2); c.fill();
-    const sing = o.sing || 0;
-    const hx = s*0.72, hy = -ry*0.75 - sing*s*0.22, hr = s*0.42;
+
+    // Body.
+    c.save(); c.translate(0, cy); c.rotate(-0.14);
+    c.beginPath(); c.ellipse(0, 0, bodyRx, bodyRy, 0, 0, Math.PI*2); c.fill();
+    c.restore();
+
+    // Folded wing — settles down onto the body just after landing.
+    const wLift = (o.wingSettle || 0)*s*0.5;
+    c.save(); c.translate(-s*0.04, cy - wLift);
+    c.beginPath();
+    c.moveTo(bodyRx*0.34, -bodyRy*0.12);
+    c.quadraticCurveTo(-bodyRx*0.4, -bodyRy*0.22, -bodyRx*0.74, bodyRy*0.34);
+    c.quadraticCurveTo(-bodyRx*0.1, bodyRy*0.32, bodyRx*0.4, bodyRy*0.06);
+    c.closePath(); c.fill();
+    c.strokeStyle = o.rim; c.lineWidth = Math.max(0.7, s*0.05); c.stroke();
+    c.strokeStyle = o.color;
+    c.restore();
+
+    // Head — turns to glance about, lifts to sing.
+    const ht = o.headTurn || 0;
+    const hr = s*0.44;
+    const hx = bodyRx*0.72 + ht*s*0.1;
+    const hy = cy - bodyRy*0.72 - sing*s*0.18;
     c.beginPath(); c.arc(hx, hy, hr, 0, Math.PI*2); c.fill();
-    const gap = 0.12 + sing*0.5;
-    const bx = hx + hr*0.7, by2 = hy;
-    const bl = (o.billLen || 0.5) * s;
-    c.lineWidth = Math.max(1, s*0.12);
-    c.beginPath();
-    c.moveTo(bx, by2); c.lineTo(bx + Math.cos(-gap)*bl, by2 + Math.sin(-gap)*bl);
-    c.moveTo(bx, by2); c.lineTo(bx + Math.cos(gap*0.8)*bl, by2 + Math.sin(gap*0.8)*bl);
-    c.stroke();
-    if (o.legs !== false) {
+
+    if (o.crest) {
+      c.lineWidth = Math.max(1, s*0.09);
       c.beginPath();
-      c.moveTo(-s*0.15, ry*0.85); c.lineTo(-s*0.2, ry*0.85 + s*0.55);
-      c.moveTo(s*0.25, ry*0.8); c.lineTo(s*0.28, ry*0.8 + s*0.55);
+      c.moveTo(hx - hr*0.2, hy - hr*0.85); c.lineTo(hx - hr*0.75, hy - hr*1.5);
+      c.moveTo(hx + hr*0.05, hy - hr*0.9); c.lineTo(hx - hr*0.28, hy - hr*1.6);
       c.stroke();
+    }
+
+    // Bill — a slim wedge that parts to sing.
+    const bl = (o.billLen || 0.5) * s * 1.35;
+    const bx = hx + hr*0.72, by = hy;
+    const gap = 0.08 + sing*0.5;
+    c.beginPath();
+    c.moveTo(bx, by - s*0.07);
+    c.lineTo(bx + bl, by - Math.sin(gap)*bl*0.5);
+    c.lineTo(bx, by + s*0.06);
+    c.closePath(); c.fill();
+    if (sing > 0.14) {
+      c.beginPath();
+      c.moveTo(bx, by + s*0.06);
+      c.lineTo(bx + bl*0.92, by + Math.sin(gap)*bl*0.5 + s*0.05);
+      c.lineTo(bx, by + s*0.16);
+      c.closePath(); c.fill();
+    }
+
+    // Eye glint.
+    c.fillStyle = o.rim;
+    c.beginPath(); c.arc(hx + hr*0.32, hy - hr*0.16, Math.max(0.8, hr*0.17), 0, Math.PI*2); c.fill();
+    c.fillStyle = o.color;
+
+    // Optional breast rim-light, for the odd individual caught by the light.
+    if (o.rimLight) {
+      c.save(); c.translate(0, cy); c.rotate(-0.14);
+      c.strokeStyle = o.rim; c.lineWidth = Math.max(0.7, s*0.06);
+      c.beginPath(); c.ellipse(0, 0, bodyRx, bodyRy, 0, Math.PI*0.12, Math.PI*0.7); c.stroke();
+      c.restore();
     }
     c.restore();
   }
@@ -802,24 +946,52 @@ class Scene {
     const s = o.s;
     c.save();
     c.translate(o.x, o.y);
-    c.rotate(Math.sin(o.t*0.6)*0.03);
+    c.rotate(Math.sin(o.t*0.6)*0.025);
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
-    c.lineWidth = Math.max(1, s*0.12); c.lineCap = "round";
-    const w = s*0.62, h = s*1.15;
-    c.beginPath(); c.ellipse(0, -h*0.5, w, h*0.6, 0, 0, Math.PI*2); c.fill();
+    c.lineWidth = Math.max(1, s*0.11); c.lineCap = "round";
+    const legLen = s*0.24;
+    const bodyRx = s*0.62, bodyRy = s*0.92;
+    const cy = -(legLen + bodyRy*0.82);
+    const ex = (o.headTurn || 0)*s*0.08;
+    // talons
     c.beginPath();
-    c.moveTo(-w*0.55, -h*1.0); c.lineTo(-w*0.85, -h*1.35);
-    c.moveTo(w*0.55, -h*1.0); c.lineTo(w*0.85, -h*1.35);
+    c.moveTo(-s*0.14, cy + bodyRy*0.78); c.lineTo(-s*0.14, 0);
+    c.moveTo(s*0.14, cy + bodyRy*0.78);  c.lineTo(s*0.14, 0);
+    c.moveTo(-s*0.14, 0); c.lineTo(-s*0.26, s*0.02); c.moveTo(-s*0.14, 0); c.lineTo(-s*0.02, s*0.02);
+    c.moveTo(s*0.14, 0);  c.lineTo(s*0.02, s*0.02);  c.moveTo(s*0.14, 0);  c.lineTo(s*0.26, s*0.02);
     c.stroke();
-    if (o.night > 0.15) {
+    // body + head (owls read as one rounded mass)
+    c.beginPath(); c.ellipse(0, cy, bodyRx, bodyRy, 0, 0, Math.PI*2); c.fill();
+    const hy = cy - bodyRy*0.66, hr = s*0.52;
+    c.beginPath(); c.arc(ex, hy, hr, 0, Math.PI*2); c.fill();
+    // ear tufts
+    c.beginPath();
+    c.moveTo(ex - hr*0.5, hy - hr*0.72); c.lineTo(ex - hr*0.86, hy - hr*1.4);
+    c.moveTo(ex + hr*0.5, hy - hr*0.72); c.lineTo(ex + hr*0.86, hy - hr*1.4);
+    c.stroke();
+    // great round eyes — pale discs, dark pupils, a glow after dark
+    const eyN = o.night || 0;
+    c.fillStyle = o.rim;
+    c.beginPath();
+    c.arc(ex - hr*0.42, hy - hr*0.02, hr*0.3, 0, Math.PI*2);
+    c.arc(ex + hr*0.42, hy - hr*0.02, hr*0.3, 0, Math.PI*2); c.fill();
+    c.fillStyle = o.color;
+    c.beginPath();
+    c.arc(ex - hr*0.42, hy - hr*0.02, hr*0.14, 0, Math.PI*2);
+    c.arc(ex + hr*0.42, hy - hr*0.02, hr*0.14, 0, Math.PI*2); c.fill();
+    if (eyN > 0.15) {
       const fc = this.tok.firefly;
-      c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.9*o.night*o.alpha})`;
+      c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.8*eyN*o.alpha})`;
       c.beginPath();
-      c.arc(-w*0.3, -h*0.88, Math.max(1, s*0.09), 0, Math.PI*2);
-      c.arc(w*0.3, -h*0.88, Math.max(1, s*0.09), 0, Math.PI*2);
-      c.fill();
+      c.arc(ex - hr*0.42, hy - hr*0.02, hr*0.17, 0, Math.PI*2);
+      c.arc(ex + hr*0.42, hy - hr*0.02, hr*0.17, 0, Math.PI*2); c.fill();
     }
+    // little beak
+    c.fillStyle = o.color;
+    c.beginPath();
+    c.moveTo(ex, hy + hr*0.12); c.lineTo(ex - hr*0.12, hy + hr*0.52); c.lineTo(ex + hr*0.12, hy + hr*0.52);
+    c.closePath(); c.fill();
     c.restore();
   }
 
@@ -870,20 +1042,38 @@ class Scene {
     if (o.flip) c.scale(-1, 1);
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
-    c.lineWidth = Math.max(1, s*0.13); c.lineCap = "round";
-    const step = o.walking ? Math.sin(o.t*8) : 0;
-    c.beginPath(); c.ellipse(0, 0, s*0.9, s*0.5, 0, 0, Math.PI*2); c.fill();
+    c.lineCap = "round";
     const sing = o.sing || 0;
-    const hy = -s*0.75 - sing*s*0.2;
-    c.beginPath(); c.arc(s*0.7, hy, s*0.3, 0, Math.PI*2); c.fill();
+    const step = o.walking ? Math.sin(o.t*8) : 0;
+    const legLen = s*1.15;
+    const bodyRx = s*0.9, bodyRy = s*0.48;
+    const cy = -(legLen + bodyRy*0.5);
+    const bax = -s*0.1 + step*s*0.2, fax = s*0.28 - step*s*0.2;   // stepping feet
+    // long legs
+    c.lineWidth = Math.max(1, s*0.09);
     c.beginPath();
-    c.moveTo(s*0.95, hy); c.lineTo(s*1.85, hy + s*0.12);
-    if (sing > 0.4) { c.moveTo(s*0.95, hy + s*0.06); c.lineTo(s*1.7, hy + s*0.28); }
+    c.moveTo(-s*0.08, cy + bodyRy*0.5); c.lineTo(bax, 0);
+    c.moveTo(s*0.26, cy + bodyRy*0.5);  c.lineTo(fax, 0);
+    c.moveTo(bax, 0); c.lineTo(bax - s*0.16, s*0.02); c.moveTo(bax, 0); c.lineTo(bax + s*0.14, s*0.02);
+    c.moveTo(fax, 0); c.lineTo(fax - s*0.14, s*0.02); c.moveTo(fax, 0); c.lineTo(fax + s*0.16, s*0.02);
     c.stroke();
+    // body
+    c.beginPath(); c.ellipse(0, cy, bodyRx, bodyRy, -0.1, 0, Math.PI*2); c.fill();
+    // neck and head, lifted to call
+    const hy = cy - bodyRy*1.35 - sing*s*0.22, hx = bodyRx*0.66, hr = s*0.3;
+    c.lineWidth = Math.max(1.4, s*0.2);
+    c.beginPath(); c.moveTo(bodyRx*0.42, cy - bodyRy*0.35); c.lineTo(hx, hy); c.stroke();
+    c.beginPath(); c.arc(hx, hy, hr, 0, Math.PI*2); c.fill();
+    // long straight bill, parting to call
+    const gap = sing*0.22;
+    c.lineWidth = Math.max(1.1, s*0.09);
     c.beginPath();
-    c.moveTo(-s*0.2, s*0.45); c.lineTo(-s*0.2 + step*s*0.18, s*1.55);
-    c.moveTo(s*0.25, s*0.45); c.lineTo(s*0.25 - step*s*0.18, s*1.55);
+    c.moveTo(hx + hr*0.55, hy - gap*s*0.4); c.lineTo(hx + hr*0.55 + s*1.0, hy + s*0.1 - gap*s*0.7);
+    c.moveTo(hx + hr*0.55, hy + gap*s*0.4); c.lineTo(hx + hr*0.55 + s*0.95, hy + s*0.16 + gap*s*0.7);
     c.stroke();
+    // eye
+    c.fillStyle = o.rim;
+    c.beginPath(); c.arc(hx + hr*0.25, hy - hr*0.2, Math.max(0.8, hr*0.24), 0, Math.PI*2); c.fill();
     c.restore();
   }
 
@@ -957,6 +1147,28 @@ class Scene {
       const bi = Math.floor(Math.random()*this.frontBlocks.length);
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "cat", b: bi, u: dir > 0 ? 0 : 1, dir, mode: "walk", timer: 0, t: 0 });
+    }
+    if (this.loc === "meadow" && dayish > 0.3 && calmW && n("rabbit") === 0
+        && this.t - this.lastRabbit > 45 && P(0.02)) {
+      this.lastRabbit = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "rabbit", x: dir > 0 ? -0.05 : 1.05, dir,
+        mode: "hop", timer: 0.3 + Math.random()*0.3, t: 0, hopPh: 0, ear: 0 });
+    }
+    if ((this.loc === "meadow" || this.loc === "forest") && (duskdawn > 0.45 || night > 0.4)
+        && n("fox") === 0 && this.t - this.lastFox > 80 && P(0.014)) {
+      this.lastFox = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "fox", x: dir > 0 ? -0.08 : 1.08, dir,
+        mode: "trot", timer: 1.2 + Math.random()*1.5, t: 0, lp: 0, look: 0 });
+    }
+    if ((this.loc === "wetland" || this.loc === "beach") && dayish > 0.3
+        && n("heron") === 0 && this.t - this.lastHeron > 85 && P(0.012)) {
+      this.lastHeron = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const edge = this.loc === "wetland" ? (this.bankY || 0.86) - 0.005 : (this.shoreY || 0.82) + 0.02;
+      this.critters.push({ kind: "heron", x: 0.25 + Math.random()*0.5, y: edge, dir,
+        mode: "stand", timer: 4 + Math.random()*5, t: 0, vx: 0, flap: 0 });
     }
     if (duskdawn > 0.55 && n("skein") === 0 && this.t - this.lastSkein > 45 && P(0.02)) {
       this.lastSkein = this.t;
@@ -1117,6 +1329,49 @@ class Scene {
             sit: cr.mode === "sit", t: cr.t, color: colDark });
           break;
         }
+        case "rabbit": {
+          cr.timer -= dt;
+          if (cr.mode === "hop") {
+            cr.hopPh += dt*7; cr.x += cr.dir*0.05*dt;
+            if (cr.timer <= 0) { cr.mode = "sit"; cr.timer = 0.6 + Math.random()*1.6; cr.hopPh = 0; }
+          } else {
+            cr.ear = Math.max(0, (cr.ear || 0) - dt*2);
+            if (Math.random() < 0.6*dt) cr.ear = 1;
+            if (cr.timer <= 0) { cr.mode = "hop"; cr.timer = 0.25 + Math.random()*0.4; }
+          }
+          if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
+          const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
+          this.paintRabbit(c, { x: cr.x*W, y: 0.9*H - hop*H*0.035, s: H*0.032,
+            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: colDark });
+          break;
+        }
+        case "fox": {
+          cr.timer -= dt;
+          const walking = cr.mode === "trot";
+          if (walking) {
+            cr.x += cr.dir*0.028*dt; cr.lp += dt*7;
+            if (cr.timer <= 0) { cr.mode = "pause"; cr.timer = 0.8 + Math.random()*1.8; }
+          } else {
+            if (cr.timer <= 0) { cr.mode = "trot"; cr.timer = 1.4 + Math.random()*2.2; }
+          }
+          if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
+          const gy = this.loc === "forest" ? 0.925 : 0.9;
+          this.paintFox(c, { x: cr.x*W, y: gy*H, s: H*0.05, dir: cr.dir, walking,
+            lp: cr.lp, look: walking ? 0 : Math.sin(cr.t*1.8), color: colDark });
+          break;
+        }
+        case "heron": {
+          cr.timer -= dt;
+          if (cr.mode === "stand") {
+            if (cr.timer <= 0) { cr.mode = "fly"; cr.vx = cr.dir*0.03; }
+          } else {
+            cr.x += cr.vx*dt; cr.y -= dt*0.018; cr.flap += dt*3.4;
+            if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
+          }
+          this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: H*0.085, dir: cr.dir,
+            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0), color: colDark, t: cr.t });
+          break;
+        }
         case "skein": {
           cr.x += cr.vx*dt;
           if (cr.x < -0.25 || cr.x > 1.25) { dead = true; break; }
@@ -1211,6 +1466,132 @@ class Scene {
       c.moveTo(-5.8, -3.8);
       c.quadraticCurveTo(-9.5, -7 + sway, -8, -10.5 + sway);
       c.stroke();
+    }
+    c.restore();
+  }
+
+  paintRabbit(c, o) {
+    const s = o.s;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineWidth = Math.max(1, s*0.12); c.lineCap = "round";
+    // cotton tail
+    c.beginPath(); c.arc(-s*0.72, -s*0.42, s*0.2, 0, Math.PI*2); c.fill();
+    // haunch / body
+    c.beginPath(); c.ellipse(0, -s*0.5, s*0.82, s*0.55, 0, 0, Math.PI*2); c.fill();
+    // head
+    const hx = s*0.68, hy = -s*0.95 - (o.hop || 0)*s*0.12;
+    c.beginPath(); c.arc(hx, hy, s*0.34, 0, Math.PI*2); c.fill();
+    // long ears, flicking
+    const ea = o.ear || 0;
+    c.lineWidth = Math.max(1.4, s*0.17);
+    c.beginPath();
+    c.moveTo(hx - s*0.08, hy - s*0.18); c.lineTo(hx - s*0.18 - ea*s*0.22, hy - s*0.92);
+    c.moveTo(hx + s*0.16, hy - s*0.16); c.lineTo(hx + s*0.24 + ea*s*0.18, hy - s*0.96);
+    c.stroke();
+    // eye glint
+    c.save(); c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
+    c.beginPath(); c.arc(hx + s*0.14, hy - s*0.05, Math.max(0.7, s*0.07), 0, Math.PI*2); c.fill();
+    c.restore();
+    // forefoot suggestion when sitting
+    if (o.sit) {
+      c.lineWidth = Math.max(1, s*0.1);
+      c.beginPath(); c.moveTo(s*0.35, -s*0.1); c.lineTo(s*0.5, 0); c.stroke();
+    }
+    c.restore();
+  }
+
+  paintFox(c, o) {
+    const s = o.s;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineWidth = Math.max(1.2, s*0.1); c.lineCap = "round";
+    // legs, trotting
+    const off = [-0.5, -0.26, 0.32, 0.56];
+    c.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const sw = o.walking ? Math.sin(o.lp + i*Math.PI)*0.14*s : 0;
+      c.moveTo(off[i]*s, -s*0.4); c.lineTo(off[i]*s + sw, 0);
+    }
+    c.stroke();
+    // bushy tail
+    c.beginPath();
+    c.moveTo(-s*0.58, -s*0.5);
+    c.quadraticCurveTo(-s*1.35, -s*0.42, -s*1.16, -s*1.02);
+    c.quadraticCurveTo(-s*0.88, -s*0.52, -s*0.58, -s*0.55);
+    c.closePath(); c.fill();
+    // sleek low body
+    c.beginPath(); c.ellipse(0, -s*0.55, s*0.76, s*0.3, 0, 0, Math.PI*2); c.fill();
+    // neck + head, turning to look when paused
+    const hx = s*0.74 + (o.look || 0)*s*0.05, hy = -s*0.86 - (o.look || 0)*s*0.05;
+    c.lineWidth = Math.max(1.6, s*0.2);
+    c.beginPath(); c.moveTo(s*0.48, -s*0.6); c.lineTo(hx, hy); c.stroke();
+    c.lineWidth = Math.max(1.2, s*0.1);
+    c.beginPath(); c.arc(hx, hy, s*0.19, 0, Math.PI*2); c.fill();
+    // snout
+    c.beginPath();
+    c.moveTo(hx + s*0.1, hy - s*0.02); c.lineTo(hx + s*0.44, hy + s*0.05);
+    c.lineTo(hx + s*0.1, hy + s*0.13); c.closePath(); c.fill();
+    // pricked ears
+    c.beginPath();
+    c.moveTo(hx - s*0.12, hy - s*0.12); c.lineTo(hx - s*0.2, hy - s*0.46); c.lineTo(hx + s*0.05, hy - s*0.2); c.closePath();
+    c.moveTo(hx + s*0.12, hy - s*0.14); c.lineTo(hx + s*0.16, hy - s*0.48); c.lineTo(hx + s*0.34, hy - s*0.18); c.closePath();
+    c.fill();
+    c.restore();
+  }
+
+  paintHeron(c, o) {
+    const s = o.s;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineCap = "round"; c.lineJoin = "round";
+    if (!o.flying) {
+      // long legs down to the water's edge at the origin
+      c.lineWidth = Math.max(1, s*0.045);
+      c.beginPath();
+      c.moveTo(-s*0.05, -s*0.55); c.lineTo(-s*0.1, 0);
+      c.moveTo(s*0.12, -s*0.55); c.lineTo(s*0.15, 0);
+      c.moveTo(-s*0.1, 0); c.lineTo(s*0.02, s*0.02);
+      c.moveTo(s*0.15, 0); c.lineTo(s*0.28, s*0.02);
+      c.stroke();
+      // body
+      c.beginPath(); c.ellipse(0, -s*0.72, s*0.42, s*0.22, -0.16, 0, Math.PI*2); c.fill();
+      // folded plume off the back
+      c.lineWidth = Math.max(1, s*0.05);
+      c.beginPath(); c.moveTo(-s*0.35, -s*0.72); c.lineTo(-s*0.62, -s*0.62); c.stroke();
+      // long S-curved neck
+      c.lineWidth = Math.max(1.4, s*0.085);
+      c.beginPath();
+      c.moveTo(s*0.22, -s*0.82);
+      c.bezierCurveTo(s*0.62, -s*1.02, s*0.12, -s*1.22, s*0.42, -s*1.5);
+      c.stroke();
+      // head + dagger bill
+      c.beginPath(); c.arc(s*0.42, -s*1.54, s*0.1, 0, Math.PI*2); c.fill();
+      c.lineWidth = Math.max(1, s*0.05);
+      c.beginPath(); c.moveTo(s*0.5, -s*1.53); c.lineTo(s*0.98, -s*1.46); c.stroke();
+      // crest wisp
+      c.beginPath(); c.moveTo(s*0.36, -s*1.6); c.lineTo(s*0.18, -s*1.66); c.stroke();
+    } else {
+      // in flight: slow, broad wings; neck tucked, legs trailing
+      const f = o.flap;
+      c.lineWidth = Math.max(1.4, s*0.08);
+      c.beginPath(); c.ellipse(0, 0, s*0.44, s*0.16, 0, 0, Math.PI*2); c.fill();
+      c.beginPath();
+      c.moveTo(0, -s*0.05);
+      c.quadraticCurveTo(-s*0.55, -s*0.55*f - s*0.1, -s*1.05, -s*0.12 - s*0.32*f);
+      c.moveTo(0, -s*0.05);
+      c.quadraticCurveTo(s*0.55, -s*0.55*f - s*0.1, s*1.05, -s*0.12 - s*0.32*f);
+      c.stroke();
+      // bill forward, legs trailing back
+      c.lineWidth = Math.max(1, s*0.05);
+      c.beginPath(); c.moveTo(s*0.42, 0); c.lineTo(s*0.9, s*0.03); c.stroke();
+      c.beginPath(); c.moveTo(-s*0.42, s*0.02); c.lineTo(-s*0.95, s*0.12); c.stroke();
     }
     c.restore();
   }

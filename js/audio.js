@@ -202,10 +202,10 @@ class AudioEngine {
 
   performCall(sp) {
     const ac = this.ac, r = this.rng;
-    let x01, y01, depth;
+    let x01, y01, depth, perchType = null;
     if (sp.layer === "perch" && this.scene.perches && this.scene.perches.length) {
       const p = this.scene.perches[Math.floor(r()*this.scene.perches.length)];
-      x01 = p.x; y01 = p.y; depth = p.depth;
+      x01 = p.x; y01 = p.y; depth = p.depth; perchType = p.type || null;
     } else if (sp.layer === "air") {
       x01 = r(); y01 = 0.08 + r()*0.28; depth = 6 + r()*8;
     } else if (sp.layer === "far") {
@@ -229,7 +229,7 @@ class AudioEngine {
                     sp.id === "curlew" || sp.id === "rooster";
     const enter = noActor ? 0 : 0.9 + r()*0.9;
     const dur = sp.synth(ac, pan.node, ac.currentTime + 0.02 + enter, r) || 1;
-    this.scene.spawnForCall(sp, x01, y01, depth, dur, enter);
+    this.scene.spawnForCall(sp, x01, y01, depth, dur, enter, perchType);
     const announce = () => {
       if (!this.running) return;
       this.scene.addRipple(x01, y01, sp.tone);
