@@ -2218,20 +2218,7 @@ class Scene {
             const rank = Math.ceil(k/2);
             const bx = (cr.x + trail*rank*0.016)*W;
             const by2 = (cr.y + side*rank*0.011)*H;
-            const flap = Math.sin(cr.t*7 + k);
-            // each goose: a tapering body, the neck reaching ahead,
-            // wings beating deep and slow
-            c.lineWidth = 1.7;
-            c.beginPath(); c.moveTo(bx - gdir*2.2, by2); c.lineTo(bx + gdir*1.4, by2 - 0.2); c.stroke();
-            c.lineWidth = 0.9;
-            c.beginPath(); c.moveTo(bx + gdir*1.4, by2 - 0.2); c.lineTo(bx + gdir*3.6, by2 - 0.6); c.stroke();
-            c.lineWidth = 1;
-            c.beginPath();
-            c.moveTo(bx - 0.4, by2);
-            c.quadraticCurveTo(bx - 1.5, by2 - 2.6*flap, bx - 2.8, by2 - 3.4*flap);
-            c.moveTo(bx - 0.4, by2);
-            c.quadraticCurveTo(bx - 1.1, by2 + 1.3*flap*0.4, bx - 2.1, by2 + 1.9*flap*0.35);
-            c.stroke();
+            this.paintGoose(c, bx, by2, gdir, Math.sin(cr.t*7 + k));
           }
           break;
         }
@@ -2708,6 +2695,22 @@ class Scene {
     c.arc(s*0.09, -s*0.36, s*0.06, 0, Math.PI*2);
     c.fill();
     c.restore();
+  }
+
+  /* One goose in a passing skein — a tapering body, the neck reaching
+     ahead, wings beating deep and slow. Stroke colour is the caller's. */
+  paintGoose(c, bx, by, gdir, flap) {
+    c.lineWidth = 1.7;
+    c.beginPath(); c.moveTo(bx - gdir*2.2, by); c.lineTo(bx + gdir*1.4, by - 0.2); c.stroke();
+    c.lineWidth = 0.9;
+    c.beginPath(); c.moveTo(bx + gdir*1.4, by - 0.2); c.lineTo(bx + gdir*3.6, by - 0.6); c.stroke();
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(bx - 0.4, by);
+    c.quadraticCurveTo(bx - 1.5, by - 2.6*flap, bx - 2.8, by - 3.4*flap);
+    c.moveTo(bx - 0.4, by);
+    c.quadraticCurveTo(bx - 1.1, by + 1.3*flap*0.4, bx - 2.1, by + 1.9*flap*0.35);
+    c.stroke();
   }
 
   /* A sanderling — leaning into its dash, legs a twinkle of steps,
