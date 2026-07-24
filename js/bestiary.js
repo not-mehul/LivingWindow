@@ -7,7 +7,7 @@
    (hour weights) and where (habitats) it appears.
    ============================================================ */
 import { Scene } from "./scene.js";
-import { SPECIES, PSTYLE, speciesIcon } from "./species.js";
+import { SPECIES, PSTYLE, CRITTER_VOICES, speciesIcon } from "./species.js";
 import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js";
 
 /* One Scene on a hidden canvas lends us its painters and tokens. */
@@ -185,6 +185,98 @@ const SPECIAL = {
     draw(c, W, H, tm, mode, P) {
       const y = H*0.68 - ((tm*9) % (H*0.38));
       scene.paintLarkFlight(c, W*0.5 + Math.sin(tm)*8, y, 12, tm*22, P.col, true);
+    } },
+  kingfisher: { sky: "day", modes: ["watch", "call", "dive"],
+    draw(c, W, H, tm, mode, P) {
+      const wy = H*0.72;
+      waterBand(c, W, H, P, wy);
+      const ps = PSTYLE.kingfisher, s = 26*ps.sc;
+      const px = W*0.42, py = H*0.42;
+      scene.drawPerchFooting(c, px, py, s, "reed", P.bot, 1);
+      let x = px, y = py, rot = 0, gone = false;
+      if (mode === "dive") {
+        const cyc = tm % 2.4;
+        if (cyc > 0.8) {
+          const ft = cyc - 0.8;
+          rot = Math.min(1.35, ft*4);
+          y = py + ft*ft*520;
+          if (y > wy + 6) {
+            gone = true;
+            c.strokeStyle = `rgba(${scene.tok.foamRGB}, ${Math.max(0, 0.5 - (cyc - 1.5))})`;
+            c.lineWidth = 1;
+            c.beginPath(); c.ellipse(x, wy + 4, 12 + (cyc - 1.2)*18, 4, 0, 0, Math.PI*2); c.stroke();
+          }
+        }
+      }
+      if (!gone) {
+        c.save(); c.translate(x, y); c.rotate(rot);
+        scene.paintBird(c, { x: 0, y: 0, s, flip: false, alpha: 1,
+          color: P.col, rim: P.rim, deep: P.deep, marks: ps,
+          plump: ps.plump, tailLen: ps.tail, tailUp: false, billLen: ps.bill,
+          sing: mode === "call" ? pulse(tm) : 0, breath: Math.sin(tm*2),
+          headTurn: mode === "watch" ? Math.sin(tm*1.2)*0.3 : 0,
+          tailFlick: 0, wingSettle: 0, fly: rot ? 1 : 0, flap: rot ? -0.4 : 0, t: tm });
+        c.restore();
+      }
+    } },
+  lapwing: { sky: "day", modes: ["stand", "call"],
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.78;
+      groundBand(c, W, H, P, gy);
+      const ps = PSTYLE.lapwing;
+      scene.drawPerchFooting(c, W*0.5, gy, 26, "ground", P.bot, 1);
+      scene.paintBird(c, { x: W*0.5, y: gy, s: 26*ps.sc, flip: false, alpha: 1,
+        color: P.col, rim: P.rim, deep: P.deep, marks: ps,
+        plump: ps.plump, tailLen: 1.1, tailUp: false, billLen: ps.bill, crest: true,
+        sing: mode === "call" ? pulse(tm) : 0, breath: Math.sin(tm*2),
+        headTurn: Math.sin(tm*0.8)*0.2, tailFlick: 0, wingSettle: 0, fly: 0, flap: 0, t: tm });
+    } },
+  pheasant: { sky: "dawn", modes: ["strut", "crow"],
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.8;
+      groundBand(c, W, H, P, gy);
+      scene.paintPheasant(c, { x: W*0.52, y: gy, s: 34, flip: false, alpha: 1,
+        color: P.col, rim: P.rim, deep: P.deep,
+        sing: mode === "crow" ? pulse(tm*0.6) : 0,
+        walking: mode === "strut", lp: tm*5, t: tm });
+    } },
+  moorhen: { sky: "day", modes: ["swim", "call"],
+    draw(c, W, H, tm, mode, P) {
+      const wy = H*0.6;
+      waterBand(c, W, H, P, wy);
+      scene.paintDuck(c, { x: W*0.5, y: wy + 24 + Math.sin(tm*1.3)*1.5, s: 22,
+        flip: false, alpha: 1, color: P.col, rim: P.rim, deep: P.deep, moorhen: true,
+        sing: mode === "call" ? pulse(tm) : 0, breath: 0, t: tm });
+    } },
+  littleegret: { sky: "day", modes: ["stand", "croak"],
+    draw(c, W, H, tm, mode, P) {
+      const wy = H*0.78;
+      waterBand(c, W, H, P, wy);
+      scene.paintHeron(c, { x: W*0.5, y: wy, s: 36, dir: 1, flying: false, flap: 0,
+        color: P.col, pale: true, sing: mode === "croak" ? pulse(tm*0.5) : 0, t: tm });
+    } },
+  tern: { sky: "day", modes: ["fly"],
+    draw(c, W, H, tm, mode, P) {
+      const ph = tm*7;
+      const x = ((tm*70) % (W + 140)) - 70;
+      scene.paintTernFlight(c, x, H*0.42 + Math.sin(ph*0.35)*8, 14, 1, ph, P.col);
+    } },
+  kestrel: { sky: "day", modes: ["hover", "glide"],
+    draw(c, W, H, tm, mode, P) {
+      if (mode === "hover") {
+        scene.paintKestrelFlight(c, W*0.5 + Math.sin(tm*3.2)*2, H*0.4 + Math.sin(tm*2)*2,
+          15, tm*15, P.col, true, 1);
+      } else {
+        const x = ((tm*80) % (W + 140)) - 70;
+        scene.paintKestrelFlight(c, x, H*0.42, 15, tm*7, P.col, false, 1);
+      }
+    } },
+  buzzard: { sky: "day", modes: ["soar"],
+    draw(c, W, H, tm, mode, P) {
+      const ang = tm*0.55;
+      const x = W*0.5 + Math.cos(ang)*W*0.22, y = H*0.42 + Math.sin(ang)*H*0.12;
+      scene.paintBuzzardSoar(c, x, y, 16, Math.sin(ang),
+        -Math.sin(ang) >= 0 ? 1 : -1, P.col);
     } }
 };
 
@@ -369,9 +461,80 @@ const CRITTERS = [
         scene.paintGoose(c, x0/2 - rank*11, H*0.22 + side*rank*7.4, 1, Math.sin(tm*7 + k));
       }
       c.restore();
+    } },
+  { id: "squirrel", name: "Red Squirrel", latin: "Sciurus vulgaris",
+    desc: "bounds the litter, sits up, forgets why", sky: "day",
+    modes: ["sit", "bound"], where: [{ h: "forest", w: 1 }],
+    when: { dawn: 0.4, day: 0.8, dusk: 0.2, night: 0 },
+    appears: "Crosses the forest floor in fine daylight, pausing upright to nibble.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.82;
+      groundBand(c, W, H, P, gy);
+      const hopY = mode === "bound" ? Math.abs(Math.sin(tm*9))*8 : 0;
+      scene.paintSquirrel(c, { x: W*0.5, y: gy - hopY, s: 26, dir: 1,
+        sit: mode === "sit", ph: tm*9, t: tm, color: P.col });
+    } },
+  { id: "hare", name: "Brown Hare", latin: "Lepus europaeus",
+    desc: "long legs and longer ears at the field edge", sky: "dawn",
+    modes: ["lope", "alert"], where: [{ h: "meadow", w: 1 }],
+    when: { dawn: 0.7, day: 0.5, dusk: 0.7, night: 0.1 },
+    appears: "Lopes the open meadow at first and last light, drawn up tall when it stops.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.82;
+      groundBand(c, W, H, P, gy);
+      const st = mode === "lope" ? 0.5 + 0.5*Math.sin(tm*8) : 0;
+      const lift = mode === "lope" ? Math.max(0, Math.sin(tm*8))*7 : 0;
+      scene.paintHare(c, { x: W*0.5, y: gy - lift, s: 30, dir: 1,
+        hop: st, alert: mode === "alert", color: P.col });
+    } },
+  { id: "hedgehog", name: "European Hedgehog", latin: "Erinaceus europaeus",
+    desc: "a shuffling dome of spines, nose down", sky: "night",
+    modes: ["shuffle"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }, { h: "city", w: 1 }],
+    when: { dawn: 0.1, day: 0, dusk: 0.3, night: 0.9 },
+    appears: "Works the ground after dark, snuffling as it goes.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.84;
+      groundBand(c, W, H, P, gy);
+      scene.paintHedgehog(c, { x: W*0.5, y: gy, s: 26, dir: 1, t: tm,
+        color: P.col, rim: P.rim });
+    } },
+  { id: "badger", name: "European Badger", latin: "Meles meles",
+    desc: "trundles its night rounds, striped and certain", sky: "night",
+    modes: ["trundle"], where: [{ h: "forest", w: 1 }],
+    when: { dawn: 0.1, day: 0, dusk: 0.3, night: 0.9 },
+    appears: "Rare — crosses the forest floor deep in the night, head down.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.84;
+      groundBand(c, W, H, P, gy);
+      scene.paintBadger(c, { x: W*0.5, y: gy, s: 34, dir: 1, lp: tm*5, color: P.col });
+    } },
+  { id: "otter", name: "Eurasian Otter", latin: "Lutra lutra",
+    desc: "threads the water, dives, surfaces further on", sky: "day",
+    modes: ["swim"], where: [{ h: "wetland", w: 1 }],
+    when: { dawn: 0.7, day: 0.5, dusk: 0.7, night: 0.2 },
+    appears: "Swims the open water outside the darkest hours, diving and resurfacing.",
+    draw(c, W, H, tm, mode, P) {
+      const wy = H*0.6;
+      waterBand(c, W, H, P, wy);
+      scene.paintOtter(c, { x: W*0.5 + Math.sin(tm*0.5)*20, y: wy + 20, s: 26,
+        dir: 1, ph: tm*3, color: P.col });
+    } },
+  { id: "bee", name: "Bumblebee", latin: "Bombus terrestris",
+    desc: "a furred knot of purpose among the flowers", sky: "day",
+    modes: ["work"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }],
+    when: { dawn: 0.2, day: 0.9, dusk: 0.1, night: 0 },
+    appears: "Works the flowers in warm, calm daylight.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.86;
+      groundBand(c, W, H, P, gy);
+      scene.paintBee(c, W*0.5 + Math.sin(tm*0.8)*30, H*0.6 + Math.sin(tm*2.1)*14 + Math.sin(tm*14)*2,
+        7, tm, P.col);
     } }
 ];
-for (const cr of CRITTERS) CARDS.push(Object.assign({ section: "critters", sp: null }, cr));
+for (const cr of CRITTERS) {
+  if (CRITTER_VOICES[cr.id]) cr.cv = CRITTER_VOICES[cr.id];
+  CARDS.push(Object.assign({ section: "critters", sp: null }, cr));
+}
 
 /* ---- build the cards ---- */
 const HOURS = ["dawn", "day", "dusk", "night"];
@@ -396,7 +559,7 @@ function buildCard(card) {
 
   const title = document.createElement("div");
   title.className = "bz-title";
-  title.innerHTML = (card.sp ? `<span class="bz-icon">${speciesIcon(card.sp, 20)}</span>` : "")
+  title.innerHTML = `<span class="bz-icon">${speciesIcon(card.sp || { id: card.id }, 20)}</span>`
     + `<span>${card.name}</span><span class="latin">${card.latin}</span>`;
   el.appendChild(title);
 
@@ -424,10 +587,11 @@ function buildCard(card) {
       controls.appendChild(b);
     }
   }
-  if (card.sp) {
+  const voiced = card.sp || card.cv;
+  if (voiced) {
     const b = document.createElement("button");
     b.type = "button"; b.className = "bz-voice"; b.textContent = "▶ voice";
-    b.addEventListener("click", () => playVoice(card.sp, b));
+    b.addEventListener("click", () => playVoice(voiced, b));
     controls.appendChild(b);
   }
   if (controls.children.length) el.appendChild(controls);

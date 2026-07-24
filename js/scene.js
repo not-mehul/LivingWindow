@@ -23,7 +23,8 @@ class Scene {
     this.meteors = [];
     this.lastDeer = -999; this.lastCat = -999; this.lastSkein = -999;
     this.lastFox = -999; this.lastRabbit = -999; this.lastHeron = -999;
-    this.lastPorpoise = -999;
+    this.lastPorpoise = -999; this.lastSquirrel = -999; this.lastHare = -999;
+    this.lastHedgehog = -999; this.lastBadger = -999; this.lastOtter = -999;
     this.timeMix = { dawn: 1, day: 0, dusk: 0, night: 0 };
     this.refreshTokens();
     this.reseed(state.seed);
@@ -97,7 +98,8 @@ class Scene {
     this.fishRings = []; this.meteors = [];
     this.lastDeer = this.t - 60; this.lastCat = this.t - 40; this.lastSkein = this.t - 20;
     this.lastFox = this.t - 55; this.lastRabbit = this.t - 30; this.lastHeron = this.t - 50;
-    this.lastPorpoise = this.t - 40;
+    this.lastPorpoise = this.t - 40; this.lastSquirrel = this.t - 25; this.lastHare = this.t - 50;
+    this.lastHedgehog = this.t - 60; this.lastBadger = this.t - 80; this.lastOtter = this.t - 45;
 
     this.clouds = [];
     const nc = 2 + Math.floor(rng()*3);
@@ -191,12 +193,24 @@ class Scene {
         .filter(p => p.y < baseYn - 0.04 && p.x > 0.04 && p.x < 0.96)
         .sort((a, b) => a.y - b.y);
       this.perches = [];
-      for (const idx of [0, Math.floor(tips.length*0.35), Math.floor(tips.length*0.7)]) {
-        if (tips[idx]) this.perches.push({ x: tips[idx].x, y: tips[idx].y, depth: 3 + rng()*2, type: "branch" });
+      const nBranch = 4 + Math.floor(rng()*2);
+      for (let k = 0; k < nBranch && tips.length; k++) {
+        const tp = tips[Math.floor(rng()*rng()*tips.length)];   // biased to the crown
+        this.perches.push({ x: tp.x, y: tp.y, depth: 3 + rng()*2.5, type: "branch" });
+      }
+      // shrub tops and a stone or two also serve as song posts
+      for (const bu of (this.bushes || []).slice(0, 2 + Math.floor(rng()*2))) {
+        this.perches.push({ x: bu.x, y: bu.y - bu.r*0.9, depth: 7 + rng()*3, type: "ground" });
+      }
+      if (this.rocks && this.rocks.length) {
+        const rk = this.rocks[Math.floor(rng()*this.rocks.length)];
+        this.perches.push({ x: rk.x, y: 0.915, depth: 2.5 + rng()*2, type: "ground" });
       }
       const groundYn = (x) => 0.92 - (x*0.5 - 0.25)*(x*0.5 - 0.25)*0.1;   // the grass line
-      const gx1 = 0.30 + rng()*0.45;
-      this.perches.push({ x: gx1, y: groundYn(gx1), depth: 2 + rng()*2, type: "ground" });
+      for (let k = 0; k < 2; k++) {
+        const gx1 = 0.15 + rng()*0.7;
+        this.perches.push({ x: gx1, y: groundYn(gx1), depth: 2 + rng()*2, type: "ground" });
+      }
       const hx = 0.28 + rng()*0.44;
       this.perches.push({ x: hx, y: this.hillB(hx) - 0.004, depth: 8 + rng()*3, type: "ground" });
     } else if (loc === "forest") {
@@ -220,12 +234,19 @@ class Scene {
         this.leaves.push({ x: rng(), y: rng(), sp: 0.012 + rng()*0.022,
           drift: (rng()-0.5)*0.035, ph: rng()*Math.PI*2, rot: rng()*Math.PI*2 });
       }
-      // A perch sits at the leaning top of a near trunk, just under its canopy.
-      this.perches = this.trunksNear.slice(0, 4).map(tr => (
+      // Perches sit at the leaning tops of trunks, just under their canopies —
+      // near ones and a few mid-distance ones, plus spots on the litter below.
+      this.perches = this.trunksNear.slice(0, 4 + Math.floor(rng()*2)).map(tr => (
         { x: tr.x + tr.lean*2, y: tr.top + 0.07 + rng()*0.05, depth: 3 + rng()*4, type: "branch" }
       ));
-      const fpx = 0.3 + rng()*0.4;
-      this.perches.push({ x: fpx, y: 0.9, depth: 5 + rng()*3, type: "ground" });
+      for (const tr of (this.trunksMid || []).slice(0, 2 + Math.floor(rng()*2))) {
+        this.perches.push({ x: tr.x + tr.lean*2, y: tr.top + 0.06 + rng()*0.05,
+          depth: 7 + rng()*4, type: "branch" });
+      }
+      for (let k = 0; k < 2; k++) {
+        const fpx = 0.15 + rng()*0.7;
+        this.perches.push({ x: fpx, y: 0.9 + rng()*0.02, depth: 4 + rng()*4, type: "ground" });
+      }
     } else if (loc === "beach") {
       this.horizonY = 0.50 + rng()*0.05;
       this.shoreY = 0.80 + rng()*0.03;
@@ -249,7 +270,18 @@ class Scene {
       const npost = 2 + Math.floor(rng()*2);
       for (let i = 0; i < npost; i++) this.posts.push({ x: 0.2 + rng()*0.6, h: 0.05 + rng()*0.03 });
       this.perches = this.posts.map(p => ({ x: p.x, y: this.shoreY - p.h, depth: 5 + rng()*4, type: "post" }));
-      this.perches.push({ x: 0.3 + rng()*0.4, y: this.shoreY + 0.08, depth: 3, type: "ground" });
+      for (let k = 0; k < 2 + Math.floor(rng()*2); k++) {
+        this.perches.push({ x: 0.12 + rng()*0.76, y: this.shoreY + 0.05 + rng()*0.06,
+          depth: 2.5 + rng()*3, type: "ground" });
+      }
+      if (this.driftwood) {
+        this.perches.push({ x: this.driftwood.x, y: this.shoreY + 0.085,
+          depth: 3 + rng()*2, type: "ground" });
+      }
+      if (this.islet) {
+        this.perches.push({ x: this.islet.x, y: this.horizonY + (this.shoreY - this.horizonY)*0.14 - this.islet.h,
+          depth: 14 + rng()*4, type: "ground" });
+      }
     } else if (loc === "wetland") {
       this.treeline = this.makeRidge(rng, 0.50, 0.03);
       this.waterY = 0.56 + rng()*0.03;
@@ -279,8 +311,16 @@ class Scene {
         this.distantTrees.push({ x, y: this.treeline(x), h: 0.045 + rng()*0.055, r: 0.02 + rng()*0.022 });
       }
       const tall = this.reeds.filter(r => r.h > 0.2);
-      this.perches = tall.slice(0, 4).map(r => ({ x: r.x, y: this.bankY - r.h, depth: 3 + rng()*4, type: "reed", reedH: r.h }));
-      this.perches.push({ x: 0.4 + rng()*0.2, y: this.bankY - 0.004, depth: 6 + rng()*3, type: "ground" });
+      this.perches = tall.slice(0, 4 + Math.floor(rng()*3)).map(r =>
+        ({ x: r.x, y: this.bankY - r.h, depth: 3 + rng()*4, type: "reed", reedH: r.h }));
+      if (this.log) {
+        this.perches.push({ x: this.log.x, y: this.log.y - 0.012,
+          depth: 4 + rng()*3, type: "branch" });
+      }
+      for (let k = 0; k < 2; k++) {
+        this.perches.push({ x: 0.2 + rng()*0.6, y: this.bankY - 0.004,
+          depth: 5 + rng()*4, type: "ground" });
+      }
     } else {
       this.backBlocks = this.makeSkyline(rng, 0.30, 0.28, 0.05, 0.10);
       this.frontBlocks = this.makeSkyline(rng, 0.55, 0.30, 0.07, 0.13);
@@ -300,9 +340,21 @@ class Scene {
         this.streetlamps.push({ x: 0.03 + rng()*0.94, ph: rng()*Math.PI*2 });
       }
       this.perches = [];
-      for (let i = 0; i < 4 && this.frontBlocks.length; i++) {
+      const nRoof = 5 + Math.floor(rng()*3);
+      for (let i = 0; i < nRoof && this.frontBlocks.length; i++) {
         const b = this.frontBlocks[Math.floor(rng()*this.frontBlocks.length)];
         this.perches.push({ x: b.x + b.w * rng(), y: 0.95 - b.h, depth: 4 + rng()*5, type: "roof" });
+      }
+      // aerial tips make favourite lookouts
+      for (const b of this.frontBlocks) {
+        if (b.antenna && rng() < 0.6) {
+          this.perches.push({ x: b.x + b.w*0.5, y: 0.95 - b.h - 0.035, depth: 4 + rng()*4, type: "post" });
+        }
+      }
+      // and the far skyline carries the odd distant silhouette
+      if (this.backBlocks.length && rng() < 0.7) {
+        const bb = this.backBlocks[Math.floor(rng()*this.backBlocks.length)];
+        this.perches.push({ x: bb.x + bb.w*rng(), y: 0.95 - (bb.h + 0.18), depth: 12 + rng()*4, type: "roof" });
       }
     }
   }
@@ -395,7 +447,20 @@ class Scene {
         }
       } else if (id === "skylark") {
         this.flyers.push({ kind: "lark", x: x01, y: y01, vx: 0, age: 0,
-          ph: Math.random()*6, size: 2.6, hold: dur + 1.2 });
+          ph: Math.random()*6, size: 2.4 + Math.random()*0.8, hold: dur + 1.2 });
+      } else if (id === "tern") {
+        this.flyers.push({ kind: "tern", x: x01, y: y01, age: 0,
+          vx: (Math.random() < 0.5 ? 1 : -1) * (0.03 + Math.random()*0.02),
+          ph: Math.random()*6, size: 4.2 + Math.random()*1.6 });
+      } else if (id === "kestrel") {
+        this.flyers.push({ kind: "kestrel", x: x01, y: Math.min(y01, 0.3), age: 0,
+          vx: 0, ph: Math.random()*6, size: 4 + Math.random()*1.4,
+          hold: dur + 3 + Math.random()*4 });
+      } else if (id === "buzzard") {
+        this.flyers.push({ kind: "buzzard", x: x01, y: Math.min(y01, 0.28), age: 0,
+          cx: x01, cy: Math.min(y01, 0.28), ang: Math.random()*6.28, vx: 0,
+          ph: Math.random()*6, size: 6 + Math.random()*2.2,
+          hold: dur + 6 + Math.random()*8 });
       }
       return;
     }
@@ -403,7 +468,7 @@ class Scene {
     // Every individual is a little different — size, plumpness, a rare crest,
     // its own idle rhythm — so no two callers feel stamped from one mould.
     const ivar = {
-      scale: 0.88 + Math.random()*0.28,
+      scale: 0.82 + Math.random()*0.42,
       puff: 0.92 + Math.random()*0.22,
       crest: Math.random() < 0.28,
       tail: 0.9 + Math.random()*0.5,
@@ -422,12 +487,24 @@ class Scene {
     };
     if (id === "owl") { a.beh = "owl"; a.linger = 3 + Math.random()*2; a.s *= 1.25; }
     else if (id === "frog") { a.beh = "frog"; a.s *= 0.9; }
-    else if (id === "mallard") {
+    else if (id === "mallard" || id === "moorhen") {
       a.beh = "duck"; a.linger = 4 + Math.random()*3;
       const wy = this.waterY || 0.6, by = this.bankY || 0.9;
       a.y = Math.min(Math.max(y01, wy + 0.05), by - 0.04);
       a.data.dir = Math.random() < 0.5 ? 1 : -1;
+      if (id === "moorhen") { a.data.moorhen = true; a.s *= 0.8; }
     }
+    else if (id === "littleegret") {
+      a.beh = "egret"; a.linger = 5 + Math.random()*4;
+      if (this.loc === "wetland") {
+        a.y = Math.min(Math.max(y01, (this.waterY || 0.6) + 0.08), (this.bankY || 0.9) - 0.01);
+      }
+    }
+    else if (id === "pheasant") {
+      a.beh = "pheasant"; a.linger = 3 + Math.random()*3;
+    }
+    else if (id === "lapwing") { a.linger = 2.5 + Math.random()*2; a.beh = "perch"; }
+    else if (id === "kingfisher") { a.beh = "perch"; a.diver = true; }
     else if (id === "woodpecker") {
       a.beh = "pecker";
       let best = null, bd = 9;
@@ -1192,14 +1269,29 @@ class Scene {
 
       if (!a.leave && a.t > sungEnd + a.linger) {
         if (a.beh === "perch") {
-          a.leave = "fly"; a.leaveT = 0;
-          a.flyDir = a.flip ? -1 : 1;
-          a.launchX = a.x; a.launchY = a.y;
+          // A kingfisher usually leaves its perch straight down into the water.
+          if (a.diver && this.loc === "wetland" && this.waterY && Math.random() < 0.75) {
+            a.leave = "dive"; a.leaveT = 0;
+            a.launchX = a.x; a.launchY = a.y;
+          } else {
+            a.leave = "fly"; a.leaveT = 0;
+            a.flyDir = a.flip ? -1 : 1;
+            a.launchX = a.x; a.launchY = a.y;
+          }
         } else {
           a.leave = "fade";
         }
       }
-      if (a.leave === "fly") {
+      if (a.leave === "dive") {
+        // a heartbeat's pause on the perch, then the plunge
+        a.leaveT += dt;
+        const ft = Math.max(0, a.leaveT - 0.14);
+        a.y = a.launchY + ft*ft*2.8;
+        if (a.y >= (this.waterY || 0.6) + 0.05) {
+          this.fishRise(a.x);
+          this.actors.splice(i, 1); continue;
+        }
+      } else if (a.leave === "fly") {
         // A real departure: gather, spring, then climb away on beating wings.
         a.leaveT += dt;
         const crouch = 0.16;
@@ -1222,6 +1314,33 @@ class Scene {
         if (a.x < -0.05 || a.x > 1.05) { this.actors.splice(i, 1); continue; }
       }
       if (a.beh === "duck" && a.t > a.enter) a.x += a.data.dir * 0.006 * dt;
+      if (a.beh === "pheasant" && a.t > sungEnd) {
+        a.x += (a.flip ? -1 : 1) * 0.010 * dt;
+        if (a.x < -0.08 || a.x > 1.08) { this.actors.splice(i, 1); continue; }
+      }
+
+      // Idle gestures — preening, a wing-stretch, a little hop-and-turn —
+      // each scheduled at the bird's own tempo, so no two fidget alike.
+      const iv0 = a.ivar || {};
+      const singingNow = a.t - a.singAt >= 0 && a.t - a.singAt < a.dur;
+      if (a.beh === "perch" && !a.leave && !singingNow && a.t > a.enter + 0.6) {
+        if (a.nextGest === undefined) a.nextGest = a.t + 1.5 + Math.random()*(iv0.lookEvery || 3);
+        if (!a.gest && a.t >= a.nextGest) {
+          a.gest = ["preen", "stretch", "hop"][Math.floor(Math.random()*3)];
+          a.gestT = 0;
+          a.gestDur = a.gest === "hop" ? 0.35 : 0.9 + Math.random()*0.5;
+        }
+      }
+      if (a.gest) {
+        a.gestT += dt;
+        if (a.gest === "hop" && !a.gestFlip && a.gestT > a.gestDur*0.5) {
+          a.flip = !a.flip; a.gestFlip = true;
+        }
+        if (a.gestT >= a.gestDur || singingNow || a.leave) {
+          a.gest = null; a.gestFlip = false;
+          a.nextGest = a.t + 2.5 + Math.random()*(iv0.lookEvery || 3)*1.6;
+        }
+      }
 
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
@@ -1251,21 +1370,35 @@ class Scene {
           const ps = PSTYLE[a.id] || {};
           this.drawPerchFooting(c, a.restX*W, a.restY*H, a.s, a.perchType, bot,
             a.alpha * landed * (1 - flyProg));
+          const hopG = a.gest === "hop" ? Math.abs(Math.sin(Math.PI*(a.gestT/a.gestDur)))*a.s*0.22 : 0;
+          const diveRot = a.leave === "dive" ? Math.min(1.35, a.leaveT*3) : 0;
+          if (diveRot) { c.save(); c.translate(x, y); c.rotate(a.flip ? -diveRot : diveRot); }
           this.paintBird(c, {
-            x, y: y - hopBob, s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
+            x: diveRot ? 0 : x, y: diveRot ? 0 : y - hopBob - hopG,
+            s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
             color: colStr, rim: rimStr, deep: deepStr, marks: ps,
             plump: (ps.plump || 1) * (iv.puff || 1),
             tailLen: (ps.tail || 1.1) * (iv.tail || 1), tailUp: !!ps.tailUp,
-            billLen: ps.bill || 0.45, crest: iv.crest && !ps.tailUp && !ps.cap, rimLight: iv.rim,
-            sing, breath, headTurn, tailFlick, wingSettle, fly: flyProg, flap: flyFlap, t: a.t
+            billLen: ps.bill || 0.45,
+            crest: ps.crest || (iv.crest && !ps.tailUp && !ps.cap), rimLight: iv.rim,
+            gest: (a.gest === "preen" || a.gest === "stretch") ? a.gest : null,
+            gestK: a.gest ? a.gestT/a.gestDur : 0,
+            sing, breath, headTurn, tailFlick, wingSettle,
+            fly: diveRot ? 1 : flyProg, flap: diveRot ? -0.4 : flyFlap, t: a.t
           });
+          if (diveRot) c.restore();
           break;
         }
+        case "egret": this.paintHeron(c, { x, y, s: a.s*2.3, dir: a.flip ? -1 : 1,
+          flying: false, flap: 0, color: colStr, pale: true, t: a.t, sing }); break;
+        case "pheasant": this.paintPheasant(c, { x, y, s: a.s*1.5, flip: a.flip,
+          alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr, sing,
+          walking: a.t > sungEnd, lp: a.t*5, t: a.t }); break;
         case "owl": this.paintOwl(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, rim: rimStr,
           deep: deepStr, night, t: a.t, headTurn, blinkPh: iv.tailPh || 0 }); break;
         case "duck": this.paintDuck(c, { x, y: y + Math.sin(a.t*1.3)*1.5, s: a.s,
           flip: a.data.dir < 0, alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr,
-          sing, breath, t: a.t }); break;
+          moorhen: a.data.moorhen, sing, breath, t: a.t }); break;
         case "pecker": this.paintWoodpecker(c, { x, y, s: a.s, alpha: a.alpha, color: colStr,
           rim: rimStr, deep: deepStr, sing, t: a.t }); break;
         case "wader": this.paintWader(c, { x, y, s: a.s, flip: a.data.dir < 0,
@@ -1324,8 +1457,12 @@ class Scene {
     const cy = -(legLen + bry*0.95);
     const ht = o.headTurn || 0;
     const hr = s*0.42 * (mk.smallHead ? 0.86 : 1);
-    const hx = s*0.58 + ht*s*0.10;
-    const hy = cy - bry*0.55 - hr*0.85 - sing*s*0.16;
+    // Idle gestures — the head reaches back to preen; a wing stretches out.
+    const gk = Math.sin(Math.PI*Math.min(1, o.gestK || 0));
+    const preen = o.gest === "preen" ? gk : 0;
+    const stretch = o.gest === "stretch" ? gk : 0;
+    const hx = s*0.58 + ht*s*0.10 - preen*hr*1.1;
+    const hy = cy - bry*0.55 - hr*0.85 - sing*s*0.16 + preen*hr*0.6;
 
     // Tail — a fan of tapered feathers off the rump; it flicks at rest and
     // fans wide on take-off. A magpie's centre feathers run longest.
@@ -1408,6 +1545,12 @@ class Scene {
       c.stroke();
       c.globalAlpha = o.alpha;
       c.strokeStyle = o.color; c.fillStyle = o.color;
+      if (stretch > 0.03) {           // one wing fanned out and down, luxuriously
+        c.fillStyle = deep;
+        this.wingBlade(c, s*0.28, cy - bry*0.1,
+          -s*0.4 - stretch*s*1.0, cy + bry*(0.3 + stretch*0.9), s*0.55*stretch + s*0.1);
+        c.fillStyle = o.color;
+      }
     } else {
       c.fillStyle = deep;
       this.wingBlade(c, wrx, wry, wrx - span*0.58, wry - span*(0.68*flap) + s*0.12, s*0.62);
@@ -1421,8 +1564,8 @@ class Scene {
       c.ellipse(s*0.55, cy - bry*0.02, s*0.40, bry*0.66, -0.3, 0, Math.PI*2); c.fill();
       c.beginPath(); c.arc(hx + hr*0.3, hy + hr*0.45, hr*0.5, 0, Math.PI*2); c.fill();
     }
-    if (mk.cap) {             // dark crown, hugging the head
-      c.fillStyle = deep;
+    if (mk.cap) {             // crown cap — dark by default, sage for a blue tit
+      c.fillStyle = mk.capTone === "sage" ? `rgba(${this.tok.sageRGB}, 0.65)` : deep;
       c.beginPath(); c.ellipse(hx, hy - hr*0.32, hr*0.9, hr*0.55, 0.05, 0, Math.PI*2); c.fill();
     }
     if (mk.cheek) {           // pale cheek under the cap
@@ -1462,10 +1605,51 @@ class Scene {
       c.stroke();
       c.globalAlpha = o.alpha;
     }
-    if (mk.shoulder) {        // magpie: white scapulars and belly
+    if (mk.shoulder) {        // white scapulars
       c.fillStyle = `rgba(${this.tok.foamRGB}, 0.75)`;
       c.beginPath(); c.ellipse(s*0.22, cy - bry*0.30, s*0.34, s*0.22, -0.25, 0, Math.PI*2); c.fill();
+    }
+    if (mk.belly) {           // white underparts
+      c.fillStyle = `rgba(${this.tok.foamRGB}, 0.7)`;
       c.beginPath(); c.ellipse(s*0.10, cy + bry*0.62, s*0.34, s*0.20, 0.1, 0, Math.PI*2); c.fill();
+    }
+    if (mk.wash) {            // a soft colour wash over breast and flank
+      const rgb2 = mk.wash === "sage" ? this.tok.sageRGB : this.tok.amberRGB;
+      c.fillStyle = `rgba(${rgb2}, 0.3)`;
+      c.beginPath(); c.ellipse(s*0.12, cy + bry*0.28, brx*0.68, bry*0.62, -0.1, 0, Math.PI*2); c.fill();
+    }
+    if (mk.speckles) {        // thrush and starling spotting
+      c.fillStyle = `rgba(${this.tok.foamRGB}, 0.55)`;
+      c.beginPath();
+      for (const [sx2, sy2] of [[0.55, 0.15], [0.35, 0.45], [0.6, 0.55], [0.15, 0.3],
+                                [0.42, 0.78], [0.18, 0.66], [-0.05, 0.5], [0.02, 0.85]]) {
+        c.moveTo(brx*sx2, cy + bry*sy2);
+        c.arc(brx*sx2, cy + bry*sy2, Math.max(0.6, s*0.05), 0, Math.PI*2);
+      }
+      c.fill();
+    }
+    if (mk.face) {            // goldfinch: the warm face blaze
+      c.fillStyle = `rgba(${this.tok.amberRGB}, 0.8)`;
+      c.beginPath(); c.arc(hx + hr*0.55, hy + hr*0.02, hr*0.46, 0, Math.PI*2); c.fill();
+    }
+    if (mk.wingPatch) {       // jay: the bright panel on the folded wing
+      c.fillStyle = `rgba(${this.tok.foamRGB}, 0.7)`;
+      c.beginPath(); c.ellipse(-s*0.12, cy + bry*0.02, s*0.2, s*0.13, 0.3, 0, Math.PI*2); c.fill();
+      c.fillStyle = `rgba(${this.tok.sageRGB}, 0.7)`;
+      c.beginPath(); c.ellipse(s*0.1, cy - bry*0.12, s*0.16, s*0.1, 0.3, 0, Math.PI*2); c.fill();
+    }
+    if (mk.collar) {          // collared dove: the thin dark half-ring
+      c.strokeStyle = deep;
+      c.lineWidth = Math.max(0.8, hr*0.13);
+      c.beginPath(); c.arc(hx - hr*0.1, hy + hr*0.55, hr*0.7, Math.PI*0.75, Math.PI*1.25); c.stroke();
+    }
+    if (mk.tailTone) {        // nightingale: the warm rufous tail
+      c.fillStyle = `rgba(${this.tok.amberRGB}, 0.4)`;
+      const aa2 = (o.tailUp ? -0.9 : 0.34);
+      const mx2 = rtx - Math.cos(aa2)*tl*0.55, my2 = rty + Math.sin(aa2)*tl*0.55;
+      c.save(); c.translate(mx2, my2); c.rotate(-aa2);
+      c.beginPath(); c.ellipse(0, 0, tl*0.5, s*0.16, 0, 0, Math.PI*2); c.fill();
+      c.restore();
     }
     if (mk.neckPatch) {       // wood pigeon: the pale neck blaze
       c.fillStyle = `rgba(${this.tok.foamRGB}, 0.6)`;
@@ -1497,21 +1681,26 @@ class Scene {
       c.stroke();
     }
 
-    // Bill — two mandibles hinged at the face, parting to sing.
+    // Bill — two mandibles hinged at the face, parting to sing; the whole
+    // bill turns down into the shoulder as the bird preens.
     const bl = (o.billLen || 0.45)*s*1.5;
     const bd = mk.billDeep ? s*0.15 : s*0.085;
     const bx0 = hx + hr*0.78, gap = sing*0.45;
     if (mk.billTone === "amber") c.fillStyle = `rgba(${this.tok.amberRGB}, 0.95)`;
+    c.save();
+    c.translate(bx0, hy);
+    c.rotate(preen*1.3);
     c.beginPath();
-    c.moveTo(bx0, hy - bd);
-    c.quadraticCurveTo(bx0 + bl*0.55, hy - bd*0.85 - gap*bl*0.28, bx0 + bl, hy - gap*bl*0.4);
-    c.quadraticCurveTo(bx0 + bl*0.5, hy - gap*bl*0.08, bx0, hy + bd*0.15);
+    c.moveTo(0, -bd);
+    c.quadraticCurveTo(bl*0.55, -bd*0.85 - gap*bl*0.28, bl, -gap*bl*0.4);
+    c.quadraticCurveTo(bl*0.5, -gap*bl*0.08, 0, bd*0.15);
     c.closePath(); c.fill();
     c.beginPath();
-    c.moveTo(bx0, hy + bd*0.2);
-    c.quadraticCurveTo(bx0 + bl*0.5, hy + bd*0.3 + gap*bl*0.4, bx0 + bl*0.88, hy + gap*bl*0.6);
-    c.quadraticCurveTo(bx0 + bl*0.4, hy + bd*0.8 + gap*bl*0.2, bx0, hy + bd*0.85);
+    c.moveTo(0, bd*0.2);
+    c.quadraticCurveTo(bl*0.5, bd*0.3 + gap*bl*0.4, bl*0.88, gap*bl*0.6);
+    c.quadraticCurveTo(bl*0.4, bd*0.8 + gap*bl*0.2, 0, bd*0.85);
     c.closePath(); c.fill();
+    c.restore();
     c.fillStyle = o.color;
 
     // Eye — a lit iris ring around a dark pupil, with a pinprick glint.
@@ -1664,9 +1853,11 @@ class Scene {
   }
 
   paintDuck(c, o) {
-    const s = o.s, sing = o.sing || 0, t = o.t || 0;
+    const s = o.s, sing = o.sing || 0, t = o.t || 0, mh = o.moorhen;
     // between calls the head tips down now and then to dabble at the water
-    const dip = sing > 0.01 ? 0 : Math.pow(Math.max(0, Math.sin(t*0.7 + 2.1)), 12);
+    const dip = (sing > 0.01 || mh) ? 0 : Math.pow(Math.max(0, Math.sin(t*0.7 + 2.1)), 12);
+    // a moorhen's head jerks with every push of its feet
+    const jerk = mh ? Math.max(0, Math.sin(t*5.5))*s*0.09 : 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.flip) c.scale(-1, 1);
@@ -1689,9 +1880,20 @@ class Scene {
     c.quadraticCurveTo(-s*0.85, -s*0.42, -s*1.2, -s*0.62);
     c.quadraticCurveTo(-s*1.05, -s*0.3, -s*0.92, s*0.06);
     c.closePath(); c.fill();
-    // the drake's curled tail feather
-    c.lineWidth = Math.max(1, s*0.08);
-    c.beginPath(); c.arc(-s*1.08, -s*0.66, s*0.11, Math.PI*0.3, Math.PI*1.6); c.stroke();
+    if (!mh) {
+      // the drake's curled tail feather
+      c.lineWidth = Math.max(1, s*0.08);
+      c.beginPath(); c.arc(-s*1.08, -s*0.66, s*0.11, Math.PI*0.3, Math.PI*1.6); c.stroke();
+    } else {
+      // the moorhen's white undertail, flirted up with each jerk
+      c.fillStyle = `rgba(${this.tok.foamRGB}, 0.7)`;
+      c.beginPath();
+      c.moveTo(-s*0.95, -s*0.3);
+      c.lineTo(-s*1.16, -s*0.56 - jerk*0.4);
+      c.lineTo(-s*0.86, -s*0.44);
+      c.closePath(); c.fill();
+      c.fillStyle = o.color;
+    }
     // folded wing panel along the flank
     c.fillStyle = o.deep || o.color;
     c.beginPath(); c.ellipse(-s*0.15, -s*0.34, s*0.56, s*0.2, -0.1, 0, Math.PI*2); c.fill();
@@ -1703,42 +1905,63 @@ class Scene {
     c.stroke();
     c.globalAlpha = o.alpha;
     // neck and head — rising to quack, tipping forward to dabble
-    const hx = s*0.58 + dip*s*0.24, hy = -s*1.02 - sing*s*0.28 + dip*s*0.66;
+    const hx = s*0.58 + dip*s*0.24 + jerk, hy = -s*1.02 - sing*s*0.28 + dip*s*0.66;
     c.fillStyle = o.color;
-    this.limb(c, s*0.52, -s*0.4, hx, hy, s*0.42, s*0.3);
+    this.limb(c, s*0.52, -s*0.4, hx, hy, s*(mh ? 0.34 : 0.42), s*(mh ? 0.24 : 0.3));
     c.save();
     c.translate(hx, hy);
     c.rotate(dip*0.9 - sing*0.12);
-    c.beginPath(); c.arc(0, -s*0.05, s*0.3, 0, Math.PI*2); c.fill();
-    // the flat spatulate bill, opening to quack
-    const g2 = sing*0.35;
-    c.beginPath();
-    c.moveTo(s*0.22, -s*0.16);
-    c.quadraticCurveTo(s*0.62, -s*0.14 - g2*s*0.3, s*0.72, -s*0.02 - g2*s*0.35);
-    c.quadraticCurveTo(s*0.6, s*0.02 - g2*s*0.1, s*0.24, 0);
-    c.closePath(); c.fill();
-    c.beginPath();
-    c.moveTo(s*0.24, s*0.02);
-    c.quadraticCurveTo(s*0.55, s*0.04 + g2*s*0.25, s*0.66, s*0.08 + g2*s*0.3);
-    c.quadraticCurveTo(s*0.45, s*0.14 + g2*s*0.1, s*0.22, s*0.12);
-    c.closePath(); c.fill();
-    // the drake's bottle-green head
-    c.fillStyle = `rgba(${this.tok.sageRGB}, 0.5)`;
-    c.beginPath(); c.arc(0, -s*0.05, s*0.3, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(0, -s*0.05, s*(mh ? 0.26 : 0.3), 0, Math.PI*2); c.fill();
+    if (mh) {
+      // the moorhen's stubby red bill and frontal shield
+      c.fillStyle = `rgba(${this.tok.amberRGB}, 0.95)`;
+      c.beginPath();
+      c.moveTo(s*0.14, -s*0.24);
+      c.lineTo(s*0.5, -s*0.02 - sing*s*0.08);
+      c.lineTo(s*0.14, s*0.08);
+      c.closePath(); c.fill();
+      c.beginPath(); c.arc(s*0.12, -s*0.16, s*0.08, 0, Math.PI*2); c.fill();
+    } else {
+      // the flat spatulate bill, opening to quack
+      const g2 = sing*0.35;
+      c.beginPath();
+      c.moveTo(s*0.22, -s*0.16);
+      c.quadraticCurveTo(s*0.62, -s*0.14 - g2*s*0.3, s*0.72, -s*0.02 - g2*s*0.35);
+      c.quadraticCurveTo(s*0.6, s*0.02 - g2*s*0.1, s*0.24, 0);
+      c.closePath(); c.fill();
+      c.beginPath();
+      c.moveTo(s*0.24, s*0.02);
+      c.quadraticCurveTo(s*0.55, s*0.04 + g2*s*0.25, s*0.66, s*0.08 + g2*s*0.3);
+      c.quadraticCurveTo(s*0.45, s*0.14 + g2*s*0.1, s*0.22, s*0.12);
+      c.closePath(); c.fill();
+      // the drake's bottle-green head
+      c.fillStyle = `rgba(${this.tok.sageRGB}, 0.5)`;
+      c.beginPath(); c.arc(0, -s*0.05, s*0.3, 0, Math.PI*2); c.fill();
+    }
     // eye
     c.fillStyle = o.deep || o.color;
     c.beginPath(); c.arc(s*0.06, -s*0.12, Math.max(0.8, s*0.06), 0, Math.PI*2); c.fill();
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.85)`;
     c.beginPath(); c.arc(s*0.08, -s*0.15, Math.max(0.4, s*0.03), 0, Math.PI*2); c.fill();
     c.restore();
-    // the white collar just below the green of the head
-    const nx = s*0.52 + (hx - s*0.52)*0.72, ny = -s*0.4 + (hy + s*0.4)*0.72;
-    c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.6)`;
-    c.lineWidth = Math.max(0.8, s*0.06);
-    c.beginPath();
-    c.moveTo(nx - s*0.15, ny + s*0.02);
-    c.quadraticCurveTo(nx, ny + s*0.1, nx + s*0.15, ny + s*0.02);
-    c.stroke();
+    if (mh) {
+      // the white flank line
+      c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.55)`;
+      c.lineWidth = Math.max(0.7, s*0.05);
+      c.beginPath();
+      c.moveTo(s*0.45, -s*0.28);
+      c.quadraticCurveTo(-s*0.2, -s*0.1, -s*0.72, -s*0.26);
+      c.stroke();
+    } else {
+      // the white collar just below the green of the head
+      const nx = s*0.52 + (hx - s*0.52)*0.72, ny = -s*0.4 + (hy + s*0.4)*0.72;
+      c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.6)`;
+      c.lineWidth = Math.max(0.8, s*0.06);
+      c.beginPath();
+      c.moveTo(nx - s*0.15, ny + s*0.02);
+      c.quadraticCurveTo(nx, ny + s*0.1, nx + s*0.15, ny + s*0.02);
+      c.stroke();
+    }
     c.restore();
   }
 
@@ -1959,9 +2182,16 @@ class Scene {
     const calmW = state.weather === "clear" || state.weather === "breeze";
 
     if ((this.loc === "meadow" || this.loc === "forest") && dayish > 0.5 && calmW
-        && n("butterfly") < (REDUCED ? 1 : 3) && P(0.07)) {
+        && n("butterfly") < (REDUCED ? 1 : 4) && P(0.11)) {
       this.critters.push({ kind: "butterfly", x: Math.random(), y: 0.55 + Math.random()*0.3,
         t: 0, ph: Math.random()*6, drift: (Math.random()-0.5)*0.02, life: 18 + Math.random()*10 });
+    }
+    // bumblebees working the flowers through the warm hours
+    if ((this.loc === "meadow" || this.loc === "forest") && dayish > 0.55 && calmW
+        && n("bee") < (REDUCED ? 1 : 2) && P(0.06)) {
+      this.critters.push({ kind: "bee", x: Math.random(), y: 0.78 + Math.random()*0.1,
+        t: 0, ph: Math.random()*6, drift: (Math.random()-0.5)*0.03, life: 9 + Math.random()*8,
+        sz: 0.8 + Math.random()*0.5 });
     }
     if (this.loc === "wetland" && dayish > 0.5 && state.weather !== "rain"
         && n("dragonfly") < 2 && P(0.05)) {
@@ -1969,25 +2199,77 @@ class Scene {
         y: this.waterY - 0.03 - Math.random()*0.1, t: 0, mode: "hover",
         timer: 1 + Math.random(), tx: 0, ty: 0, life: 16 + Math.random()*8 });
     }
-    if (night > 0.5 && state.weather !== "rain" && this.loc !== "beach"
-        && n("bat") < (REDUCED ? 1 : 3) && P(0.09)) {
+    if ((night > 0.35 || duskdawn > 0.6) && state.weather !== "rain" && this.loc !== "beach"
+        && n("bat") < (REDUCED ? 1 : 4) && P(0.12)) {
       const sx = Math.random() < 0.5 ? -0.05 : 1.05;
       this.critters.push({ kind: "bat", x: sx, y: 0.12 + Math.random()*0.28, t: 0,
         vx: (sx < 0 ? 1 : -1)*(0.06 + Math.random()*0.05), vy: 0, turn: 0,
-        size: 3.5 + Math.random()*2 });
+        size: 3 + Math.random()*2.6 });
     }
-    if (this.loc === "forest" && duskdawn > 0.5 && n("deer") === 0
+    if (this.loc === "forest" && (duskdawn > 0.5 || night > 0.6) && n("deer") === 0
         && this.t - this.lastDeer > 90 && P(0.03)) {
       this.lastDeer = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "deer", x: dir > 0 ? -0.08 : 1.08, dir,
         tx: 0.25 + Math.random()*0.5, state: "enter", t: 0, timer: 0,
-        head: 0, cycles: 2 + Math.floor(Math.random()*2), lp: 0 });
+        head: 0, cycles: 2 + Math.floor(Math.random()*2), lp: 0,
+        sz: 0.85 + Math.random()*0.3 });
     }
-    if (this.loc === "beach" && night < 0.5 && n("runner") < 3 && P(0.05)) {
+    if (this.loc === "beach" && night < 0.5 && n("runner") < 4 && P(0.05)) {
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "runner", x: dir > 0 ? -0.03 : 1.03, dir,
         mode: "dash", timer: 0.4 + Math.random()*0.4, t: 0, ph: 0 });
+      // sanderlings keep company — often a second follows the first
+      if (Math.random() < 0.4) {
+        this.critters.push({ kind: "runner", x: (dir > 0 ? -0.03 : 1.03) - dir*0.04, dir,
+          mode: "dash", timer: 0.4 + Math.random()*0.4, t: 0, ph: Math.random()*3 });
+      }
+    }
+    // a red squirrel bounding across the litter, sitting up to nibble
+    if (this.loc === "forest" && dayish > 0.4 && calmW && n("squirrel") === 0
+        && this.t - this.lastSquirrel > 40 && P(0.03)) {
+      this.lastSquirrel = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "squirrel", x: dir > 0 ? -0.05 : 1.05, dir,
+        mode: "bound", timer: 0.8 + Math.random()*1.2, t: 0, ph: 0,
+        sz: 0.85 + Math.random()*0.35 });
+    }
+    // a brown hare loping the field edge, drawn up tall when it stops
+    if (this.loc === "meadow" && (duskdawn > 0.4 || dayish > 0.55) && n("hare") === 0
+        && this.t - this.lastHare > 70 && P(0.016)) {
+      this.lastHare = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "hare", x: dir > 0 ? -0.07 : 1.07, dir,
+        mode: "lope", timer: 1.5 + Math.random()*2, t: 0, ph: 0,
+        sz: 0.85 + Math.random()*0.35 });
+    }
+    // a hedgehog on its shuffling night beat
+    if ((this.loc === "meadow" || this.loc === "forest" || this.loc === "city")
+        && night > 0.5 && n("hedgehog") === 0
+        && this.t - this.lastHedgehog > 80 && P(0.02)) {
+      this.lastHedgehog = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "hedgehog", x: dir > 0 ? -0.05 : 1.05, dir,
+        mode: "shuffle", timer: 2 + Math.random()*3, t: 0,
+        sz: 0.85 + Math.random()*0.3 });
+    }
+    // a badger trundling its rounds, rare and unhurried
+    if (this.loc === "forest" && night > 0.6 && n("badger") === 0
+        && this.t - this.lastBadger > 110 && P(0.013)) {
+      this.lastBadger = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "badger", x: dir > 0 ? -0.08 : 1.08, dir,
+        t: 0, lp: 0, sz: 0.9 + Math.random()*0.25 });
+    }
+    // an otter threading the open water, diving and surfacing
+    if (this.loc === "wetland" && night < 0.6 && n("otter") === 0
+        && this.t - this.lastOtter > 70 && P(0.018)) {
+      this.lastOtter = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "otter", x: dir > 0 ? -0.06 : 1.06, dir,
+        y: this.waterY + 0.1 + Math.random()*(this.bankY - this.waterY - 0.2),
+        mode: "swim", timer: 2.5 + Math.random()*3, t: 0, ph: 0,
+        sz: 0.85 + Math.random()*0.3 });
     }
     if (this.loc === "city" && night > 0.5 && n("cat") === 0
         && this.t - this.lastCat > 70 && P(0.03)
@@ -1997,19 +2279,21 @@ class Scene {
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "cat", b: bi, u: dir > 0 ? 0 : 1, dir, mode: "walk", timer: 0, t: 0 });
     }
-    if (this.loc === "meadow" && dayish > 0.3 && calmW && n("rabbit") === 0
-        && this.t - this.lastRabbit > 45 && P(0.02)) {
+    if (this.loc === "meadow" && (dayish > 0.3 || duskdawn > 0.4) && calmW && n("rabbit") === 0
+        && this.t - this.lastRabbit > 30 && P(0.035)) {
       this.lastRabbit = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "rabbit", x: dir > 0 ? -0.05 : 1.05, dir,
-        mode: "hop", timer: 0.3 + Math.random()*0.3, t: 0, hopPh: 0, ear: 0 });
+        mode: "hop", timer: 0.3 + Math.random()*0.3, t: 0, hopPh: 0, ear: 0,
+        sz: 0.85 + Math.random()*0.3 });
     }
     if ((this.loc === "meadow" || this.loc === "forest") && (duskdawn > 0.45 || night > 0.4)
-        && n("fox") === 0 && this.t - this.lastFox > 80 && P(0.014)) {
+        && n("fox") === 0 && this.t - this.lastFox > 80 && P(0.018)) {
       this.lastFox = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "fox", x: dir > 0 ? -0.08 : 1.08, dir,
-        mode: "trot", timer: 1.2 + Math.random()*1.5, t: 0, lp: 0, look: 0 });
+        mode: "trot", timer: 1.2 + Math.random()*1.5, t: 0, lp: 0, look: 0,
+        sz: 0.85 + Math.random()*0.3 });
     }
     if ((this.loc === "wetland" || this.loc === "beach") && dayish > 0.3
         && n("heron") === 0 && this.t - this.lastHeron > 85 && P(0.012)) {
@@ -2017,7 +2301,8 @@ class Scene {
       const dir = Math.random() < 0.5 ? 1 : -1;
       const edge = this.loc === "wetland" ? (this.bankY || 0.86) - 0.005 : (this.shoreY || 0.82) + 0.02;
       this.critters.push({ kind: "heron", x: 0.25 + Math.random()*0.5, y: edge, dir,
-        mode: "stand", timer: 4 + Math.random()*5, t: 0, vx: 0, flap: 0 });
+        mode: "stand", timer: 4 + Math.random()*5, t: 0, vx: 0, flap: 0,
+        sz: 0.85 + Math.random()*0.3 });
     }
     // a porpoise arcing through the surf — rare, unhurried
     if (this.loc === "beach" && state.weather !== "rain" && n("porpoise") === 0
@@ -2115,7 +2400,7 @@ class Scene {
           } else if (cr.state === "leave") {
             if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           }
-          this.paintDeer(c, { x: cr.x*W, y: 0.93*H, s: H*0.075, dir: cr.dir,
+          this.paintDeer(c, { x: cr.x*W, y: 0.93*H, s: H*0.075*(cr.sz || 1), dir: cr.dir,
             head: cr.head, walking, lp: cr.lp, color: colDark, t: cr.t,
             grazing: cr.state === "graze" });
           break;
@@ -2145,7 +2430,8 @@ class Scene {
             cr.timer -= dt;
             if (cr.timer <= 0) cr.mode = "walk";
           }
-          this.paintCat(c, { x: (b.x + cr.u*b.w)*W, y: (0.95 - b.h)*H, dir: cr.dir,
+          cr.x = b.x + cr.u*b.w;      // kept current, so its voice comes from the right roof
+          this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
             sit: cr.mode === "sit", t: cr.t, color: colDark });
           break;
         }
@@ -2161,7 +2447,7 @@ class Scene {
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
           const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
-          this.paintRabbit(c, { x: cr.x*W, y: 0.9*H - hop*H*0.035, s: H*0.032,
+          this.paintRabbit(c, { x: cr.x*W, y: 0.9*H - hop*H*0.035, s: H*0.032*(cr.sz || 1),
             dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: colDark });
           break;
         }
@@ -2176,7 +2462,7 @@ class Scene {
           }
           if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           const gy = this.loc === "forest" ? 0.925 : 0.9;
-          this.paintFox(c, { x: cr.x*W, y: gy*H, s: H*0.05, dir: cr.dir, walking,
+          this.paintFox(c, { x: cr.x*W, y: gy*H, s: H*0.05*(cr.sz || 1), dir: cr.dir, walking,
             lp: cr.lp, look: walking ? 0 : Math.sin(cr.t*1.8), color: colDark });
           break;
         }
@@ -2188,7 +2474,7 @@ class Scene {
             cr.x += cr.vx*dt; cr.y -= dt*0.018; cr.flap += dt*3.4;
             if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
           }
-          this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: H*0.085, dir: cr.dir,
+          this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: H*0.085*(cr.sz || 1), dir: cr.dir,
             flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0), color: colDark, t: cr.t });
           break;
         }
@@ -2205,6 +2491,87 @@ class Scene {
             c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
             c.beginPath(); c.ellipse(cr.x*W, cr.base*H, 10, 3, 0, 0, Math.PI*2); c.stroke();
           }
+          break;
+        }
+        case "squirrel": {
+          cr.timer -= dt;
+          if (cr.mode === "bound") {
+            cr.ph += dt*9; cr.x += cr.dir*0.045*dt;
+            if (cr.timer <= 0) { cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.2; }
+          } else if (cr.timer <= 0) {
+            cr.mode = "bound"; cr.timer = 0.6 + Math.random()*1.0;
+          }
+          if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
+          const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
+          this.paintSquirrel(c, { x: cr.x*W, y: (0.925 - hopY)*H, s: H*0.03*(cr.sz || 1),
+            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t, color: colDark });
+          break;
+        }
+        case "hare": {
+          cr.timer -= dt;
+          if (cr.mode === "lope") {
+            cr.ph += dt*8; cr.x += cr.dir*0.07*dt;
+            if (cr.timer <= 0 && Math.random() < 0.6) {
+              cr.mode = "alert"; cr.timer = 1.2 + Math.random()*2;
+            } else if (cr.timer <= 0) cr.timer = 1 + Math.random()*1.5;
+          } else if (cr.timer <= 0) {
+            cr.mode = "lope"; cr.timer = 1.5 + Math.random()*2;
+          }
+          if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
+          const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
+          const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
+          this.paintHare(c, { x: cr.x*W, y: (0.9 - lift)*H, s: H*0.042*(cr.sz || 1),
+            dir: cr.dir, hop: st, alert: cr.mode === "alert", color: colDark });
+          break;
+        }
+        case "hedgehog": {
+          cr.timer -= dt;
+          if (cr.mode === "shuffle") {
+            cr.x += cr.dir*0.008*dt;
+            if (cr.timer <= 0) { cr.mode = "pause"; cr.timer = 1 + Math.random()*2; }
+          } else if (cr.timer <= 0) {
+            cr.mode = "shuffle"; cr.timer = 2 + Math.random()*3;
+          }
+          if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
+          this.paintHedgehog(c, { x: cr.x*W, y: 0.94*H, s: H*0.026*(cr.sz || 1),
+            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: colDark, rim: colFar });
+          break;
+        }
+        case "badger": {
+          cr.x += cr.dir*0.014*dt; cr.lp += dt*5;
+          if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
+          this.paintBadger(c, { x: cr.x*W, y: 0.935*H, s: H*0.045*(cr.sz || 1),
+            dir: cr.dir, lp: cr.lp, color: colDark });
+          break;
+        }
+        case "otter": {
+          cr.timer -= dt;
+          if (cr.mode === "swim") {
+            cr.x += cr.dir*0.03*dt; cr.ph += dt*3;
+            if (cr.timer <= 0) {
+              cr.mode = "under"; cr.timer = 1.2 + Math.random()*1.8;
+              this.fishRings.push({ x: cr.x, y: cr.y, age: 0, quiet: true });
+            }
+          } else {
+            cr.x += cr.dir*0.02*dt;
+            if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
+          }
+          if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
+          if (cr.mode === "swim") {
+            this.paintOtter(c, { x: cr.x*W, y: cr.y*H, s: H*0.03*(cr.sz || 1),
+              dir: cr.dir, ph: cr.ph, color: colDark });
+          }
+          break;
+        }
+        case "bee": {
+          cr.x += (cr.drift + Math.sin(cr.t*1.3 + cr.ph)*0.02)*dt;
+          cr.y += Math.sin(cr.t*2.2 + cr.ph)*0.02*dt;
+          if (cr.t > cr.life || cr.x < -0.04 || cr.x > 1.04) { dead = true; break; }
+          const alB = Math.max(0, Math.min(1, (cr.life - cr.t)))*0.9;
+          c.globalAlpha = alB;
+          this.paintBee(c, cr.x*W, (cr.y + Math.sin(cr.t*14)*0.004)*H,
+            H*0.008*(cr.sz || 1), cr.t, colDark);
+          c.globalAlpha = 1;
           break;
         }
         case "skein": {
@@ -2512,6 +2879,17 @@ class Scene {
       if (cock < 0.5) {
         c.beginPath(); c.moveTo(s*0.15, 0); c.lineTo(s*0.28, s*0.02); c.stroke();
       }
+      // a little egret is the same bird in white, with black bill and
+      // amber feet; the grey heron keeps the ink
+      const pale = o.pale ? `rgba(${this.tok.foamRGB}, 0.92)` : null;
+      if (pale) {
+        c.fillStyle = `rgba(${this.tok.amberRGB}, 0.9)`;
+        c.beginPath();
+        c.arc(-s*0.06, 0, Math.max(1, s*0.035), 0, Math.PI*2);
+        c.arc(s*0.17, 0, Math.max(1, s*0.035), 0, Math.PI*2);
+        c.fill();
+        c.fillStyle = pale; c.strokeStyle = pale;
+      }
       // body — deep-keeled, the wing folded along the back
       c.beginPath();
       c.moveTo(s*0.30, -s*0.88);
@@ -2533,22 +2911,25 @@ class Scene {
       c.moveTo(s*0.24, -s*0.8);
       c.bezierCurveTo(s*0.64 + watch, -s*1.05, s*0.10 + watch, -s*1.28, s*0.40 + watch, -s*1.56);
       c.stroke();
-      const hx = s*0.42 + watch, hy = -s*1.6;
+      const hx = s*0.42 + watch, hy = -s*1.6 - (o.sing || 0)*s*0.06;
       c.beginPath(); c.ellipse(hx, hy, s*0.14, s*0.10, -0.15, 0, Math.PI*2); c.fill();
-      // dagger bill
+      // dagger bill, parting a crack to croak
+      if (pale) c.fillStyle = o.color;
+      const hg = (o.sing || 0)*s*0.05;
       c.beginPath();
       c.moveTo(hx + s*0.06, hy - s*0.05);
-      c.lineTo(hx + s*0.6, hy + s*0.04);
+      c.lineTo(hx + s*0.6, hy + s*0.04 - hg);
       c.lineTo(hx + s*0.06, hy + s*0.06);
       c.closePath(); c.fill();
-      // the dark brow-plume swept off the crown
+      // the brow-plume swept off the crown
+      if (pale) c.strokeStyle = o.color;
       c.lineWidth = Math.max(0.8, s*0.04);
       c.beginPath();
       c.moveTo(hx - s*0.04, hy - s*0.08);
       c.quadraticCurveTo(hx - s*0.22, hy - s*0.16, hx - s*0.34, hy - s*0.12);
       c.stroke();
       // eye
-      c.fillStyle = `rgba(${this.tok.foamRGB}, 0.8)`;
+      c.fillStyle = pale ? o.color : `rgba(${this.tok.foamRGB}, 0.8)`;
       c.beginPath(); c.arc(hx + s*0.02, hy - s*0.02, Math.max(0.5, s*0.03), 0, Math.PI*2); c.fill();
     } else {
       // flight — broad bowed wings with fingered tips, neck drawn in,
@@ -2757,6 +3138,407 @@ class Scene {
     c.restore();
   }
 
+  /* A pheasant — deep-chested, small-headed, trailing that improbable tail;
+     head thrown up to crow, stepping deliberately otherwise. */
+  paintPheasant(c, o) {
+    const s = o.s, t = o.t || 0, sing = o.sing || 0;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.flip) c.scale(-1, 1);
+    c.globalAlpha = o.alpha;
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineCap = "round"; c.lineJoin = "round";
+    const by = -s*0.6;
+    // legs — stout, stepping
+    for (const [lx0, ph2] of [[-s*0.16, 0], [s*0.14, Math.PI]]) {
+      const sw = o.walking ? Math.sin((o.lp || 0) + ph2)*s*0.14 : 0;
+      const lift = o.walking ? Math.max(0, Math.sin((o.lp || 0) + ph2 + 0.8))*s*0.07 : 0;
+      this.leg(c, lx0, by + s*0.28, lx0 + sw, -lift, 0.07, s*0.12, s*0.05);
+    }
+    // the long barred tail, carried just off the ground
+    const tf = Math.pow(Math.max(0, Math.sin(t*0.8 + 1)), 12);   // the odd flick
+    for (let k = 0; k < 3; k++) {
+      const aa = 0.16 + k*0.07 - tf*0.12 - sing*0.1;
+      this.limb(c, -s*0.6, by + s*0.05,
+        -s*0.6 - Math.cos(aa)*s*1.7*(1 - k*0.13), by + s*0.05 + Math.sin(aa)*s*1.7*(1 - k*0.13),
+        s*0.16, s*0.05);
+    }
+    c.strokeStyle = o.rim || o.color;
+    c.lineWidth = Math.max(0.5, s*0.035);
+    c.globalAlpha = o.alpha*0.5;
+    c.beginPath();
+    for (let k = 1; k <= 3; k++) {
+      c.moveTo(-s*(0.6 + k*0.38), by + s*(0.1 + k*0.05));
+      c.lineTo(-s*(0.6 + k*0.38), by + s*(0.22 + k*0.05));
+    }
+    c.stroke();
+    c.globalAlpha = o.alpha;
+    c.strokeStyle = o.color;
+    // body — full breast, the back sloping into the tail root
+    c.beginPath();
+    c.moveTo(s*0.5, by - s*0.34);
+    c.quadraticCurveTo(-s*0.1, by - s*0.48, -s*0.55, by - s*0.2);
+    c.quadraticCurveTo(-s*0.78, by, -s*0.55, by + s*0.2);
+    c.quadraticCurveTo(-s*0.05, by + s*0.42, s*0.42, by + s*0.28);
+    c.quadraticCurveTo(s*0.72, by + s*0.05, s*0.5, by - s*0.34);
+    c.closePath(); c.fill();
+    // the coppery wash over the body
+    c.fillStyle = `rgba(${this.tok.amberRGB}, 0.35)`;
+    c.beginPath(); c.ellipse(-s*0.05, by, s*0.6, s*0.36, -0.1, 0, Math.PI*2); c.fill();
+    // neck and small head, thrown up for the crow
+    const hx = s*0.6, hy = by - s*0.78 - sing*s*0.16;
+    c.fillStyle = o.color;
+    this.limb(c, s*0.42, by - s*0.2, hx, hy, s*0.26, s*0.14);
+    c.beginPath(); c.arc(hx, hy, s*0.16, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.moveTo(hx + s*0.13, hy - s*0.06);
+    c.lineTo(hx + s*0.34, hy - sing*s*0.03);
+    c.lineTo(hx + s*0.13, hy + s*0.06);
+    c.closePath(); c.fill();
+    // the white neck-ring and the red face wattle
+    c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.75)`;
+    c.lineWidth = Math.max(0.8, s*0.06);
+    c.beginPath(); c.arc(hx - s*0.06, hy + s*0.26, s*0.17, Math.PI*0.6, Math.PI*2.2); c.stroke();
+    c.fillStyle = `rgba(${this.tok.amberRGB}, 0.9)`;
+    c.beginPath(); c.arc(hx + s*0.04, hy - s*0.02, s*0.075, 0, Math.PI*2); c.fill();
+    c.fillStyle = o.deep || o.color;
+    c.beginPath(); c.arc(hx + s*0.05, hy - s*0.03, Math.max(0.5, s*0.03), 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
+  /* A red squirrel — all tail: arched over the back when it sits up to
+     nibble, streaming behind when it bounds. */
+  paintSquirrel(c, o) {
+    const s = o.s, t = o.t || 0;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color;
+    if (o.sit) {
+      // the great tail curling up and over
+      c.beginPath();
+      c.moveTo(-s*0.5, -s*0.15);
+      c.quadraticCurveTo(-s*1.05, -s*0.3, -s*1.0, -s*0.95);
+      c.quadraticCurveTo(-s*0.92, -s*1.42, -s*0.42, -s*1.4);
+      c.quadraticCurveTo(-s*0.75, -s*1.25, -s*0.72, -s*0.9);
+      c.quadraticCurveTo(-s*0.68, -s*0.4, -s*0.3, -s*0.2);
+      c.closePath(); c.fill();
+      // haunch and upright body
+      c.beginPath(); c.ellipse(-s*0.05, -s*0.32, s*0.42, s*0.34, 0, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(s*0.12, -s*0.62, s*0.26, s*0.36, 0.15, 0, Math.PI*2); c.fill();
+      // head with ear tufts, bobbing as it nibbles
+      const nib = Math.sin(t*9)*s*0.03;
+      const hy = -s*1.02 + nib;
+      c.beginPath(); c.arc(s*0.22, hy, s*0.2, 0, Math.PI*2); c.fill();
+      c.beginPath();
+      c.moveTo(s*0.08, hy - s*0.14); c.lineTo(s*0.04, hy - s*0.36); c.lineTo(s*0.18, hy - s*0.18);
+      c.moveTo(s*0.28, hy - s*0.16); c.lineTo(s*0.32, hy - s*0.38); c.lineTo(s*0.42, hy - s*0.16);
+      c.closePath(); c.fill();
+      // forepaws held up together
+      c.beginPath(); c.ellipse(s*0.32, -s*0.72 + nib, s*0.1, s*0.07, 0.3, 0, Math.PI*2); c.fill();
+      // eye
+      c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
+      c.beginPath(); c.arc(s*0.28, hy - s*0.04, Math.max(0.6, s*0.05), 0, Math.PI*2); c.fill();
+    } else {
+      // bounding: body stretched, tail flowing in a wave behind
+      const wv = Math.sin((o.ph || 0))*s*0.12;
+      c.beginPath();
+      c.moveTo(-s*0.45, -s*0.3);
+      c.quadraticCurveTo(-s*1.0, -s*0.55 + wv, -s*1.45, -s*0.4 + wv*1.6);
+      c.quadraticCurveTo(-s*1.6, -s*0.28 + wv*1.6, -s*1.45, -s*0.18 + wv*1.2);
+      c.quadraticCurveTo(-s*0.95, -s*0.12 + wv*0.5, -s*0.4, -s*0.12);
+      c.closePath(); c.fill();
+      c.beginPath(); c.ellipse(0, -s*0.3, s*0.55, s*0.26, -0.12, 0, Math.PI*2); c.fill();
+      // tucked legs
+      this.limb(c, -s*0.3, -s*0.15, -s*0.45, s*0.02, s*0.16, s*0.06);
+      this.limb(c, s*0.3, -s*0.18, s*0.45, s*0.0, s*0.12, s*0.05);
+      // head reaching forward
+      c.beginPath(); c.arc(s*0.55, -s*0.42, s*0.18, 0, Math.PI*2); c.fill();
+      c.beginPath();
+      c.moveTo(s*0.44, -s*0.54); c.lineTo(s*0.42, -s*0.7); c.lineTo(s*0.54, -s*0.56);
+      c.closePath(); c.fill();
+    }
+    c.restore();
+  }
+
+  /* A brown hare — lankier than any rabbit, loping low or drawn up tall
+     and still, ears like signal flags. */
+  paintHare(c, o) {
+    const s = o.s;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color;
+    if (o.alert) {
+      // sat up on its haunches, ears up, utterly still
+      c.beginPath(); c.ellipse(-s*0.15, -s*0.4, s*0.5, s*0.4, 0, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(s*0.05, -s*0.85, s*0.28, s*0.5, 0.12, 0, Math.PI*2); c.fill();
+      const hx = s*0.18, hy = -s*1.42;
+      c.beginPath(); c.arc(hx, hy, s*0.22, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(hx + s*0.2, hy + s*0.04, s*0.1, s*0.08, 0.2, 0, Math.PI*2); c.fill();
+      this.limb(c, hx - s*0.08, hy - s*0.1, hx - s*0.22, hy - s*0.85, s*0.13, s*0.06);
+      this.limb(c, hx + s*0.08, hy - s*0.1, hx + s*0.05, hy - s*0.9, s*0.13, s*0.06);
+      this.limb(c, s*0.28, -s*0.35, s*0.36, -s*0.02, s*0.12, s*0.06);
+      c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
+      c.beginPath(); c.arc(hx + s*0.08, hy - s*0.04, Math.max(0.6, s*0.05), 0, Math.PI*2); c.fill();
+    } else {
+      const st = o.hop || 0;      // 0 gathered, 1 stretched mid-lope
+      // long hind legs driving, forelegs reaching
+      this.limb(c, -s*0.5, -s*0.42, -s*0.6 - st*s*0.5, -s*0.05, s*0.34, s*0.09);
+      c.strokeStyle = o.color; c.lineWidth = Math.max(1, s*0.09); c.lineCap = "round";
+      c.beginPath();
+      c.moveTo(-s*0.6 - st*s*0.5, -s*0.05);
+      c.lineTo(-s*0.35 - st*s*0.75, st*s*0.0 - s*0.02);
+      c.stroke();
+      this.limb(c, s*0.42, -s*0.5, s*(0.62 + st*0.25), -s*0.05, s*0.13, s*0.05);
+      // long low body
+      c.beginPath();
+      c.ellipse(-st*s*0.05, -s*0.52, s*(0.85 + st*0.2), s*(0.4 - st*0.06), -st*0.1, 0, Math.PI*2);
+      c.fill();
+      // head with the great ears laid along the back
+      const hx = s*(0.72 + st*0.15), hy = -s*(0.78 + st*0.1);
+      c.beginPath(); c.arc(hx, hy, s*0.2, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(hx + s*0.17, hy + s*0.04, s*0.1, s*0.07, 0.2, 0, Math.PI*2); c.fill();
+      this.limb(c, hx - s*0.05, hy - s*0.08, hx - s*0.6, hy - s*0.3, s*0.13, s*0.06);
+      this.limb(c, hx + s*0.06, hy - s*0.1, hx - s*0.45, hy - s*0.42, s*0.13, s*0.06);
+      c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
+      c.beginPath(); c.arc(hx + s*0.07, hy - s*0.04, Math.max(0.6, s*0.045), 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+  }
+
+  /* A hedgehog — a dome of spines on busy little feet, nose to the ground. */
+  paintHedgehog(c, o) {
+    const s = o.s, t = o.t || 0;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color; c.strokeStyle = o.color; c.lineCap = "round";
+    const bob = Math.sin(t*7)*s*0.02;
+    // feet, shuffling
+    c.lineWidth = Math.max(1, s*0.08);
+    c.beginPath();
+    c.moveTo(-s*0.35, -s*0.08); c.lineTo(-s*0.35 + Math.sin(t*9)*s*0.08, s*0.02);
+    c.moveTo(s*0.25, -s*0.08);  c.lineTo(s*0.25 - Math.sin(t*9)*s*0.08, s*0.02);
+    c.stroke();
+    // the dome
+    c.beginPath();
+    c.moveTo(-s*0.78, -s*0.04 + bob);
+    c.quadraticCurveTo(-s*0.6, -s*0.72 + bob, 0, -s*0.72 + bob);
+    c.quadraticCurveTo(s*0.55, -s*0.7 + bob, s*0.72, -s*0.16 + bob);
+    c.quadraticCurveTo(s*0.4, -s*0.02, -s*0.78, -s*0.04 + bob);
+    c.closePath(); c.fill();
+    // snout, down and questing
+    const sniff = Math.sin(t*5)*s*0.03;
+    c.beginPath();
+    c.moveTo(s*0.6, -s*0.3 + bob);
+    c.quadraticCurveTo(s*0.95, -s*0.12 + sniff, s*1.04, s*0.0 + sniff);
+    c.lineTo(s*0.62, -s*0.05);
+    c.closePath(); c.fill();
+    c.beginPath(); c.arc(s*1.04, sniff, Math.max(0.7, s*0.05), 0, Math.PI*2); c.fill();
+    // spines — short strokes fanned over the dome
+    c.strokeStyle = o.rim || o.color;
+    c.lineWidth = Math.max(0.5, s*0.04);
+    c.globalAlpha = (c.globalAlpha || 1)*0.6;
+    c.beginPath();
+    for (let k = 0; k < 9; k++) {
+      const aa = Math.PI*(0.15 + k*0.085);
+      const px2 = -s*0.05 - Math.cos(aa)*s*0.62, py2 = -s*0.36 + bob - Math.sin(aa)*s*0.38;
+      c.moveTo(px2, py2);
+      c.lineTo(px2 - Math.cos(aa)*s*0.22, py2 - Math.sin(aa)*s*0.22);
+    }
+    c.stroke();
+    c.globalAlpha = 1;
+    c.restore();
+  }
+
+  /* A badger — low, broad and unhurried, the striped head down at the
+     ground as it trundles its night rounds. */
+  paintBadger(c, o) {
+    const s = o.s;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color;
+    // short legs, trundling
+    const off2 = [-0.45, -0.2, 0.25, 0.45];
+    for (let i = 0; i < 4; i++) {
+      const sw = Math.sin((o.lp || 0) + (i % 2)*Math.PI + Math.floor(i/2)*1.2)*s*0.1;
+      this.limb(c, off2[i]*s, -s*0.3, off2[i]*s + sw, 0, s*0.16, s*0.08);
+    }
+    // broad low body
+    c.beginPath();
+    c.moveTo(s*0.55, -s*0.5);
+    c.quadraticCurveTo(0, -s*0.68, -s*0.55, -s*0.52);
+    c.quadraticCurveTo(-s*0.85, -s*0.36, -s*0.7, -s*0.16);
+    c.quadraticCurveTo(-s*0.1, -s*0.06, s*0.5, -s*0.14);
+    c.quadraticCurveTo(s*0.75, -s*0.3, s*0.55, -s*0.5);
+    c.closePath(); c.fill();
+    // wedge head, held low
+    c.beginPath();
+    c.moveTo(s*0.5, -s*0.44);
+    c.quadraticCurveTo(s*0.95, -s*0.3, s*1.1, -s*0.08);
+    c.lineTo(s*0.55, -s*0.12);
+    c.closePath(); c.fill();
+    // the two white face stripes
+    c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.75)`;
+    c.lineWidth = Math.max(0.8, s*0.06);
+    c.beginPath();
+    c.moveTo(s*1.05, -s*0.1); c.lineTo(s*0.58, -s*0.34);
+    c.moveTo(s*1.02, -s*0.16); c.lineTo(s*0.62, -s*0.42);
+    c.stroke();
+    // small round ear
+    c.fillStyle = o.color;
+    c.beginPath(); c.arc(s*0.56, -s*0.46, s*0.07, 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
+  /* An otter swimming — a head, a rolling hump of back, a tail-tip, all
+     threaded along the waterline; it dives and is gone. */
+  paintOtter(c, o) {
+    const s = o.s, ph = o.ph || 0;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color;
+    // wake
+    c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(-s*0.3, s*0.05); c.quadraticCurveTo(-s*1.2, s*0.1, -s*2.0, s*0.28);
+    c.moveTo(s*0.5, s*0.06); c.quadraticCurveTo(-s*0.3, s*0.16, -s*1.2, s*0.4);
+    c.stroke();
+    // head and muzzle above the line
+    c.beginPath(); c.ellipse(s*0.55, -s*0.18, s*0.26, s*0.18, -0.1, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.ellipse(s*0.82, -s*0.12, s*0.12, s*0.08, 0.1, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*0.42, -s*0.32, s*0.06, 0, Math.PI*2); c.fill();  // ear
+    // the rolling back, rising and falling as it swims
+    const roll = 0.5 + 0.5*Math.sin(ph);
+    c.beginPath();
+    c.moveTo(s*0.25, s*0.02);
+    c.quadraticCurveTo(-s*0.15, -s*0.4*roll - s*0.08, -s*0.6, s*0.0);
+    c.closePath(); c.fill();
+    // tail-tip breaking behind
+    const roll2 = 0.5 + 0.5*Math.sin(ph - 1.4);
+    if (roll2 > 0.4) {
+      c.beginPath();
+      c.moveTo(-s*0.85, s*0.03);
+      c.quadraticCurveTo(-s*1.05, -s*0.22*roll2, -s*1.3, s*0.02);
+      c.closePath(); c.fill();
+    }
+    // eye
+    c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
+    c.beginPath(); c.arc(s*0.6, -s*0.24, Math.max(0.6, s*0.045), 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
+  /* A bumblebee — a furred amber knot with a shimmer where wings should be. */
+  paintBee(c, x, y, s, t, colDark) {
+    c.save();
+    c.translate(x, y);
+    c.fillStyle = `rgba(${this.tok.amberRGB}, 0.85)`;
+    c.beginPath(); c.ellipse(0, 0, s*0.55, s*0.38, 0.1, 0, Math.PI*2); c.fill();
+    c.fillStyle = colDark;
+    c.beginPath();
+    c.ellipse(-s*0.12, 0, s*0.11, s*0.38, 0.1, 0, Math.PI*2);
+    c.ellipse(s*0.32, 0.5, s*0.1, s*0.3, 0.1, 0, Math.PI*2);
+    c.fill();
+    // wing shimmer
+    c.fillStyle = `rgba(${this.tok.foamRGB}, ${0.25 + 0.3*Math.abs(Math.sin(t*40))})`;
+    c.beginPath();
+    c.ellipse(-s*0.05, -s*0.42, s*0.3, s*0.14, -0.4, 0, Math.PI*2);
+    c.fill();
+    c.restore();
+  }
+
+  /* A tern — lighter and sharper than any gull, deep buoyant wingbeats
+     and tail streamers trailing. */
+  paintTernFlight(c, x, y, s, dir, ph, col) {
+    const k = Math.sin(ph)*0.85;
+    c.save();
+    c.translate(x, y);
+    if (dir < 0) c.scale(-1, 1);
+    c.fillStyle = col;
+    const A = c.globalAlpha;
+    c.globalAlpha = A*0.6;
+    this.wingBlade(c, -s*0.08, -s*0.06, -s*0.9, -s*0.85*k - s*0.35, s*0.24);
+    c.globalAlpha = A;
+    // slim body and the forked tail streamers
+    c.beginPath(); c.ellipse(0, 0, s*0.6, s*0.17, 0, 0, Math.PI*2); c.fill();
+    c.strokeStyle = col; c.lineCap = "round"; c.lineWidth = Math.max(0.7, s*0.05);
+    c.beginPath();
+    c.moveTo(-s*0.45, -s*0.03); c.lineTo(-s*1.05, -s*0.14);
+    c.moveTo(-s*0.45, s*0.03);  c.lineTo(-s*0.95, s*0.1);
+    c.stroke();
+    c.beginPath(); c.arc(s*0.58, -s*0.06, s*0.16, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.moveTo(s*0.7, -s*0.08); c.lineTo(s*0.95, -s*0.02); c.lineTo(s*0.7, s*0.03);
+    c.closePath(); c.fill();
+    this.wingBlade(c, s*0.04, -s*0.04, -s*0.55, -s*1.05*k - s*0.42, s*0.3);
+    c.restore();
+  }
+
+  /* A kestrel holding its cross in the wind — tail fanned hard down,
+     wings winnowing; when it slips away it goes on flat wings. */
+  paintKestrelFlight(c, x, y, s, ph, col, hovering, dir) {
+    const k = hovering ? Math.sin(ph)*0.32 : 0.12;
+    c.save();
+    c.translate(x, y);
+    if (dir < 0) c.scale(-1, 1);
+    c.rotate(-0.12);
+    c.fillStyle = col;
+    const A = c.globalAlpha;
+    // fanned tail, pressed down to hold station
+    if (hovering) {
+      for (let f = -1; f <= 1; f++) {
+        this.limb(c, -s*0.35, s*0.02, -s*0.95 - Math.abs(f)*s*0.06, s*0.42 + f*s*0.16, s*0.2, s*0.1);
+      }
+    } else {
+      this.limb(c, -s*0.35, 0, -s*1.0, s*0.1, s*0.2, s*0.1);
+    }
+    c.globalAlpha = A*0.6;
+    this.wingBlade(c, -s*0.05, -s*0.08, -s*0.8, -s*0.7*k - s*0.4, s*0.34);
+    c.globalAlpha = A;
+    // body head-down into the wind
+    c.beginPath(); c.ellipse(0, 0, s*0.52, s*0.2, 0.08, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*0.5, s*0.02, s*0.17, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.moveTo(s*0.62, 0); c.lineTo(s*0.78, s*0.08); c.lineTo(s*0.58, s*0.1);
+    c.closePath(); c.fill();
+    this.wingBlade(c, s*0.02, -s*0.06, -s*0.5, -s*0.9*k - s*0.5, s*0.4);
+    c.restore();
+  }
+
+  /* A buzzard wheeling — broad plank wings barely moving, primaries
+     fingered at the tips, the whole bird banking round its circle. */
+  paintBuzzardSoar(c, x, y, s, bank, dir, col) {
+    c.save();
+    c.translate(x, y);
+    if (dir < 0) c.scale(-1, 1);
+    c.rotate(bank*0.22);
+    c.fillStyle = col; c.strokeStyle = col; c.lineCap = "round";
+    // both wings held out flat, a shallow V
+    this.wingBlade(c, -s*0.06, -s*0.02, -s*1.45, -s*0.3 - bank*s*0.14, s*0.55);
+    this.wingBlade(c, s*0.06, -s*0.02, s*1.45, -s*0.3 + bank*s*0.14, -s*0.55);
+    // fingered primaries
+    c.lineWidth = Math.max(0.7, s*0.045);
+    c.beginPath();
+    for (const sd of [-1, 1]) {
+      for (let f = 0; f < 3; f++) {
+        const tx2 = sd*s*(1.35 + f*0.06), ty2 = -s*0.28 + sd*bank*s*0.14*sd + f*s*0.07;
+        c.moveTo(tx2 - sd*s*0.16, ty2);
+        c.lineTo(tx2 + sd*s*0.1, ty2 - s*0.06);
+      }
+    }
+    c.stroke();
+    // body, fanned tail, small head
+    c.beginPath(); c.ellipse(0, 0, s*0.34, s*0.2, 0, 0, Math.PI*2); c.fill();
+    for (let f = -1; f <= 1; f++) {
+      this.limb(c, -s*0.2, s*0.02, -s*0.62, s*0.16 + f*s*0.12, s*0.16, s*0.1);
+    }
+    c.beginPath(); c.arc(s*0.38, -s*0.02, s*0.13, 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
   drawFlyers(c, W, H, dt, bot) {
     const col = css(mix(this.tok.ink, bot, 0.2));
     for (let i = this.flyers.length - 1; i >= 0; i--) {
@@ -2767,20 +3549,47 @@ class Scene {
         f.x += Math.sin(f.ph)*0.0003;
         f.y -= dt*0.004;
         f.ph += dt*22;
+      } else if (f.kind === "kestrel") {
+        // winnowing in place over one spot, then slipping off downwind
+        if (f.hold > 0) {
+          f.hold -= dt; f.ph += dt*15;
+          f.x += Math.sin(f.ph*0.21)*0.0002;
+          f.y += Math.sin(f.ph*0.13)*0.0002;
+        } else {
+          if (!f.vx) f.vx = (Math.random() < 0.5 ? 1 : -1)*0.045;
+          f.x += f.vx*dt*3; f.ph += dt*7;
+        }
+      } else if (f.kind === "buzzard") {
+        // wheeling a slow circle that itself drifts across the sky
+        f.ph += dt;
+        if (f.hold > 0) {
+          f.hold -= dt; f.ang += dt*0.55; f.cx += dt*0.0022;
+          f.x = f.cx + Math.cos(f.ang)*0.06;
+          f.y = f.cy + Math.sin(f.ang)*0.028;
+        } else {
+          if (!f.vx) f.vx = (f.x < 0.5 ? -1 : 1)*0.03;
+          f.x += f.vx*dt*3;
+        }
       } else {
         if (f.kind === "lark" && !f.vx) f.vx = (Math.random() < 0.5 ? 1 : -1)*0.05;
         f.x += f.vx*dt*3;
-        f.ph += dt * (f.kind === "swift" ? 16 : f.kind === "gull" ? 5 : f.kind === "lark" ? 22 : 11);
+        f.ph += dt * (f.kind === "swift" ? 16 : f.kind === "gull" ? 5 :
+                      f.kind === "lark" ? 22 : f.kind === "tern" ? 7 : 11);
       }
       if (f.x < -0.12 || f.x > 1.12 || f.y < -0.05) { this.flyers.splice(i, 1); continue; }
       const fx = f.x*W;
-      const bob = f.kind === "swift" ? Math.sin(f.ph*0.5)*9 : Math.sin(f.ph*0.3)*4;
+      const bob = f.kind === "swift" ? Math.sin(f.ph*0.5)*9 :
+                  f.kind === "buzzard" || f.kind === "kestrel" ? 0 : Math.sin(f.ph*0.3)*4;
       const fy = f.y*H + bob;
       const dir = (f.vx || 0.01) >= 0 ? 1 : -1;
       c.globalAlpha = Math.min(1, f.age*2);
       if (f.kind === "gull") this.paintGullFlight(c, fx, fy, f.size, dir, f.ph, col);
       else if (f.kind === "swift") this.paintSwiftFlight(c, fx, fy, f.size, dir, f.ph, col);
       else if (f.kind === "lark") this.paintLarkFlight(c, fx, fy, f.size, f.ph, col, f.hold > 0);
+      else if (f.kind === "tern") this.paintTernFlight(c, fx, fy, f.size, dir, f.ph, col);
+      else if (f.kind === "kestrel") this.paintKestrelFlight(c, fx, fy, f.size, f.ph, col, f.hold > 0, dir);
+      else if (f.kind === "buzzard") this.paintBuzzardSoar(c, fx, fy, f.size,
+        Math.sin(f.ang || 0), -Math.sin(f.ang || 0) >= 0 ? 1 : -1, col);
       else this.paintSmallBirdFlight(c, fx, fy, f.size, dir, f.ph, col);
       c.globalAlpha = 1;
     }
