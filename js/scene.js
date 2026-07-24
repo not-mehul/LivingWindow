@@ -8,6 +8,8 @@ import {
 } from "./util.js";
 import { PSTYLE } from "./species.js";
 
+const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
+
 class Scene {
   constructor(canvas) {
     this.canvas = canvas;
@@ -29,7 +31,8 @@ class Scene {
     ro.observe(canvas);
     this.resize();
     this.last = performance.now();
-    requestAnimationFrame((n) => this.frame(n));
+    this._frame = (n) => this.frame(n);   // bound once, not re-created each frame
+    requestAnimationFrame(this._frame);
   }
 
   refreshTokens() {
@@ -54,6 +57,35 @@ class Scene {
       amberRGB: themeVar("--accent-amber-rgb"),
       sageRGB: themeVar("--accent-sage-rgb")
     };
+    this._glow = new Map();   // radial-glow sprites are token-coloured; rebuild on theme change
+    this._skyKey = null;      // invalidate the cached sky gradient
+    const fc = this.tok.firefly;
+    this.tok.fireflyRGB = (fc[0]|0) + "," + (fc[1]|0) + "," + (fc[2]|0);
+  }
+
+  /* A cached radial-glow sprite (colour → transparent), so glows blit with one
+     drawImage instead of building a new gradient every frame. */
+  glowSprite(rgb) {
+    let cv = this._glow.get(rgb);
+    if (cv) return cv;
+    const R = 48;
+    cv = document.createElement("canvas");
+    cv.width = cv.height = R*2;
+    const g2 = cv.getContext("2d");
+    const grad = g2.createRadialGradient(R, R, 0, R, R, R);
+    grad.addColorStop(0, `rgba(${rgb}, 1)`);
+    grad.addColorStop(1, `rgba(${rgb}, 0)`);
+    g2.fillStyle = grad;
+    g2.fillRect(0, 0, R*2, R*2);
+    this._glow.set(rgb, cv);
+    return cv;
+  }
+
+  drawGlow(c, rgb, x, y, rx, ry, alpha) {
+    if (alpha <= 0.004) return;
+    c.globalAlpha = alpha < 1 ? alpha : 1;
+    c.drawImage(this.glowSprite(rgb), x - rx, y - ry, rx*2, ry*2);
+    c.globalAlpha = 1;
   }
 
   reseed(seedBase) {
@@ -452,25 +484,27 @@ class Scene {
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
-    for (const k of ["dawn","day","dusk","night"]) {
-      const target = state.time === k ? 1 : 0;
-      this.timeMix[k] += (target - this.timeMix[k]) * Math.min(1, dt * 1.2);
+    const k = Math.min(1, dt * 1.2);
+    for (const ph of PHASES) {
+      this.timeMix[ph] += ((state.time === ph ? 1 : 0) - this.timeMix[ph]) * k;
     }
     this.draw(dt);
     this.spawnCritters(dt);
-    requestAnimationFrame((n) => this.frame(n));
+    requestAnimationFrame(this._frame);
   }
 
   skyColors() {
-    const m = this.timeMix;
+    const m = this.timeMix, sky = this.tok.sky;
     const total = m.dawn + m.day + m.dusk + m.night || 1;
-    let top = [0,0,0,1], bot = [0,0,0,1];
-    for (const k of ["dawn","day","dusk","night"]) {
-      const w = m[k] / total;
-      top = [top[0]+this.tok.sky[k][0][0]*w, top[1]+this.tok.sky[k][0][1]*w, top[2]+this.tok.sky[k][0][2]*w, 1];
-      bot = [bot[0]+this.tok.sky[k][1][0]*w, bot[1]+this.tok.sky[k][1][1]*w, bot[2]+this.tok.sky[k][1][2]*w, 1];
+    const top = this._top || (this._top = [0,0,0,1]);
+    const bot = this._bot || (this._bot = [0,0,0,1]);
+    top[0] = top[1] = top[2] = 0; bot[0] = bot[1] = bot[2] = 0;
+    for (const ph of PHASES) {
+      const w = m[ph] / total, s = sky[ph];
+      top[0] += s[0][0]*w; top[1] += s[0][1]*w; top[2] += s[0][2]*w;
+      bot[0] += s[1][0]*w; bot[1] += s[1][1]*w; bot[2] += s[1][2]*w;
     }
-    return [top, bot];
+    return this._sky || (this._sky = [top, bot]);
   }
 
   nightness() {
@@ -481,15 +515,21 @@ class Scene {
   draw(dt) {
     const c = this.ctx, W = this.W, H = this.H;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    c.clearRect(0, 0, W, H);
+    // No clearRect: the sky gradient is opaque and covers the whole canvas.
 
     const [top, bot] = this.skyColors();
     const night = this.nightness();
 
-    const g = c.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, css(top));
-    g.addColorStop(1, css(bot));
-    c.fillStyle = g;
+    // Rebuild the sky gradient only when the colours (or size) actually change —
+    // constant in steady state, so no gradient is allocated most frames.
+    const key = (top[0]|0)+","+(top[1]|0)+","+(top[2]|0)+"|"+(bot[0]|0)+","+(bot[1]|0)+","+(bot[2]|0)+"|"+(H|0);
+    if (key !== this._skyKey) {
+      const g = c.createLinearGradient(0, 0, 0, H);
+      g.addColorStop(0, css(top));
+      g.addColorStop(1, css(bot));
+      this._skyGrad = g; this._skyKey = key;
+    }
+    c.fillStyle = this._skyGrad;
     c.fillRect(0, 0, W, H);
 
     this.drawCelestial(c, W, H, top, night, dt);
@@ -514,20 +554,21 @@ class Scene {
   drawCelestial(c, W, H, top, night, dt) {
     // Stars, brightening as the light fails.
     if (night > 0.05 && this.stars) {
+      c.fillStyle = `rgb(${this.tok.cloudRGB})`;   // one colour; vary alpha per star
       for (const st of this.stars) {
         const tw = 0.55 + 0.45*Math.sin(this.t*st.tw + st.ph);
         const a = (st.bright ? 0.6 : 0.34) * night * tw;
         if (a < 0.03) continue;
         const sx = st.x*W, sy = st.y*H, r = st.r*(st.bright ? 1.5 : 1);
-        c.fillStyle = `rgba(${this.tok.cloudRGB}, ${a})`;
+        c.globalAlpha = a;
         c.fillRect(sx, sy, r, r);
         if (st.bright) {
           c.globalAlpha = a*0.45;
           c.fillRect(sx - r, sy + r*0.3, r*3, r*0.5);
           c.fillRect(sx + r*0.3, sy - r, r*0.5, r*3);
-          c.globalAlpha = 1;
         }
       }
+      c.globalAlpha = 1;
     }
     const breathe = 0.86 + 0.14*Math.sin(this.t*0.28);   // a slow living glow
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
@@ -537,11 +578,7 @@ class Scene {
       const sx = W * (0.22*m.dawn + 0.5*m.day + 0.8*m.dusk) / denom;
       const sy = H * (0.42*m.dawn + 0.16*m.day + 0.46*m.dusk) / denom;
       const rr = Math.min(W,H)*0.05;
-      const halo = c.createRadialGradient(sx, sy, 0, sx, sy, rr*5);
-      halo.addColorStop(0, `rgba(${this.tok.amberRGB}, ${0.30*sunA*breathe})`);
-      halo.addColorStop(1, `rgba(${this.tok.amberRGB}, 0)`);
-      c.fillStyle = halo;
-      c.fillRect(sx-rr*5, sy-rr*5, rr*10, rr*10);
+      this.drawGlow(c, this.tok.amberRGB, sx, sy, rr*5, rr*5, 0.30*sunA*breathe);
       const sc = this.tok.sun.slice(); sc[3] = sunA;
       c.fillStyle = css(sc);
       c.beginPath(); c.arc(sx, sy, rr, 0, Math.PI*2); c.fill();
@@ -550,11 +587,7 @@ class Scene {
     const moonA = m.night / total;
     if (moonA > 0.03) {
       const mx = W*0.72, my = H*0.2, rr = Math.min(W,H)*0.04;
-      const halo = c.createRadialGradient(mx, my, 0, mx, my, rr*6);
-      halo.addColorStop(0, `rgba(${this.tok.cloudRGB}, ${0.12*moonA*breathe})`);
-      halo.addColorStop(1, `rgba(${this.tok.cloudRGB}, 0)`);
-      c.fillStyle = halo;
-      c.fillRect(mx-rr*6, my-rr*6, rr*12, rr*12);
+      this.drawGlow(c, this.tok.cloudRGB, mx, my, rr*6, rr*6, 0.12*moonA*breathe);
       const mc = this.tok.moon.slice(); mc[3] = moonA;
       c.fillStyle = css(mc);
       c.beginPath(); c.arc(mx, my, rr, 0, Math.PI*2); c.fill();
@@ -578,18 +611,14 @@ class Scene {
   }
 
   drawClouds(c, W, H, dt, night) {
+    const rgb = this.tok.cloudRGB;
+    const wf = state.weather === "breeze" ? 3 : 1;
+    const af = (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
     for (const cl of this.clouds) {
-      cl.x += cl.s * dt * (state.weather === "breeze" ? 3 : 1);
+      cl.x += cl.s * dt * wf;
       if (cl.x > 1.3) cl.x = -0.3;
-      const cx = cl.x * W, cy = cl.y * H, cw = cl.w * W;
-      const cg = c.createRadialGradient(cx, cy, 0, cx, cy, cw);
-      const alpha = cl.a * (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
-      cg.addColorStop(0, `rgba(${this.tok.cloudRGB}, ${alpha})`);
-      cg.addColorStop(1, `rgba(${this.tok.cloudRGB}, 0)`);
-      c.fillStyle = cg;
-      c.save(); c.translate(cx, cy); c.scale(1, 0.35); c.translate(-cx, -cy);
-      c.beginPath(); c.arc(cx, cy, cw, 0, Math.PI*2); c.fill();
-      c.restore();
+      const cw = cl.w * W;
+      this.drawGlow(c, rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af);
     }
   }
 
@@ -755,11 +784,11 @@ class Scene {
     if (!this.flowers) return;
     const wa = this.windAmt();
     c.lineWidth = 1;
+    c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.16));   // stems share one colour
     for (const f of this.flowers) {
       const gx = f.x*W, gy = baseYfn(f.x)*H;
       const sway = Math.sin(this.t*1.6 + f.ph)*5*wa*this.windWave(f.x);
       const tx = gx + sway, ty = gy - f.h*H;
-      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.16));
       c.beginPath(); c.moveTo(gx, gy + 3); c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, tx, ty); c.stroke();
       const rgb = f.tone < 0.4 ? this.tok.amberRGB : f.tone < 0.72 ? this.tok.sageRGB : this.tok.cloudRGB;
       c.fillStyle = `rgba(${rgb}, 0.82)`;
@@ -770,33 +799,37 @@ class Scene {
   drawForest(c, W, H, dt, bot) {
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.5), W, H);
     const wa = this.windAmt();
-    const drawTrunk = (tr, color) => {
+    const mn = Math.min(W, H);
+    const drawTrunk = (tr, colStr) => {
       const groundY = H * 0.93;
       const topY = H * tr.top;
       const sway = Math.sin(this.t*1.1 + tr.x*9) * 2.2 * wa * this.windWave(tr.x);
-      c.strokeStyle = css(color);
+      c.strokeStyle = colStr; c.fillStyle = colStr;
       c.lineCap = "round";
       c.lineWidth = tr.w;
+      const bx = tr.x*W + tr.lean*W*2 + sway;
       c.beginPath();
       c.moveTo(tr.x*W, groundY);
-      c.quadraticCurveTo(tr.x*W + tr.lean*W, (groundY+topY)/2, tr.x*W + tr.lean*W*2 + sway, topY);
+      c.quadraticCurveTo(tr.x*W + tr.lean*W, (groundY+topY)/2, bx, topY);
       c.stroke();
-      c.fillStyle = css(color);
       for (const b of tr.canopy) {
         c.beginPath();
-        c.arc(tr.x*W + tr.lean*W*2 + sway + b.dx*W, topY + b.dy*H, b.r*Math.min(W,H), 0, Math.PI*2);
+        c.arc(bx + b.dx*W, topY + b.dy*H, b.r*mn, 0, Math.PI*2);
         c.fill();
       }
     };
-    for (const tr of this.trunksFar) drawTrunk(tr, mix(this.tok.ink, bot, 0.36));
-    for (const tr of (this.trunksMid || [])) drawTrunk(tr, mix(this.tok.ink, bot, 0.20));
+    const farCol = css(mix(this.tok.ink, bot, 0.36));
+    const midCol = css(mix(this.tok.ink, bot, 0.20));
+    for (const tr of this.trunksFar) drawTrunk(tr, farCol);
+    for (const tr of (this.trunksMid || [])) drawTrunk(tr, midCol);
     // a band of soft haze hanging between the trees
     const haze = c.createLinearGradient(0, H*0.42, 0, H*0.82);
     haze.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
     haze.addColorStop(0.5, `rgba(${this.tok.fogRGB}, 0.05)`);
     haze.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
     c.fillStyle = haze; c.fillRect(0, H*0.42, W, H*0.4);
-    for (const tr of this.trunksNear) drawTrunk(tr, mix(this.tok.inkDeep, bot, 0.10));
+    const nearCol = css(mix(this.tok.inkDeep, bot, 0.10));
+    for (const tr of this.trunksNear) drawTrunk(tr, nearCol);
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05));
     c.fillRect(0, H*0.93, W, H*0.07);
     this.drawFerns(c, W, H, bot);
@@ -829,10 +862,10 @@ class Scene {
   drawMushrooms(c, W, H, bot) {
     if (!this.mushrooms) return;
     c.lineCap = "round";
+    c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.24));   // stems share one colour
     for (const m of this.mushrooms) {
       const gx = m.x*W, gy = 0.945*H, r = m.size*Math.min(W, H);
       const stemH = m.tall ? r*2.4 : r*1.3;
-      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.24));
       c.lineWidth = Math.max(1.3, r*0.7);
       c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx, gy - stemH); c.stroke();
       const rgb = m.tone < 0.5 ? this.tok.amberRGB : this.tok.foamRGB;
@@ -1015,18 +1048,17 @@ class Scene {
     c.quadraticCurveTo(W*0.5, by - H*0.015, W, by);
     c.lineTo(W, H); c.closePath(); c.fill();
     const wa = this.windAmt();
+    const reedCol = css(mix(this.tok.inkDeep, bot, 0.10));
+    c.strokeStyle = reedCol; c.fillStyle = reedCol; c.lineWidth = 1.3;
     for (const r of this.reeds) {
       const rx = r.x * W;
       const sway = Math.sin(this.t*1.3 + r.ph) * 7 * wa * this.windWave(r.x) + r.lean*5;
       const topX = rx + sway, topY = by - r.h*H;
-      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.10));
-      c.lineWidth = 1.3;
       c.beginPath();
       c.moveTo(rx, by + 3);
       c.quadraticCurveTo(rx + sway*0.35, by - r.h*H*0.55, topX, topY);
       c.stroke();
       if (r.head) {
-        c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
         c.save();
         c.translate(topX, topY);
         c.rotate(sway * 0.01);
@@ -1087,16 +1119,14 @@ class Scene {
     c.fillRect(0, groundY, W, H - groundY);
     // street lamps warming the pavement after dark
     if (night > 0.2 && this.streetlamps) {
-      const fc = this.tok.firefly;
+      const fcs = this.tok.fireflyRGB;
+      const postCol = css(mix(this.tok.inkDeep, bot, 0.22));
       for (const L of this.streetlamps) {
         const lx = L.x*W, flick = 0.8 + 0.2*Math.sin(this.t*0.7 + L.ph);
-        const g = c.createRadialGradient(lx, groundY, 0, lx, groundY, 24);
-        g.addColorStop(0, `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.38*night*flick})`);
-        g.addColorStop(1, `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},0)`);
-        c.fillStyle = g; c.beginPath(); c.arc(lx, groundY, 24, 0, Math.PI*2); c.fill();
-        c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.22)); c.lineWidth = 1.4; c.lineCap = "round";
+        this.drawGlow(c, fcs, lx, groundY, 24, 24, 0.38*night*flick);
+        c.strokeStyle = postCol; c.lineWidth = 1.4; c.lineCap = "round";
         c.beginPath(); c.moveTo(lx, groundY + 2); c.lineTo(lx, groundY - 11); c.stroke();
-        c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.75*night*flick})`;
+        c.fillStyle = `rgba(${fcs},${0.75*night*flick})`;
         c.beginPath(); c.arc(lx, groundY - 12, 1.7, 0, Math.PI*2); c.fill();
       }
     }
@@ -2136,6 +2166,7 @@ class Scene {
   drawFireflies(c, W, H, dt, night) {
     const ffA = night * (state.weather === "rain" ? 0.15 : 1);
     if (ffA < 0.05 || !this.fireflies.length) return;
+    const rgb = this.tok.fireflyRGB;
     for (const ff of this.fireflies) {
       ff.x += (ff.dx + Math.sin(this.t*0.3 + ff.ph)*0.006) * dt;
       if (ff.x < 0) ff.x = 1; if (ff.x > 1) ff.x = 0;
@@ -2143,12 +2174,7 @@ class Scene {
       const a = blink*blink * 0.8 * ffA;
       if (a < 0.03) continue;
       const fx = ff.x*W, fy = ff.y*H + Math.sin(this.t*0.7+ff.ph)*5;
-      const fg = c.createRadialGradient(fx, fy, 0, fx, fy, 7);
-      const fc = this.tok.firefly;
-      fg.addColorStop(0, `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${a})`);
-      fg.addColorStop(1, `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},0)`);
-      c.fillStyle = fg;
-      c.beginPath(); c.arc(fx, fy, 7, 0, Math.PI*2); c.fill();
+      this.drawGlow(c, rgb, fx, fy, 7, 7, a);
     }
   }
 
