@@ -1909,37 +1909,54 @@ class Scene {
     }
   }
 
+  /* A filled tapered segment — width w0 at (x0,y0), w1 at (x1,y1) — so legs and
+     necks read as solid mass rather than wire. */
+  limb(c, x0, y0, x1, y1, w0, w1) {
+    const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1;
+    const nx = -dy/len*0.5, ny = dx/len*0.5;
+    c.beginPath();
+    c.moveTo(x0 + nx*w0, y0 + ny*w0);
+    c.lineTo(x1 + nx*w1, y1 + ny*w1);
+    c.lineTo(x1 - nx*w1, y1 - ny*w1);
+    c.lineTo(x0 - nx*w0, y0 - ny*w0);
+    c.closePath(); c.fill();
+  }
+
   paintDeer(c, o) {
     const s = o.s;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
-    c.fillStyle = o.color; c.strokeStyle = o.color;
-    c.lineWidth = Math.max(1.2, s*0.09); c.lineCap = "round";
-    c.beginPath(); c.ellipse(0, -s*0.78, s*0.72, s*0.32, 0, 0, Math.PI*2); c.fill();
-    const offs = [-0.5, -0.25, 0.28, 0.52];
-    c.beginPath();
+    c.fillStyle = o.color;
+    const by = -s*0.78;                       // body centre
+    // legs — filled tapers, behind the body
+    const legs = [-0.52, -0.3, 0.28, 0.5];
     for (let i = 0; i < 4; i++) {
-      const sw = o.walking ? Math.sin(o.lp + i*Math.PI)*0.12*s : 0;
-      c.moveTo(offs[i]*s*0.72*1.3, -s*0.55);
-      c.lineTo(offs[i]*s*0.72*1.3 + sw, 0);
+      const lx = legs[i]*s;
+      const sw = o.walking ? Math.sin(o.lp + i*Math.PI)*0.11*s : 0;
+      this.limb(c, lx, by + s*0.18, lx + sw, 0, s*0.16, s*0.05);
     }
-    c.stroke();
-    const nib = o.grazing ? Math.sin(o.t*7)*0.03*s : 0;
-    const hx = s*0.95, hy = -s*1.45 + o.head*s*1.35 + nib;
-    c.lineWidth = Math.max(1.6, s*0.15);
+    // body — arched back from overlapping fills (haunch, barrel, shoulder)
+    c.beginPath(); c.ellipse(0, by, s*0.72, s*0.33, 0, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(-s*0.52, by + s*0.02, s*0.31, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*0.5, by, s*0.27, 0, Math.PI*2); c.fill();
+    // short raised tail
     c.beginPath();
-    c.moveTo(s*0.62, -s*0.95);
-    c.lineTo(hx, hy);
-    c.stroke();
-    c.lineWidth = Math.max(1.2, s*0.09);
-    c.beginPath(); c.arc(hx + s*0.06, hy, s*0.13, 0, Math.PI*2); c.fill();
-    c.beginPath(); c.moveTo(hx + s*0.16, hy); c.lineTo(hx + s*0.34, hy + s*0.03); c.stroke();
+    c.moveTo(-s*0.74, by - s*0.04); c.lineTo(-s*0.92, by - s*0.22);
+    c.lineTo(-s*0.66, by + s*0.06); c.closePath(); c.fill();
+    // neck + head, lowering to graze
+    const nib = o.grazing ? Math.sin(o.t*7)*0.025*s : 0;
+    const hx = s*0.95, hy = -s*1.42 + o.head*s*1.32 + nib;
+    this.limb(c, s*0.55, by - s*0.06, hx, hy, s*0.3, s*0.15);
+    // head — a wedge muzzle that tips down to graze
+    c.save(); c.translate(hx, hy); c.rotate(o.head*0.95);
+    c.beginPath(); c.ellipse(s*0.15, 0, s*0.22, s*0.12, 0, 0, Math.PI*2); c.fill();
+    c.restore();
+    // upright ears
     c.beginPath();
-    c.moveTo(hx - s*0.02, hy - s*0.1); c.lineTo(hx - s*0.1, hy - s*0.28);
-    c.moveTo(hx + s*0.08, hy - s*0.1); c.lineTo(hx + s*0.14, hy - s*0.28);
-    c.stroke();
-    c.beginPath(); c.moveTo(-s*0.72, -s*0.9); c.lineTo(-s*0.88, -s*1.02); c.stroke();
+    c.ellipse(hx - s*0.03, hy - s*0.15, s*0.05, s*0.13, -0.4, 0, Math.PI*2);
+    c.ellipse(hx + s*0.11, hy - s*0.15, s*0.05, s*0.13, 0.05, 0, Math.PI*2);
+    c.fill();
     c.restore();
   }
 
@@ -1947,38 +1964,46 @@ class Scene {
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
-    c.fillStyle = o.color; c.strokeStyle = o.color;
-    c.lineWidth = 1.2; c.lineCap = "round";
+    c.fillStyle = o.color;
     const sway = Math.sin(o.t*2)*1.6;
     if (o.sit) {
-      c.beginPath(); c.ellipse(0, -4.2, 3.4, 4.2, 0, 0, Math.PI*2); c.fill();
-      c.beginPath(); c.arc(0.6, -9, 2.2, 0, Math.PI*2); c.fill();
+      // upright tail curling round, filled
       c.beginPath();
-      c.moveTo(-0.9, -10.6); c.lineTo(-1.5, -12.3); c.lineTo(0, -11);
-      c.moveTo(2.1, -10.6); c.lineTo(2.7, -12.3); c.lineTo(1.2, -11);
-      c.stroke();
+      c.moveTo(-2.6, -1);
+      c.quadraticCurveTo(-7 + sway*0.5, -2, -6.4 + sway, -6.5);
+      c.quadraticCurveTo(-5.2 + sway*0.5, -3, -1.6, -1.5);
+      c.closePath(); c.fill();
+      // haunches + upright body
+      c.beginPath(); c.ellipse(0, -3.6, 3.6, 4.4, 0, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(-1.4, -1.6, 3.4, 2, 0, 0, Math.PI*2); c.fill();
+      // head + ears
+      c.beginPath(); c.arc(0.8, -9.2, 2.4, 0, Math.PI*2); c.fill();
       c.beginPath();
-      c.moveTo(-3, -1);
-      c.quadraticCurveTo(-6.5, -2 + sway*0.4, -6, -6 + sway);
-      c.stroke();
+      c.moveTo(-1.1, -10.8); c.lineTo(-1.6, -12.8); c.lineTo(0.4, -11.2);
+      c.moveTo(1.4, -11); c.lineTo(2.9, -12.6); c.lineTo(2.8, -10.6);
+      c.closePath(); c.fill();
     } else {
-      c.beginPath(); c.ellipse(0, -3.2, 6, 2.8, 0, 0, Math.PI*2); c.fill();
-      c.beginPath(); c.arc(6.2, -4.8, 2.2, 0, Math.PI*2); c.fill();
+      // trailing tail, filled and curved up
       c.beginPath();
-      c.moveTo(5, -6.6); c.lineTo(4.6, -8.4); c.lineTo(6, -7.1);
-      c.moveTo(7.4, -6.6); c.lineTo(7.9, -8.4); c.lineTo(6.5, -7.1);
-      c.stroke();
-      c.beginPath();
+      c.moveTo(-5.4, -3.6);
+      c.quadraticCurveTo(-9.6 + sway, -6.5, -8 + sway, -10.8);
+      c.quadraticCurveTo(-8.8 + sway, -6, -4.6, -2.8);
+      c.closePath(); c.fill();
+      // legs — filled tapers
       for (let i = 0; i < 4; i++) {
-        const lx = -3.6 + i*2.4;
+        const lx = -3.6 + i*2.5;
         const sw2 = Math.sin(o.t*8 + i*Math.PI)*0.9;
-        c.moveTo(lx, -1); c.lineTo(lx + sw2, 0);
+        this.limb(c, lx, -2, lx + sw2, 0, 1.7, 0.9);
       }
-      c.stroke();
+      // sleek body + shoulder
+      c.beginPath(); c.ellipse(0, -3.4, 6, 2.7, 0, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.arc(4.8, -4, 2.4, 0, Math.PI*2); c.fill();
+      // head + ears
+      c.beginPath(); c.arc(6.4, -5.2, 2.3, 0, Math.PI*2); c.fill();
       c.beginPath();
-      c.moveTo(-5.8, -3.8);
-      c.quadraticCurveTo(-9.5, -7 + sway, -8, -10.5 + sway);
-      c.stroke();
+      c.moveTo(4.8, -6.8); c.lineTo(4.4, -8.8); c.lineTo(6.2, -7.2);
+      c.moveTo(7.2, -6.9); c.lineTo(8.1, -8.7); c.lineTo(8, -6.7);
+      c.closePath(); c.fill();
     }
     c.restore();
   }
@@ -1997,13 +2022,10 @@ class Scene {
     // head
     const hx = s*0.68, hy = -s*0.95 - (o.hop || 0)*s*0.12;
     c.beginPath(); c.arc(hx, hy, s*0.34, 0, Math.PI*2); c.fill();
-    // long ears, flicking
+    // long ears, flicking — filled tapers
     const ea = o.ear || 0;
-    c.lineWidth = Math.max(1.4, s*0.17);
-    c.beginPath();
-    c.moveTo(hx - s*0.08, hy - s*0.18); c.lineTo(hx - s*0.18 - ea*s*0.22, hy - s*0.92);
-    c.moveTo(hx + s*0.16, hy - s*0.16); c.lineTo(hx + s*0.24 + ea*s*0.18, hy - s*0.96);
-    c.stroke();
+    this.limb(c, hx - s*0.06, hy - s*0.12, hx - s*0.16 - ea*s*0.22, hy - s*0.92, s*0.17, s*0.09);
+    this.limb(c, hx + s*0.14, hy - s*0.1, hx + s*0.22 + ea*s*0.18, hy - s*0.96, s*0.17, s*0.09);
     // eye glint
     c.save(); c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
     c.beginPath(); c.arc(hx + s*0.14, hy - s*0.05, Math.max(0.7, s*0.07), 0, Math.PI*2); c.fill();
@@ -2021,38 +2043,34 @@ class Scene {
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
-    c.fillStyle = o.color; c.strokeStyle = o.color;
-    c.lineWidth = Math.max(1.2, s*0.1); c.lineCap = "round";
-    // legs, trotting
+    c.fillStyle = o.color;
+    // legs — filled tapers, trotting
     const off = [-0.5, -0.26, 0.32, 0.56];
-    c.beginPath();
     for (let i = 0; i < 4; i++) {
+      const lx = off[i]*s;
       const sw = o.walking ? Math.sin(o.lp + i*Math.PI)*0.14*s : 0;
-      c.moveTo(off[i]*s, -s*0.4); c.lineTo(off[i]*s + sw, 0);
+      this.limb(c, lx, -s*0.4, lx + sw, 0, s*0.15, s*0.05);
     }
-    c.stroke();
     // bushy tail
     c.beginPath();
     c.moveTo(-s*0.58, -s*0.5);
     c.quadraticCurveTo(-s*1.35, -s*0.42, -s*1.16, -s*1.02);
     c.quadraticCurveTo(-s*0.88, -s*0.52, -s*0.58, -s*0.55);
     c.closePath(); c.fill();
-    // sleek low body
-    c.beginPath(); c.ellipse(0, -s*0.55, s*0.76, s*0.3, 0, 0, Math.PI*2); c.fill();
-    // neck + head, turning to look when paused
-    const hx = s*0.74 + (o.look || 0)*s*0.05, hy = -s*0.86 - (o.look || 0)*s*0.05;
-    c.lineWidth = Math.max(1.6, s*0.2);
-    c.beginPath(); c.moveTo(s*0.48, -s*0.6); c.lineTo(hx, hy); c.stroke();
-    c.lineWidth = Math.max(1.2, s*0.1);
-    c.beginPath(); c.arc(hx, hy, s*0.19, 0, Math.PI*2); c.fill();
-    // snout
+    // sleek low body, longer than tall
+    c.beginPath(); c.ellipse(0, -s*0.52, s*0.84, s*0.27, 0, 0, Math.PI*2); c.fill();
+    // neck + head, held low and forward (turns to look when paused)
+    const hx = s*0.78 + (o.look || 0)*s*0.05, hy = -s*0.68 - (o.look || 0)*s*0.06;
+    this.limb(c, s*0.46, -s*0.56, hx, hy, s*0.32, s*0.2);
+    c.beginPath(); c.arc(hx, hy, s*0.2, 0, Math.PI*2); c.fill();
+    // pointed snout
     c.beginPath();
-    c.moveTo(hx + s*0.1, hy - s*0.02); c.lineTo(hx + s*0.44, hy + s*0.05);
-    c.lineTo(hx + s*0.1, hy + s*0.13); c.closePath(); c.fill();
-    // pricked ears
+    c.moveTo(hx + s*0.05, hy - s*0.08); c.lineTo(hx + s*0.52, hy + s*0.06);
+    c.lineTo(hx + s*0.08, hy + s*0.17); c.closePath(); c.fill();
+    // small pricked ears
     c.beginPath();
-    c.moveTo(hx - s*0.12, hy - s*0.12); c.lineTo(hx - s*0.2, hy - s*0.46); c.lineTo(hx + s*0.05, hy - s*0.2); c.closePath();
-    c.moveTo(hx + s*0.12, hy - s*0.14); c.lineTo(hx + s*0.16, hy - s*0.48); c.lineTo(hx + s*0.34, hy - s*0.18); c.closePath();
+    c.moveTo(hx - s*0.13, hy - s*0.1); c.lineTo(hx - s*0.17, hy - s*0.36); c.lineTo(hx + s*0.04, hy - s*0.16); c.closePath();
+    c.moveTo(hx + s*0.07, hy - s*0.12); c.lineTo(hx + s*0.11, hy - s*0.38); c.lineTo(hx + s*0.25, hy - s*0.14); c.closePath();
     c.fill();
     c.restore();
   }
@@ -2114,19 +2132,19 @@ class Scene {
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
-    c.fillStyle = o.color; c.strokeStyle = o.color;
-    c.lineCap = "round";
-    // the smooth curve of the back breaking the surface
-    c.lineWidth = Math.max(2, s*0.5);
+    c.fillStyle = o.color;
+    // the arched back breaking the surface, filled as a solid crescent
     c.beginPath();
-    c.moveTo(-s*0.95, s*0.2);
-    c.quadraticCurveTo(0, -s*0.55*a - s*0.12, s*0.95, s*0.2);
-    c.stroke();
+    c.moveTo(-s*1.02, s*0.24);
+    c.quadraticCurveTo(-s*0.5, -s*0.5*a - s*0.16, s*0.15, -s*0.55*a - s*0.14);
+    c.quadraticCurveTo(s*0.75, -s*0.5*a - s*0.06, s*1.02, s*0.22);
+    c.quadraticCurveTo(0, s*0.02, -s*1.02, s*0.24);
+    c.closePath(); c.fill();
     // dorsal fin
     c.beginPath();
-    c.moveTo(-s*0.08, -s*0.32*a - s*0.05);
-    c.lineTo(-s*0.34, -s*0.66*a - s*0.1);
-    c.lineTo(s*0.16, -s*0.28*a);
+    c.moveTo(-s*0.06, -s*0.34*a - s*0.06);
+    c.lineTo(-s*0.36, -s*0.72*a - s*0.12);
+    c.lineTo(s*0.2, -s*0.3*a);
     c.closePath(); c.fill();
     c.restore();
   }
