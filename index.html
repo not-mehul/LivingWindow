@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Living Window</title>
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="glow-layer" aria-hidden="true">
+  <div class="glow glow-1"></div>
+  <div class="glow glow-2"></div>
+  <div class="glow glow-3"></div>
+</div>
+
+<div class="container">
+
+  <header>
+    <div class="header-row">
+      <div class="eyebrow">Field Station · Session <span class="session-no" id="sessionNo">No. ————</span></div>
+      <button class="btn-square" id="settingsBtn" aria-haspopup="dialog" aria-label="Open settings">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+    <h1>The Living <em>Window</em></h1>
+    <p class="tagline">An open casement onto a small wild place. The land composes itself — no two hours are alike, and none will come again.</p>
+  </header>
+
+  <div class="window-frame" id="windowFrame">
+    <div class="window-inner">
+      <canvas id="scene"></canvas>
+
+      <div class="window-tools">
+        <button class="icon-btn" id="diceBtn" aria-label="Somewhere else — a place at random" title="Somewhere else">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+        </button>
+        <button class="icon-btn" id="fsBtn" aria-label="View fullscreen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+        </button>
+      </div>
+
+      <div class="caption" aria-live="polite">
+        <div class="caption-card" id="captionCard">
+          <div class="caption-species"><span class="cap-icon" id="capIcon"></span><span id="capName">—</span> <span class="latin" id="capLatin"></span></div>
+          <div class="caption-desc" id="capDesc"></div>
+          <div class="caption-dir" id="capDir"></div>
+        </div>
+      </div>
+
+      <div class="begin-overlay" id="beginOverlay">
+        <div class="begin-card">
+          <div class="begin-title">Open the window</div>
+          <p class="begin-note">Sound begins when you do. Headphones recommended — the land is spatial.</p>
+          <button class="btn-primary" id="beginBtn">Begin listening</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="actions-row">
+    <button class="btn-primary" id="pauseBtn" disabled>Pause</button>
+    <button class="btn-muted" id="reseedBtn">New session</button>
+  </div>
+
+  <section class="notes-section">
+    <div class="section-label">Field Notes — recent calls</div>
+    <div class="notes-panel" id="notesPanel">
+      <div class="notes-empty" id="notesEmpty">Nothing yet. The land is holding its breath.</div>
+    </div>
+  </section>
+
+  <footer>
+    <div><span class="term">Generative.</span> Every voice is synthesized in real time from a fresh seed. No recording, no loop — no session resembles the last.</div>
+    <div><span class="term">Faithful.</span> Each place keeps its own company: the blackbird's fluted phrases in the meadow, the curlew's rising cry over the shore, swifts screaming down a city street. Nothing sings where it would not live.</div>
+    <div><span class="term">Peopled.</span> Watch long enough and the land shows you more — a deer at the forest edge, sanderlings chasing the foam, a cat crossing the rooftops at midnight.</div>
+    <div><span class="term">Unhurried.</span> Voices take turns, as they do. Silence is part of the score.</div>
+    <div><span class="term">Private.</span> Everything runs in your browser. Nothing is sent anywhere.</div>
+  </footer>
+
+</div>
+
+<!-- Settings -->
+<div class="settings-overlay hidden" id="settingsOverlay">
+  <div class="settings-card" role="dialog" aria-modal="true" aria-label="Settings">
+    <div class="settings-head">
+      <div class="section-label">The Casement — Conditions</div>
+      <button class="icon-btn" id="settingsClose" aria-label="Close settings">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <div class="switch-row">
+      <div>
+        <div class="switch-name">Appearance</div>
+        <div class="switch-hint">Dusk or Dawn — the room around the window.</div>
+      </div>
+      <button class="theme-switch" id="themeSwitch" role="switch" aria-checked="false" aria-label="Switch to light theme">
+        <span class="icon" id="iconMoon" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </span>
+        <span class="icon" id="iconSun" aria-hidden="true">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+        </span>
+        <span class="knob"></span>
+      </button>
+    </div>
+
+    <hr class="settings-divider">
+
+    <div class="controls-grid">
+      <div class="control-group wide">
+        <span class="field-label">Place</span>
+        <div class="segmented" role="group" aria-label="Place" id="placeSeg">
+          <button data-val="meadow" class="active">Meadow</button>
+          <button data-val="forest">Forest</button>
+          <button data-val="beach">Shore</button>
+          <button data-val="wetland">Wetland</button>
+          <button data-val="city">City</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="field-label">Hour</span>
+        <div class="segmented" role="group" aria-label="Time of day" id="timeSeg">
+          <button data-val="dawn" class="active">Dawn</button>
+          <button data-val="day">Day</button>
+          <button data-val="dusk">Dusk</button>
+          <button data-val="night">Night</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="field-label">Weather</span>
+        <div class="segmented" role="group" aria-label="Weather" id="weatherSeg">
+          <button data-val="clear" class="active">Clear</button>
+          <button data-val="breeze">Breeze</button>
+          <button data-val="rain">Rain</button>
+          <button data-val="fog">Fog</button>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="field-label">Life — density of voices</span>
+        <div class="slider-row">
+          <input type="range" id="activitySlider" min="0" max="100" value="45" aria-label="Density of voices">
+          <span class="slider-val" id="activityVal">45</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <span class="field-label">Loudness</span>
+        <div class="slider-row">
+          <input type="range" id="volumeSlider" min="0" max="100" value="75" aria-label="Loudness">
+          <span class="slider-val" id="volumeVal">75</span>
+        </div>
+      </div>
+
+      <div class="control-group wide">
+        <span class="field-label">Listening</span>
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Spatial audio</div>
+            <div class="switch-hint">Binaural placement of each voice. Best with headphones.</div>
+          </div>
+          <button class="mini-switch" id="spatialSwitch" role="switch" aria-checked="true" aria-label="Spatial audio"><span class="knob"></span></button>
+        </div>
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Subtitles</div>
+            <div class="switch-hint">Names each call as it happens, and where it came from.</div>
+          </div>
+          <button class="mini-switch" id="subsSwitch" role="switch" aria-checked="true" aria-label="Subtitles"><span class="knob"></span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
