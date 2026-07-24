@@ -44,15 +44,21 @@ function speciesIcon(sp, size) {
     + 'aria-hidden="true">' + inner + '</svg>';
 }
 
-/* Perched-bird styling per species (used by the scene) */
+/* Perched-bird styling per species (used by the scene): body proportions plus
+   the field marks that let an etched silhouette read as its species at a
+   glance — a robin's warm bib, a magpie's white scapulars, a tit's dark cap. */
 const PSTYLE = {
-  blackbird: {}, robin: { sc: 0.9 }, greattit: { sc: 0.85 },
-  chiffchaff: { sc: 0.82 }, wren: { sc: 0.72, tailUp: true, tail: 0.9 },
-  sparrow: { sc: 0.85 }, reedwarbler: { sc: 0.85 },
-  woodpigeon: { plump: 1.3, bill: 0.35, sc: 1.1 },
-  feralpigeon: { plump: 1.3, bill: 0.35, sc: 1.05 },
-  crow: { sc: 1.2, bill: 0.7, plump: 1.05 },
-  magpie: { sc: 1.05, tail: 1.9 }
+  blackbird: { bill: 0.5, tail: 1.3, billTone: "amber", eyeRing: true },
+  robin: { sc: 0.9, bill: 0.38, plump: 1.08, breast: true },
+  greattit: { sc: 0.85, bill: 0.34, cap: true, cheek: true, bib: true, wingbar: true },
+  chiffchaff: { sc: 0.82, bill: 0.36, brow: true },
+  wren: { sc: 0.72, tailUp: true, tail: 0.72, bill: 0.42, plump: 1.12, barring: true },
+  sparrow: { sc: 0.85, bill: 0.42, plump: 1.06, cap: true, bib: true, wingbar: true },
+  reedwarbler: { sc: 0.85, bill: 0.48, brow: true },
+  woodpigeon: { plump: 1.35, bill: 0.3, sc: 1.12, smallHead: true, neckPatch: true },
+  feralpigeon: { plump: 1.3, bill: 0.3, sc: 1.05, smallHead: true, sheen: true, wingbar: true },
+  crow: { sc: 1.2, bill: 0.72, plump: 1.05, billDeep: true, gloss: true, tail: 1.35 },
+  magpie: { sc: 1.05, tail: 2.4, bill: 0.5, billDeep: true, shoulder: true, gloss: true }
 };
 
 /* Synth primitives — the building blocks of every voice. */
