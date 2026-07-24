@@ -15,11 +15,20 @@ class AudioEngine {
     this.emit = emit;     // callback(species, az, depth, dur) — raises a subtitle
     this.ac = null;
     this.running = false;
-    this.timers = [];
+    this.timers = new Set();  // pending one-shot timers, self-pruning
+    this.gen = 0;             // scheduler generation; bumped to stop old loops
     this.quietUntil = 0;
     this.activeVoices = 0;   // live synthesized calls, capped for a calm mix
     this.maxVoices = 6;
     this.rng = mulberry32((state.seed ^ 0xA0D10) >>> 0);
+  }
+
+  /* A one-shot timer that removes itself from the pending set when it fires,
+     so the set can never grow without bound during a long session. */
+  once(fn, ms) {
+    const id = setTimeout(() => { this.timers.delete(id); fn(); }, ms);
+    this.timers.add(id);
+    return id;
   }
 
   softBuffer(dur) {
@@ -86,12 +95,22 @@ class AudioEngine {
       this.aeolianFilters.push(f); this.aeolianStrings.push(g);
     }
 
-    // rain bed
-    this.rainGain = ac.createGain(); this.rainGain.gain.value = 0;
-    const rbp = ac.createBiquadFilter(); rbp.type = "bandpass";
-    rbp.frequency.value = 2400; rbp.Q.value = 0.4;
-    this.loopNoise().connect(rbp); rbp.connect(this.rainGain);
+    // rain bed — a full, smooth wash carries the sound (no per-drop scheduling):
+    // a bright hiss over a low body, gently breathing via a slow LFO.
+    this.rainGain = ac.createGain(); this.rainGain.gain.value = 0;   // on/off gate
+    const rainMod = ac.createGain(); rainMod.gain.value = 1;         // slow breathing
+    const rSrc = this.loopNoise();
+    const rHiss = ac.createBiquadFilter(); rHiss.type = "bandpass";
+    rHiss.frequency.value = 2600; rHiss.Q.value = 0.5;
+    const rBody = ac.createBiquadFilter(); rBody.type = "lowpass"; rBody.frequency.value = 700;
+    const rBodyGain = ac.createGain(); rBodyGain.gain.value = 0.55;
+    rSrc.connect(rHiss); rHiss.connect(rainMod);
+    rSrc.connect(rBody); rBody.connect(rBodyGain); rBodyGain.connect(rainMod);
+    rainMod.connect(this.rainGain);
     this.rainGain.connect(this.master);
+    const rLfo = ac.createOscillator(); rLfo.frequency.value = 0.13;
+    const rLfoGain = ac.createGain(); rLfoGain.gain.value = 0.16;
+    rLfo.connect(rLfoGain); rLfoGain.connect(rainMod.gain); rLfo.start();
 
     // leaf-rustle bed
     this.leavesGain = ac.createGain(); this.leavesGain.gain.value = 0;
@@ -247,24 +266,24 @@ class AudioEngine {
     const enter = noActor ? 0 : 0.9 + r()*0.9;
     const dur = sp.synth(ac, pan.node, ac.currentTime + 0.02 + enter, r) || 1;
     this.activeVoices++;
-    this.timers.push(setTimeout(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
-      (enter + dur + 0.3) * 1000));
+    this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
+      (enter + dur + 0.3) * 1000);
     this.scene.spawnForCall(sp, x01, y01, depth, dur, enter, perchType);
     const announce = () => {
       if (!this.running) return;
       this.scene.addRipple(x01, y01, sp.tone);
       this.emit(sp, az, depth, dur);
     };
-    if (enter > 0) this.timers.push(setTimeout(announce, enter * 1000));
+    if (enter > 0) this.once(announce, enter * 1000);
     else announce();
     return dur + enter;
   }
 
-  startSchedulers() {
+  startSchedulers(gen) {
     this.quietUntil = 0;
     for (const sp of SPECIES) {
       const loop = () => {
-        if (!this.running) return;
+        if (!this.running || gen !== this.gen) return;
         const w = sp.weights[state.time] || 0;
         const habOK = sp.habitats.includes(state.location);
         const hw = habOK ? ((sp.hw && sp.hw[state.location] !== undefined) ? sp.hw[state.location] : 1) : 0;
@@ -283,57 +302,62 @@ class AudioEngine {
             wait = Math.max(wait, 6000);
           }
         }
-        this.timers.push(setTimeout(loop, wait));
+        setTimeout(loop, wait);
       };
-      this.timers.push(setTimeout(loop, 1200 + this.rng() * sp.base * 600));
+      setTimeout(loop, 1200 + this.rng() * sp.base * 600);
     }
   }
 
-  startGusts() {
+  startGusts(gen) {
     const gust = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       this.set(this.windGain.gain, this.windBase * (0.55 + this.rng()*0.95), 1.6);
-      this.timers.push(setTimeout(gust, 4000 + this.rng()*5500));
+      setTimeout(gust, 4000 + this.rng()*5500);
     };
-    this.timers.push(setTimeout(gust, 2500));
+    setTimeout(gust, 2500);
   }
 
-  startSwells() {
+  startSwells(gen) {
     const swell = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       const g = this.aeolianStrings[Math.floor(this.rng()*this.aeolianStrings.length)];
       this.set(g.gain, 0.04 + this.rng()*0.24, 2.2);
-      this.timers.push(setTimeout(swell, 3000 + this.rng()*4500));
+      setTimeout(swell, 3000 + this.rng()*4500);
     };
-    this.timers.push(setTimeout(swell, 2000));
+    setTimeout(swell, 2000);
   }
 
-  startFlyerScheduler() {
+  startFlyerScheduler(gen) {
     const fly = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       if (this.rng() < 0.5 && !REDUCED) this.scene.addFlyer(this.rng() < 0.5 ? 1 : -1);
-      this.timers.push(setTimeout(fly, 12000 + this.rng()*20000));
+      setTimeout(fly, 12000 + this.rng()*20000);
     };
-    this.timers.push(setTimeout(fly, 6000 + this.rng()*8000));
+    setTimeout(fly, 6000 + this.rng()*8000);
   }
 
-  startDropletScheduler() {
+  startDropletScheduler(gen) {
+    // The rain bed does the heavy lifting; these are just occasional, softly
+    // scheduled drops for texture — sparse enough never to churn the mix.
     const drop = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       if (state.weather === "rain" && this.ac) {
-        const pan = this.makeCheapPan((this.rng()*2 - 1)*0.95, 2 + this.rng()*5);
-        pan.out.connect(this.master);
-        burst(this.ac, pan.node, this.ac.currentTime + 0.01,
-          2800 + this.rng()*4200, 9, 0.03, 0.011);
+        const n = 1 + Math.floor(this.rng()*2);
+        for (let k = 0; k < n; k++) {
+          const pan = this.makeCheapPan((this.rng()*2 - 1)*0.9, 3 + this.rng()*6);
+          pan.out.connect(this.master);
+          burst(this.ac, pan.node, this.ac.currentTime + 0.07 + k*0.04,
+            1800 + this.rng()*2600, 3, 0.04, 0.007);
+        }
       }
-      this.timers.push(setTimeout(drop, 130 + this.rng()*430));
+      setTimeout(drop, 700 + this.rng()*1100);
     };
-    this.timers.push(setTimeout(drop, 500));
+    setTimeout(drop, 800);
   }
 
-  startWaveScheduler() {
+  startWaveScheduler(gen) {
     const wave = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       if (state.location === "beach" && this.ac) {
         const t = this.ac.currentTime;
         const big = 0.6 + this.rng()*0.9;                 // how large this wave is
@@ -366,18 +390,18 @@ class AudioEngine {
         fff.setValueAtTime(1700, t);
         fff.linearRampToValueAtTime(850, crest + 1.6);    // foam settles lower as it recedes
 
-        this.timers.push(setTimeout(() => this.scene.foamPulse(), (crest - t + 0.12)*1000));
-        this.timers.push(setTimeout(wave, dur * 1000 * (0.7 + this.rng()*0.4)));
+        this.once(() => this.scene.foamPulse(), (crest - t + 0.12)*1000);
+        setTimeout(wave, dur * 1000 * (0.7 + this.rng()*0.4));
       } else {
-        this.timers.push(setTimeout(wave, 5000));
+        setTimeout(wave, 5000);
       }
     };
-    this.timers.push(setTimeout(wave, 1500));
+    setTimeout(wave, 1500);
   }
 
-  startLapScheduler() {
+  startLapScheduler(gen) {
     const lap = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       if (state.location === "wetland" && this.ac) {
         const az = (this.rng()*2 - 1) * 0.8;
         if (this.rng() < 0.22) {
@@ -393,14 +417,14 @@ class AudioEngine {
             480 + this.rng()*320, 1.2, 0.25, 0.013);
         }
       }
-      this.timers.push(setTimeout(lap, 2500 + this.rng()*5500));
+      setTimeout(lap, 2500 + this.rng()*5500);
     };
-    this.timers.push(setTimeout(lap, 3000));
+    setTimeout(lap, 3000);
   }
 
-  startCarScheduler() {
+  startCarScheduler(gen) {
     const car = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       if (state.location === "city" && this.ac && this.rng() < 0.75) {
         const ac = this.ac;
         const src = this.loopNoise();
@@ -417,20 +441,20 @@ class AudioEngine {
         }
         g.gain.exponentialRampToValueAtTime(0.028, t + dur*0.45);
         g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-        this.timers.push(setTimeout(() => { try { src.stop(); } catch(e) {} }, (dur + 0.5)*1000));
+        this.once(() => { try { src.stop(); } catch(e) {} }, (dur + 0.5)*1000);
       }
-      this.timers.push(setTimeout(car, 18000 + this.rng()*35000));
+      setTimeout(car, 18000 + this.rng()*35000);
     };
-    this.timers.push(setTimeout(car, 8000 + this.rng()*10000));
+    setTimeout(car, 8000 + this.rng()*10000);
   }
 
-  startBellScheduler() {
+  startBellScheduler(gen) {
     const bell = () => {
-      if (!this.running) return;
+      if (!this.running || gen !== this.gen) return;
       if (state.location === "city" && this.ac && this.rng() < 0.65) this.playBell();
-      this.timers.push(setTimeout(bell, 70000 + this.rng()*110000));
+      setTimeout(bell, 70000 + this.rng()*110000);
     };
-    this.timers.push(setTimeout(bell, 20000 + this.rng()*40000));
+    setTimeout(bell, 20000 + this.rng()*40000);
   }
 
   playBell() {
@@ -461,20 +485,22 @@ class AudioEngine {
 
   clearTimers() {
     for (const t of this.timers) clearTimeout(t);
-    this.timers = [];
+    this.timers.clear();
   }
 
   resumeSchedulers() {
     this.activeVoices = 0;   // a paused engine clears its in-flight voice timers
-    this.startGusts(); this.startSwells();
-    this.startSchedulers();
-    this.startFlyerScheduler(); this.startDropletScheduler();
-    this.startWaveScheduler(); this.startLapScheduler();
-    this.startCarScheduler(); this.startBellScheduler();
+    const gen = ++this.gen;  // stamp this run; older scheduler loops self-stop
+    this.startGusts(gen); this.startSwells(gen);
+    this.startSchedulers(gen);
+    this.startFlyerScheduler(gen); this.startDropletScheduler(gen);
+    this.startWaveScheduler(gen); this.startLapScheduler(gen);
+    this.startCarScheduler(gen); this.startBellScheduler(gen);
   }
 
   pause() {
     this.running = false;
+    this.gen++;              // halt every recurring scheduler loop
     this.clearTimers();
     if (this.ac) this.ac.suspend();
   }
