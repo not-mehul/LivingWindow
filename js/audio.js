@@ -53,6 +53,42 @@ class AudioEngine {
     return src;
   }
 
+  /* Render one long segment of rain once, up front, so it can simply be looped.
+     Rain is stationary enough that a loop is indistinguishable from live
+     synthesis — and a single looping buffer costs the audio thread almost
+     nothing, so it can never stutter. Shaped noise (low body + broadband
+     hiss) with a gentle, seamless breathing baked in, and the ends
+     cross-faded so the wrap is inaudible. */
+  makeRainLoop(seconds) {
+    const ac = this.ac, fs = ac.sampleRate;
+    const N = Math.floor(fs * seconds);
+    const F = Math.floor(fs * 0.05);          // 50 ms cross-fade
+    const M = N + F;
+    const tmp = new Float32Array(M);
+    const aLow = 1 - Math.exp(-2*Math.PI*1000/fs);   // split point ~1 kHz
+    let low = 0;
+    const twoPiOverN = 2*Math.PI / N;
+    for (let i = 0; i < M; i++) {
+      const w = Math.random()*2 - 1;
+      low += aLow*(w - low);
+      const high = w - low;
+      const ph = twoPiOverN * (i % N);               // periodic over N → seamless
+      const mod = 1 + 0.16*Math.sin(ph*2) + 0.10*Math.sin(ph*5 + 1.3);
+      tmp[i] = (low*1.5 + high*0.6) * mod;
+    }
+    let peak = 1e-6;
+    for (let i = 0; i < M; i++) { const a = Math.abs(tmp[i]); if (a > peak) peak = a; }
+    const norm = 0.9 / peak;
+    const buf = ac.createBuffer(1, N, fs);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < N; i++) d[i] = tmp[i] * norm;
+    for (let i = 0; i < F; i++) {                     // blend the extra tail into the head
+      const fin = i/F;
+      d[i] = (tmp[i]*fin + tmp[N + i]*(1 - fin)) * norm;
+    }
+    return buf;
+  }
+
   async start() {
     const AC = window.AudioContext || window.webkitAudioContext;
     this.ac = new AC();
@@ -95,22 +131,16 @@ class AudioEngine {
       this.aeolianFilters.push(f); this.aeolianStrings.push(g);
     }
 
-    // rain bed — a full, smooth wash carries the sound (no per-drop scheduling):
-    // a bright hiss over a low body, gently breathing via a slow LFO.
-    this.rainGain = ac.createGain(); this.rainGain.gain.value = 0;   // on/off gate
-    const rainMod = ac.createGain(); rainMod.gain.value = 1;         // slow breathing
-    const rSrc = this.loopNoise();
-    const rHiss = ac.createBiquadFilter(); rHiss.type = "bandpass";
-    rHiss.frequency.value = 2600; rHiss.Q.value = 0.5;
-    const rBody = ac.createBiquadFilter(); rBody.type = "lowpass"; rBody.frequency.value = 700;
-    const rBodyGain = ac.createGain(); rBodyGain.gain.value = 0.55;
-    rSrc.connect(rHiss); rHiss.connect(rainMod);
-    rSrc.connect(rBody); rBody.connect(rBodyGain); rBodyGain.connect(rainMod);
-    rainMod.connect(this.rainGain);
+    // rain bed — a single pre-rendered loop, gated on/off. No live filtering
+    // and no per-drop scheduling, so the audio thread has nothing to do here
+    // beyond reading samples: it cannot stutter.
+    this.rainGain = ac.createGain(); this.rainGain.gain.value = 0;
+    const rainSrc = ac.createBufferSource();
+    rainSrc.buffer = this.makeRainLoop(11);
+    rainSrc.loop = true;
+    rainSrc.connect(this.rainGain);
     this.rainGain.connect(this.master);
-    const rLfo = ac.createOscillator(); rLfo.frequency.value = 0.13;
-    const rLfoGain = ac.createGain(); rLfoGain.gain.value = 0.16;
-    rLfo.connect(rLfoGain); rLfoGain.connect(rainMod.gain); rLfo.start();
+    rainSrc.start();
 
     // leaf-rustle bed
     this.leavesGain = ac.createGain(); this.leavesGain.gain.value = 0;
@@ -161,7 +191,7 @@ class AudioEngine {
     const locAeo = { meadow: 1, forest: 0.55, beach: 0.7, wetland: 0.8, city: 0.3 };
     this.aeoBase = aeoT[w] * locAeo[L] * 0.16;
     this.set(this.aeoGain.gain, this.aeoBase, 2);
-    this.set(this.rainGain.gain, w === "rain" ? 0.20 : 0);
+    this.set(this.rainGain.gain, w === "rain" ? 0.16 : 0);
     // Leaf hiss follows the wind: a still, clear day in the wood is quiet.
     const leafBase = L === "forest" ? 0.10 : L === "wetland" ? 0.05 : 0;
     const leafWeather = { clear: 0.4, breeze: 1.7, rain: 1.1, fog: 0.7 }[w] || 1;
@@ -221,8 +251,8 @@ class AudioEngine {
     return { node: lp, out: sp };
   }
 
-  /* A lightweight panner (stereo only, no HRTF) for the many small percussive
-     sounds — droplets, water laps — so they never overload the audio thread. */
+  /* A lightweight panner (stereo only, no HRTF) for small percussive sounds
+     like the water laps, so they never overload the audio thread. */
   makeCheapPan(az, depth) {
     const ac = this.ac;
     const g = ac.createGain();
@@ -334,25 +364,6 @@ class AudioEngine {
       setTimeout(fly, 12000 + this.rng()*20000);
     };
     setTimeout(fly, 6000 + this.rng()*8000);
-  }
-
-  startDropletScheduler(gen) {
-    // The rain bed does the heavy lifting; these are just occasional, softly
-    // scheduled drops for texture — sparse enough never to churn the mix.
-    const drop = () => {
-      if (!this.running || gen !== this.gen) return;
-      if (state.weather === "rain" && this.ac) {
-        const n = 1 + Math.floor(this.rng()*2);
-        for (let k = 0; k < n; k++) {
-          const pan = this.makeCheapPan((this.rng()*2 - 1)*0.9, 3 + this.rng()*6);
-          pan.out.connect(this.master);
-          burst(this.ac, pan.node, this.ac.currentTime + 0.07 + k*0.04,
-            1800 + this.rng()*2600, 3, 0.04, 0.007);
-        }
-      }
-      setTimeout(drop, 700 + this.rng()*1100);
-    };
-    setTimeout(drop, 800);
   }
 
   startWaveScheduler(gen) {
@@ -493,7 +504,7 @@ class AudioEngine {
     const gen = ++this.gen;  // stamp this run; older scheduler loops self-stop
     this.startGusts(gen); this.startSwells(gen);
     this.startSchedulers(gen);
-    this.startFlyerScheduler(gen); this.startDropletScheduler(gen);
+    this.startFlyerScheduler(gen);
     this.startWaveScheduler(gen); this.startLapScheduler(gen);
     this.startCarScheduler(gen); this.startBellScheduler(gen);
   }
