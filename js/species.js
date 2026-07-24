@@ -68,12 +68,24 @@ function note(ac, dest, t, f0, f1, dur, peak, type) {
   o.connect(g); g.connect(dest);
   o.start(t); o.stop(t + dur + 0.05);
 }
+/* One noise buffer, reused for every burst — allocating a fresh buffer per call
+   (there can be many per second in rain) is what makes the soundscape stutter. */
+let _noiseBuf = null;
+function sharedNoise(ac) {
+  if (!_noiseBuf || _noiseBuf.sampleRate !== ac.sampleRate) {
+    const len = Math.floor(ac.sampleRate * 1.5);
+    _noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+    const d = _noiseBuf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random()*2 - 1;
+  }
+  return _noiseBuf;
+}
 function burst(ac, dest, t, freq, q, dur, peak) {
   const len = Math.max(0.05, dur + 0.05);
-  const buf = ac.createBuffer(1, ac.sampleRate * len, ac.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random()*2 - 1;
-  const src = ac.createBufferSource(); src.buffer = buf;
+  const buf = sharedNoise(ac);
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const offset = Math.random() * Math.max(0, buf.duration - len - 0.01);
   const bp = ac.createBiquadFilter();
   bp.type = "bandpass"; bp.frequency.value = freq; bp.Q.value = q;
   const g = ac.createGain();
@@ -81,7 +93,7 @@ function burst(ac, dest, t, freq, q, dur, peak) {
   g.gain.exponentialRampToValueAtTime(peak, t + 0.008);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   src.connect(bp); bp.connect(g); g.connect(dest);
-  src.start(t); src.stop(t + len);
+  src.start(t, offset, len); src.stop(t + len + 0.02);
 }
 
 /* The species catalogue.

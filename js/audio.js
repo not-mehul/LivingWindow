@@ -17,6 +17,8 @@ class AudioEngine {
     this.running = false;
     this.timers = [];
     this.quietUntil = 0;
+    this.activeVoices = 0;   // live synthesized calls, capped for a calm mix
+    this.maxVoices = 6;
     this.rng = mulberry32((state.seed ^ 0xA0D10) >>> 0);
   }
 
@@ -200,8 +202,23 @@ class AudioEngine {
     return { node: lp, out: sp };
   }
 
+  /* A lightweight panner (stereo only, no HRTF) for the many small percussive
+     sounds — droplets, water laps — so they never overload the audio thread. */
+  makeCheapPan(az, depth) {
+    const ac = this.ac;
+    const g = ac.createGain();
+    g.gain.value = Math.max(0.2, Math.min(1, 5 / (3.2 + depth)));
+    const sp = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
+    if (sp.pan) sp.pan.value = Math.max(-1, Math.min(1, az * 0.8));
+    g.connect(sp);
+    return { node: g, out: sp };
+  }
+
   performCall(sp) {
     const ac = this.ac, r = this.rng;
+    // Hold a calm ceiling on how many voices sound at once — the surest guard
+    // against the mix stuttering when the land gets busy.
+    if (this.activeVoices >= this.maxVoices) return 0.5;
     let x01, y01, depth, perchType = null;
     if (sp.layer === "perch" && this.scene.perches && this.scene.perches.length) {
       const p = this.scene.perches[Math.floor(r()*this.scene.perches.length)];
@@ -229,6 +246,9 @@ class AudioEngine {
                     sp.id === "curlew" || sp.id === "rooster";
     const enter = noActor ? 0 : 0.9 + r()*0.9;
     const dur = sp.synth(ac, pan.node, ac.currentTime + 0.02 + enter, r) || 1;
+    this.activeVoices++;
+    this.timers.push(setTimeout(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
+      (enter + dur + 0.3) * 1000));
     this.scene.spawnForCall(sp, x01, y01, depth, dur, enter, perchType);
     const announce = () => {
       if (!this.running) return;
@@ -301,12 +321,12 @@ class AudioEngine {
     const drop = () => {
       if (!this.running) return;
       if (state.weather === "rain" && this.ac) {
-        const pan = this.makePanner((this.rng()*2 - 1)*0.95, 0, 2 + this.rng()*5);
+        const pan = this.makeCheapPan((this.rng()*2 - 1)*0.95, 2 + this.rng()*5);
         pan.out.connect(this.master);
         burst(this.ac, pan.node, this.ac.currentTime + 0.01,
           2800 + this.rng()*4200, 9, 0.03, 0.011);
       }
-      this.timers.push(setTimeout(drop, 90 + this.rng()*380));
+      this.timers.push(setTimeout(drop, 130 + this.rng()*430));
     };
     this.timers.push(setTimeout(drop, 500));
   }
@@ -361,13 +381,13 @@ class AudioEngine {
       if (state.location === "wetland" && this.ac) {
         const az = (this.rng()*2 - 1) * 0.8;
         if (this.rng() < 0.22) {
-          const pan = this.makePanner(az, 0, 4 + this.rng()*6);
+          const pan = this.makeCheapPan(az, 4 + this.rng()*6);
           pan.out.connect(this.master);
           note(this.ac, pan.node, this.ac.currentTime + 0.02,
             290 + this.rng()*160, 90, 0.09, 0.045);
           this.scene.fishRise((az/0.8 + 1) / 2);
         } else {
-          const pan = this.makePanner(az, 0, 3 + this.rng()*5);
+          const pan = this.makeCheapPan(az, 3 + this.rng()*5);
           pan.out.connect(this.master);
           burst(this.ac, pan.node, this.ac.currentTime + 0.02,
             480 + this.rng()*320, 1.2, 0.25, 0.013);
@@ -445,6 +465,7 @@ class AudioEngine {
   }
 
   resumeSchedulers() {
+    this.activeVoices = 0;   // a paused engine clears its in-flight voice timers
     this.startGusts(); this.startSwells();
     this.startSchedulers();
     this.startFlyerScheduler(); this.startDropletScheduler();

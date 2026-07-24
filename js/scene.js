@@ -1161,15 +1161,28 @@ class Scene {
       const sungEnd = a.singAt + a.dur;
 
       if (!a.leave && a.t > sungEnd + a.linger) {
-        if (a.beh === "perch" && Math.random() < 0.7) {
-          this.flyers.push({ kind: "bird", x: a.x, y: a.y, age: 0,
-            vx: (a.flip ? -1 : 1) * (0.03 + Math.random()*0.02),
-            ph: Math.random()*6, size: Math.max(2.5, a.s*0.35) });
-          this.actors.splice(i, 1); continue;
+        if (a.beh === "perch") {
+          a.leave = "fly"; a.leaveT = 0;
+          a.flyDir = a.flip ? -1 : 1;
+          a.launchX = a.x; a.launchY = a.y;
+        } else {
+          a.leave = "fade";
         }
-        a.leave = "fade";
       }
-      if (a.leave === "fade") {
+      if (a.leave === "fly") {
+        // A real departure: gather, spring, then climb away on beating wings.
+        a.leaveT += dt;
+        const crouch = 0.16;
+        if (a.leaveT < crouch) {
+          a.y = a.launchY + (a.s/H)*0.16*(a.leaveT/crouch);
+        } else {
+          const ft = a.leaveT - crouch;
+          a.y = a.launchY - (a.s/H)*0.16 - (0.05*ft + 0.05*ft*ft);
+          a.x = a.launchX + a.flyDir*(0.05*ft + 0.03*ft*ft);
+          a.alpha = Math.max(0, 1 - ft*0.72);
+        }
+        if (a.alpha <= 0.02 || a.y < -0.12 || a.x < -0.14 || a.x > 1.14) { this.actors.splice(i, 1); continue; }
+      } else if (a.leave === "fade") {
         a.alpha -= dt * 1.3;
         a.x += (a.flip ? 1 : -1) * 0.012 * dt;         // drift off rather than dissolve in place
         if (a.alpha <= 0) { this.actors.splice(i, 1); continue; }
@@ -1195,17 +1208,24 @@ class Scene {
       const wingSettle = Math.max(0, 1 - settled/0.55);
       const hopBob = (a.enter > 0 && a.t < a.enter && a.beh === "perch")
         ? Math.abs(Math.sin(a.t*13)) * a.s * 0.12 : 0;
+      // Departure: 0 while perched, ramping to 1 once the bird springs into flight.
+      const flyProg = a.leave === "fly" ? Math.max(0, Math.min(1, (a.leaveT - 0.16)/0.14)) : 0;
+      const flyFlap = flyProg > 0 ? Math.sin(a.leaveT*20) : 0;
+      // The perch twig belongs in the scene: draw it at the resting spot, and only
+      // once the bird has landed — never trailing from its feet as it flies in/out.
+      const landed = a.enter > 0 ? Math.max(0, Math.min(1, (a.t - a.enter)/0.2)) : 1;
 
       switch (a.beh) {
         case "perch": {
           const ps = PSTYLE[a.id] || {};
-          this.drawPerchFooting(c, x, y, a.s, a.perchType, bot, a.alpha);
+          this.drawPerchFooting(c, a.restX*W, a.restY*H, a.s, a.perchType, bot,
+            a.alpha * landed * (1 - flyProg));
           this.paintBird(c, {
             x, y: y - hopBob, s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
             color: colStr, rim: rimStr, plump: (ps.plump || 1) * (iv.puff || 1),
             tailLen: (ps.tail || 1.1) * (iv.tail || 1), tailUp: !!ps.tailUp,
             billLen: ps.bill || 0.5, crest: iv.crest && !ps.tailUp, rimLight: iv.rim,
-            sing, breath, headTurn, tailFlick, wingSettle
+            sing, breath, headTurn, tailFlick, wingSettle, fly: flyProg, flap: flyFlap
           });
           break;
         }
@@ -1255,6 +1275,7 @@ class Scene {
     const plump = o.plump || 1;
     const sing = o.sing || 0;
     const breath = o.breath || 0;
+    const fly = o.fly || 0;               // 0 perched, 1 in flight
     c.save();
     c.translate(o.x, o.y);
     if (o.flip) c.scale(-1, 1);
@@ -1280,15 +1301,19 @@ class Scene {
     c.lineTo(tx0, ty0 + bodyRy*0.24);
     c.closePath(); c.fill();
 
-    // Legs and toes.
+    // Legs and toes — they tuck up under the body as the bird takes wing.
+    const footY = bellyY*0.62*fly;              // 0 on the perch, rising when flying
+    const toeVis = 1 - Math.min(1, fly*1.6);
     c.lineWidth = Math.max(1, s*0.1);
     c.beginPath();
-    c.moveTo(-s*0.12, 0); c.lineTo(-s*0.04, bellyY);
-    c.moveTo(s*0.2, 0);   c.lineTo(s*0.09, bellyY);
-    c.moveTo(-s*0.12, 0); c.lineTo(-s*0.26, s*0.02);
-    c.moveTo(-s*0.12, 0); c.lineTo(0, s*0.02);
-    c.moveTo(s*0.2, 0);   c.lineTo(s*0.06, s*0.02);
-    c.moveTo(s*0.2, 0);   c.lineTo(s*0.32, s*0.02);
+    c.moveTo(-s*0.12, footY); c.lineTo(-s*0.04, bellyY);
+    c.moveTo(s*0.2, footY);   c.lineTo(s*0.09, bellyY);
+    if (toeVis > 0.05) {
+      c.moveTo(-s*0.12, footY); c.lineTo(-s*0.26, footY + s*0.02);
+      c.moveTo(-s*0.12, footY); c.lineTo(0, footY + s*0.02);
+      c.moveTo(s*0.2, footY);   c.lineTo(s*0.06, footY + s*0.02);
+      c.moveTo(s*0.2, footY);   c.lineTo(s*0.32, footY + s*0.02);
+    }
     c.stroke();
 
     // Body.
@@ -1296,17 +1321,33 @@ class Scene {
     c.beginPath(); c.ellipse(0, 0, bodyRx, bodyRy, 0, 0, Math.PI*2); c.fill();
     c.restore();
 
-    // Folded wing — settles down onto the body just after landing.
-    const wLift = (o.wingSettle || 0)*s*0.5;
-    c.save(); c.translate(-s*0.04, cy - wLift);
-    c.beginPath();
-    c.moveTo(bodyRx*0.34, -bodyRy*0.12);
-    c.quadraticCurveTo(-bodyRx*0.4, -bodyRy*0.22, -bodyRx*0.74, bodyRy*0.34);
-    c.quadraticCurveTo(-bodyRx*0.1, bodyRy*0.32, bodyRx*0.4, bodyRy*0.06);
-    c.closePath(); c.fill();
-    c.strokeStyle = o.rim; c.lineWidth = Math.max(0.7, s*0.05); c.stroke();
-    c.strokeStyle = o.color;
-    c.restore();
+    if (fly < 0.4) {
+      // Folded wing — settles down onto the body just after landing.
+      const wLift = (o.wingSettle || 0)*s*0.5;
+      c.save(); c.translate(-s*0.04, cy - wLift);
+      c.beginPath();
+      c.moveTo(bodyRx*0.34, -bodyRy*0.12);
+      c.quadraticCurveTo(-bodyRx*0.4, -bodyRy*0.22, -bodyRx*0.74, bodyRy*0.34);
+      c.quadraticCurveTo(-bodyRx*0.1, bodyRy*0.32, bodyRx*0.4, bodyRy*0.06);
+      c.closePath(); c.fill();
+      c.strokeStyle = o.rim; c.lineWidth = Math.max(0.7, s*0.05); c.stroke();
+      c.strokeStyle = o.color;
+      c.restore();
+    }
+    if (fly > 0.03) {
+      // Wings spread and beating — one continuous sweep over the back.
+      const flap = o.flap || 0;
+      const span = (bodyRx + s*0.55) * (0.7 + 0.5*fly);
+      const wy = cy - bodyRy*0.25;
+      const dip = flap*span*0.42;
+      c.strokeStyle = o.color;
+      c.lineWidth = Math.max(1.8, s*0.2);
+      c.beginPath();
+      c.moveTo(-span*0.95, wy - dip*0.9);
+      c.quadraticCurveTo(-bodyRx*0.15, wy - span*0.28, bodyRx*0.15, wy);
+      c.quadraticCurveTo(bodyRx*0.5, wy - span*0.28, span*0.85, wy - dip);
+      c.stroke();
+    }
 
     // Head — turns to glance about, lifts to sing.
     const ht = o.headTurn || 0;
