@@ -94,6 +94,7 @@ wireSegmented(document.getElementById("weatherSeg"), (v) => {
 });
 function setLocation(v) {
   state.location = v;
+  scene.clearLife();          // the old place's company doesn't come along
   scene.reseed(state.seed);
   audio.applyConditions();
   audio.quietUntil = 0;
@@ -101,12 +102,18 @@ function setLocation(v) {
 }
 wireSegmented(document.getElementById("placeSeg"), setLocation);
 
-/* Somewhere else, at some other hour. */
+/* Somewhere else, at some other hour — and a land never seen before.
+   A fresh seed is what makes it new ground rather than the same meadow
+   this session has always had, so the serial in the header follows it. */
 on("diceBtn", "click", () => {
+  state.seed = (Math.random() * 0xFFFFFFFF) >>> 0;
+  const el = document.getElementById("sessionNo");
+  if (el) el.textContent = sessionSerial(state.seed);
   const others = LOCATIONS.filter(l => l !== state.location);
-  setLocation(others[Math.floor(Math.random()*others.length)]);
+  setLocation(others[Math.floor(Math.random()*others.length)]);   // reseeds the land
   const hours = PHASES.filter(h => h !== state.time);
   setTime(hours[Math.floor(Math.random()*hours.length)]);
+  audio.retune();             // the aeolian strings are tuned from the seed
 });
 
 const activitySlider = document.getElementById("activitySlider");

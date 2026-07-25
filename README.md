@@ -34,6 +34,13 @@ Left to itself the light moves on: dawn gives way to day, dusk, night and
 round again, an hour of the day every half hour. Both the turning and its
 pace live under **The passing of time** in settings.
 
+The shuffle button in the frame's top-right corner takes you somewhere
+else entirely — a new place, a new hour, and freshly generated ground,
+drawn from a new seed. The serial in the header follows it, since that
+serial *is* the land you are looking at. Choosing a place by hand from
+settings does not re-roll the seed, so a place you leave and come back to
+during a session is exactly as you left it.
+
 ## Project layout
 
 ```
