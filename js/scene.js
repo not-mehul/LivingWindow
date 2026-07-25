@@ -206,9 +206,14 @@ class Scene {
           ph: rng()*Math.PI*2, lean: (rng() - 0.5)*0.5, head: rng() < 0.5 });
       }
     } else {
-      // a slack cable or two strung across the near corner of the street
-      this.fg.push({ y: 0.06 + rng()*0.05, sag: 0.05 + rng()*0.05, side: rng() < 0.5 });
-      if (rng() < 0.6) this.fg.push({ y: 0.14 + rng()*0.06, sag: 0.04 + rng()*0.04, side: rng() < 0.5 });
+      // Cables strung the width of the street between two poles, hanging in
+      // the catenary a real wire makes. Both ends are attached to something.
+      this.poleX = [0.06 + rng()*0.1, 0.84 + rng()*0.1];
+      this.poleTop = [0.10 + rng()*0.05, 0.13 + rng()*0.05];
+      const nWire = 2 + Math.floor(rng()*2);
+      for (let i = 0; i < nWire; i++) {
+        this.fg.push({ drop: i*0.028 + rng()*0.012, sag: 0.06 + rng()*0.05 });
+      }
     }
 
     // Points of light glinting off moving water.
@@ -225,6 +230,14 @@ class Scene {
       this.hillB = this.makeRidge(rng, 0.78, 0.07);
       this.treeX = rng() < 0.5 ? 0.12 + rng()*0.1 : 0.78 + rng()*0.1;
       this.tree = this.makeTree(rng);
+      // Foliage gathered at the ends of the branches. A tree standing bare in
+      // a summer field is the one thing in this view that never looked right.
+      this.treeLeaves = [];
+      for (const sg of this.tree) {
+        if (sg.w > 1 || rng() < 0.25) continue;
+        this.treeLeaves.push({ x: sg.x2, y: sg.y2, r: 0.026 + rng()*0.03,
+          dx: (rng()-0.5)*0.02, dy: (rng()-0.5)*0.02 });
+      }
       this.grass = this.makeGrass(rng, 110, 0.03, 0.05);
       // shrubs on the near hill, a couple of far trees, wildflowers and stones
       this.bushes = [];
@@ -294,9 +307,9 @@ class Scene {
     } else if (loc === "forest") {
       this.hillA = this.makeRidge(rng, 0.55, 0.06);
       this.trunksFar = []; this.trunksMid = []; this.trunksNear = [];
-      for (let i = 0; i < 11; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 1.6 + rng()*1.4));
-      for (let i = 0; i < 7; i++)  this.trunksMid.push(this.makeTrunk(rng, 0.23 + rng()*0.10, 2.4 + rng()*1.8));
-      for (let i = 0; i < 6; i++)  this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 3.5 + rng()*3));
+      for (let i = 0; i < 11; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 2.8 + rng()*1.8, 0.85));
+      for (let i = 0; i < 7; i++)  this.trunksMid.push(this.makeTrunk(rng, 0.23 + rng()*0.10, 4.6 + rng()*2.8, 1));
+      for (let i = 0; i < 6; i++)  this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 7.5 + rng()*5, 1.25));
       this.grass = this.makeGrass(rng, 64, 0.04, 0.07);
       // undergrowth: ferns, mushrooms and a slow drift of falling leaves
       this.ferns = [];
@@ -479,10 +492,19 @@ class Scene {
     grow(0, 0, -Math.PI/2 + (rng()-0.5)*0.2, 0.13, 4);
     return segs;
   }
-  makeTrunk(rng, top, w) {
+  makeTrunk(rng, top, w, crown) {
     const canopy = [];
-    const nb = 2 + Math.floor(rng()*3);
-    for (let i = 0; i < nb; i++) canopy.push({ dx: (rng()-0.5)*0.10, dy: (rng()-0.3)*0.08, r: 0.04 + rng()*0.05 });
+    const k = crown || 1;
+    const nb = 4 + Math.floor(rng()*3);
+    // The clump always has a blob square on the trunk top, and the rest are
+    // gathered tightly around it — a crown grows out of its own tree.
+    canopy.push({ dx: 0, dy: -0.012*k, r: (0.042 + rng()*0.032)*k });
+    for (let i = 1; i < nb; i++) {
+      // spread wider than tall, so a crown sits in the air like a crown and
+      // not like a ball balanced on a pole
+      canopy.push({ dx: (rng()-0.5)*0.075*k, dy: (rng()-0.62)*0.032*k,
+        r: (0.028 + rng()*0.038)*k });
+    }
     return { x: 0.05 + rng()*0.9, top, w, lean: (rng()-0.5)*0.02, canopy };
   }
   makeSkyline(rng, hBase, hVar, wMin, wVar) {
@@ -617,20 +639,31 @@ class Scene {
     }
     else a.beh = "perch";
 
-    // Entrance: the behaviour branch has fixed the resting spot; arrive there by
-    // gliding (fliers) or hopping in from the side (ground), fading up as we go,
-    // and only begin the call once settled (a.singAt).
+    // Entrance: the behaviour branch has fixed the resting spot; arrive there
+    // from off the frame, and only begin the call once settled (a.singAt).
     a.restX = a.x; a.restY = a.y;
     a.enter = enter; a.singAt = enter;
     a.enterFromX = a.x; a.enterFromY = a.y;
     if (enter > 0) {
-      a.alpha = 0;
       const ground = a.beh === "frog" || a.beh === "wader" || a.beh === "duck";
-      const side = a.flip ? 1 : -1;
-      if (ground) {
+      if (a.beh === "perch") {
+        // A bird arrives on the wing: in over the edge of the frame, down
+        // across the open air, a flare at the last moment, and only then is
+        // it standing on the branch. Nothing simply appears out of nothing.
+        a.flightIn = true;
+        a.alpha = 1;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        a.enterFromX = side < 0 ? -0.14 : 1.14;
+        a.enterFromY = Math.max(0.04, a.restY - (0.16 + Math.random()*0.26));
+        a.flip = side > 0;                     // it faces the way it is going
+      } else if (ground) {
+        a.alpha = 0;
+        const side = a.flip ? 1 : -1;
         a.enterFromX = a.restX + side * (0.06 + Math.random()*0.05);
         a.enterFromY = a.restY;
       } else {
+        a.alpha = 0;
+        const side = a.flip ? 1 : -1;
         a.enterFromX = a.restX + side * (0.04 + Math.random()*0.04);
         a.enterFromY = a.restY - (0.06 + Math.random()*0.06);
       }
@@ -1032,12 +1065,35 @@ class Scene {
       }
     }
     if (this.loc === "city") {
-      c.strokeStyle = near; c.lineWidth = 1.8; c.lineCap = "round";
-      for (const w of this.fg) {
-        const y0 = w.y*H, sag = w.sag*H + Math.sin(this.t*0.5)*2*wa;
+      const [pxL, pxR] = this.poleX, [ptL, ptR] = this.poleTop;
+      const swing = Math.sin(this.t*0.5)*2.5*wa;
+      c.strokeStyle = near; c.fillStyle = near; c.lineCap = "round";
+      // the two poles the wires hang from, and their crossarms
+      c.lineWidth = 5;
+      for (const [px, pt] of [[pxL, ptL], [pxR, ptR]]) {
+        c.beginPath(); c.moveTo(px*W, H + 4); c.lineTo(px*W, pt*H); c.stroke();
+        c.lineWidth = 3;
         c.beginPath();
-        c.moveTo(w.side ? -4 : W*0.45, y0);
-        c.quadraticCurveTo(W*0.5, y0 + sag, w.side ? W*0.55 : W + 4, y0 + (w.side ? sag*0.4 : 0));
+        c.moveTo(px*W - 13, pt*H + 8); c.lineTo(px*W + 13, pt*H + 8);
+        c.moveTo(px*W - 9, pt*H + 20); c.lineTo(px*W + 9, pt*H + 20);
+        c.stroke();
+        c.lineWidth = 5;
+      }
+      // and the wires between them, each hanging a little lower than the last
+      c.lineWidth = 1.8;
+      for (const w of this.fg) {
+        const yL = (ptL + 0.02 + w.drop)*H, yR = (ptR + 0.02 + w.drop)*H;
+        const sag = w.sag*H + swing;
+        c.beginPath();
+        c.moveTo(pxL*W, yL);
+        c.quadraticCurveTo((pxL + pxR)*0.5*W, (yL + yR)*0.5 + sag*2, pxR*W, yR);
+        c.stroke();
+        // and the same wires carrying on off both edges of the frame
+        c.beginPath();
+        c.moveTo(pxL*W, yL);
+        c.quadraticCurveTo(pxL*W*0.5, yL + sag*0.7, -6, yL - 6);
+        c.moveTo(pxR*W, yR);
+        c.quadraticCurveTo((pxR + 1)*0.5*W, yR + sag*0.7, W + 6, yR - 6);
         c.stroke();
       }
       return;
@@ -1123,6 +1179,19 @@ class Scene {
       c.lineTo(this.treeX*W + s.x2*W*0.5 + sway, baseY + s.y2*H*0.9);
       c.stroke();
     }
+    // the crown, swaying with the branches that carry it
+    if (this.treeLeaves) {
+      const mnT = Math.min(W, H);
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
+      for (const lf of this.treeLeaves) {
+        const sway = Math.sin(this.t*1.1 + lf.y*8) * 3.6 *
+          (state.weather === "breeze" ? 0.85 : 0.22) * treeWind;
+        c.beginPath();
+        c.arc(this.treeX*W + (lf.x + lf.dx)*W*0.5 + sway,
+          baseY + (lf.y + lf.dy)*H*0.9, lf.r*mnT, 0, Math.PI*2);
+        c.fill();
+      }
+    }
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
     c.beginPath();
     c.moveTo(0, H); c.lineTo(0, H*0.92);
@@ -1172,9 +1241,17 @@ class Scene {
       c.lineCap = "round";
       c.lineWidth = tr.w;
       const bx = tr.x*W + tr.lean*W*2 + sway;
+      // the butt of the tree, where it spreads into the ground
+      c.beginPath();
+      c.moveTo(tr.x*W - tr.w*1.15, groundY + 2);
+      c.quadraticCurveTo(tr.x*W - tr.w*0.55, groundY - H*0.05, tr.x*W - tr.w*0.5, groundY - H*0.09);
+      c.lineTo(tr.x*W + tr.w*0.5, groundY - H*0.09);
+      c.quadraticCurveTo(tr.x*W + tr.w*0.55, groundY - H*0.05, tr.x*W + tr.w*1.15, groundY + 2);
+      c.closePath(); c.fill();
       c.beginPath();
       c.moveTo(tr.x*W, groundY);
-      c.quadraticCurveTo(tr.x*W + tr.lean*W, (groundY+topY)/2, bx, topY);
+      // carried a little way up into the crown, so the join is never a gap
+      c.quadraticCurveTo(tr.x*W + tr.lean*W, (groundY+topY)/2, bx, topY - H*0.03);
       c.stroke();
       for (const b of tr.canopy) {
         c.beginPath();
@@ -1729,13 +1806,24 @@ class Scene {
       const a = this.actors[i];
       a.t += dt;
 
-      // Entrance: glide/hop from the arrival offset to the resting spot, fading in.
+      // Entrance. A flying bird crosses the open air on a curve, losing speed
+      // as it comes in; everything else glides or hops the short way in.
+      const px0 = a.x, py0 = a.y;
       if (a.enter > 0 && a.t < a.enter) {
-        const k = a.t / a.enter, e = k*k*(3 - 2*k);   // smoothstep
-        a.x = a.enterFromX + (a.restX - a.enterFromX) * e;
-        a.y = a.enterFromY + (a.restY - a.enterFromY) * e;
-        a.alpha = Math.min(1, e * 1.3);
-      } else if (a.enter > 0 && !a.leave && a.alpha < 1) {
+        const k = a.t / a.enter;
+        if (a.flightIn) {
+          const ex = 1 - Math.pow(1 - k, 2.4);         // quick out, slow in
+          const ey = k*k*(3 - 2*k);
+          a.x = a.enterFromX + (a.restX - a.enterFromX)*ex;
+          a.y = a.enterFromY + (a.restY - a.enterFromY)*ey - Math.sin(Math.PI*k)*0.035;
+          a.alpha = 1;
+        } else {
+          const e = k*k*(3 - 2*k);                     // smoothstep
+          a.x = a.enterFromX + (a.restX - a.enterFromX) * e;
+          a.y = a.enterFromY + (a.restY - a.enterFromY) * e;
+          a.alpha = Math.min(1, e * 1.3);
+        }
+      } else if (a.enter > 0 && !a.leave && (a.alpha < 1 || a.flightIn)) {
         a.x = a.restX; a.y = a.restY; a.alpha = 1;
       }
 
@@ -1769,18 +1857,18 @@ class Scene {
           this.actors.splice(i, 1); continue;
         }
       } else if (a.leave === "fly") {
-        // A real departure: gather, spring, then climb away on beating wings.
+        // A real departure: gather, spring, then climb away on beating wings
+        // and out over the edge of the frame — not a dissolve in mid-air.
         a.leaveT += dt;
         const crouch = 0.16;
         if (a.leaveT < crouch) {
           a.y = a.launchY + (a.s/H)*0.16*(a.leaveT/crouch);
         } else {
           const ft = a.leaveT - crouch;
-          a.y = a.launchY - (a.s/H)*0.16 - (0.05*ft + 0.05*ft*ft);
-          a.x = a.launchX + a.flyDir*(0.05*ft + 0.03*ft*ft);
-          a.alpha = Math.max(0, 1 - ft*0.72);
+          a.y = a.launchY - (a.s/H)*0.16 - (0.10*ft + 0.19*ft*ft);
+          a.x = a.launchX + a.flyDir*(0.26*ft + 0.38*ft*ft);
         }
-        if (a.alpha <= 0.02 || a.y < -0.12 || a.x < -0.14 || a.x > 1.14) { this.actors.splice(i, 1); continue; }
+        if (a.y < -0.16 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
       } else if (a.leave === "fade") {
         a.alpha -= dt * 1.3;
         a.x += (a.flip ? 1 : -1) * 0.012 * dt;         // drift off rather than dissolve in place
@@ -1843,7 +1931,25 @@ class Scene {
         ? Math.abs(Math.sin(a.t*13)) * a.s * 0.12 : 0;
       // Departure: 0 while perched, ramping to 1 once the bird springs into flight.
       const flyProg = a.leave === "fly" ? Math.max(0, Math.min(1, (a.leaveT - 0.16)/0.14)) : 0;
-      const flyFlap = flyProg > 0 ? Math.sin(a.leaveT*20) : 0;
+      const flyFlap = flyProg > 0 ? Math.sin(a.leaveT*21) : 0;
+      // Arrival: wings out and beating all the way in, then held high and
+      // forward for the flare that kills the last of the speed.
+      const inK = (a.flightIn && a.enter > 0 && a.t < a.enter) ? a.t/a.enter : -1;
+      const flare = inK >= 0 ? Math.pow(Math.max(0, inK - 0.7)/0.3, 1.4) : 0;
+      const flyIn = inK >= 0 ? Math.max(0, 1 - Math.pow(Math.max(0, inK - 0.86)/0.14, 2)) : 0;
+      const flapIn = inK >= 0 ? (flare > 0.15 ? 0.55 + flare*0.45 : Math.sin(a.t*23)) : 0;
+      // The body follows its own path: nose down on the descent, up in the
+      // flare, up again on the climb out.
+      let bodyRot = 0;
+      if (inK >= 0 || flyProg > 0) {
+        const vx = (a.x - px0), vy = (a.y - py0);
+        if (Math.abs(vx) > 1e-6 || Math.abs(vy) > 1e-6) {
+          const ang = Math.atan2(vy*H, Math.max(1e-4, Math.abs(vx*W)));
+          a.pitch = (a.pitch === undefined ? ang : a.pitch + (ang - a.pitch)*Math.min(1, dt*8));
+        }
+        bodyRot = Math.max(-0.55, Math.min(0.55, (a.pitch || 0)*0.75)) - flare*0.42;
+        if (a.flip) bodyRot = -bodyRot;
+      }
       // The perch twig belongs in the scene: draw it at the resting spot, and only
       // once the bird has landed — never trailing from its feet as it flies in/out.
       const landed = a.enter > 0 ? Math.max(0, Math.min(1, (a.t - a.enter)/0.2)) : 1;
@@ -1858,9 +1964,10 @@ class Scene {
           const fluffG = a.gest === "fluff" ? gk : 0;
           const peerG = a.gest === "peer" ? gk : 0;
           const diveRot = a.leave === "dive" ? Math.min(1.35, a.leaveT*3) : 0;
-          if (diveRot) { c.save(); c.translate(x, y); c.rotate(a.flip ? -diveRot : diveRot); }
+          const rot = diveRot ? (a.flip ? -diveRot : diveRot) : bodyRot;
+          if (rot) { c.save(); c.translate(x, y); c.rotate(rot); }
           this.paintBird(c, {
-            x: diveRot ? 0 : x, y: diveRot ? 0 : y - hopBob - hopG,
+            x: rot ? 0 : x, y: rot ? 0 : y - hopBob - hopG,
             s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
             color: colStr, rim: rimStr, deep: deepStr, marks: ps,
             plump: (ps.plump || 1) * (iv.puff || 1) * (1 + fluffG*0.24),
@@ -1870,9 +1977,11 @@ class Scene {
             gest: (a.gest === "preen" || a.gest === "stretch") ? a.gest : null,
             gestK: a.gest ? a.gestT/a.gestDur : 0,
             sing, breath, headTurn: headTurn + peerG*0.85, tailFlick, wingSettle,
-            fly: diveRot ? 1 : flyProg, flap: diveRot ? -0.4 : flyFlap, t: a.t
+            fly: diveRot ? 1 : Math.max(flyProg, flyIn),
+            flap: diveRot ? -0.4 : (flyIn > 0 ? flapIn : flyFlap),
+            flare, t: a.t
           });
-          if (diveRot) c.restore();
+          if (rot) c.restore();
           break;
         }
         case "egret": this.paintHeron(c, { x, y, s: a.s*2.3, dir: a.flip ? -1 : 1,
@@ -1950,12 +2059,13 @@ class Scene {
     const hx = s*0.58 + ht*s*0.10 - preen*hr*1.1;
     const hy = cy - bry*0.55 - hr*0.85 - sing*s*0.16 + preen*hr*0.6;
 
-    // Tail — a fan of tapered feathers off the rump; it flicks at rest and
-    // fans wide on take-off. A magpie's centre feathers run longest.
-    const tAng = (o.tailUp ? -0.9 : 0.34) - (o.tailFlick || 0)*0.5 - fly*0.55;
+    // Tail — a fan of tapered feathers off the rump; it flicks at rest, fans
+    // wide on take-off, and drops hard as an air-brake in the landing flare.
+    const flare = o.flare || 0;
+    const tAng = (o.tailUp ? -0.9 : 0.34) - (o.tailFlick || 0)*0.5 - fly*0.55 + flare*1.15;
     const tl = (o.tailLen || 1.1)*s*1.15;
     const rtx = -brx*0.72, rty = cy - bry*0.02;
-    const spread = 0.12 + fly*0.15;
+    const spread = 0.12 + fly*0.15 + flare*0.18;
     for (let k = -1; k <= 1; k++) {
       const aa = tAng + k*spread;
       const kl = tl*(1 - Math.abs(k)*(mk.shoulder ? 0.18 : 0.10));
@@ -1964,12 +2074,14 @@ class Scene {
       c.beginPath(); c.arc(tx2, ty2, s*0.08, 0, Math.PI*2); c.fill();
     }
 
-    // Legs — tarsi with toes that grip; they tuck up as the bird takes wing.
-    const tuck = Math.min(1, fly*1.5);
+    // Legs — tarsi with toes that grip. They tuck up as the bird takes wing,
+    // and swing down and forward, feet open, as it comes in to land.
+    const tuck = Math.min(1, fly*1.5) * (1 - flare*0.95);
     if (tuck < 0.95) {
       const hipY = cy + bry*0.62;
-      for (const [hpx, fx] of [[-s*0.02, -s*0.12], [s*0.14, s*0.18]]) {
-        const fy = -tuck*legLen*0.8;
+      for (const [hpx0, fx0] of [[-s*0.02, -s*0.12], [s*0.14, s*0.18]]) {
+        const hpx = hpx0, fx = fx0 + flare*s*0.5;
+        const fy = -tuck*legLen*0.8 - flare*s*0.1;
         c.lineWidth = Math.max(1, s*0.085);
         c.beginPath();
         c.moveTo(hpx, hipY);
