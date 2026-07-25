@@ -7,7 +7,7 @@
    for globals.
    ============================================================ */
 import { mulberry32, REDUCED, state } from "./util.js";
-import { SPECIES, note, burst } from "./species.js";
+import { SPECIES, CRITTER_VOICES, note, burst } from "./species.js";
 
 class AudioEngine {
   constructor({ scene, emit }) {
@@ -357,6 +357,35 @@ class AudioEngine {
     setTimeout(swell, 2000);
   }
 
+  /* The ambient wildlife has voices too. When a critter with one is on
+     stage — a fox trotting the field edge, a heron at the water — it may
+     speak from wherever it happens to be. Its presence already respects
+     place and hour, so the voice needs no weighting of its own. */
+  startCritterVoiceScheduler(gen) {
+    const tick = () => {
+      if (!this.running || gen !== this.gen) return;
+      const crs = (this.scene.critters || []).filter(cr => CRITTER_VOICES[cr.kind]);
+      if (crs.length && this.activeVoices < this.maxVoices) {
+        const cr = crs[Math.floor(this.rng()*crs.length)];
+        const v = CRITTER_VOICES[cr.kind];
+        if (this.rng() < v.p && cr.x >= -0.02 && cr.x <= 1.02) {
+          const az = Math.max(-1, Math.min(1, (cr.x*2 - 1) * 0.9));
+          const depth = 4 + this.rng()*5;
+          const pan = this.makePanner(az, 0.2, depth);
+          pan.out.connect(this.voiceGain);
+          const dur = v.synth(this.ac, pan.node, this.ac.currentTime + 0.02, this.rng) || 1;
+          this.activeVoices++;
+          this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
+            (dur + 0.3) * 1000);
+          this.scene.addRipple(cr.x, cr.y !== undefined ? cr.y : 0.85, v.tone);
+          this.emit(v, az, depth, dur);
+        }
+      }
+      setTimeout(tick, 9000 + this.rng()*14000);
+    };
+    setTimeout(tick, 7000 + this.rng()*8000);
+  }
+
   startFlyerScheduler(gen) {
     const fly = () => {
       if (!this.running || gen !== this.gen) return;
@@ -504,6 +533,7 @@ class AudioEngine {
     const gen = ++this.gen;  // stamp this run; older scheduler loops self-stop
     this.startGusts(gen); this.startSwells(gen);
     this.startSchedulers(gen);
+    this.startCritterVoiceScheduler(gen);
     this.startFlyerScheduler(gen);
     this.startWaveScheduler(gen); this.startLapScheduler(gen);
     this.startCarScheduler(gen); this.startBellScheduler(gen);
