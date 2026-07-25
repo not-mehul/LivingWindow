@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS } from "./util.js";
-import { speciesIcon } from "./species.js";
-import { Scene } from "./scene.js";
-import { AudioEngine } from "./audio.js";
+import { state, sessionSerial, LOCATIONS } from "./util.js?v=3";
+import { speciesIcon } from "./species.js?v=3";
+import { Scene } from "./scene.js?v=3";
+import { AudioEngine } from "./audio.js?v=3";
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
@@ -62,7 +62,18 @@ function emitSubtitle(sp, az, depth, dur) {
 const scene = new Scene(document.getElementById("scene"));
 const audio = new AudioEngine({ scene, emit: emitSubtitle });
 
+/* Bind a handler by id, tolerating an element that isn't there. A stale
+   cached script against fresh markup used to throw here and take every
+   later control down with it; now the odd missing control is just missing. */
+function on(id, evt, fn) {
+  const el = document.getElementById(id);
+  if (!el) { console.warn("The Living Window: no #" + id + " to wire."); return null; }
+  el.addEventListener(evt, fn);
+  return el;
+}
+
 function wireSegmented(el, cb) {
+  if (!el) return;
   el.addEventListener("click", (e) => {
     const btn = e.target.closest("button");
     if (!btn) return;
@@ -91,7 +102,7 @@ function setLocation(v) {
 wireSegmented(document.getElementById("placeSeg"), setLocation);
 
 /* Somewhere else, at some other hour. */
-document.getElementById("diceBtn").addEventListener("click", () => {
+on("diceBtn", "click", () => {
   const others = LOCATIONS.filter(l => l !== state.location);
   setLocation(others[Math.floor(Math.random()*others.length)]);
   const hours = PHASES.filter(h => h !== state.time);
@@ -100,28 +111,28 @@ document.getElementById("diceBtn").addEventListener("click", () => {
 
 const activitySlider = document.getElementById("activitySlider");
 const activityVal = document.getElementById("activityVal");
-activitySlider.addEventListener("input", () => {
+on("activitySlider", "input", () => {
   state.activity = activitySlider.value / 100;
   activityVal.textContent = activitySlider.value;
 });
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
-volumeSlider.addEventListener("input", () => {
+on("volumeSlider", "input", () => {
   state.volume = volumeSlider.value / 100;
   volumeVal.textContent = volumeSlider.value;
   audio.setVolume(state.volume);
 });
 
-function wireMiniSwitch(el, key, cb) {
-  el.addEventListener("click", () => {
+function wireMiniSwitch(id, key, cb) {
+  const el = on(id, "click", () => {
     state[key] = !state[key];
     el.setAttribute("aria-checked", String(state[key]));
     if (cb) cb(state[key]);
   });
 }
-wireMiniSwitch(document.getElementById("spatialSwitch"), "spatial");
-wireMiniSwitch(document.getElementById("subsSwitch"), "subtitles", (on) => {
-  if (!on) captionCard.classList.remove("visible");
+wireMiniSwitch("spatialSwitch", "spatial");
+wireMiniSwitch("subsSwitch", "subtitles", (on2) => {
+  if (!on2) captionCard.classList.remove("visible");
 });
 
 /* ---- The turning of the hours ----
@@ -154,23 +165,23 @@ setInterval(() => {
 const timeSpeedSlider = document.getElementById("timeSpeedSlider");
 const timeSpeedVal = document.getElementById("timeSpeedVal");
 const timeSpeedRow = document.getElementById("timeSpeedRow");
-function describeSpan() {
-  const mins = 30 / state.timeSpeed;
-  timeSpeedVal.textContent = mins >= 90 ? (mins/60).toFixed(1).replace(/\.0$/, "") + " h"
-    : mins >= 1 ? Math.round(mins) + " min"
-    : Math.round(mins*60) + " s";
-}
 function applyTimeSpeed() {
+  if (!timeSpeedSlider) return;
   // a gentle exponential either side of the ordinary half-hour
   state.timeSpeed = Math.pow(2, (timeSpeedSlider.value - 50) / 15);
-  describeSpan();
+  const mins = 30 / state.timeSpeed;
+  if (timeSpeedVal) {
+    timeSpeedVal.textContent = mins >= 90 ? (mins/60).toFixed(1).replace(/\.0$/, "") + " h"
+      : mins >= 1 ? Math.round(mins) + " min"
+      : Math.round(mins*60) + " s";
+  }
 }
-timeSpeedSlider.addEventListener("input", applyTimeSpeed);
+on("timeSpeedSlider", "input", applyTimeSpeed);
 applyTimeSpeed();
 
-wireMiniSwitch(document.getElementById("timeFlowSwitch"), "timeFlow", (on) => {
+wireMiniSwitch("timeFlowSwitch", "timeFlow", (running) => {
   phaseElapsed = 0;
-  timeSpeedRow.classList.toggle("disabled", !on);
+  if (timeSpeedRow) timeSpeedRow.classList.toggle("disabled", !running);
 });
 
 /* ---- The casement ---- */
@@ -215,9 +226,9 @@ function closeWindow() {
   }, 1200);
 }
 
-document.getElementById("beginBtn").addEventListener("click", openWindow);
-document.getElementById("closeWinBtn").addEventListener("click", closeWindow);
-document.getElementById("fsBtn").addEventListener("click", () => {
+on("beginBtn", "click", openWindow);
+on("closeWinBtn", "click", closeWindow);
+on("fsBtn", "click", () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else if (windowFrame.requestFullscreen) windowFrame.requestFullscreen();
 });
@@ -233,9 +244,9 @@ function closeSettings() {
   settingsOverlay.classList.add("hidden");
   settingsBtn.focus();
 }
-settingsBtn.addEventListener("click", openSettings);
-settingsClose.addEventListener("click", closeSettings);
-settingsOverlay.addEventListener("click", (e) => {
+on("settingsBtn", "click", openSettings);
+on("settingsClose", "click", closeSettings);
+on("settingsOverlay", "click", (e) => {
   if (e.target === settingsOverlay) closeSettings();
 });
 document.addEventListener("keydown", (e) => {

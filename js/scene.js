@@ -5,8 +5,8 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js";
-import { PSTYLE } from "./species.js";
+} from "./util.js?v=3";
+import { PSTYLE } from "./species.js?v=3";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 

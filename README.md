@@ -58,6 +58,19 @@ js/
                   species' synths; adds nothing to the piece itself.
 ```
 
+### A note on caching
+
+There is no build step, so the stylesheet and every module carry an explicit
+`?v=N` on their URLs — in `index.html`, `bestiary.html`, and on every `import`
+inside `js/`. Browsers cache scripts and styles far more eagerly than markup,
+and a cached script running against fresh markup fails in confusing ways (a
+handler that binds to a control which no longer exists throws, and every
+control wired after it silently stops working). **Bump the number everywhere
+at once when shipping a change**; keeping them equal is what guarantees the
+whole app is one version. As a second line of defence, `main.js` binds through
+a small `on(id, …)` helper that warns about a missing control instead of
+taking the rest of the page down with it.
+
 ### How the modules fit together
 
 The dependency graph is acyclic:

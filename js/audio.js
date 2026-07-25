@@ -6,8 +6,8 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js";
-import { SPECIES, CRITTER_VOICES, note, burst } from "./species.js";
+import { mulberry32, REDUCED, state } from "./util.js?v=3";
+import { SPECIES, CRITTER_VOICES, note, burst } from "./species.js?v=3";
 
 class AudioEngine {
   constructor({ scene, emit }) {
