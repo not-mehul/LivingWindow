@@ -539,15 +539,28 @@ class AudioEngine {
     this.startCarScheduler(gen); this.startBellScheduler(gen);
   }
 
+  /* Silence, and the schedulers stopped. The master gain is cut to nothing
+     first: calls already handed to the audio clock would otherwise resume
+     mid-phrase when the context does. */
   pause() {
     this.running = false;
     this.gen++;              // halt every recurring scheduler loop
     this.clearTimers();
-    if (this.ac) this.ac.suspend();
+    if (this.ac) {
+      const g = this.master.gain;
+      g.cancelScheduledValues(this.ac.currentTime);
+      g.setValueAtTime(0, this.ac.currentTime);
+      this.ac.suspend();
+    }
   }
 
   resume() {
-    if (this.ac) this.ac.resume();
+    if (this.ac) {
+      this.ac.resume();
+      const g = this.master.gain;
+      g.cancelScheduledValues(this.ac.currentTime);
+      g.setValueAtTime(state.volume, this.ac.currentTime);
+    }
     this.running = true;
     this.resumeSchedulers();
   }

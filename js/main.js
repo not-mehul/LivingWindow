@@ -1,7 +1,8 @@
 /* ============================================================
    Main — the entry point. Wires the DOM to the scene and the
-   audio engine, owns the theme toggle and the subtitle/field-
-   note surface, and boots everything once the module loads.
+   audio engine, owns the theme toggle, the casement (opening
+   and shutting the window), the turning of the hours, and the
+   subtitles. Boots everything once the module loads.
    ============================================================ */
 import { state, sessionSerial, LOCATIONS } from "./util.js";
 import { speciesIcon } from "./species.js";
@@ -28,15 +29,13 @@ themeSwitch.addEventListener("click", () => {
 /* ---- Session number ---- */
 document.getElementById("sessionNo").textContent = sessionSerial(state.seed);
 
-/* ---- Subtitles & field notes ---- */
+/* ---- Subtitles ---- */
 const captionCard = document.getElementById("captionCard");
 const capIcon = document.getElementById("capIcon");
 const capName = document.getElementById("capName");
 const capLatin = document.getElementById("capLatin");
 const capDesc = document.getElementById("capDesc");
 const capDir = document.getElementById("capDir");
-const notesPanel = document.getElementById("notesPanel");
-const notesEmpty = document.getElementById("notesEmpty");
 let capTimer = null;
 
 function direction(az, depth) {
@@ -45,28 +44,7 @@ function direction(az, depth) {
   return side + " \u00b7 " + d;
 }
 
-function addNote(sp, time) {
-  notesEmpty.style.display = "none";
-  const row = document.createElement("div");
-  row.className = "note-row";
-  const tm = document.createElement("span");
-  tm.className = "note-time"; tm.textContent = time;
-  const ic = document.createElement("span");
-  ic.className = "note-icon" + (sp.tone === "sage" ? " sage" : "");
-  ic.innerHTML = speciesIcon(sp, 15);
-  const nm = document.createElement("span");
-  nm.className = "note-species"; nm.textContent = sp.name;
-  const ds = document.createElement("span");
-  ds.className = "note-desc"; ds.textContent = sp.desc;
-  row.append(tm, ic, nm, ds);
-  notesPanel.prepend(row);
-  const rows = notesPanel.querySelectorAll(".note-row");
-  if (rows.length > 6) rows[rows.length - 1].remove();
-}
-
 function emitSubtitle(sp, az, depth, dur) {
-  const time = new Date().toTimeString().slice(0, 5);
-  addNote(sp, time);
   if (!state.subtitles) return;
   capIcon.innerHTML = speciesIcon(sp, 18);
   capIcon.classList.toggle("sage", sp.tone === "sage");
@@ -98,7 +76,7 @@ function syncSeg(el, val) {
     b.classList.toggle("active", b.dataset.val === val));
 }
 
-wireSegmented(document.getElementById("timeSeg"), (v) => { state.time = v; });
+wireSegmented(document.getElementById("timeSeg"), (v) => { setTime(v); });
 wireSegmented(document.getElementById("weatherSeg"), (v) => {
   state.weather = v;
   audio.applyConditions();
@@ -112,9 +90,12 @@ function setLocation(v) {
 }
 wireSegmented(document.getElementById("placeSeg"), setLocation);
 
+/* Somewhere else, at some other hour. */
 document.getElementById("diceBtn").addEventListener("click", () => {
   const others = LOCATIONS.filter(l => l !== state.location);
   setLocation(others[Math.floor(Math.random()*others.length)]);
+  const hours = PHASES.filter(h => h !== state.time);
+  setTime(hours[Math.floor(Math.random()*hours.length)]);
 });
 
 const activitySlider = document.getElementById("activitySlider");
@@ -143,44 +124,99 @@ wireMiniSwitch(document.getElementById("subsSwitch"), "subtitles", (on) => {
   if (!on) captionCard.classList.remove("visible");
 });
 
-const beginOverlay = document.getElementById("beginOverlay");
-const pauseBtn = document.getElementById("pauseBtn");
-document.getElementById("beginBtn").addEventListener("click", async () => {
-  beginOverlay.classList.add("hidden");
-  pauseBtn.disabled = false;
-  state.listening = true;
-  await audio.start();
-});
-pauseBtn.addEventListener("click", () => {
-  if (audio.running) {
-    audio.pause();
-    pauseBtn.textContent = "Resume";
-  } else {
-    audio.resume();
-    pauseBtn.textContent = "Pause";
+/* ---- The turning of the hours ----
+   Left to itself the light moves on: dawn to day to dusk to night and round
+   again, an hour of the day every half hour at the ordinary pace. The clock
+   only runs while the window is open — a shut window keeps no time. */
+const PHASES = ["dawn", "day", "dusk", "night"];
+const PHASE_MS = 30 * 60 * 1000;
+let phaseElapsed = 0;
+let lastTick = performance.now();
+
+function setTime(v) {
+  state.time = v;
+  phaseElapsed = 0;                       // a chosen hour gets its full span
+  syncSeg(document.getElementById("timeSeg"), v);
+}
+
+setInterval(() => {
+  const now = performance.now();
+  const dt = now - lastTick;
+  lastTick = now;
+  if (!state.timeFlow || !windowOpen || dt > 5000) return;   // no time passes while shut
+  phaseElapsed += dt * state.timeSpeed;
+  if (phaseElapsed >= PHASE_MS) {
+    phaseElapsed = 0;
+    setTime(PHASES[(PHASES.indexOf(state.time) + 1) % PHASES.length]);
   }
+}, 1000);
+
+const timeSpeedSlider = document.getElementById("timeSpeedSlider");
+const timeSpeedVal = document.getElementById("timeSpeedVal");
+const timeSpeedRow = document.getElementById("timeSpeedRow");
+function describeSpan() {
+  const mins = 30 / state.timeSpeed;
+  timeSpeedVal.textContent = mins >= 90 ? (mins/60).toFixed(1).replace(/\.0$/, "") + " h"
+    : mins >= 1 ? Math.round(mins) + " min"
+    : Math.round(mins*60) + " s";
+}
+function applyTimeSpeed() {
+  // a gentle exponential either side of the ordinary half-hour
+  state.timeSpeed = Math.pow(2, (timeSpeedSlider.value - 50) / 15);
+  describeSpan();
+}
+timeSpeedSlider.addEventListener("input", applyTimeSpeed);
+applyTimeSpeed();
+
+wireMiniSwitch(document.getElementById("timeFlowSwitch"), "timeFlow", (on) => {
+  phaseElapsed = 0;
+  timeSpeedRow.classList.toggle("disabled", !on);
 });
 
-document.getElementById("reseedBtn").addEventListener("click", () => {
+/* ---- The casement ---- */
+const windowFrame = document.getElementById("windowFrame");
+const beginOverlay = document.getElementById("beginOverlay");
+let windowOpen = false;
+let closing = null;
+
+async function openWindow() {
+  if (windowOpen) return;
+  clearTimeout(closing);
+  windowOpen = true;
+  state.listening = true;
+  // Every opening is a new session: a fresh seed, an empty land, its own serial.
   state.seed = (Math.random() * 0xFFFFFFFF) >>> 0;
   document.getElementById("sessionNo").textContent = sessionSerial(state.seed);
-  // A new session is a genuinely new day: roll the hour, the weather and how
-  // busy the land is, then reflect the new conditions back in the controls.
-  const pick = (arr) => arr[Math.floor(Math.random()*arr.length)];
-  state.time = pick(["dawn", "day", "dusk", "night"]);
-  state.weather = pick(["clear", "clear", "breeze", "rain", "fog"]);   // clear a touch more likely
-  state.activity = 0.25 + Math.random()*0.6;
-  syncSeg(document.getElementById("timeSeg"), state.time);
-  syncSeg(document.getElementById("weatherSeg"), state.weather);
-  const av = Math.round(state.activity*100);
-  activitySlider.value = av; activityVal.textContent = av;
+  phaseElapsed = 0;
+  lastTick = performance.now();
+  scene.clearLife();
   scene.reseed(state.seed);
-  audio.retune();
-  audio.applyConditions();
-  audio.quietUntil = 0;
-});
+  scene.setActive(true);
+  beginOverlay.classList.add("hidden");
+  windowFrame.classList.remove("closed");
+  if (!audio.ac) await audio.start();
+  else { audio.retune(); audio.applyConditions(); audio.quietUntil = 0; audio.resume(); }
+}
 
-const windowFrame = document.getElementById("windowFrame");
+function closeWindow() {
+  if (!windowOpen) return;
+  windowOpen = false;
+  state.listening = false;
+  audio.pause();                       // silence at once, and the schedulers stop
+  captionCard.classList.remove("visible");
+  clearTimeout(capTimer);
+  windowFrame.classList.add("closed");
+  beginOverlay.classList.remove("hidden");
+  if (document.fullscreenElement) document.exitFullscreen();
+  // Let the leaves swing shut over the land before stopping the world behind them.
+  closing = setTimeout(() => {
+    scene.setActive(false);
+    scene.clearLife();
+  }, 1200);
+}
+
+document.getElementById("beginBtn").addEventListener("click", openWindow);
+document.getElementById("closeWinBtn").addEventListener("click", closeWindow);
 document.getElementById("fsBtn").addEventListener("click", () => {
   if (document.fullscreenElement) document.exitFullscreen();
   else if (windowFrame.requestFullscreen) windowFrame.requestFullscreen();
@@ -208,3 +244,6 @@ document.addEventListener("keydown", (e) => {
 
 if (matchMedia("(prefers-color-scheme: light)").matches) applyTheme("light");
 else applyTheme("dark");
+
+// The window starts shut: the land behind it is still, and costs nothing.
+scene.setActive(false);

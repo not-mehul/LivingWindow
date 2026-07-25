@@ -32,8 +32,30 @@ class Scene {
     ro.observe(canvas);
     this.resize();
     this.last = performance.now();
+    this.active = true;
     this._frame = (n) => this.frame(n);   // bound once, not re-created each frame
     requestAnimationFrame(this._frame);
+  }
+
+  /* The window shut: stop the world entirely — no drawing, no spawning, no
+     drifting on in the dark. Opening it again starts a fresh, empty land. */
+  setActive(on) {
+    if (on === this.active) return;
+    this.active = on;
+    if (on) {
+      this.last = performance.now();
+      requestAnimationFrame(this._frame);
+    }
+  }
+
+  /* Everything living, gone — leaving only the land itself. */
+  clearLife() {
+    this.actors.length = 0;
+    this.critters.length = 0;
+    this.flyers.length = 0;
+    this.ripples.length = 0;
+    this.fishRings.length = 0;
+    this.meteors.length = 0;
   }
 
   refreshTokens() {
@@ -558,6 +580,7 @@ class Scene {
   }
 
   frame(now) {
+    if (!this.active) return;                // the window is shut; nothing stirs
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;

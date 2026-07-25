@@ -20,9 +20,19 @@ python3 -m http.server 8000
 npx serve .
 ```
 
-Then open <http://localhost:8000/>. Sound begins when you press **Begin
-listening** (a browser gesture is required to start audio); headphones are
-recommended, as each voice is placed spatially.
+Then open <http://localhost:8000/>. The window starts shut: press **Begin
+listening** and the casement swings open (a browser gesture is required to
+start audio). Headphones are recommended, as each voice is placed spatially.
+
+Closing the window again — the last button in the top-right of the frame —
+swings the leaves shut, stops every voice and every animal, and ends the
+session. Nothing is kept: opening it again draws a fresh seed and a new
+serial. The piece is meant to be ephemeral, so there is no pause and no way
+back to an hour you have closed.
+
+Left to itself the light moves on: dawn gives way to day, dusk, night and
+round again, an hour of the day every half hour. Both the turning and its
+pace live under **The passing of time** in settings.
 
 ## Project layout
 
@@ -41,7 +51,8 @@ js/
                   drifting inhabitants.
   audio.js        The `AudioEngine` class — wind, aeolian drift, per-place ambience,
                   turn-taking voices, and the odd church bell.
-  main.js         Entry point: theme toggle, subtitles / field notes, and all DOM wiring.
+  main.js         Entry point: theme toggle, the casement (opening and shutting the
+                  window), the turning of the hours, subtitles, and all DOM wiring.
                   Boots the scene and the audio engine.
   bestiary.js     Logic for the bestiary page. Borrows the Scene's painters and the
                   species' synths; adds nothing to the piece itself.
@@ -95,6 +106,8 @@ draws and sings. It honours the same Dawn/Dusk themes and
   and its cast.
 - **Faithful.** Each place keeps its own company; a species only sings where it
   would actually live (see `habitats` / `hw` in `species.js`).
+- **Ephemeral.** There is no pause and no going back. A shut window keeps no
+  time, holds no animals and makes no sound; opening it begins somewhere new.
 - **Accessible.** Honours `prefers-reduced-motion` and `prefers-color-scheme`, and
   ships light ("Dawn") and dark ("Dusk") themes.
 - **Private.** No dependencies, no build step, no network calls. Just static files.
