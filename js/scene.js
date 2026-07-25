@@ -172,6 +172,45 @@ class Scene {
           ph: rng()*Math.PI*2, sp: 0.004 + rng()*0.009, drift: (rng()-0.5)*0.012 });
       }
     }
+    // The near edge of the world: whatever grows right up against the glass.
+    // It is drawn last of all, so the animals pass behind it — the one cue
+    // that most convinces the eye there is depth here at all.
+    this.fg = [];
+    if (loc === "meadow") {
+      for (let i = 0; i < 15; i++) {
+        const edge = rng() < 0.78;
+        this.fg.push({ x: edge ? (rng() < 0.5 ? rng()*0.3 - 0.03 : 0.73 + rng()*0.3) : rng(),
+          h: edge ? 0.13 + rng()*0.17 : 0.05 + rng()*0.05,
+          ph: rng()*Math.PI*2, lean: (rng() - 0.5)*0.9, head: rng() < 0.3 });
+      }
+    } else if (loc === "forest") {
+      this.fgTrunks = [
+        { x: -0.02 + rng()*0.1, w: 0.028 + rng()*0.026, lean: (rng() - 0.5)*0.03 },
+        { x: 0.92 + rng()*0.1, w: 0.026 + rng()*0.03, lean: (rng() - 0.5)*0.03 }
+      ];
+      for (let i = 0; i < 5; i++) {
+        this.fg.push({ x: rng() < 0.5 ? rng()*0.24 - 0.02 : 0.78 + rng()*0.24,
+          h: 0.12 + rng()*0.1, ph: rng()*Math.PI*2,
+          lean: (rng() - 0.5)*0.8, blades: 4 + Math.floor(rng()*3) });
+      }
+    } else if (loc === "beach") {
+      for (let i = 0; i < 16; i++) {
+        const side = rng() < 0.5;
+        this.fg.push({ x: side ? rng()*0.3 - 0.02 : 0.72 + rng()*0.3,
+          h: 0.13 + rng()*0.13, ph: rng()*Math.PI*2, lean: (rng() - 0.5)*1.1 });
+      }
+    } else if (loc === "wetland") {
+      for (let i = 0; i < 9; i++) {
+        this.fg.push({ x: rng() < 0.5 ? rng()*0.26 - 0.03 : 0.77 + rng()*0.26,
+          h: 0.26 + rng()*0.2,
+          ph: rng()*Math.PI*2, lean: (rng() - 0.5)*0.5, head: rng() < 0.5 });
+      }
+    } else {
+      // a slack cable or two strung across the near corner of the street
+      this.fg.push({ y: 0.06 + rng()*0.05, sag: 0.05 + rng()*0.05, side: rng() < 0.5 });
+      if (rng() < 0.6) this.fg.push({ y: 0.14 + rng()*0.06, sag: 0.04 + rng()*0.04, side: rng() < 0.5 });
+    }
+
     // Points of light glinting off moving water.
     this.glints = [];
     if (loc === "beach" || loc === "wetland") {
@@ -660,6 +699,7 @@ class Scene {
     this.drawActors(c, W, H, dt, bot, night);
     this.drawCritters(c, W, H, dt, bot, night);
     this.drawFlyers(c, W, H, dt, bot);
+    this.drawForeground(c, W, H, dt, bot);   // the near edge, over everything living
     this.drawFireflies(c, W, H, dt, night);
     this.drawWeather(c, W, H, dt, night);
     this.drawRipples(c, W, H, dt);
@@ -729,10 +769,13 @@ class Scene {
     const wf = state.weather === "breeze" ? 3 : 1;
     const af = (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
     for (const cl of this.clouds) {
-      cl.x += cl.s * dt * wf;
+      // Big clouds are near ones: they cross faster and hold their colour,
+      // while the small far ones hang almost still and pale away.
+      const near = Math.max(0, Math.min(1, (cl.w - 0.16)/0.22));
+      cl.x += cl.s * dt * wf * (0.5 + near);
       if (cl.x > 1.3) cl.x = -0.3;
       const cw = cl.w * W;
-      this.drawGlow(c, rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af);
+      this.drawGlow(c, rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af * (0.62 + near*0.5));
     }
   }
 
@@ -809,6 +852,49 @@ class Scene {
     }
   }
 
+  /* ---- depth ----
+     Where a ground animal stands, how large it looks, and how much air is
+     between it and the pane. z runs 0 at the glass to 1 at the far edge of
+     the walkable ground. Things further off sit higher in the frame, are
+     smaller, move more slowly across it, and are washed toward the colour
+     of the sky — the three cues that do most of the work of distance. */
+  groundBand() {
+    // The near end sits on the lit ground, not down in the dark strip at the
+    // very bottom of the frame — an animal standing there is a black shape on
+    // black. The far end stops short of the ridge it would otherwise climb.
+    switch (this.loc) {
+      case "meadow":  return [0.930, 0.872];
+      case "forest":  return [0.945, 0.898];
+      case "beach":   return [(this.shoreY || 0.82) + 0.125, (this.shoreY || 0.82) + 0.03];
+      case "wetland": return [(this.bankY || 0.86) + 0.035, (this.bankY || 0.86) - 0.008];
+      default:        return [0.978, 0.952];
+    }
+  }
+  groundDepth(z, bot) {
+    const [near, far] = this.groundBand();
+    const zz = Math.max(0, Math.min(1, z === undefined ? 0.5 : z));
+    return {
+      y: near + (far - near)*zz,
+      scale: 1.22 - zz*0.62,
+      speed: 1 - zz*0.55,
+      // A light touch only: these animals stand on dark ground but against
+      // a pale far hill, so contrast runs both ways and a strong ramp would
+      // lose them at one end or the other.
+      col: css(mix(this.tok.inkDeep, bot, 0.03 + zz*0.10))
+    };
+  }
+
+  /* The small dark pool a body casts on the ground beneath it. Nothing
+     grounds an animal like the shadow it stands in. */
+  contactShadow(c, x, y, w, alpha) {
+    if (alpha <= 0.01) return;
+    c.save();
+    c.globalAlpha = alpha;
+    c.fillStyle = css(this.tok.inkDeep);
+    c.beginPath(); c.ellipse(x, y, w, Math.max(1, w*0.22), 0, 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
   /* Roughly how bright the day is — for daytime-only touches like motes. */
   dayness() {
     const m = this.timeMix, total = m.dawn + m.day + m.dusk + m.night || 1;
@@ -841,6 +927,81 @@ class Scene {
     c.globalAlpha = 1;
   }
 
+  /* The nearest layer of all, drawn over the animals: grass and reeds
+     against the glass, trunks at the frame's edge, a cable across the
+     street. Almost black, and swaying wider than anything behind it,
+     because it is close. */
+  drawForeground(c, W, H, dt, bot) {
+    if (!this.fg) return;
+    const wa = this.windAmt();
+    const near = css(mix(this.tok.inkDeep, bot, 0.015));
+    const mn = Math.min(W, H);
+
+    if (this.loc === "forest" && this.fgTrunks) {
+      c.fillStyle = near;
+      for (const tr of this.fgTrunks) {
+        const sway = Math.sin(this.t*0.7 + tr.x*5)*3*wa;
+        const bw = tr.w*W;
+        c.beginPath();
+        c.moveTo(tr.x*W - bw*0.5, H);
+        c.lineTo(tr.x*W - bw*0.5 + tr.lean*W + sway, -2);
+        c.lineTo(tr.x*W + bw*0.5 + tr.lean*W + sway, -2);
+        c.lineTo(tr.x*W + bw*0.5, H);
+        c.closePath(); c.fill();
+      }
+    }
+    if (this.loc === "city") {
+      c.strokeStyle = near; c.lineWidth = 1.8; c.lineCap = "round";
+      for (const w of this.fg) {
+        const y0 = w.y*H, sag = w.sag*H + Math.sin(this.t*0.5)*2*wa;
+        c.beginPath();
+        c.moveTo(w.side ? -4 : W*0.45, y0);
+        c.quadraticCurveTo(W*0.5, y0 + sag, w.side ? W*0.55 : W + 4, y0 + (w.side ? sag*0.4 : 0));
+        c.stroke();
+      }
+      return;
+    }
+
+    c.strokeStyle = near; c.fillStyle = near;
+    c.lineCap = "round";
+    for (const g of this.fg) {
+      const gx = g.x*W, gy = H + 4, len = g.h*H;
+      const sway = Math.sin(this.t*1.5 + g.ph)*11*wa*this.windWave(g.x) + g.lean*7;
+      c.lineWidth = Math.max(2, mn*0.009);
+      c.beginPath();
+      c.moveTo(gx, gy);
+      c.quadraticCurveTo(gx + sway*0.4, gy - len*0.6, gx + sway, gy - len);
+      c.stroke();
+      if (g.blades) {                       // a near fern, fronds and all
+        c.lineWidth = Math.max(1, mn*0.004);
+        for (let k = 1; k <= g.blades; k++) {
+          const t2 = k/(g.blades + 1);
+          const bx = gx + sway*t2, by = gy - len*t2, bl = len*0.3*(1 - t2*0.5);
+          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5); c.stroke();
+          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5); c.stroke();
+        }
+      } else if (g.head) {                  // a seed head, heavy at the tip
+        c.save();
+        c.translate(gx + sway, gy - len);
+        c.rotate(sway*0.012);
+        c.beginPath(); c.ellipse(0, mn*0.008, mn*0.006, mn*0.022, 0, 0, Math.PI*2); c.fill();
+        c.restore();
+      }
+    }
+  }
+
+  /* The air itself, thickening with distance: a soft band of haze lying
+     along the far ground. It is what keeps the middle distance from
+     reading as a flat cut-out. */
+  distanceHaze(c, W, H, y0, y1, strength) {
+    const g = c.createLinearGradient(0, y0*H, 0, y1*H);
+    g.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
+    g.addColorStop(0.45, `rgba(${this.tok.fogRGB}, ${strength})`);
+    g.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
+    c.fillStyle = g;
+    c.fillRect(0, y0*H, W, (y1 - y0)*H);
+  }
+
   /* Sparse points of light flashing off moving water. */
   drawWaterGlints(c, W, H, y0, y1, night) {
     if (!this.glints) return;
@@ -862,6 +1023,7 @@ class Scene {
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.45), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.38));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
+    this.distanceHaze(c, W, H, 0.52, 0.82, 0.075*(1 - this.nightness()*0.55));
     this.drawRidge(c, this.hillB, mix(this.tok.ink, bot, 0.18), W, H);
     const bushCol = css(mix(this.tok.inkDeep, bot, 0.15));
     for (const bu of (this.bushes || [])) this.bushShape(c, bu.x, bu.y, bu.r, bu.lobes, W, H, bushCol);
@@ -878,7 +1040,7 @@ class Scene {
       c.lineTo(this.treeX*W + s.x2*W*0.5 + sway, baseY + s.y2*H*0.9);
       c.stroke();
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.04));
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
     c.beginPath();
     c.moveTo(0, H); c.lineTo(0, H*0.92);
     c.quadraticCurveTo(W*0.5, H*0.88, W, H*0.93);
@@ -944,7 +1106,7 @@ class Scene {
     c.fillStyle = haze; c.fillRect(0, H*0.42, W, H*0.4);
     const nearCol = css(mix(this.tok.inkDeep, bot, 0.10));
     for (const tr of this.trunksNear) drawTrunk(tr, nearCol);
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05));
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
     c.fillRect(0, H*0.93, W, H*0.07);
     this.drawFerns(c, W, H, bot);
     this.drawMushrooms(c, W, H, bot);
@@ -1012,6 +1174,8 @@ class Scene {
     c.fillRect(0, hy, W, sy - hy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.14)`;
     c.fillRect(0, hy, W, 1);
+    this.distanceHaze(c, W, H, this.horizonY - 0.07, this.horizonY + 0.1,
+      0.09*(1 - night*0.55));
     if (this.islet) {
       const ix = this.islet.x*W, iy = hy + (sy - hy)*0.14;
       const iw = this.islet.w*W, ih = this.islet.h*H;
@@ -1092,6 +1256,8 @@ class Scene {
     this.drawRidge(c, this.treeline, mix(this.tok.ink, bot, 0.42), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.36));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
+    this.distanceHaze(c, W, H, this.treeline(0.5) - 0.06, this.waterY + 0.06,
+      0.08*(1 - this.nightness()*0.55));
     const wy = this.waterY * H, by = this.bankY * H;
     const wg = c.createLinearGradient(0, wy, 0, by);
     wg.addColorStop(0, css(mix(this.tok.sea, top, 0.45)));
@@ -1156,7 +1322,7 @@ class Scene {
         c.beginPath(); c.arc(fr.x*W, fr.y*H, 2, 0, Math.PI*2); c.fill();
       }
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.06));
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.15));
     c.beginPath();
     c.moveTo(0, H); c.lineTo(0, by);
     c.quadraticCurveTo(W*0.5, by - H*0.015, W, by);
@@ -1229,7 +1395,7 @@ class Scene {
         }
       }
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.04));
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
     c.fillRect(0, groundY, W, H - groundY);
     // street lamps warming the pavement after dark
     if (night > 0.2 && this.streetlamps) {
@@ -2384,6 +2550,9 @@ class Scene {
     for (let i = this.critters.length - 1; i >= 0; i--) {
       const cr = this.critters[i];
       cr.t += dt;
+      // where this individual stands in the depth of the field, decided once
+      if (cr.z === undefined) cr.z = Math.random();
+      const D = this.groundDepth(cr.z, bot);
       let dead = false;
       switch (cr.kind) {
         case "butterfly": {
@@ -2424,7 +2593,7 @@ class Scene {
         }
         case "deer": {
           const walking = cr.state === "enter" || cr.state === "leave" || cr.state === "walkbit";
-          if (walking) { cr.x += cr.dir*0.02*dt; cr.lp += dt*6; }
+          if (walking) { cr.x += cr.dir*0.02*dt*D.speed; cr.lp += dt*6; }
           if (cr.state === "enter" || cr.state === "walkbit") {
             if ((cr.dir > 0 && cr.x >= cr.tx) || (cr.dir < 0 && cr.x <= cr.tx)) { cr.state = "grazedown"; }
           } else if (cr.state === "grazedown") {
@@ -2458,21 +2627,23 @@ class Scene {
               cr.tx = Math.min(0.9, Math.max(0.1, cr.x + cr.dir*(0.06 + Math.random()*0.1)));
             }
           } else if (cr.state === "leave") {
-            if (cr.bounding) { cr.x += cr.dir*0.055*dt; cr.bp += dt*7; }
+            if (cr.bounding) { cr.x += cr.dir*0.055*dt*D.speed; cr.bp += dt*7; }
             if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           }
           const bound = cr.bounding && cr.state === "leave"
             ? Math.max(0, Math.sin(cr.bp)) : 0;
-          this.paintDeer(c, { x: cr.x*W, y: (0.93 - bound*0.035)*H,
-            s: H*0.075*(cr.sz || 1), dir: cr.dir,
-            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: colDark, t: cr.t,
+          const dS = H*0.075*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - bound));
+          this.paintDeer(c, { x: cr.x*W, y: (D.y - bound*0.035)*H,
+            s: dS, dir: cr.dir,
+            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: D.col, t: cr.t,
             grazing: cr.state === "graze", alert: cr.state === "alert", bound });
           break;
         }
         case "runner": {
           cr.timer -= dt;
           if (cr.mode === "dash") {
-            cr.x += cr.dir*0.11*dt; cr.ph += dt*30;
+            cr.x += cr.dir*0.11*dt*D.speed; cr.ph += dt*30;
             if (cr.timer <= 0) { cr.mode = "pause"; cr.timer = 0.5 + Math.random()*1.2; }
           } else if (cr.timer <= 0) {
             cr.mode = "dash"; cr.timer = 0.35 + Math.random()*0.5;
@@ -2481,8 +2652,10 @@ class Scene {
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
           // standing still, it works the wet sand with quick jabs of the bill
           const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
-          this.paintSanderling(c, cr.x*W, ((this.shoreY || 0.82) + 0.035)*H,
-            cr.dir, cr.mode === "dash", cr.ph, colDark, probe);
+          c.save(); c.translate(cr.x*W, D.y*H); c.scale(D.scale, D.scale);
+          this.contactShadow(c, 0, 1, 5, 0.16*(1 - cr.z*0.6));
+          this.paintSanderling(c, 0, 0, cr.dir, cr.mode === "dash", cr.ph, D.col, probe);
+          c.restore();
           break;
         }
         case "cat": {
@@ -2521,7 +2694,7 @@ class Scene {
           cr.timer -= dt;
           cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "hop") {
-            cr.hopPh += dt*7; cr.x += cr.dir*0.05*dt;
+            cr.hopPh += dt*7; cr.x += cr.dir*0.05*dt*D.speed;
             if (cr.timer <= 0) {
               // it settles to crop the grass, wash its face, or just sit up
               const roll = Math.random();
@@ -2540,8 +2713,10 @@ class Scene {
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
           const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
-          this.paintRabbit(c, { x: cr.x*W, y: 0.9*H - hop*H*0.035, s: H*0.032*(cr.sz || 1),
-            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: colDark,
+          const rS = H*0.032*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
+          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
+            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
             t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
             wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
           break;
@@ -2551,7 +2726,7 @@ class Scene {
           cr.actT = (cr.actT || 0) + dt;
           const walking = cr.mode === "trot";
           if (walking) {
-            cr.x += cr.dir*0.028*dt; cr.lp += dt*7;
+            cr.x += cr.dir*0.028*dt*D.speed; cr.lp += dt*7;
             if (cr.timer <= 0) {
               // it stops for a reason: a scent on the ground, a sound under
               // the grass worth pouncing on, or just to listen
@@ -2565,18 +2740,20 @@ class Scene {
             if (Math.random() < 0.22) cr.dir *= -1;      // thinks better of it
           }
           if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
-          const gy = this.loc === "forest" ? 0.925 : 0.9;
           // the pounce: gathers, springs high, comes down forepaws first
           const pk = cr.mode === "pounce" ? Math.min(1, cr.actT/1.15) : 0;
           const pounce = pk > 0 ? Math.sin(Math.PI*pk) : 0;
-          this.paintFox(c, { x: cr.x*W, y: gy*H, s: H*0.05*(cr.sz || 1), dir: cr.dir, walking,
+          const fS = H*0.05*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9, 0.2*(1 - cr.z*0.6)*(1 - pounce*0.8));
+          this.paintFox(c, { x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir, walking,
             lp: cr.lp, look: cr.mode === "listen" ? Math.sin(cr.t*1.8) : 0,
-            sniff: cr.mode === "sniff" ? 1 : 0, pounce, color: colDark });
+            sniff: cr.mode === "sniff" ? 1 : 0, pounce, color: D.col });
           break;
         }
         case "heron": {
           cr.timer -= dt;
           cr.actT = (cr.actT || 0) + dt;
+          if (!cr.placed) { cr.y = D.y; cr.placed = true; }   // stands at its own distance
           if (cr.mode === "stand") {
             // the whole point of standing there: now and then the neck goes
             // down like a loosed spring
@@ -2592,8 +2769,11 @@ class Scene {
             cr.x += cr.vx*dt; cr.y -= dt*0.018; cr.flap += dt*3.4;
             if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
           }
-          this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: H*0.085*(cr.sz || 1), dir: cr.dir,
-            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0), color: colDark, t: cr.t,
+          const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
+          if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
+          this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
+            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
+            color: cr.mode === "fly" ? colDark : D.col, t: cr.t,
             stab: cr.act === "stab" ? Math.sin(Math.PI*Math.min(1, cr.actT/0.9)) : 0,
             preen: cr.act === "preen" ? 1 : 0 });
           break;
@@ -2617,7 +2797,7 @@ class Scene {
           cr.timer -= dt;
           cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "bound") {
-            cr.ph += dt*9; cr.x += cr.dir*0.045*dt;
+            cr.ph += dt*9; cr.x += cr.dir*0.045*dt*D.speed;
             if (cr.timer <= 0) {
               // up on its haunches to nibble, or scrabbling at the litter
               cr.act = Math.random() < 0.4 ? "dig" : null;
@@ -2629,15 +2809,17 @@ class Scene {
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
           const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
-          this.paintSquirrel(c, { x: cr.x*W, y: (0.925 - hopY)*H, s: H*0.03*(cr.sz || 1),
-            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t, color: colDark,
+          const qS = H*0.03*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
+          this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
+            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t, color: D.col,
             dig: cr.act === "dig" ? 1 : 0 });
           break;
         }
         case "hare": {
           cr.timer -= dt;
           if (cr.mode === "lope") {
-            cr.ph += dt*8; cr.x += cr.dir*0.07*dt;
+            cr.ph += dt*8; cr.x += cr.dir*0.07*dt*D.speed;
             if (cr.timer <= 0) {
               const roll = Math.random();
               // it sits bolt upright to look, or drops its head to the grass
@@ -2651,16 +2833,18 @@ class Scene {
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
           const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
           const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
-          this.paintHare(c, { x: cr.x*W, y: (0.9 - lift)*H, s: H*0.042*(cr.sz || 1),
+          const hS = H*0.042*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
+          this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
             dir: cr.dir, hop: st, alert: cr.mode === "alert",
-            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: colDark });
+            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: D.col });
           break;
         }
         case "hedgehog": {
           cr.timer -= dt;
           cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "shuffle") {
-            cr.x += cr.dir*0.008*dt;
+            cr.x += cr.dir*0.008*dt*D.speed;
             if (cr.timer <= 0) {
               // stops dead, nose up, reading the air
               cr.mode = Math.random() < 0.45 ? "sniffup" : "pause";
@@ -2671,8 +2855,10 @@ class Scene {
             if (Math.random() < 0.2) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
-          this.paintHedgehog(c, { x: cr.x*W, y: 0.94*H, s: H*0.026*(cr.sz || 1),
-            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: colDark, rim: colFar,
+          const gS = H*0.026*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, gS*0.85, 0.18*(1 - cr.z*0.6));
+          this.paintHedgehog(c, { x: cr.x*W, y: D.y*H, s: gS,
+            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: D.col, rim: colFar,
             sniffUp: cr.mode === "sniffup" ? Math.min(1, cr.actT*2) : 0 });
           break;
         }
@@ -2682,13 +2868,15 @@ class Scene {
           if (cr.mode === "dig") {
             if (cr.timer <= 0) { cr.mode = "trundle"; cr.timer = 4 + Math.random()*6; }
           } else {
-            cr.x += cr.dir*0.014*dt; cr.lp += dt*5;
+            cr.x += cr.dir*0.014*dt*D.speed; cr.lp += dt*5;
             // it stops to rootle at the ground, which is most of what it does
             if (cr.timer <= 0) { cr.mode = "dig"; cr.timer = 2 + Math.random()*3; cr.actT = 0; }
           }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          this.paintBadger(c, { x: cr.x*W, y: 0.935*H, s: H*0.045*(cr.sz || 1),
-            dir: cr.dir, lp: cr.lp, color: colDark,
+          const bS = H*0.045*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, bS*0.95, 0.2*(1 - cr.z*0.6));
+          this.paintBadger(c, { x: cr.x*W, y: D.y*H, s: bS,
+            dir: cr.dir, lp: cr.lp, color: D.col,
             dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
           break;
         }
@@ -2706,7 +2894,7 @@ class Scene {
             }
           } else if (cr.mode === "roll") {
             cr.actT = (cr.actT || 0) + dt;
-            cr.x += cr.dir*0.008*dt;
+            cr.x += cr.dir*0.008*dt*D.speed;
             if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
           } else {
             cr.x += cr.dir*0.02*dt;
@@ -3792,7 +3980,7 @@ class Scene {
   }
 
   drawFlyers(c, W, H, dt, bot) {
-    const col = css(mix(this.tok.ink, bot, 0.2));
+    const colNear = mix(this.tok.ink, bot, 0.2);
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];
       f.age = (f.age || 0) + dt;
@@ -3834,7 +4022,11 @@ class Scene {
                   f.kind === "buzzard" || f.kind === "kestrel" ? 0 : Math.sin(f.ph*0.3)*4;
       const fy = f.y*H + bob;
       const dir = (f.vx || 0.01) >= 0 ? 1 : -1;
-      c.globalAlpha = Math.min(1, f.age*2);
+      // A small bird in the sky is a distant one: it loses itself in the air
+      // by the same amount that it has lost its size.
+      const far = Math.max(0, Math.min(1, 1 - (f.size - 2.4)/9));
+      const col = css(mix(colNear, bot, far*0.45));
+      c.globalAlpha = Math.min(1, f.age*2) * (1 - far*0.3);
       if (f.kind === "gull") this.paintGullFlight(c, fx, fy, f.size, dir, f.ph, col);
       else if (f.kind === "swift") this.paintSwiftFlight(c, fx, fy, f.size, dir, f.ph, col);
       else if (f.kind === "lark") this.paintLarkFlight(c, fx, fy, f.size, f.ph, col, f.hold > 0);
