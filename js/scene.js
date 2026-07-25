@@ -504,7 +504,11 @@ class Scene {
       id, x: x01, y: y01, perchType,
       s: Math.max(3.5, Math.min(16, 15.5 - depth*0.62)) * hs * ivar.scale,   // far = smaller, near = bigger
       t: 0, dur, alpha: 1, flip: x01 > 0.55, ivar,
-      linger: 1.4 + Math.random()*1.8, leave: null,
+      // Most callers say their piece and move on. About a third settle in:
+      // they stay a good while, preening and looking about the place, and
+      // leave in their own time.
+      linger: Math.random() < 0.34 ? 14 + Math.random()*34 : 2 + Math.random()*4.5,
+      leave: null,
       depthMix: Math.min(0.42, 0.10 + depth*0.013), data: {}
     };
     if (id === "owl") { a.beh = "owl"; a.linger = 3 + Math.random()*2; a.s *= 1.25; }
@@ -563,7 +567,17 @@ class Scene {
     }
 
     this.actors.push(a);
-    if (this.actors.length > 6) this.actors.shift();
+    // With settlers about, the stage can fill. Rather than blinking the
+    // earliest guest out of existence, ask it to leave the way it arrived.
+    if (this.actors.length > 8) {
+      const old = this.actors.find(x => !x.leave);
+      if (!old) { this.actors.shift(); return; }
+      if (old.beh === "perch") {
+        old.leave = "fly"; old.leaveT = 0;
+        old.flyDir = old.flip ? -1 : 1;
+        old.launchX = old.x; old.launchY = old.y;
+      } else old.leave = "fade";
+    }
   }
 
   fishRise(x01) {
@@ -1349,9 +1363,15 @@ class Scene {
       if (a.beh === "perch" && !a.leave && !singingNow && a.t > a.enter + 0.6) {
         if (a.nextGest === undefined) a.nextGest = a.t + 1.5 + Math.random()*(iv0.lookEvery || 3);
         if (!a.gest && a.t >= a.nextGest) {
-          a.gest = ["preen", "stretch", "hop"][Math.floor(Math.random()*3)];
+          // preening, a wing stretched, a hop about-face, feathers fluffed
+          // out, or a long look at something only it can see
+          a.gest = ["preen", "stretch", "hop", "fluff", "peer", "preen", "fluff"]
+            [Math.floor(Math.random()*7)];
           a.gestT = 0;
-          a.gestDur = a.gest === "hop" ? 0.35 : 0.9 + Math.random()*0.5;
+          a.gestDur = a.gest === "hop" ? 0.35
+            : a.gest === "fluff" ? 0.7 + Math.random()*0.6
+            : a.gest === "peer" ? 1.2 + Math.random()*1.4
+            : 0.9 + Math.random()*0.5;
         }
       }
       if (a.gest) {
@@ -1394,19 +1414,22 @@ class Scene {
           this.drawPerchFooting(c, a.restX*W, a.restY*H, a.s, a.perchType, bot,
             a.alpha * landed * (1 - flyProg));
           const hopG = a.gest === "hop" ? Math.abs(Math.sin(Math.PI*(a.gestT/a.gestDur)))*a.s*0.22 : 0;
+          const gk = a.gest ? Math.sin(Math.PI*Math.min(1, a.gestT/a.gestDur)) : 0;
+          const fluffG = a.gest === "fluff" ? gk : 0;
+          const peerG = a.gest === "peer" ? gk : 0;
           const diveRot = a.leave === "dive" ? Math.min(1.35, a.leaveT*3) : 0;
           if (diveRot) { c.save(); c.translate(x, y); c.rotate(a.flip ? -diveRot : diveRot); }
           this.paintBird(c, {
             x: diveRot ? 0 : x, y: diveRot ? 0 : y - hopBob - hopG,
             s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
             color: colStr, rim: rimStr, deep: deepStr, marks: ps,
-            plump: (ps.plump || 1) * (iv.puff || 1),
+            plump: (ps.plump || 1) * (iv.puff || 1) * (1 + fluffG*0.24),
             tailLen: (ps.tail || 1.1) * (iv.tail || 1), tailUp: !!ps.tailUp,
             billLen: ps.bill || 0.45,
             crest: ps.crest || (iv.crest && !ps.tailUp && !ps.cap), rimLight: iv.rim,
             gest: (a.gest === "preen" || a.gest === "stretch") ? a.gest : null,
             gestK: a.gest ? a.gestT/a.gestDur : 0,
-            sing, breath, headTurn, tailFlick, wingSettle,
+            sing, breath, headTurn: headTurn + peerG*0.85, tailFlick, wingSettle,
             fly: diveRot ? 1 : flyProg, flap: diveRot ? -0.4 : flyFlap, t: a.t
           });
           if (diveRot) c.restore();
@@ -2235,7 +2258,7 @@ class Scene {
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "deer", x: dir > 0 ? -0.08 : 1.08, dir,
         tx: 0.25 + Math.random()*0.5, state: "enter", t: 0, timer: 0,
-        head: 0, cycles: 2 + Math.floor(Math.random()*2), lp: 0,
+        head: 0, cycles: 2 + Math.floor(Math.random()*3), lp: 0, bp: 0,
         sz: 0.85 + Math.random()*0.3 });
     }
     if (this.loc === "beach" && night < 0.5 && n("runner") < 4 && P(0.05)) {
@@ -2414,18 +2437,36 @@ class Scene {
             cr.head = Math.max(0, cr.head - dt*1.4);
             if (cr.head <= 0) {
               cr.cycles--;
-              if (cr.cycles <= 0) { cr.state = "leave"; }
-              else {
+              if (cr.cycles <= 0) {
+                cr.state = "leave";
+                // now and then something spooks it and it goes in bounds
+                cr.bounding = Math.random() < 0.4;
+                cr.bp = 0;
+              } else if (Math.random() < 0.45) {
+                // head up, ears forward, listening — the longest it ever holds still
+                cr.state = "alert"; cr.timer = 1.8 + Math.random()*3;
+              } else {
                 cr.state = "walkbit";
                 cr.tx = Math.min(0.9, Math.max(0.1, cr.x + cr.dir*(0.06 + Math.random()*0.08)));
               }
             }
+          } else if (cr.state === "alert") {
+            cr.timer -= dt;
+            if (cr.timer <= 0) {
+              cr.state = "walkbit";
+              if (Math.random() < 0.3) cr.dir *= -1;     // moves off the other way
+              cr.tx = Math.min(0.9, Math.max(0.1, cr.x + cr.dir*(0.06 + Math.random()*0.1)));
+            }
           } else if (cr.state === "leave") {
+            if (cr.bounding) { cr.x += cr.dir*0.055*dt; cr.bp += dt*7; }
             if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           }
-          this.paintDeer(c, { x: cr.x*W, y: 0.93*H, s: H*0.075*(cr.sz || 1), dir: cr.dir,
-            head: cr.head, walking, lp: cr.lp, color: colDark, t: cr.t,
-            grazing: cr.state === "graze" });
+          const bound = cr.bounding && cr.state === "leave"
+            ? Math.max(0, Math.sin(cr.bp)) : 0;
+          this.paintDeer(c, { x: cr.x*W, y: (0.93 - bound*0.035)*H,
+            s: H*0.075*(cr.sz || 1), dir: cr.dir,
+            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: colDark, t: cr.t,
+            grazing: cr.state === "graze", alert: cr.state === "alert", bound });
           break;
         }
         case "runner": {
@@ -2438,67 +2479,123 @@ class Scene {
             if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
+          // standing still, it works the wet sand with quick jabs of the bill
+          const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
           this.paintSanderling(c, cr.x*W, ((this.shoreY || 0.82) + 0.035)*H,
-            cr.dir, cr.mode === "dash", cr.ph, colDark);
+            cr.dir, cr.mode === "dash", cr.ph, colDark, probe);
           break;
         }
         case "cat": {
           const b = this.frontBlocks && this.frontBlocks[cr.b];
           if (!b) { dead = true; break; }
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "walk") {
             cr.u += cr.dir * 0.02 * dt / Math.max(0.04, b.w);
-            if (Math.random() < 0.12*dt) { cr.mode = "sit"; cr.timer = 2 + Math.random()*3; }
+            if (Math.random() < 0.12*dt) {
+              // it stops to sit, or to stretch out the length of itself
+              cr.mode = Math.random() < 0.25 ? "stretch" : "sit";
+              cr.timer = cr.mode === "stretch" ? 1.4 : 2 + Math.random()*4;
+              cr.actT = 0;
+            }
             if (cr.u < -0.05 || cr.u > 1.05) { dead = true; break; }
           } else {
             cr.timer -= dt;
-            if (cr.timer <= 0) cr.mode = "walk";
+            if (cr.mode === "sit" && !cr.act && Math.random() < 0.25*dt) {
+              cr.act = "groom"; cr.actT = 0;                 // a wash, while it's sitting
+              cr.actDur = 2 + Math.random()*2.5;
+            }
+            if (cr.act && cr.actT > cr.actDur) cr.act = null;
+            if (cr.timer <= 0) {
+              cr.mode = "walk"; cr.act = null;
+              if (Math.random() < 0.3) cr.dir *= -1;         // turns and goes back
+            }
           }
           cr.x = b.x + cr.u*b.w;      // kept current, so its voice comes from the right roof
           this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
-            sit: cr.mode === "sit", t: cr.t, color: colDark });
+            sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
+            groom: cr.act === "groom" ? 1 : 0,
+            stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
           break;
         }
         case "rabbit": {
           cr.timer -= dt;
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "hop") {
             cr.hopPh += dt*7; cr.x += cr.dir*0.05*dt;
-            if (cr.timer <= 0) { cr.mode = "sit"; cr.timer = 0.6 + Math.random()*1.6; cr.hopPh = 0; }
+            if (cr.timer <= 0) {
+              // it settles to crop the grass, wash its face, or just sit up
+              const roll = Math.random();
+              cr.act = roll < 0.42 ? "nibble" : roll < 0.62 ? "wash" : null;
+              cr.mode = "sit";
+              cr.timer = (cr.act ? 2 : 0.6) + Math.random()*2.2;
+              cr.hopPh = 0; cr.actT = 0;
+            }
           } else {
             cr.ear = Math.max(0, (cr.ear || 0) - dt*2);
             if (Math.random() < 0.6*dt) cr.ear = 1;
-            if (cr.timer <= 0) { cr.mode = "hop"; cr.timer = 0.25 + Math.random()*0.4; }
+            if (cr.timer <= 0) {
+              cr.mode = "hop"; cr.act = null; cr.timer = 0.25 + Math.random()*0.5;
+              if (Math.random() < 0.2) cr.dir *= -1;
+            }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
           const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
           this.paintRabbit(c, { x: cr.x*W, y: 0.9*H - hop*H*0.035, s: H*0.032*(cr.sz || 1),
-            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: colDark });
+            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: colDark,
+            t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
+            wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
           break;
         }
         case "fox": {
           cr.timer -= dt;
+          cr.actT = (cr.actT || 0) + dt;
           const walking = cr.mode === "trot";
           if (walking) {
             cr.x += cr.dir*0.028*dt; cr.lp += dt*7;
-            if (cr.timer <= 0) { cr.mode = "pause"; cr.timer = 0.8 + Math.random()*1.8; }
-          } else {
-            if (cr.timer <= 0) { cr.mode = "trot"; cr.timer = 1.4 + Math.random()*2.2; }
+            if (cr.timer <= 0) {
+              // it stops for a reason: a scent on the ground, a sound under
+              // the grass worth pouncing on, or just to listen
+              const roll = Math.random();
+              cr.mode = roll < 0.36 ? "sniff" : roll < 0.55 ? "pounce" : "listen";
+              cr.timer = cr.mode === "pounce" ? 1.15 : 1.1 + Math.random()*2.2;
+              cr.actT = 0;
+            }
+          } else if (cr.timer <= 0) {
+            cr.mode = "trot"; cr.timer = 1.4 + Math.random()*2.4;
+            if (Math.random() < 0.22) cr.dir *= -1;      // thinks better of it
           }
           if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           const gy = this.loc === "forest" ? 0.925 : 0.9;
+          // the pounce: gathers, springs high, comes down forepaws first
+          const pk = cr.mode === "pounce" ? Math.min(1, cr.actT/1.15) : 0;
+          const pounce = pk > 0 ? Math.sin(Math.PI*pk) : 0;
           this.paintFox(c, { x: cr.x*W, y: gy*H, s: H*0.05*(cr.sz || 1), dir: cr.dir, walking,
-            lp: cr.lp, look: walking ? 0 : Math.sin(cr.t*1.8), color: colDark });
+            lp: cr.lp, look: cr.mode === "listen" ? Math.sin(cr.t*1.8) : 0,
+            sniff: cr.mode === "sniff" ? 1 : 0, pounce, color: colDark });
           break;
         }
         case "heron": {
           cr.timer -= dt;
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "stand") {
-            if (cr.timer <= 0) { cr.mode = "fly"; cr.vx = cr.dir*0.03; }
+            // the whole point of standing there: now and then the neck goes
+            // down like a loosed spring
+            if (!cr.act && Math.random() < 0.22*dt) { cr.act = "stab"; cr.actT = 0; }
+            else if (!cr.act && Math.random() < 0.12*dt) { cr.act = "preen"; cr.actT = 0; }
+            if (cr.act === "stab" && cr.actT > 0.9) {
+              cr.act = null;
+              if (Math.random() < 0.5) this.fishRings.push({ x: cr.x, y: cr.y + 0.01, age: 0, quiet: true });
+            }
+            if (cr.act === "preen" && cr.actT > 2.4) cr.act = null;
+            if (cr.timer <= 0) { cr.mode = "fly"; cr.act = null; cr.vx = cr.dir*0.03; }
           } else {
             cr.x += cr.vx*dt; cr.y -= dt*0.018; cr.flap += dt*3.4;
             if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
           }
           this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: H*0.085*(cr.sz || 1), dir: cr.dir,
-            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0), color: colDark, t: cr.t });
+            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0), color: colDark, t: cr.t,
+            stab: cr.act === "stab" ? Math.sin(Math.PI*Math.min(1, cr.actT/0.9)) : 0,
+            preen: cr.act === "preen" ? 1 : 0 });
           break;
         }
         case "porpoise": {
@@ -2518,53 +2615,81 @@ class Scene {
         }
         case "squirrel": {
           cr.timer -= dt;
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "bound") {
             cr.ph += dt*9; cr.x += cr.dir*0.045*dt;
-            if (cr.timer <= 0) { cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.2; }
+            if (cr.timer <= 0) {
+              // up on its haunches to nibble, or scrabbling at the litter
+              cr.act = Math.random() < 0.4 ? "dig" : null;
+              cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.6; cr.actT = 0;
+            }
           } else if (cr.timer <= 0) {
-            cr.mode = "bound"; cr.timer = 0.6 + Math.random()*1.0;
+            cr.mode = "bound"; cr.act = null; cr.timer = 0.6 + Math.random()*1.1;
+            if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
           const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
           this.paintSquirrel(c, { x: cr.x*W, y: (0.925 - hopY)*H, s: H*0.03*(cr.sz || 1),
-            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t, color: colDark });
+            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t, color: colDark,
+            dig: cr.act === "dig" ? 1 : 0 });
           break;
         }
         case "hare": {
           cr.timer -= dt;
           if (cr.mode === "lope") {
             cr.ph += dt*8; cr.x += cr.dir*0.07*dt;
-            if (cr.timer <= 0 && Math.random() < 0.6) {
-              cr.mode = "alert"; cr.timer = 1.2 + Math.random()*2;
-            } else if (cr.timer <= 0) cr.timer = 1 + Math.random()*1.5;
+            if (cr.timer <= 0) {
+              const roll = Math.random();
+              // it sits bolt upright to look, or drops its head to the grass
+              cr.mode = roll < 0.5 ? "alert" : roll < 0.78 ? "graze" : "lope";
+              cr.timer = cr.mode === "lope" ? 1 + Math.random()*1.5 : 1.6 + Math.random()*3;
+            }
           } else if (cr.timer <= 0) {
-            cr.mode = "lope"; cr.timer = 1.5 + Math.random()*2;
+            cr.mode = "lope"; cr.timer = 1.5 + Math.random()*2.4;
+            if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
           const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
           const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
           this.paintHare(c, { x: cr.x*W, y: (0.9 - lift)*H, s: H*0.042*(cr.sz || 1),
-            dir: cr.dir, hop: st, alert: cr.mode === "alert", color: colDark });
+            dir: cr.dir, hop: st, alert: cr.mode === "alert",
+            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: colDark });
           break;
         }
         case "hedgehog": {
           cr.timer -= dt;
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "shuffle") {
             cr.x += cr.dir*0.008*dt;
-            if (cr.timer <= 0) { cr.mode = "pause"; cr.timer = 1 + Math.random()*2; }
+            if (cr.timer <= 0) {
+              // stops dead, nose up, reading the air
+              cr.mode = Math.random() < 0.45 ? "sniffup" : "pause";
+              cr.timer = 1 + Math.random()*2.2; cr.actT = 0;
+            }
           } else if (cr.timer <= 0) {
-            cr.mode = "shuffle"; cr.timer = 2 + Math.random()*3;
+            cr.mode = "shuffle"; cr.timer = 2 + Math.random()*3.5;
+            if (Math.random() < 0.2) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
           this.paintHedgehog(c, { x: cr.x*W, y: 0.94*H, s: H*0.026*(cr.sz || 1),
-            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: colDark, rim: colFar });
+            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: colDark, rim: colFar,
+            sniffUp: cr.mode === "sniffup" ? Math.min(1, cr.actT*2) : 0 });
           break;
         }
         case "badger": {
-          cr.x += cr.dir*0.014*dt; cr.lp += dt*5;
+          cr.timer = (cr.timer || 0) - dt;
+          cr.actT = (cr.actT || 0) + dt;
+          if (cr.mode === "dig") {
+            if (cr.timer <= 0) { cr.mode = "trundle"; cr.timer = 4 + Math.random()*6; }
+          } else {
+            cr.x += cr.dir*0.014*dt; cr.lp += dt*5;
+            // it stops to rootle at the ground, which is most of what it does
+            if (cr.timer <= 0) { cr.mode = "dig"; cr.timer = 2 + Math.random()*3; cr.actT = 0; }
+          }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
           this.paintBadger(c, { x: cr.x*W, y: 0.935*H, s: H*0.045*(cr.sz || 1),
-            dir: cr.dir, lp: cr.lp, color: colDark });
+            dir: cr.dir, lp: cr.lp, color: colDark,
+            dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
           break;
         }
         case "otter": {
@@ -2572,17 +2697,26 @@ class Scene {
           if (cr.mode === "swim") {
             cr.x += cr.dir*0.03*dt; cr.ph += dt*3;
             if (cr.timer <= 0) {
-              cr.mode = "under"; cr.timer = 1.2 + Math.random()*1.8;
-              this.fishRings.push({ x: cr.x, y: cr.y, age: 0, quiet: true });
+              // down for a fish, or over onto its back for a moment
+              if (Math.random() < 0.35) { cr.mode = "roll"; cr.timer = 1.6 + Math.random()*1.6; cr.actT = 0; }
+              else {
+                cr.mode = "under"; cr.timer = 1.2 + Math.random()*1.8;
+                this.fishRings.push({ x: cr.x, y: cr.y, age: 0, quiet: true });
+              }
             }
+          } else if (cr.mode === "roll") {
+            cr.actT = (cr.actT || 0) + dt;
+            cr.x += cr.dir*0.008*dt;
+            if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
           } else {
             cr.x += cr.dir*0.02*dt;
             if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
-          if (cr.mode === "swim") {
+          if (cr.mode !== "under") {
             this.paintOtter(c, { x: cr.x*W, y: cr.y*H, s: H*0.03*(cr.sz || 1),
-              dir: cr.dir, ph: cr.ph, color: colDark });
+              dir: cr.dir, ph: cr.ph, color: colDark,
+              roll: cr.mode === "roll" ? Math.sin(Math.PI*Math.min(1, cr.actT/3)) : 0 });
           }
           break;
         }
@@ -2687,9 +2821,11 @@ class Scene {
     c.translate(-s*0.84, by - s*0.12); c.rotate(-0.5 - tf*0.7);
     c.beginPath(); c.ellipse(-s*0.1, 0, s*0.14, s*0.06, 0, 0, Math.PI*2); c.fill();
     c.restore();
-    // neck and head, lowering to graze; a nibble once it's down
+    // neck and head, lowering to graze; a nibble once it's down. Standing
+    // alert the head comes up higher still; in a bound it reaches forward.
     const nib = o.grazing ? Math.sin(t*7)*0.025*s : 0;
-    const hx = s*0.95, hy = -s*1.46 + o.head*s*1.34 + nib;
+    const hx = s*0.95 + (o.bound || 0)*s*0.12;
+    const hy = -s*1.46 + o.head*s*1.34 + nib - (o.alert ? s*0.1 : 0);
     this.limb(c, s*0.52, by - s*0.10, hx, hy, s*0.34, s*0.16);
     // head — brow, tapering muzzle, jaw
     c.save(); c.translate(hx, hy); c.rotate(o.head*0.95);
@@ -2700,11 +2836,13 @@ class Scene {
     c.quadraticCurveTo(s*0.05, s*0.14, -s*0.12, s*0.10);
     c.closePath(); c.fill();
     c.restore();
-    // tall ears, swivelling at a sound
-    const ef = Math.pow(Math.max(0, Math.sin(t*0.7 + 5)), 14);
+    // tall ears, swivelling at a sound — and pricked hard forward when it
+    // has heard something and is standing to work out what
+    const al = o.alert ? 1 : 0;
+    const ef = al ? 1 : Math.pow(Math.max(0, Math.sin(t*0.7 + 5)), 14);
     c.beginPath();
-    c.ellipse(hx - s*0.05, hy - s*0.17, s*0.055, s*0.15, -0.5 - ef*0.4, 0, Math.PI*2);
-    c.ellipse(hx + s*0.12, hy - s*0.16, s*0.055, s*0.15, 0.1 + ef*0.3, 0, Math.PI*2);
+    c.ellipse(hx - s*0.05, hy - s*0.17 - al*s*0.03, s*0.055, s*(0.15 + al*0.02), -0.5 - ef*0.4, 0, Math.PI*2);
+    c.ellipse(hx + s*0.12, hy - s*0.16 - al*s*0.03, s*0.055, s*(0.15 + al*0.02), 0.1 + ef*0.3, 0, Math.PI*2);
     c.fill();
     // eye
     c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.45));
@@ -2728,17 +2866,41 @@ class Scene {
       c.quadraticCurveTo(-6.5, -4.4, -5.2, -2.2);
       c.quadraticCurveTo(-3.6, -0.6, -1.6, -1.2);
       c.closePath(); c.fill();
+      const st = o.stretch || 0;
+      if (st > 0.05) {
+        // the full stretch: chest down on the ground, forelegs reaching away,
+        // haunches up behind, tail straight over the back
+        c.beginPath();
+        c.moveTo(-4.6, -6.2);
+        c.quadraticCurveTo(0, -5.2, 5.2, -1.6);
+        c.quadraticCurveTo(6.4, -0.6, 5.2, -0.2);
+        c.quadraticCurveTo(0, -0.6, -4.6, -2.2);
+        c.closePath(); c.fill();
+        c.beginPath(); c.ellipse(-4.4, -4.6, 3.2, 3.4, 0, 0, Math.PI*2); c.fill();  // raised rump
+        c.beginPath(); c.ellipse(7.2, -0.4, 2.6, 0.9, 0.06, 0, Math.PI*2); c.fill(); // reaching paws
+        c.beginPath(); c.ellipse(-4.2, -0.6, 1.2, 0.7, 0, 0, Math.PI*2); c.fill();   // hind foot
+        // head low between the shoulders
+        c.beginPath(); c.arc(6.6, -2.4, 2.1, 0, Math.PI*2); c.fill();
+        c.beginPath();
+        c.moveTo(5.2, -3.8); c.lineTo(4.8, -5.8); c.lineTo(6.5, -4.4);
+        c.moveTo(7.4, -4.1); c.lineTo(8.4, -5.7); c.lineTo(8.4, -3.8);
+        c.closePath(); c.fill();
+        c.restore();
+        return;
+      }
       // haunches, upright chest, forepaws set together
       c.beginPath(); c.ellipse(0, -3.4, 3.7, 4.3, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(-1.2, -1.5, 3.5, 1.9, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(1.2, -5.8, 2.1, 3.4, 0.1, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(2.2, -0.4, 1.5, 0.8, 0, 0, Math.PI*2); c.fill();
-      // head — the slow look-around
-      const lk = Math.sin(o.t*0.7)*0.8;
-      c.beginPath(); c.arc(1.2 + lk, -9.4, 2.4, 0, Math.PI*2); c.fill();
+      // head — the slow look-around, or bent right down to wash a shoulder
+      const gr = o.groom ? (0.5 + 0.5*Math.sin(o.t*5)) : 0;
+      const lk = gr ? -1.6*gr : Math.sin(o.t*0.7)*0.8;
+      const hyC = -9.4 + gr*4.6;
+      c.beginPath(); c.arc(1.2 + lk, hyC, 2.4, 0, Math.PI*2); c.fill();
       c.beginPath();
-      c.moveTo(-0.6 + lk, -10.9); c.lineTo(-1.2 + lk, -13.1); c.lineTo(0.9 + lk, -11.5);
-      c.moveTo(1.9 + lk, -11.3); c.lineTo(3.3 + lk, -12.9); c.lineTo(3.3 + lk, -10.8);
+      c.moveTo(-0.6 + lk, hyC - 1.5); c.lineTo(-1.2 + lk, hyC - 3.7); c.lineTo(0.9 + lk, hyC - 2.1);
+      c.moveTo(1.9 + lk, hyC - 1.9); c.lineTo(3.3 + lk, hyC - 3.5); c.lineTo(3.3 + lk, hyC - 1.4);
       c.closePath(); c.fill();
     } else {
       // tail carried high, curling over at the tip
@@ -2796,8 +2958,10 @@ class Scene {
     c.beginPath();
     c.ellipse(-st*s*0.08, -s*0.5, s*(0.8 + st*0.25), s*(0.56 - st*0.12), -st*0.15, 0, Math.PI*2);
     c.fill();
-    // head and muzzle
-    const hx = s*(0.66 + st*0.18), hy = -s*(0.95 + st*0.05) - st*s*0.08;
+    // head and muzzle — down in the grass when it is cropping
+    const nib = o.nibble ? 1 : 0;
+    const bob = nib ? Math.sin((o.t || 0)*9)*s*0.03 : 0;
+    const hx = s*(0.66 + st*0.18), hy = -s*(0.95 + st*0.05) - st*s*0.08 + nib*s*0.62 + bob;
     c.beginPath(); c.arc(hx, hy, s*0.33, 0, Math.PI*2); c.fill();
     c.beginPath(); c.ellipse(hx + s*0.26, hy + s*0.06, s*0.13, s*0.10, 0.2, 0, Math.PI*2); c.fill();
     // long ears — laid back mid-leap, up and swivelling at rest
@@ -2805,9 +2969,14 @@ class Scene {
     const back = st*0.9 - ea*0.35;
     this.limb(c, hx - s*0.05, hy - s*0.14, hx - s*0.2 - back*s*0.5, hy - s*0.9 + back*s*0.35, s*0.16, s*0.08);
     this.limb(c, hx + s*0.13, hy - s*0.12, hx + s*0.1 - back*s*0.55, hy - s*0.95 + back*s*0.4, s*0.16, s*0.08);
-    // forelegs — reaching for the landing, or tucked neatly under
+    // forelegs — reaching for the landing, tucked neatly under, or brought
+    // up to the face to wash it
     if (st > 0.05) {
       this.limb(c, s*0.5, -s*0.55, s*(0.75 + st*0.2), -s*0.12, s*0.14, s*0.06);
+    } else if (o.wash) {
+      const wv = o.wash;
+      this.limb(c, s*0.42, -s*0.5, hx + s*0.16, hy + s*0.16 + wv*s*0.1, s*0.13, s*0.07);
+      this.limb(c, s*0.5, -s*0.5, hx + s*0.26, hy + s*0.1 - wv*s*0.12, s*0.12, s*0.07);
     } else {
       this.limb(c, s*0.42, -s*0.3, s*0.5, -s*0.02, s*0.14, s*0.07);
     }
@@ -2819,9 +2988,12 @@ class Scene {
 
   paintFox(c, o) {
     const s = o.s, t = o.t || 0;
+    const sniff = o.sniff || 0, pounce = o.pounce || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
+    // mid-pounce the whole animal leaves the ground, nose-down over the spot
+    if (pounce > 0.01) { c.translate(0, -pounce*s*0.75); c.rotate(pounce*0.42); }
     c.fillStyle = o.color;
     const bounce = o.walking ? Math.abs(Math.sin(o.lp))*s*0.05 : 0;
     // legs — diagonal pairs in a trot, jointed, feet lifting
@@ -2831,7 +3003,10 @@ class Scene {
       const lx = off[i]*s;
       const sw = o.walking ? Math.sin(o.lp + phs[i])*0.2*s : 0;
       const lift = o.walking ? Math.max(0, Math.sin(o.lp + phs[i] + 0.7))*0.12*s : 0;
-      this.leg(c, lx, -s*0.42 - bounce, lx + sw, -lift, i < 2 ? 0.10 : -0.08, s*0.14, s*0.05);
+      // in the air the forefeet reach out ahead and the hind legs trail
+      const px = pounce*(i < 2 ? -s*0.3 : s*0.34), py = pounce*s*0.34;
+      this.leg(c, lx, -s*0.42 - bounce, lx + sw + px, -lift + py,
+        i < 2 ? 0.10 : -0.08, s*0.14, s*0.05);
     }
     // the brush, streaming behind at the trot
     const tsw = o.walking ? Math.sin(o.lp*0.5)*0.1 : Math.sin(t*1.2)*0.06;
@@ -2854,9 +3029,11 @@ class Scene {
     c.quadraticCurveTo(s*0.75, -s*0.45 - bounce, s*0.6, -s*0.72 - bounce);
     c.closePath(); c.fill();
     c.beginPath(); c.ellipse(s*0.5, -s*0.52 - bounce, s*0.24, s*0.3, 0.2, 0, Math.PI*2); c.fill();
-    // head — carried low, turning to listen when paused
+    // head — carried low, turning to listen when paused, right down to the
+    // ground when following a scent, and thrust forward over a pounce
     const lk = o.look || 0;
-    const hx = s*0.82 + lk*s*0.05, hy = -s*0.72 - lk*s*0.10 - bounce;
+    const hx = s*0.82 + lk*s*0.05 + sniff*s*0.08 + pounce*s*0.12;
+    const hy = -s*0.72 - lk*s*0.10 - bounce + sniff*s*0.5 + pounce*s*0.16;
     this.limb(c, s*0.5, -s*0.6 - bounce, hx, hy, s*0.3, s*0.2);
     c.beginPath(); c.arc(hx, hy, s*0.21, 0, Math.PI*2); c.fill();
     // tapered snout
@@ -2927,14 +3104,20 @@ class Scene {
       c.moveTo(-s*0.3, -s*0.88); c.quadraticCurveTo(-s*0.55, -s*0.78, -s*0.72, -s*0.66);
       c.moveTo(-s*0.2, -s*0.8);  c.quadraticCurveTo(-s*0.5, -s*0.72, -s*0.68, -s*0.58);
       c.stroke();
-      // the neck — a true S, swaying a little as it watches the water
+      // the neck — a true S, swaying a little as it watches the water; it
+      // uncoils entirely into a stab, or folds back over the shoulder to preen
       const watch = Math.sin(t*0.5)*s*0.02;
+      const stab = o.stab || 0, pr = o.preen ? (0.5 + 0.5*Math.sin(t*3)) : 0;
       c.lineWidth = Math.max(1.6, s*0.10);
       c.beginPath();
       c.moveTo(s*0.24, -s*0.8);
-      c.bezierCurveTo(s*0.64 + watch, -s*1.05, s*0.10 + watch, -s*1.28, s*0.40 + watch, -s*1.56);
+      c.bezierCurveTo(
+        s*(0.64 + stab*0.2) + watch - pr*s*0.5, -s*(1.05 - stab*0.5) + pr*s*0.1,
+        s*(0.10 + stab*0.6) + watch - pr*s*0.6, -s*(1.28 - stab*1.0) + pr*s*0.3,
+        s*(0.40 + stab*0.55) + watch - pr*s*0.95, -s*(1.56 - stab*1.62) + pr*s*0.72);
       c.stroke();
-      const hx = s*0.42 + watch, hy = -s*1.6 - (o.sing || 0)*s*0.06;
+      const hx = s*(0.42 + stab*0.55) + watch - pr*s*0.95;
+      const hy = -s*(1.6 - stab*1.62) + pr*s*0.72 - (o.sing || 0)*s*0.06;
       c.beginPath(); c.ellipse(hx, hy, s*0.14, s*0.10, -0.15, 0, Math.PI*2); c.fill();
       // dagger bill, parting a crack to croak
       if (pale) c.fillStyle = o.color;
@@ -3119,11 +3302,12 @@ class Scene {
 
   /* A sanderling — leaning into its dash, legs a twinkle of steps,
      drawn up straight when it pauses. */
-  paintSanderling(c, x, y, dir, dash, ph, colDark) {
+  paintSanderling(c, x, y, dir, dash, ph, colDark, probe) {
     c.save();
     c.translate(x, y);
     if (dir < 0) c.scale(-1, 1);
-    c.rotate(dash ? 0.16 : 0);
+    // stopped, it tips forward to jab its bill into the sand
+    c.rotate(dash ? 0.16 : (probe || 0)*0.5);
     c.fillStyle = colDark; c.strokeStyle = colDark; c.lineCap = "round";
     // plump little body with a short tail
     c.beginPath();
@@ -3249,16 +3433,22 @@ class Scene {
       // haunch and upright body
       c.beginPath(); c.ellipse(-s*0.05, -s*0.32, s*0.42, s*0.34, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(s*0.12, -s*0.62, s*0.26, s*0.36, 0.15, 0, Math.PI*2); c.fill();
-      // head with ear tufts, bobbing as it nibbles
+      // head with ear tufts, bobbing as it nibbles — or right down at the
+      // litter, front paws scrabbling something under the leaves
+      const dig = o.dig ? 1 : 0;
+      const scrabble = dig ? Math.sin(t*14) : 0;
       const nib = Math.sin(t*9)*s*0.03;
-      const hy = -s*1.02 + nib;
-      c.beginPath(); c.arc(s*0.22, hy, s*0.2, 0, Math.PI*2); c.fill();
+      const hy = -s*1.02 + nib + dig*s*0.5;
+      c.beginPath(); c.arc(s*0.22 + dig*s*0.14, hy, s*0.2, 0, Math.PI*2); c.fill();
       c.beginPath();
       c.moveTo(s*0.08, hy - s*0.14); c.lineTo(s*0.04, hy - s*0.36); c.lineTo(s*0.18, hy - s*0.18);
       c.moveTo(s*0.28, hy - s*0.16); c.lineTo(s*0.32, hy - s*0.38); c.lineTo(s*0.42, hy - s*0.16);
       c.closePath(); c.fill();
-      // forepaws held up together
-      c.beginPath(); c.ellipse(s*0.32, -s*0.72 + nib, s*0.1, s*0.07, 0.3, 0, Math.PI*2); c.fill();
+      // forepaws held up together, or working at the ground
+      c.beginPath();
+      c.ellipse(s*(0.32 + dig*0.22), -s*0.72 + nib + dig*(s*0.62 + scrabble*s*0.07),
+        s*0.1, s*0.07, 0.3, 0, Math.PI*2);
+      c.fill();
       // eye
       c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
       c.beginPath(); c.arc(s*0.28, hy - s*0.04, Math.max(0.6, s*0.05), 0, Math.PI*2); c.fill();
@@ -3292,6 +3482,25 @@ class Scene {
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
+    if (o.graze) {
+      // head down in the grass on a stretched neck, haunches high behind,
+      // ears swept back but still clear of the line of the back
+      const bob = Math.sin((o.t || 0)*8)*s*0.03;
+      c.beginPath();
+      c.ellipse(-s*0.28, -s*0.52, s*0.72, s*0.4, -0.12, 0, Math.PI*2); c.fill();
+      this.limb(c, -s*0.55, -s*0.5, -s*0.68, -s*0.04, s*0.3, s*0.09);
+      this.limb(c, s*0.28, -s*0.5, s*0.38, -s*0.03, s*0.13, s*0.06);
+      const hx = s*0.82, hy = -s*0.2 + bob;
+      this.limb(c, s*0.28, -s*0.62, hx - s*0.06, hy - s*0.06, s*0.26, s*0.17);
+      c.beginPath(); c.arc(hx, hy, s*0.19, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(hx + s*0.16, hy + s*0.07, s*0.11, s*0.07, 0.35, 0, Math.PI*2); c.fill();
+      this.limb(c, hx - s*0.1, hy - s*0.14, hx - s*0.5, hy - s*0.72, s*0.12, s*0.06);
+      this.limb(c, hx + s*0.02, hy - s*0.15, hx - s*0.3, hy - s*0.8, s*0.12, s*0.06);
+      c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
+      c.beginPath(); c.arc(hx + s*0.05, hy - s*0.07, Math.max(0.6, s*0.045), 0, Math.PI*2); c.fill();
+      c.restore();
+      return;
+    }
     if (o.alert) {
       // sat up on its haunches, ears up, utterly still
       c.beginPath(); c.ellipse(-s*0.15, -s*0.4, s*0.5, s*0.4, 0, 0, Math.PI*2); c.fill();
@@ -3338,6 +3547,8 @@ class Scene {
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color; c.strokeStyle = o.color; c.lineCap = "round";
     const bob = Math.sin(t*7)*s*0.02;
+    const up = o.sniffUp || 0;         // front lifted, nose reading the air
+    if (up > 0.01) { c.translate(0, 0); c.rotate(-up*0.22); }
     // feet, shuffling
     c.lineWidth = Math.max(1, s*0.08);
     c.beginPath();
@@ -3351,14 +3562,15 @@ class Scene {
     c.quadraticCurveTo(s*0.55, -s*0.7 + bob, s*0.72, -s*0.16 + bob);
     c.quadraticCurveTo(s*0.4, -s*0.02, -s*0.78, -s*0.04 + bob);
     c.closePath(); c.fill();
-    // snout, down and questing
+    // snout, down and questing — or raised, twitching, into the wind
     const sniff = Math.sin(t*5)*s*0.03;
+    const ny = sniff - up*s*0.34;
     c.beginPath();
     c.moveTo(s*0.6, -s*0.3 + bob);
-    c.quadraticCurveTo(s*0.95, -s*0.12 + sniff, s*1.04, s*0.0 + sniff);
+    c.quadraticCurveTo(s*0.95, -s*0.12 + ny, s*1.04, ny);
     c.lineTo(s*0.62, -s*0.05);
     c.closePath(); c.fill();
-    c.beginPath(); c.arc(s*1.04, sniff, Math.max(0.7, s*0.05), 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*1.04, ny, Math.max(0.7, s*0.05), 0, Math.PI*2); c.fill();
     // spines — short strokes fanned over the dome
     c.strokeStyle = o.rim || o.color;
     c.lineWidth = Math.max(0.5, s*0.04);
@@ -3383,11 +3595,13 @@ class Scene {
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
+    const dig = o.dig || 0;            // head down, forepaws working the ground
     // short legs, trundling
     const off2 = [-0.45, -0.2, 0.25, 0.45];
     for (let i = 0; i < 4; i++) {
       const sw = Math.sin((o.lp || 0) + (i % 2)*Math.PI + Math.floor(i/2)*1.2)*s*0.1;
-      this.limb(c, off2[i]*s, -s*0.3, off2[i]*s + sw, 0, s*0.16, s*0.08);
+      const dg = i > 1 ? dig*s*0.12 : 0;
+      this.limb(c, off2[i]*s, -s*0.3, off2[i]*s + sw + dg, 0, s*0.16, s*0.08);
     }
     // broad low body
     c.beginPath();
@@ -3397,18 +3611,19 @@ class Scene {
     c.quadraticCurveTo(-s*0.1, -s*0.06, s*0.5, -s*0.14);
     c.quadraticCurveTo(s*0.75, -s*0.3, s*0.55, -s*0.5);
     c.closePath(); c.fill();
-    // wedge head, held low
+    // wedge head, held low — lower still, and swinging, when it digs
+    const dy = dig*s*0.16;
     c.beginPath();
     c.moveTo(s*0.5, -s*0.44);
-    c.quadraticCurveTo(s*0.95, -s*0.3, s*1.1, -s*0.08);
+    c.quadraticCurveTo(s*0.95, -s*0.3 + dy, s*1.1, -s*0.08 + dy);
     c.lineTo(s*0.55, -s*0.12);
     c.closePath(); c.fill();
     // the two white face stripes
     c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.75)`;
     c.lineWidth = Math.max(0.8, s*0.06);
     c.beginPath();
-    c.moveTo(s*1.05, -s*0.1); c.lineTo(s*0.58, -s*0.34);
-    c.moveTo(s*1.02, -s*0.16); c.lineTo(s*0.62, -s*0.42);
+    c.moveTo(s*1.05, -s*0.1 + dy); c.lineTo(s*0.58, -s*0.34);
+    c.moveTo(s*1.02, -s*0.16 + dy); c.lineTo(s*0.62, -s*0.42);
     c.stroke();
     // small round ear
     c.fillStyle = o.color;
@@ -3419,11 +3634,25 @@ class Scene {
   /* An otter swimming — a head, a rolling hump of back, a tail-tip, all
      threaded along the waterline; it dives and is gone. */
   paintOtter(c, o) {
-    const s = o.s, ph = o.ph || 0;
+    const s = o.s, ph = o.ph || 0, roll = o.roll || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
+    if (roll > 0.02) {
+      // over onto its back, paws up, carried along by the current
+      c.beginPath(); c.ellipse(0, -s*0.14, s*0.86, s*0.24, 0.05, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(s*0.72, -s*0.24, s*0.24, s*0.18, -0.2, 0, Math.PI*2); c.fill();
+      const paw = Math.sin(ph*2)*s*0.06;
+      this.limb(c, s*0.2, -s*0.28, s*0.3 + paw, -s*0.56, s*0.1, s*0.06);
+      this.limb(c, -s*0.02, -s*0.28, s*0.06 - paw, -s*0.54, s*0.1, s*0.06);
+      c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(-s*0.8, s*0.02); c.quadraticCurveTo(-s*1.5, s*0.1, -s*2.1, s*0.3);
+      c.stroke();
+      c.restore();
+      return;
+    }
     // wake
     c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
     c.beginPath();
@@ -3435,17 +3664,17 @@ class Scene {
     c.beginPath(); c.ellipse(s*0.82, -s*0.12, s*0.12, s*0.08, 0.1, 0, Math.PI*2); c.fill();
     c.beginPath(); c.arc(s*0.42, -s*0.32, s*0.06, 0, Math.PI*2); c.fill();  // ear
     // the rolling back, rising and falling as it swims
-    const roll = 0.5 + 0.5*Math.sin(ph);
+    const hump = 0.5 + 0.5*Math.sin(ph);
     c.beginPath();
     c.moveTo(s*0.25, s*0.02);
-    c.quadraticCurveTo(-s*0.15, -s*0.4*roll - s*0.08, -s*0.6, s*0.0);
+    c.quadraticCurveTo(-s*0.15, -s*0.4*hump - s*0.08, -s*0.6, s*0.0);
     c.closePath(); c.fill();
     // tail-tip breaking behind
-    const roll2 = 0.5 + 0.5*Math.sin(ph - 1.4);
-    if (roll2 > 0.4) {
+    const hump2 = 0.5 + 0.5*Math.sin(ph - 1.4);
+    if (hump2 > 0.4) {
       c.beginPath();
       c.moveTo(-s*0.85, s*0.03);
-      c.quadraticCurveTo(-s*1.05, -s*0.22*roll2, -s*1.3, s*0.02);
+      c.quadraticCurveTo(-s*1.05, -s*0.22*hump2, -s*1.3, s*0.02);
       c.closePath(); c.fill();
     }
     // eye
