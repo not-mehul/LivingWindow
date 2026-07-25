@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Living Window</title>
+<link rel="icon" href="favicon.svg?v=3" type="image/svg+xml">
 <link rel="stylesheet" href="css/styles.css?v=3">
 </head>
 <body>
@@ -128,21 +129,6 @@
       </div>
 
       <div class="control-group">
-        <span class="field-label">The passing of time</span>
-        <div class="switch-row">
-          <div>
-            <div class="switch-name">Let the hours turn</div>
-            <div class="switch-hint">Dawn gives way to day, to dusk, to night, and round again.</div>
-          </div>
-          <button class="mini-switch" id="timeFlowSwitch" role="switch" aria-checked="true" aria-label="Let the hours turn"><span class="knob"></span></button>
-        </div>
-        <div class="slider-row" id="timeSpeedRow">
-          <input type="range" id="timeSpeedSlider" min="0" max="100" value="50" aria-label="How long each hour lasts">
-          <span class="slider-val wide-val" id="timeSpeedVal">30 min</span>
-        </div>
-      </div>
-
-      <div class="control-group">
         <span class="field-label">Weather</span>
         <div class="segmented" role="group" aria-label="Weather" id="weatherSeg">
           <button data-val="clear" class="active">Clear</button>
@@ -151,6 +137,23 @@
           <button data-val="fog">Fog</button>
         </div>
       </div>
+
+      <div class="control-group wide">
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Let the hours turn</div>
+            <div class="switch-hint">Dawn gives way to day, to dusk, to night, and round again.</div>
+          </div>
+          <button class="mini-switch" id="timeFlowSwitch" role="switch" aria-checked="true" aria-label="Let the hours turn"><span class="knob"></span></button>
+        </div>
+        <div class="slider-row inset" id="timeSpeedRow">
+          <span class="slider-label">Each hour lasts</span>
+          <input type="range" id="timeSpeedSlider" min="0" max="100" value="50" aria-label="How long each hour lasts">
+          <span class="slider-val wide-val" id="timeSpeedVal">30 min</span>
+        </div>
+      </div>
+
+      <hr class="settings-divider">
 
       <div class="control-group">
         <span class="field-label">Life — density of voices</span>

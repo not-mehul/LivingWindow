@@ -577,13 +577,17 @@ h1 em { font-style: italic; color: var(--accent-amber); }
 .btn-square:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ---------- Controls ---------- */
+/* Two even columns, so paired controls (Hour/Weather, Life/Loudness) sit
+   shoulder to shoulder and nothing stretches to match its neighbour. */
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.4rem 1.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.3rem 1.8rem;
+  align-items: start;
 }
 .control-group { min-width: 0; }
 .control-group.wide { grid-column: 1 / -1; }
+.controls-grid .settings-divider { grid-column: 1 / -1; margin: 0.1rem 0; }
 
 .segmented {
   display: flex;
@@ -646,6 +650,16 @@ input[type="range"]:focus-visible { outline: 2px solid var(--focus-ring); outlin
   min-width: 3ch; text-align: right;
 }
 .slider-val.wide-val { min-width: 7ch; }
+/* a slider that belongs to the switch above it, stepped in beneath it */
+.slider-row.inset { padding: 0.15rem 0 0.1rem 0; }
+.slider-label {
+  font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
+    Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  flex: none;
+}
 /* the cycle speed means nothing while the hours are held still */
 .slider-row.disabled { opacity: 0.4; pointer-events: none; }
 
