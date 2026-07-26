@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS } from "./util.js?v=3";
-import { speciesIcon } from "./species.js?v=3";
-import { Scene } from "./scene.js?v=3";
-import { AudioEngine } from "./audio.js?v=3";
+import { state, sessionSerial, LOCATIONS } from "./util.js?v=4";
+import { speciesIcon } from "./species.js?v=4";
+import { Scene } from "./scene.js?v=4";
+import { AudioEngine } from "./audio.js?v=4";
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
@@ -59,7 +59,7 @@ function emitSubtitle(sp, az, depth, dur) {
 }
 
 /* ---- Wiring ---- */
-const scene = new Scene(document.getElementById("scene"));
+const scene = new Scene(document.getElementById("scene"), document.getElementById("sky"));
 const audio = new AudioEngine({ scene, emit: emitSubtitle });
 
 /* Bind a handler by id, tolerating an element that isn't there. A stale

@@ -5,8 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=3";
-import { PSTYLE } from "./species.js?v=3";
+} from "./util.js?v=4";
+import { PSTYLE } from "./species.js?v=4";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=4";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -19,9 +20,17 @@ const PERF = typeof location !== "undefined" &&
   new URLSearchParams(location.search).has("perf");
 
 class Scene {
-  constructor(canvas) {
+  constructor(canvas, skyCanvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
+    /* The sky and everything hanging in it is painted by one of two backends —
+       the GPU where there is one, the 2D context where there is not. `onGL`
+       decides whether this canvas must clear itself first or whether it is
+       still the thing painting the sky. See js/sky.js. */
+    this.skyCanvas = skyCanvas || null;
+    this.skyPainter = makeSkyPainter(skyCanvas, this);
+    this.onGL = !(this.skyPainter instanceof Canvas2DSky);
+    if (skyCanvas && !this.onGL) skyCanvas.style.display = "none";
     this.t = 0;
     this.ripples = [];
     this.flyers = [];
@@ -946,25 +955,28 @@ class Scene {
   draw(dt) {
     const c = this.ctx, W = this.W, H = this.H;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    // No clearRect: the sky gradient is opaque and covers the whole canvas.
 
     const [top, bot] = this.skyColors();
     const night = this.nightness();
 
-    // Rebuild the sky gradient only when the colours (or size) actually change —
-    // constant in steady state, so no gradient is allocated most frames.
-    const key = (top[0]|0)+","+(top[1]|0)+","+(top[2]|0)+"|"+(bot[0]|0)+","+(bot[1]|0)+","+(bot[2]|0)+"|"+(H|0);
-    if (key !== this._skyKey) {
-      const g = c.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, css(top));
-      g.addColorStop(1, css(bot));
-      this._skyGrad = g; this._skyKey = key;
+    /* A lost GL context drops us back to painting the sky here, mid-session.
+       Do it before anything is drawn, so the swap costs at worst one frame. */
+    if (this.onGL && !this.skyPainter.ok) {
+      this.skyPainter = new Canvas2DSky(this);
+      this.onGL = false;
+      if (this.skyCanvas) this.skyCanvas.style.display = "none";
+      this._skyKey = null;
     }
-    c.fillStyle = this._skyGrad;
-    c.fillRect(0, 0, W, H);
+    // With the sky on the layer beneath, this canvas is glass: it has to be
+    // wiped each frame. Painting its own sky, the opaque gradient is the wipe.
+    if (this.onGL) c.clearRect(0, 0, W, H);
 
-    this.drawCelestial(c, W, H, top, night, dt);
-    this.drawClouds(c, W, H, dt, night);
+    const p = this.skyPainter;
+    p.begin(W, H, this.dpr);
+    p.sky(top, bot);
+    this.drawCelestial(p, W, H, top, night, dt);
+    this.drawClouds(p, W, H, dt, night);
+    p.end();
 
     switch (this.loc) {
       case "meadow": this.drawMeadow(c, W, H, dt, bot); break;
@@ -984,24 +996,24 @@ class Scene {
     if (PERF) this.drawPerf(c, dt);
   }
 
-  drawCelestial(c, W, H, top, night, dt) {
+  /* `p` is a sky painter, not the 2D context: the same calls go to the GPU or
+     back onto the canvas depending on what the machine can offer. The shapes
+     and their order are written once, here, so both roads lead to one picture. */
+  drawCelestial(p, W, H, top, night, dt) {
     // Stars, brightening as the light fails.
     if (night > 0.05 && this.stars) {
-      c.fillStyle = `rgb(${this.tok.cloudRGB})`;   // one colour; vary alpha per star
+      const rgb = this.tok.cloudRGB;              // one colour; vary alpha per star
       for (const st of this.stars) {
         const tw = 0.55 + 0.45*Math.sin(this.t*st.tw + st.ph);
         const a = (st.bright ? 0.6 : 0.34) * night * tw;
         if (a < 0.03) continue;
         const sx = st.x*W, sy = st.y*H, r = st.r*(st.bright ? 1.5 : 1);
-        c.globalAlpha = a;
-        c.fillRect(sx, sy, r, r);
+        p.rect(rgb, sx, sy, r, r, a);
         if (st.bright) {
-          c.globalAlpha = a*0.45;
-          c.fillRect(sx - r, sy + r*0.3, r*3, r*0.5);
-          c.fillRect(sx + r*0.3, sy - r, r*0.5, r*3);
+          p.rect(rgb, sx - r, sy + r*0.3, r*3, r*0.5, a*0.45);
+          p.rect(rgb, sx + r*0.3, sy - r, r*0.5, r*3, a*0.45);
         }
       }
-      c.globalAlpha = 1;
     }
     const breathe = 0.86 + 0.14*Math.sin(this.t*0.28);   // a slow living glow
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
@@ -1011,39 +1023,30 @@ class Scene {
       const sx = W * (0.22*m.dawn + 0.5*m.day + 0.8*m.dusk) / denom;
       const sy = H * (0.42*m.dawn + 0.16*m.day + 0.46*m.dusk) / denom;
       const rr = Math.min(W,H)*0.05;
-      this.drawGlow(c, this.tok.amberRGB, sx, sy, rr*5, rr*5, 0.30*sunA*breathe);
-      const sc = this.tok.sun.slice(); sc[3] = sunA;
-      c.fillStyle = css(sc);
-      c.beginPath(); c.arc(sx, sy, rr, 0, Math.PI*2); c.fill();
+      p.glow(this.tok.amberRGB, sx, sy, rr*5, rr*5, 0.30*sunA*breathe);
+      p.disc(this.tok.sun, sx, sy, rr, sunA);
       this.celX = sx / W;
     }
     const moonA = m.night / total;
     if (moonA > 0.03) {
       const mx = W*0.72, my = H*0.2, rr = Math.min(W,H)*0.04;
-      this.drawGlow(c, this.tok.cloudRGB, mx, my, rr*6, rr*6, 0.12*moonA*breathe);
-      const mc = this.tok.moon.slice(); mc[3] = moonA;
-      c.fillStyle = css(mc);
-      c.beginPath(); c.arc(mx, my, rr, 0, Math.PI*2); c.fill();
-      c.fillStyle = css(mix(top, this.tok.moon, 0.08).slice(0,3).concat([moonA]));
-      c.beginPath(); c.arc(mx - rr*0.42, my - rr*0.18, rr*0.85, 0, Math.PI*2); c.fill();
+      p.glow(this.tok.cloudRGB, mx, my, rr*6, rr*6, 0.12*moonA*breathe);
+      p.disc(this.tok.moon, mx, my, rr, moonA);
+      p.disc(mix(top, this.tok.moon, 0.08), mx - rr*0.42, my - rr*0.18, rr*0.85, moonA);
       // shooting stars
       for (let i = this.meteors.length - 1; i >= 0; i--) {
         const mt = this.meteors[i];
         mt.age += dt; mt.x += mt.vx*dt; mt.y += mt.vy*dt;
         if (mt.age > mt.life) { this.meteors.splice(i, 1); continue; }
         const al = (1 - mt.age/mt.life) * 0.7 * moonA;
-        c.strokeStyle = `rgba(${this.tok.cloudRGB}, ${al})`;
-        c.lineWidth = 1.2;
-        c.beginPath();
-        c.moveTo(mt.x*W, mt.y*H);
-        c.lineTo((mt.x - mt.vx*0.10)*W, (mt.y - mt.vy*0.10)*H);
-        c.stroke();
+        p.seg(this.tok.cloudRGB, mt.x*W, mt.y*H,
+          (mt.x - mt.vx*0.10)*W, (mt.y - mt.vy*0.10)*H, 1.2, al);
       }
       this.celX = mx / W;
     }
   }
 
-  drawClouds(c, W, H, dt, night) {
+  drawClouds(p, W, H, dt, night) {
     const rgb = this.tok.cloudRGB;
     const wf = state.weather === "breeze" ? 3 : 1;
     const af = (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
@@ -1054,7 +1057,7 @@ class Scene {
       cl.x += cl.s * dt * wf * (0.5 + near);
       if (cl.x > 1.3) cl.x = -0.3;
       const cw = cl.w * W;
-      this.drawGlow(c, rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af * (0.62 + near*0.5));
+      p.glow(rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af * (0.62 + near*0.5));
     }
   }
 

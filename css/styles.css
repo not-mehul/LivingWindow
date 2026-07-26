@@ -361,7 +361,20 @@ h1 em { font-style: italic; color: var(--accent-amber); }
 /* Nothing to reach for while the window is shut. */
 .window-frame.closed .window-tools { opacity: 0; pointer-events: none; }
 .window-tools { transition: opacity 0.5s ease; }
+/* The sky sits under the land, in the same box. #scene keeps the sizing rules
+   and so drives the height of the stack; #sky is stretched to whatever that
+   comes to, which is what keeps the two in register at every viewport and in
+   fullscreen without the rule having to be written twice. */
+.scene-stack { position: relative; display: block; font-size: 0; }
+#sky {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
 #scene {
+  position: relative;
   display: block;
   width: 100%;
   height: min(56vh, 520px);

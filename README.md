@@ -56,6 +56,9 @@ js/
                   primitives, and the species catalogue (habitat, hour weighting, synth).
   scene.js        The `Scene` class — canvas rendering of the five landscapes and their
                   drifting inhabitants.
+  sky.js          The sky and what hangs in it — gradient, stars, sun, moon, clouds —
+                  painted on a second canvas underneath by the GPU, with a Canvas 2D
+                  backend that takes over verbatim where there is no WebGL2.
   audio.js        The `AudioEngine` class — wind, aeolian drift, per-place ambience,
                   turn-taking voices, and the odd church bell.
   main.js         Entry point: theme toggle, the casement (opening and shutting the
@@ -107,10 +110,15 @@ species.js ◄──┐        │
    ▲          │        │
    │          │        │
 scene.js   audio.js    │
-   ▲          ▲        │
+   ▲  │       ▲        │
+   │  └► sky.js        │
    └────┬─────┘        │
       main.js ─────────┘
 ```
+
+`sky.js` knows nothing of the scene beyond a handful of shapes it is asked to
+paint, which is what lets the same calls go either to the GPU or back onto the
+2D canvas.
 
 `main.js` owns the concrete instances. Rather than reaching for globals, the
 audio engine is **given** what it needs: `new AudioEngine({ scene, emit })`,

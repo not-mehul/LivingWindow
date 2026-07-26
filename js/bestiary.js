@@ -6,9 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=3";
-import { SPECIES, PSTYLE, CRITTER_VOICES, speciesIcon } from "./species.js?v=3";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=3";
+import { Scene } from "./scene.js?v=4";
+import { SPECIES, PSTYLE, CRITTER_VOICES, speciesIcon } from "./species.js?v=4";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=4";
 
 /* One Scene on a hidden canvas lends us its painters and tokens. */
 const scene = new Scene(document.getElementById("bz-hidden"));
