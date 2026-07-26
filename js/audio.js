@@ -7,7 +7,12 @@
    for globals.
    ============================================================ */
 import { mulberry32, REDUCED, state } from "./util.js";
-import { SPECIES, CRITTER_VOICES, note, burst } from "./species.js";
+import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst } from "./species.js";
+
+/* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
+function disconnect(...nodes) {
+  for (const n of nodes) { try { n.disconnect(); } catch (e) { /* already gone */ } }
+}
 
 class AudioEngine {
   constructor({ scene, emit }) {
@@ -20,6 +25,9 @@ class AudioEngine {
     this.quietUntil = 0;
     this.activeVoices = 0;   // live synthesized calls, capped for a calm mix
     this.maxVoices = 6;
+    this.duelUntil = 0;      // an exchange of songs is running until this time
+    this.lastCallX = 0.5;    // where the last voice sounded, for the reply
+    this.live = new Set();   // signal chains still sounding, torn down when done
     this.rng = mulberry32((state.seed ^ 0xA0D10) >>> 0);
   }
 
@@ -31,9 +39,14 @@ class AudioEngine {
     return id;
   }
 
-  softBuffer(dur) {
+  /* Four seconds of pink noise, generated once and shared by every bed that
+     needs it. Filling this costs a couple of hundred thousand iterations on
+     the main thread, so building a fresh one per bed (and again per passing
+     car) was a self-inflicted stall. */
+  softBuffer() {
+    if (this._soft) return this._soft;
     const ac = this.ac;
-    const buf = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate);
+    const buf = ac.createBuffer(1, ac.sampleRate * 4, ac.sampleRate);
     const d = buf.getChannelData(0);
     let b0 = 0, b1 = 0, b2 = 0;
     for (let i = 0; i < d.length; i++) {
@@ -43,11 +56,12 @@ class AudioEngine {
       b2 = 0.57000*b2 + w*1.0526913;
       d[i] = (b0 + b1 + b2 + w*0.1848) * 0.12;
     }
+    this._soft = buf;
     return buf;
   }
   loopNoise() {
     const src = this.ac.createBufferSource();
-    src.buffer = this.softBuffer(4);
+    src.buffer = this.softBuffer();
     src.loop = true;
     src.start();
     return src;
@@ -222,6 +236,12 @@ class AudioEngine {
     });
   }
 
+  /* A voice's own little signal chain. Every call built one of these and left
+     it wired to the mix for the rest of the session: after ten minutes the
+     graph carried a hundred idle HRTF panners, each still convolving silence.
+     That is what made the soundscape thicken and then stutter. So each chain
+     now comes with a `dispose`, and the caller unwires it the moment the call
+     has finished sounding. */
   makePanner(az, el, depth) {
     const ac = this.ac;
     const lp = ac.createBiquadFilter();
@@ -232,6 +252,7 @@ class AudioEngine {
     const dg = ac.createGain();
     dg.gain.value = Math.max(0.2, Math.min(1, 5 / (3.2 + depth)));
     lp.connect(dg);
+    let out;
     if (state.spatial && ac.createPanner) {
       const p = ac.createPanner();
       p.panningModel = "HRTF";
@@ -242,13 +263,13 @@ class AudioEngine {
       if (p.positionX) {
         p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z;
       } else p.setPosition(x, y, z);
-      dg.connect(p);
-      return { node: lp, out: p };
+      out = p;
+    } else {
+      out = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
+      if (out.pan) out.pan.value = Math.max(-1, Math.min(1, az * 0.8));
     }
-    const sp = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
-    if (sp.pan) sp.pan.value = az * 0.8;
-    dg.connect(sp);
-    return { node: lp, out: sp };
+    dg.connect(out);
+    return { node: lp, out, dispose: () => disconnect(lp, dg, out) };
   }
 
   /* A lightweight panner (stereo only, no HRTF) for small percussive sounds
@@ -260,22 +281,41 @@ class AudioEngine {
     const sp = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
     if (sp.pan) sp.pan.value = Math.max(-1, Math.min(1, az * 0.8));
     g.connect(sp);
-    return { node: g, out: sp };
+    return { node: g, out: sp, dispose: () => disconnect(g, sp) };
   }
 
-  performCall(sp) {
+  /* Wire a finished chain out of the graph once its last sound has decayed.
+     Live chains are also tracked so that pausing tears the whole lot down at
+     once rather than leaving them stranded when the timers are cleared. */
+  retire(chain, afterSec) {
+    this.live.add(chain);
+    this.once(() => { chain.dispose(); this.live.delete(chain); },
+      Math.max(200, afterSec*1000));
+  }
+
+  performCall(sp, opts) {
     const ac = this.ac, r = this.rng;
     // Hold a calm ceiling on how many voices sound at once — the surest guard
     // against the mix stuttering when the land gets busy.
     if (this.activeVoices >= this.maxVoices) return 0.5;
+    opts = opts || {};
     let x01, y01, depth, perchType = null;
     if (sp.layer === "perch" && this.scene.perches && this.scene.perches.length) {
-      const p = this.scene.perches[Math.floor(r()*this.scene.perches.length)];
+      // The scene keeps track of who is standing where, so a new arrival takes
+      // a free song post rather than landing on an occupant's head.
+      const p = this.scene.pickPerch(r, opts);
       x01 = p.x; y01 = p.y; depth = p.depth; perchType = p.type || null;
     } else if (sp.layer === "air") {
       x01 = r(); y01 = 0.08 + r()*0.28; depth = 6 + r()*8;
     } else if (sp.layer === "far") {
-      x01 = r(); y01 = 0.3 + r()*0.2; depth = 16 + r()*10;
+      // A far caller has no perch list to draw on, so an answering bird is
+      // simply placed well off across the valley from the one it is answering.
+      x01 = opts.at !== undefined ? opts.at
+        : opts.awayFrom !== undefined
+          ? Math.min(0.94, Math.max(0.06,
+              opts.awayFrom + (opts.awayFrom < 0.5 ? 1 : -1)*(0.28 + r()*0.34)))
+          : r();
+      y01 = 0.3 + r()*0.2; depth = 16 + r()*10;
     } else {
       x01 = r(); y01 = 0.78 + r()*0.12; depth = 2 + r()*5;
       if (state.location === "wetland" && this.scene.waterY) {
@@ -290,15 +330,19 @@ class AudioEngine {
     pan.out.connect(this.voiceGain);
     // Animals that appear on-canvas ease in, settle, and only then call. Fliers
     // (already on the wing) and voice-only species call without a staged entrance.
+    // A bird already on its perch answers a rival at once — it does not fly in
+    // again to say the second half of an argument.
     const noActor = sp.layer === "air" || sp.layer === "far" ||
-                    sp.id === "cricket" || sp.id === "cuckoo" ||
-                    sp.id === "curlew" || sp.id === "rooster";
-    const enter = noActor ? 0 : 0.9 + r()*0.9;
+                    sp.id === "cricket" || sp.id === "curlew";
+    const settled = opts.reply && this.scene.hasSingerNear(sp.id, x01);
+    const enter = (noActor || settled) ? 0 : 0.9 + r()*0.9;
     const dur = sp.synth(ac, pan.node, ac.currentTime + 0.02 + enter, r) || 1;
     this.activeVoices++;
     this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
       (enter + dur + 0.3) * 1000);
+    this.retire(pan, enter + dur + 2.5);
     this.scene.spawnForCall(sp, x01, y01, depth, dur, enter, perchType);
+    this.lastCallX = x01;
     const announce = () => {
       if (!this.running) return;
       this.scene.addRipple(x01, y01, sp.tone);
@@ -306,7 +350,49 @@ class AudioEngine {
     };
     if (enter > 0) this.once(announce, enter * 1000);
     else announce();
+    if (!opts.reply) this.maybeCounterSing(sp, enter + dur, x01);
     return dur + enter;
+  }
+
+  /* Counter-singing. Two neighbours of the same species answer each other
+     across a boundary: one sings, the other replies from its own song post the
+     moment the first falls quiet, and back again. The turns tighten as the
+     exchange goes on — that quickening is what makes it sound like an argument
+     rather than a chorus — and then it simply stops. Nothing overlaps, because
+     birds contesting a boundary listen: singing over a rival is a different
+     signal altogether, and a rarer one. */
+  maybeCounterSing(sp, dur, fromX) {
+    const readiness = COUNTERSING[sp.id];
+    // Needs a song post to answer from — or, for a cuckoo, the far side of
+    // the valley, which comes to the same thing.
+    if (!readiness || (sp.layer !== "perch" && sp.layer !== "far")) return;
+    const now = performance.now();
+    if (now < this.duelUntil) return;                       // one argument at a time
+    if (this.rng() >= readiness * (0.35 + state.activity*0.75)) return;
+    const rounds = 2 + Math.floor(this.rng()*4);            // 2–5 answers
+    // Hold the rest of the land back so the exchange can be heard for what it is.
+    this.duelUntil = now + (dur + rounds*3.4)*1000;
+    this.quietUntil = Math.max(this.quietUntil, this.duelUntil - 1200);
+    this.answer(sp, rounds, dur + 0.45 + this.rng()*0.6,
+      0.5 + this.rng()*0.55, fromX, null, true);
+  }
+
+  /* One turn of the exchange, which books the next. The rival claims a post of
+     its own on its first reply and the two then alternate between the posts
+     they hold, so the argument stays between two birds in two places. */
+  answer(sp, left, delaySec, gap, postA, postB, rivalsTurn) {
+    if (left <= 0) return;
+    this.once(() => {
+      if (!this.running) return;
+      const opts = { reply: true };
+      if (!rivalsTurn) opts.at = postA;
+      else if (postB === null) opts.awayFrom = postA;
+      else opts.at = postB;
+      const dur = this.performCall(sp, opts);
+      const b = (rivalsTurn && postB === null) ? this.lastCallX : postB;
+      this.answer(sp, left - 1, dur + gap, Math.max(0.3, gap*0.84),
+        postA, b, !rivalsTurn);
+    }, delaySec*1000);
   }
 
   startSchedulers(gen) {
@@ -377,6 +463,7 @@ class AudioEngine {
           this.activeVoices++;
           this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
             (dur + 0.3) * 1000);
+          this.retire(pan, dur + 2.5);
           this.scene.addRipple(cr.x, cr.y !== undefined ? cr.y : 0.85, v.tone);
           this.emit(v, az, depth, dur);
         }
@@ -449,12 +536,14 @@ class AudioEngine {
           pan.out.connect(this.master);
           note(this.ac, pan.node, this.ac.currentTime + 0.02,
             290 + this.rng()*160, 90, 0.09, 0.045);
+          this.retire(pan, 1.2);
           this.scene.fishRise((az/0.8 + 1) / 2);
         } else {
           const pan = this.makeCheapPan(az, 3 + this.rng()*5);
           pan.out.connect(this.master);
           burst(this.ac, pan.node, this.ac.currentTime + 0.02,
             480 + this.rng()*320, 1.2, 0.25, 0.013);
+          this.retire(pan, 1.2);
         }
       }
       setTimeout(lap, 2500 + this.rng()*5500);
@@ -481,7 +570,10 @@ class AudioEngine {
         }
         g.gain.exponentialRampToValueAtTime(0.028, t + dur*0.45);
         g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-        this.once(() => { try { src.stop(); } catch(e) {} }, (dur + 0.5)*1000);
+        this.once(() => {
+          try { src.stop(); } catch (e) { /* already stopped */ }
+          disconnect(src, lp, g, sp);
+        }, (dur + 0.5)*1000);
       }
       setTimeout(car, 18000 + this.rng()*35000);
     };
@@ -518,6 +610,7 @@ class AudioEngine {
         o.start(t); o.stop(t + 5.4);
       }
     }
+    this.retire(pan, strikes*2.6 + 7);
     this.emit({ id: "bell", name: "Church bell", latin: "",
       desc: "the hour, loosed over the rooftops", tone: "amber" },
       az, depth, strikes*2.6 + 2);
@@ -530,6 +623,7 @@ class AudioEngine {
 
   resumeSchedulers() {
     this.activeVoices = 0;   // a paused engine clears its in-flight voice timers
+    this.duelUntil = 0;
     const gen = ++this.gen;  // stamp this run; older scheduler loops self-stop
     this.startGusts(gen); this.startSwells(gen);
     this.startSchedulers(gen);
@@ -543,6 +637,8 @@ class AudioEngine {
     this.running = false;
     this.gen++;              // halt every recurring scheduler loop
     this.clearTimers();
+    for (const chain of this.live) chain.dispose();
+    this.live.clear();
     if (this.ac) this.ac.suspend();
   }
 

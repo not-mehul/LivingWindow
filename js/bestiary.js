@@ -101,7 +101,19 @@ function perchDraw(id) {
     const s = 30*(ps.sc || 1);
     const cx = W*0.46, gy = H*0.74;
     let sing = 0, fly = 0, flap = 0, x = cx, y = gy, alpha = 1;
+    let peck = 0, legTuck = 0, stride = 0;
     if (mode === "sing") sing = pulse(tm);
+    if (mode === "forage") {
+      // a few steps, then head down to work the turf — the ground routine
+      const cyc = tm % 4.2;
+      if (cyc < 1.6) {
+        if (ps.walks) stride = tm*9;
+        else { legTuck = Math.max(0, Math.sin(tm*11)); y = gy - legTuck*s*0.45; }
+        x = cx + Math.sin(cyc*1.9)*10;
+      } else if (cyc < 3.2) {
+        peck = Math.pow(Math.sin(Math.PI*(((cyc - 1.6)/0.42) % 1)), 0.6);
+      }
+    }
     if (mode === "take off") {
       const cyc = tm % 2.6;
       if (cyc < 1.0) { /* gathering itself on the perch */ }
@@ -115,11 +127,12 @@ function perchDraw(id) {
         alpha = Math.max(0, 1 - ft*0.9);
       }
     }
-    scene.drawPerchFooting(c, cx, gy, s, "branch", P.bot, alpha*(1 - fly));
+    scene.drawPerchFooting(c, mode === "forage" ? x : cx, gy, s,
+      mode === "forage" ? "ground" : "branch", P.bot, alpha*(1 - fly));
     scene.paintBird(c, {
       x, y, s, flip: false, alpha, color: P.col, rim: P.rim, deep: P.deep, marks: ps,
       plump: ps.plump || 1, tailLen: ps.tail || 1.1, tailUp: !!ps.tailUp,
-      billLen: ps.bill || 0.45, crest: false, sing,
+      billLen: ps.bill || 0.45, crest: false, sing, peck, legTuck, stride,
       breath: Math.sin(tm*2),
       headTurn: Math.sin(tm*0.8)*0.2 + Math.pow(Math.max(0, Math.sin(tm*0.5)), 6)*0.5,
       tailFlick: Math.pow(Math.max(0, Math.sin(tm*1.15)), 8),
@@ -131,13 +144,53 @@ function perchDraw(id) {
 const CARDS = [];
 /* kinds for the species that have their own painters or flight forms */
 const SPECIAL = {
-  owl: { sky: "dusk", modes: ["watch", "night"],
+  owl: { sky: "dusk", modes: ["watch", "hoot", "night", "leave"],
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.78;
+      if (mode === "leave") {
+        // it tips off the branch and rows away — never dissolves in place
+        const cyc = tm % 3.2;
+        const ft = Math.max(0, cyc - 0.7);
+        const x = W*0.5 + (0.09*ft + 0.05*ft*ft)*320;
+        const y = gy + Math.min(0.028, ft*0.10)*300 - 0.030*ft*ft*300;
+        scene.drawPerchFooting(c, W*0.5, gy, 26, "branch", P.bot, 1);
+        scene.paintOwl(c, { x, y, s: 26, alpha: Math.max(0, 1 - Math.max(0, ft - 1.1)*0.85),
+          color: P.col, rim: P.rim, deep: P.deep, night: 0, t: tm,
+          fly: cyc > 0.7 ? Math.min(1, (cyc - 0.7)/0.35) : 0,
+          flap: Math.sin(cyc*8.5), headTurn: 0, blinkPh: 0 });
+        return;
+      }
       scene.drawPerchFooting(c, W*0.5, gy, 26, "branch", P.bot, 1);
       scene.paintOwl(c, { x: W*0.5, y: gy, s: 26, alpha: 1, color: P.col, rim: P.rim,
         deep: P.deep, night: mode === "night" ? 1 : 0, t: tm,
-        headTurn: Math.sin(tm*0.5)*0.5, blinkPh: 0 });
+        sing: mode === "hoot" ? pulse(tm*0.4) : 0,
+        breath: Math.sin(tm*2),
+        headTurn: Math.sin(tm*0.5)*0.9, blinkPh: 0 });
+    } },
+  cuckoo: { sky: "day", modes: ["perch", "call", "fly"],
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.7;
+      if (mode === "fly") {
+        const x = ((tm*90) % (W + 160)) - 80;
+        scene.paintCuckoo(c, { x, y: H*0.5, s: 22, flip: false, alpha: 1,
+          color: P.col, rim: P.rim, deep: P.deep, t: tm,
+          fly: 1, flap: Math.sin(tm*13) });
+        return;
+      }
+      scene.drawPerchFooting(c, W*0.5, gy, 22, "branch", P.bot, 1);
+      scene.paintCuckoo(c, { x: W*0.5, y: gy, s: 22, flip: false, alpha: 1,
+        color: P.col, rim: P.rim, deep: P.deep, t: tm,
+        breath: Math.sin(tm*2), tailFlick: Math.pow(Math.max(0, Math.sin(tm*1.1)), 8),
+        sing: mode === "call" ? pulse(tm*0.35) : 0 });
+    } },
+  rooster: { sky: "dawn", modes: ["stand", "crow", "step"],
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.8;
+      groundBand(c, W, H, P, gy);
+      scene.paintRooster(c, { x: W*0.5, y: gy, s: 26, flip: false, alpha: 1,
+        color: P.col, rim: P.rim, deep: P.deep, t: tm,
+        sing: mode === "crow" ? pulse(tm*0.35) : 0,
+        walking: mode === "step", lp: tm*4 });
     } },
   mallard: { sky: "day", modes: ["drift", "quack"],
     draw(c, W, H, tm, mode, P) {
@@ -231,14 +284,25 @@ const SPECIAL = {
         sing: mode === "call" ? pulse(tm) : 0, breath: Math.sin(tm*2),
         headTurn: Math.sin(tm*0.8)*0.2, tailFlick: 0, wingSettle: 0, fly: 0, flap: 0, t: tm });
     } },
-  pheasant: { sky: "dawn", modes: ["strut", "crow"],
+  pheasant: { sky: "dawn", modes: ["strut", "crow", "flush"],
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.8;
       groundBand(c, W, H, P, gy);
-      scene.paintPheasant(c, { x: W*0.52, y: gy, s: 34, flip: false, alpha: 1,
+      let x = W*0.52, y = gy, fly = 0, flap = 0;
+      if (mode === "flush") {
+        const cyc = tm % 2.6;
+        if (cyc < 0.18) y = gy + cyc*30;
+        else {
+          const u = cyc - 0.18;
+          fly = Math.min(1, u/0.12); flap = Math.sin(cyc*30);
+          y = gy - (0.24*u + 0.10*u*u)*420;
+          x = W*0.52 + (0.05*u + 0.16*u*u)*420;
+        }
+      }
+      scene.paintPheasant(c, { x, y, s: 34, flip: false, alpha: 1,
         color: P.col, rim: P.rim, deep: P.deep,
         sing: mode === "crow" ? pulse(tm*0.6) : 0,
-        walking: mode === "strut", lp: tm*5, t: tm });
+        walking: mode === "strut", lp: tm*5, fly, flap, t: tm });
     } },
   moorhen: { sky: "day", modes: ["swim", "call"],
     draw(c, W, H, tm, mode, P) {
@@ -248,12 +312,16 @@ const SPECIAL = {
         flip: false, alpha: 1, color: P.col, rim: P.rim, deep: P.deep, moorhen: true,
         sing: mode === "call" ? pulse(tm) : 0, breath: 0, t: tm });
     } },
-  littleegret: { sky: "day", modes: ["stand", "croak"],
+  littleegret: { sky: "day", modes: ["stand", "croak", "strike"],
     draw(c, W, H, tm, mode, P) {
       const wy = H*0.78;
       waterBand(c, W, H, P, wy);
+      const cyc = tm % 2.2;
+      const strike = mode !== "strike" ? 0
+        : cyc < 0.16 ? cyc/0.16 : cyc < 0.30 ? 1 : cyc < 0.62 ? 1 - (cyc - 0.30)/0.32 : 0;
       scene.paintHeron(c, { x: W*0.5, y: wy, s: 36, dir: 1, flying: false, flap: 0,
-        color: P.col, pale: true, sing: mode === "croak" ? pulse(tm*0.5) : 0, t: tm });
+        color: P.col, deep: P.deep, pale: true, neck: mode === "stand" ? 0.55 : 1,
+        strike, sing: mode === "croak" ? pulse(tm*0.5) : 0, t: tm });
     } },
   tern: { sky: "day", modes: ["fly"],
     draw(c, W, H, tm, mode, P) {
@@ -282,24 +350,26 @@ const SPECIAL = {
 
 for (const sp of SPECIES) {
   const kind = SPECIAL[sp.id];
-  const voiceOnly = ["cricket", "cuckoo", "curlew", "rooster"].includes(sp.id);
+  const voiceOnly = ["cricket", "curlew"].includes(sp.id);
   CARDS.push({
     id: sp.id, sp, section: "species",
     name: sp.name, latin: sp.latin, desc: sp.desc,
     sky: kind ? kind.sky : "day",
-    modes: voiceOnly ? [] : kind ? kind.modes : ["idle", "sing", "take off"],
+    modes: voiceOnly ? [] : kind ? kind.modes : ["idle", "sing", "forage", "take off"],
     draw: voiceOnly ? null : kind ? kind.draw : perchDraw(sp.id),
     where: sp.habitats.map(h => ({ h, w: (sp.hw && sp.hw[h]) || 1 })),
     when: sp.weights,
     appears: voiceOnly
       ? "Voice only — heard from offstage, never drawn."
       : sp.layer === "air" ? "Crosses the open sky while it calls."
-      : sp.id === "owl" ? "Takes a perch in the open after dusk; its eyes catch the light at night."
+      : sp.id === "owl" ? "Takes a perch in the open after dusk; its eyes catch the light at night, and it leaves by tipping off the branch on soundless wings."
+      : sp.id === "cuckoo" ? "On the skyline — a distant treetop or the far ridge — where it calls with wings drooped and tail cocked."
+      : sp.id === "rooster" ? "Comes up over the brow of the hill from the farm on the far side, crows, patrols the ridge, and drops back out of sight."
       : sp.id === "mallard" ? "Afloat on the open water, drifting as it quacks and dabbles."
       : sp.id === "woodpecker" ? "Clings to a near trunk and drums against the wood."
       : sp.id === "oystercatcher" ? "On the wet sand, piping, then walking off along the tide line."
       : sp.id === "frog" ? "Down at the water's edge, swelling with each croak."
-      : "Alights on a perch near its song — branch, reed, post or roof — sings, lingers, then slips away.",
+      : "Alights on a perch near its song — branch, reed, post or roof — sings, lingers, then slips away. On the ground it walks a little, works the turf for food, and flies off when it has had enough.",
     every: sp.base
   });
 }
@@ -321,15 +391,35 @@ const CRITTERS = [
     } },
   { id: "fox", name: "Red Fox", latin: "Vulpes vulpes",
     desc: "trots the field edge between dusk and dawn", sky: "dusk",
-    modes: ["trot", "listen"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }],
+    modes: ["trot", "listen", "pounce"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }],
     when: { dawn: 0.6, day: 0, dusk: 0.7, night: 0.6 },
-    appears: "Trots through low ground after dusk, pausing to listen with turned ears.",
+    appears: "Trots through low ground after dusk, pausing to listen with turned ears — and now and then going straight up and over in the mousing pounce, coming down nose-first.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.82;
       groundBand(c, W, H, P, gy);
-      scene.paintFox(c, { x: W*0.5, y: gy, s: 30, dir: 1,
+      const s = 30;
+      const pose = { crouch: 0, lift: 0, rot: 0, air: 0 };
+      if (mode === "listen") pose.crouch = 1;
+      if (mode === "pounce") {
+        // the same phases the scene itself runs, on a loop
+        const u = tm % 3.4;
+        if (u < 0.9) pose.crouch = Math.min(1, u*2);
+        else if (u < 1.16) { pose.crouch = 1; pose.lift = Math.sin((u - 0.9)/0.26*Math.PI*0.5)*s*0.10; }
+        else if (u < 1.88) {
+          const k = (u - 1.16)/0.72;
+          pose.air = Math.min(1, k*4);
+          pose.lift = Math.sin(k*Math.PI)*s*1.55;
+          pose.rot = -0.55 + k*1.85;
+        } else if (u < 2.24) {
+          pose.rot = 1.30 - (u - 1.88)*1.9;
+          pose.air = Math.max(0, 1 - (u - 1.88)*4);
+          pose.crouch = 1;
+        } else { pose.crouch = 1; pose.rot = 0.60 + Math.sin(u*9)*0.06; }
+      }
+      scene.paintFox(c, Object.assign({ x: W*0.5, y: gy, s, dir: 1,
         walking: mode === "trot", lp: tm*7,
-        look: mode === "listen" ? Math.sin(tm*1.8) : 0, color: P.col, t: tm });
+        ears: mode === "trot" ? 0 : 1,
+        look: mode === "listen" ? Math.sin(tm*1.8)*0.3 : 0, color: P.col, t: tm }, pose));
     } },
   { id: "rabbit", name: "European Rabbit", latin: "Oryctolagus cuniculus",
     desc: "hops the meadow in fits and starts", sky: "day",
@@ -360,20 +450,33 @@ const CRITTERS = [
     } },
   { id: "heron", name: "Grey Heron", latin: "Ardea cinerea",
     desc: "stands sentinel, then rows away on slow wings", sky: "day",
-    modes: ["stand", "fly"], where: [{ h: "wetland", w: 1 }, { h: "beach", w: 1 }],
+    modes: ["wait", "watch", "stalk", "strike", "preen", "fly"],
+    where: [{ h: "wetland", w: 1 }, { h: "beach", w: 1 }],
     when: { dawn: 0.5, day: 0.6, dusk: 0.3, night: 0 },
-    appears: "Waits at the water's edge by day; leaves low and unhurried when it's done.",
+    appears: "Waits at the water's edge by day — hunched, then drawn up to watch, a slow step, the strike and the swallow — and leaves low and unhurried when it's done.",
     draw(c, W, H, tm, mode, P) {
       const wy = H*0.78;
       waterBand(c, W, H, P, wy);
       if (mode === "fly") {
         const x = ((tm*45) % (W + 170)) - 85;
         scene.paintHeron(c, { x, y: H*0.42, s: 34, dir: 1, flying: true,
-          flap: Math.sin(tm*3.4), color: P.col, t: tm });
-      } else {
-        scene.paintHeron(c, { x: W*0.5, y: wy, s: 36, dir: 1, flying: false,
-          flap: 0, color: P.col, t: tm });
+          flap: Math.sin(tm*3.4), color: P.col, deep: P.deep, t: tm });
+        return;
       }
+      const pose = { neck: 0.25, strike: 0, gulp: 0, step: 0, preen: 0 };
+      if (mode === "watch") pose.neck = 1;
+      else if (mode === "stalk") { pose.neck = 0.85; pose.step = (tm/1.7) % 1; }
+      else if (mode === "preen") { pose.neck = 0.6; pose.preen = Math.sin((tm % 1.9)/1.9*Math.PI); }
+      else if (mode === "strike") {
+        pose.neck = 1;
+        const u = tm % 2.6;
+        if (u < 0.16) pose.strike = u/0.16;
+        else if (u < 0.30) pose.strike = 1;
+        else if (u < 0.62) pose.strike = 1 - (u - 0.30)/0.32;
+        else if (u < 1.4) pose.gulp = (u - 0.62)/0.78;
+      }
+      scene.paintHeron(c, Object.assign({ x: W*0.5, y: wy, s: 36, dir: 1, flying: false,
+        flap: 0, color: P.col, deep: P.deep, t: tm }, pose));
     } },
   { id: "porpoise", name: "Harbour Porpoise", latin: "Phocoena phocoena",
     desc: "an arched back and a breath, then gone", sky: "day",
@@ -384,16 +487,24 @@ const CRITTERS = [
       const wy = H*0.6;
       waterBand(c, W, H, P, wy);
       const x = ((tm*50) % (W + 130)) - 65;
-      const arc = Math.sin(tm*1.8);
-      const keepH = scene.H;
-      scene.H = 330;
-      if (arc > 0.03) {
-        scene.paintPorpoise(c, { x, y: wy - arc*14, dir: 1, arc, color: P.col });
-      } else if (arc > -0.25) {
-        c.strokeStyle = `rgba(${scene.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
-        c.beginPath(); c.ellipse(x, wy, 10, 3, 0, 0, Math.PI*2); c.stroke();
+      const ph = tm*1.8;
+      const arc = Math.sin(ph);
+      if (arc > 0.02) {
+        scene.paintPorpoise(c, { x, y: wy, dir: 1, arc, pitch: Math.cos(ph)*0.34,
+          s: 26, color: P.col, rim: P.rim });
+      } else {
+        const fp = Math.max(0, 1 + arc*1.6);
+        const sub = Math.max(0, 1 + arc*3);
+        if (sub > 0.02) {
+          c.globalAlpha = 0.18*sub; c.fillStyle = P.col;
+          c.beginPath(); c.ellipse(x, wy + 8, 30, 6, 0, 0, Math.PI*2); c.fill();
+          c.globalAlpha = 1;
+        }
+        if (fp > 0.02) {
+          c.strokeStyle = `rgba(${scene.tok.foamRGB}, ${0.26*fp})`; c.lineWidth = 1;
+          c.beginPath(); c.ellipse(x - 16, wy, 15*(2 - fp), 4, 0, 0, Math.PI*2); c.stroke();
+        }
       }
-      scene.H = keepH;
     } },
   { id: "bat", name: "Common Pipistrelle", latin: "Pipistrellus pipistrellus",
     desc: "a jinking scrap of night air", sky: "night",
@@ -463,16 +574,24 @@ const CRITTERS = [
       c.restore();
     } },
   { id: "squirrel", name: "Red Squirrel", latin: "Sciurus vulgaris",
-    desc: "bounds the litter, sits up, forgets why", sky: "day",
-    modes: ["sit", "bound"], where: [{ h: "forest", w: 1 }],
+    desc: "bounds the litter, sits up, forgets where it buried it", sky: "day",
+    modes: ["sit", "bound", "cache"], where: [{ h: "forest", w: 1 }],
     when: { dawn: 0.4, day: 0.8, dusk: 0.2, night: 0 },
-    appears: "Crosses the forest floor in fine daylight, pausing upright to nibble.",
+    appears: "Crosses the forest floor in fine daylight, pausing upright to nibble — and digs a hole, drops a nut in, noses it down and pats the litter back over it.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.82;
       groundBand(c, W, H, P, gy);
       const hopY = mode === "bound" ? Math.abs(Math.sin(tm*9))*8 : 0;
+      let dig = 0, bury = 0, pat = 0;
+      if (mode === "cache") {
+        const u = tm % 4.4;
+        if (u < 0.5) dig = u/0.5;
+        else if (u < 2.3) dig = 1;
+        else if (u < 3.0) { dig = 1; bury = (u - 2.3)/0.7; }
+        else if (u < 3.7) { dig = 1 - (u - 3.0)/0.7; pat = 1; }
+      }
       scene.paintSquirrel(c, { x: W*0.5, y: gy - hopY, s: 26, dir: 1,
-        sit: mode === "sit", ph: tm*9, t: tm, color: P.col });
+        sit: mode === "sit", ph: tm*9, t: tm, dig, bury, pat, color: P.col });
     } },
   { id: "hare", name: "Brown Hare", latin: "Lepus europaeus",
     desc: "long legs and longer ears at the field edge", sky: "dawn",

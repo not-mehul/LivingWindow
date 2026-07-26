@@ -88,13 +88,38 @@ can never drift out of date: what you inspect there is exactly what the window
 draws and sings. It honours the same Dawn/Dusk themes and
 `prefers-reduced-motion`.
 
+## Behaviour worth knowing about
+
+- **Song posts are held.** An arriving bird takes a perch nobody is already
+  sitting on (`Scene.pickPerch`), and a bird that sings again from the post it
+  already holds is the same bird, not a second one drawn on top of the first.
+- **Counter-singing.** Neighbouring territory-holders answer each other across a
+  boundary: one sings, the other replies from its own post the moment the first
+  falls quiet, and the turns tighten as the exchange goes on. Which species do
+  this, and how readily, is `COUNTERSING` in `species.js`; the exchange itself is
+  `AudioEngine.answer`.
+- **Ground birds have somewhere to be.** A bird that comes down to a stone or a
+  tussock takes a few steps — hopping or walking according to its species — has
+  a look round, and works the turf for food before flying off.
+- **Nothing dissolves in place.** Every visitor leaves by doing something: the
+  owl tips off the branch and rows away, the pheasant walks out of frame or goes
+  up like a firework, the kingfisher drops into the water, the cockerel sinks
+  back behind the hill it came over.
+
 ## Design notes
 
 - **Generative.** Every voice is built from oscillators and filtered noise via the
   Web Audio API — nothing is sampled. A session's seed drives both the landscape
   and its cast.
 - **Faithful.** Each place keeps its own company; a species only sings where it
-  would actually live (see `habitats` / `hw` in `species.js`).
+  would actually live (see `habitats` / `hw` in `species.js`). The same applies to
+  behaviour: the fox's mousing pounce, the heron's strike, the squirrel caching a
+  nut and the cuckoo's drooped-wing calling posture are all drawn from life.
+- **Cheap to run.** A phrase costs two audio nodes, not two per note
+  (`noteTrain` / `pulseTrain` in `species.js`), every voice's signal chain is
+  unwired from the graph once it has decayed, and the canvas holds to a pixel
+  budget with an adaptive render scale, so full screen on a dense display stays
+  smooth.
 - **Accessible.** Honours `prefers-reduced-motion` and `prefers-color-scheme`, and
   ships light ("Dawn") and dark ("Dusk") themes.
 - **Private.** No dependencies, no build step, no network calls. Just static files.
