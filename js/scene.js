@@ -25,6 +25,7 @@ class Scene {
     this.lastFox = -999; this.lastRabbit = -999; this.lastHeron = -999;
     this.lastPorpoise = -999; this.lastSquirrel = -999; this.lastHare = -999;
     this.lastHedgehog = -999; this.lastBadger = -999; this.lastOtter = -999;
+    this.lastPounce = -999;
     this.timeMix = { dawn: 1, day: 0, dusk: 0, night: 0 };
     this.refreshTokens();
     this.reseed(state.seed);
@@ -44,6 +45,7 @@ class Scene {
     this.active = on;
     if (on) {
       this.last = performance.now();
+      this.warm = 0;             // judge the frame rate afresh, not on the first paint
       requestAnimationFrame(this._frame);
     }
   }
@@ -81,7 +83,8 @@ class Scene {
       sageRGB: themeVar("--accent-sage-rgb")
     };
     this._glow = new Map();   // radial-glow sprites are token-coloured; rebuild on theme change
-    this._skyKey = null;      // invalidate the cached sky gradient
+    this._skyKey = null;      // invalidate the cached sky and fog gradients
+    this._fogKey = null;
     const fc = this.tok.firefly;
     this.tok.fireflyRGB = (fc[0]|0) + "," + (fc[1]|0) + "," + (fc[2]|0);
   }
@@ -122,6 +125,7 @@ class Scene {
     this.lastFox = this.t - 55; this.lastRabbit = this.t - 30; this.lastHeron = this.t - 50;
     this.lastPorpoise = this.t - 40; this.lastSquirrel = this.t - 25; this.lastHare = this.t - 50;
     this.lastHedgehog = this.t - 60; this.lastBadger = this.t - 80; this.lastOtter = this.t - 45;
+    this.lastPounce = this.t - 20;
 
     this.clouds = [];
     const nc = 2 + Math.floor(rng()*3);
@@ -239,11 +243,30 @@ class Scene {
           dx: (rng()-0.5)*0.02, dy: (rng()-0.5)*0.02 });
       }
       this.grass = this.makeGrass(rng, 110, 0.03, 0.05);
-      // shrubs on the near hill, a couple of far trees, wildflowers and stones
-      this.bushes = [];
-      for (let i = 0; i < 5 + Math.floor(rng()*4); i++) {
+      // A hedgerow running across the middle distance — the field boundary
+      // that stops the middle of the picture from being an empty band of
+      // colour — then a couple of far trees, wildflowers and stones.
+      this.hedgeLine = (x) => (this.hillA(x) + this.hillB(x))*0.5 + 0.012;
+      this.hedge = this.makeHedgerow(rng, this.hedgeLine);
+      // a couple of shrubs standing out on their own, away from the hedge line
+      this.shrubs = [];
+      for (let i = 0; i < 2 + Math.floor(rng()*3); i++) {
         const x = rng();
-        this.bushes.push({ x, y: this.hillB(x), r: 0.018 + rng()*0.03, lobes: 3 + Math.floor(rng()*3) });
+        this.shrubs.push({ x, y: this.hillB(x), r: 0.014 + rng()*0.022, seed: rng() });
+      }
+      // Cattle out on the far hill, in ones and twos as cattle actually stand.
+      this.cattle = [];
+      if (rng() < 0.8) {
+        const herd = 2 + Math.floor(rng()*4);
+        let cx = 0.10 + rng()*0.55;
+        for (let i = 0; i < herd; i++) {
+          cx += (0.035 + rng()*0.085);
+          if (cx > 0.94) break;
+          this.cattle.push({ x: cx, sz: 0.85 + rng()*0.3, dir: rng() < 0.5 ? -1 : 1,
+            ph: rng()*Math.PI*2, calf: rng() < 0.22,
+            // most of a cow's day is head-down; the rest is standing about
+            head: rng() < 0.68 ? 1 : 0, next: 6 + rng()*14 });
+        }
       }
       this.distantTrees = [];
       for (let i = 0; i < 2 + Math.floor(rng()*2); i++) {
@@ -257,23 +280,6 @@ class Scene {
       this.rocks = [];
       for (let i = 0; i < 3 + Math.floor(rng()*4); i++) {
         this.rocks.push({ x: 0.04 + rng()*0.92, r: 0.008 + rng()*0.016, shade: rng() });
-      }
-      // A hedgerow running across the middle distance, with a gap in it and a
-      // couple of standards grown up out of the line — the thing that stops
-      // the middle of a field from being an empty band of colour.
-      this.hedge = [];
-      const gapAt = 0.2 + rng()*0.6, gapW = 0.05 + rng()*0.05;
-      for (let x = -0.02; x < 1.04; x += 0.016 + rng()*0.01) {
-        if (Math.abs(x - gapAt) < gapW) continue;
-        this.hedge.push({ x, r: 0.011 + rng()*0.012,
-          tree: rng() < 0.05 ? 0.03 + rng()*0.03 : 0 });
-      }
-      // Stock out on the far slope: too distant to be anything but a mark,
-      // which is exactly what gives the field its size.
-      this.grazers = [];
-      for (let i = 0; i < 2 + Math.floor(rng()*3); i++) {
-        this.grazers.push({ x: 0.08 + rng()*0.84, sz: 0.6 + rng()*0.5,
-          dir: rng() < 0.5 ? 1 : -1, ph: rng()*Math.PI*2, sp: 0.0016 + rng()*0.002 });
       }
       // Perches derived from the tree's real branch tips, so a bird lands on a
       // branch that is actually drawn — never floating in mid-air.
@@ -289,9 +295,12 @@ class Scene {
         const tp = tips[Math.floor(rng()*rng()*tips.length)];   // biased to the crown
         this.perches.push({ x: tp.x, y: tp.y, depth: 3 + rng()*2.5, type: "branch" });
       }
-      // shrub tops and a stone or two also serve as song posts
-      for (const bu of (this.bushes || []).slice(0, 2 + Math.floor(rng()*2))) {
-        this.perches.push({ x: bu.x, y: bu.y - bu.r*0.9, depth: 7 + rng()*3, type: "ground" });
+      // the hedge top and a shrub or two also serve as song posts
+      for (const p of this.hedge.posts) {
+        this.perches.push({ x: p.x, y: p.y, depth: 7 + rng()*3, type: "branch" });
+      }
+      for (const bu of this.shrubs.slice(0, 1 + Math.floor(rng()*2))) {
+        this.perches.push({ x: bu.x, y: bu.y - bu.r*1.5, depth: 7 + rng()*3, type: "ground" });
       }
       if (this.rocks && this.rocks.length) {
         const rk = this.rocks[Math.floor(rng()*this.rocks.length)];
@@ -518,13 +527,88 @@ class Scene {
     return blocks;
   }
 
+  /* How many device pixels the window may cost. Blown up to full screen on a
+     high-density display, a naive width×height×dpr² backing store runs to
+     fifteen million pixels, and everything here is fill-rate work — gradients,
+     glows, a sky repainted every frame — so the whole thing crawls. Cap the
+     budget instead: the piece is soft-edged and none of it suffers for being
+     rendered at a slightly lower density than the panel. */
+  static PIXEL_BUDGET = 3.1e6;
+
   resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const r = this.canvas.getBoundingClientRect();
-    this.canvas.width = Math.max(1, r.width * dpr);
-    this.canvas.height = Math.max(1, r.height * dpr);
+    const w = Math.max(1, r.width), h = Math.max(1, r.height);
+    const want = Math.min(window.devicePixelRatio || 1, 2);
+    const fit = Math.sqrt(Scene.PIXEL_BUDGET / (w*h));
+    // `quality` is the adaptive term: it drops if frames start arriving late,
+    // and recovers when they don't.
+    const dpr = Math.max(0.62, Math.min(want, fit) * (this.quality || 1));
+    this.canvas.width = Math.round(w * dpr);
+    this.canvas.height = Math.round(h * dpr);
     this.dpr = dpr;
-    this.W = r.width; this.H = r.height;
+    this.W = w; this.H = h;
+    this._skyKey = null;         // the sky gradient is keyed on height
+    this._fogKey = null;
+  }
+
+  /* Watch the frame time and give ground if the browser cannot keep up. Some
+     engines are markedly slower at large canvases than others, so rather than
+     guess at a device we measure: sustained slow frames step the render scale
+     down, a sustained run of quick ones lets it back up. Both moves are small
+     and rare, so the picture never visibly pulses. */
+  adaptQuality(dt) {
+    // Ignore the first couple of seconds: modules are still warming up and the
+    // first paint is always slow, and a scene that shrank itself over that
+    // would never grow back. Judge only a long-run average after that.
+    this.warm = (this.warm || 0) + dt;
+    if (this.warm < 2.5) { this.frameMs = 16.7; return; }
+    this.frameMs += (dt*1000 - this.frameMs)*0.04;
+    this.quality = this.quality || 1;
+    if ((this.qualityHold = (this.qualityHold || 0) - dt) > 0) return;
+    if (this.frameMs > 24 && this.quality > 0.55) {
+      this.quality = Math.max(0.55, this.quality - 0.15);
+      this.qualityHold = 3; this.resize();
+    } else if (this.frameMs < 13.5 && this.quality < 1) {
+      this.quality = Math.min(1, this.quality + 0.1);
+      this.qualityHold = 5; this.resize();
+    }
+  }
+
+  /* Choose a song post. Birds hold space: a arriving singer takes a perch
+     that nobody is already sitting on, which is what stops three of them
+     stacking in one corner of the frame. `opts.at` asks for the perch nearest
+     a given spot (a bird returning to its own post mid-argument), and
+     `opts.awayFrom` for one at a distance from a rival's. */
+  pickPerch(rand, opts) {
+    const ps = this.perches;
+    if (!ps || !ps.length) return { x: rand(), y: 0.8, depth: 6, type: null };
+    opts = opts || {};
+    const taken = [];
+    for (const a of this.actors) if (!a.leave) taken.push(a.restX);
+    let best = ps[0], bestScore = -Infinity;
+    for (const p of ps) {
+      let score = rand()*0.4;                      // never quite the same choice twice
+      // A perch the singer itself is holding is not "occupied" for its own sake.
+      const mine = opts.at !== undefined && Math.abs(p.x - opts.at) < 0.05;
+      if (!mine) {
+        let near = Infinity;
+        for (const tx of taken) near = Math.min(near, Math.abs(p.x - tx));
+        score -= 5 * Math.max(0, 1 - near/0.13);
+      }
+      if (opts.at !== undefined) score += 3 * Math.max(0, 1 - Math.abs(p.x - opts.at)/0.1);
+      else if (opts.awayFrom !== undefined) score += Math.min(1.6, Math.abs(p.x - opts.awayFrom)*3.4);
+      if (score > bestScore) { bestScore = score; best = p; }
+    }
+    return best;
+  }
+
+  /* Is this species already sitting about here? Then it can answer where it
+     stands rather than flying in a second time. */
+  hasSingerNear(id, x01) {
+    for (const a of this.actors) {
+      if (a.id === id && !a.leave && Math.abs(a.restX - x01) < 0.05) return true;
+    }
+    return false;
   }
 
   addRipple(x01, y01, tone) {
@@ -544,10 +628,51 @@ class Scene {
     });
   }
 
+  /* Where a far-off caller stands: on the skyline — the crown of a distant
+     tree, a mid-distance trunk, or the far ridge itself — so it reads as
+     half a mile off rather than as a small bird close to. */
+  farPerch(x01, onGround) {
+    const x = Math.min(0.94, Math.max(0.06, x01));
+    // A cockerel is on the ground of a farm over the hill, not up a tree, so
+    // it wants the skyline itself; a cuckoo wants something to sit on.
+    if (onGround) {
+      const r0 = this.hillA || this.treeline;
+      return r0 ? { x, y: r0(x) - 0.002, ridge: r0(x) } : { x, y: 0.6, ridge: 0.6 };
+    }
+    if (this.loc === "forest" && this.trunksMid && this.trunksMid.length) {
+      let best = this.trunksMid[0], bd = 9;
+      for (const tr of this.trunksMid) {
+        const d = Math.abs(tr.x - x); if (d < bd) { bd = d; best = tr; }
+      }
+      return { x: best.x + best.lean*2, y: best.top + 0.07, ridge: null };
+    }
+    if (this.distantTrees && this.distantTrees.length) {
+      let best = this.distantTrees[0], bd = 9;
+      for (const t of this.distantTrees) {
+        const d = Math.abs(t.x - x); if (d < bd) { bd = d; best = t; }
+      }
+      return { x: best.x + (best.x < 0.5 ? best.r*0.9 : -best.r*0.9),
+        y: best.y - best.h*0.92, ridge: null };
+    }
+    const ridge = this.hillA || this.treeline;
+    return ridge ? { x, y: ridge(x) - 0.002, ridge: ridge(x) } : { x, y: 0.55, ridge: null };
+  }
+
   /* A voice becomes a visible animal at its own coordinates. */
   spawnForCall(sp, x01, y01, depth, dur, enter = 0, perchType = null) {
     const id = sp.id;
-    if (id === "cricket" || id === "cuckoo" || id === "curlew" || id === "rooster") return;
+    if (id === "cricket" || id === "curlew") return;   // heard from cover, never seen
+    // A bird singing again from the post it already holds is the same bird:
+    // let it open its bill where it stands rather than conjuring a second one
+    // on top of the first.
+    for (const a0 of this.actors) {
+      if (a0.id === id && !a0.leave && Math.abs(a0.restX - x01) < 0.05) {
+        a0.singAt = a0.t + enter; a0.dur = dur;
+        a0.linger = 1.6 + Math.random()*2.2;
+        a0.gest = null; a0.gestFlip = false; a0.nextGest = undefined;
+        return;
+      }
+    }
     if (sp.layer === "air") {
       if (id === "gull") {
         this.flyers.push({ kind: "gull", x: x01, y: y01, age: 0,
@@ -604,7 +729,19 @@ class Scene {
       leave: null,
       depthMix: Math.min(0.42, 0.10 + depth*0.013), data: {}
     };
-    if (id === "owl") { a.beh = "owl"; a.linger = 3 + Math.random()*2; a.s *= 1.25; }
+    if (sp.layer === "far") {
+      // A caller on the skyline: small, sky-washed, and standing on something
+      // that is actually drawn — a treetop or the ridge itself.
+      const spot = this.farPerch(x01, id === "rooster");
+      a.x = spot.x; a.y = spot.y;
+      a.s = Math.max(4.5, Math.min(11, 13 - depth*0.26)) * hs;
+      a.depthMix = 0.42;
+      a.flip = spot.x > 0.5;
+      a.ridgeY = spot.ridge;                       // set when it stands on a skyline
+      a.beh = id === "rooster" ? "cockerel" : "cuckoo";
+      a.linger = 2.5 + Math.random()*3.5;
+    }
+    else if (id === "owl") { a.beh = "owl"; a.linger = 3 + Math.random()*2; a.s *= 1.25; }
     else if (id === "frog") { a.beh = "frog"; a.s *= 0.9; }
     else if (id === "mallard" || id === "moorhen") {
       a.beh = "duck"; a.linger = 4 + Math.random()*3;
@@ -639,6 +776,14 @@ class Scene {
     }
     else a.beh = "perch";
 
+    // A bird that has come down to the ground has somewhere to go and something
+    // to look for, so it stays a good while longer than one on a branch.
+    if (a.beh === "perch" && perchType === "ground") {
+      a.ground = true;
+      a.walks = !!(PSTYLE[id] || {}).walks;   // pigeons and plovers walk; finches hop
+      a.linger = 4.5 + Math.random()*6;
+    }
+
     // Entrance: the behaviour branch has fixed the resting spot; arrive there
     // from off the frame, and only begin the call once settled (a.singAt).
     a.restX = a.x; a.restY = a.y;
@@ -646,7 +791,17 @@ class Scene {
     a.enterFromX = a.x; a.enterFromY = a.y;
     if (enter > 0) {
       const ground = a.beh === "frog" || a.beh === "wader" || a.beh === "duck";
-      if (a.beh === "perch") {
+      if (a.beh === "cockerel") {
+        // Comes up over the brow of the hill from the farm on the far side.
+        a.alpha = 0;
+        a.enterFromX = a.restX + (a.flip ? -1 : 1)*0.012;
+        a.enterFromY = a.restY + 0.035;
+      } else if (a.beh === "cuckoo") {
+        // In along the skyline on quick shallow beats, to the treetop.
+        a.alpha = 0;
+        a.enterFromX = a.restX + (a.flip ? 1 : -1)*(0.10 + Math.random()*0.06);
+        a.enterFromY = a.restY - 0.01;
+      } else if (a.beh === "perch") {
         // A bird arrives on the wing: in over the edge of the frame, down
         // across the open air, a flare at the last moment, and only then is
         // it standing on the branch. Nothing simply appears out of nothing.
@@ -676,11 +831,15 @@ class Scene {
     if (this.actors.length > 8) {
       const old = this.actors.find(x => !x.leave);
       if (!old) { this.actors.shift(); return; }
-      if (old.beh === "perch") {
-        old.leave = "fly"; old.leaveT = 0;
-        old.flyDir = old.flip ? -1 : 1;
-        old.launchX = old.x; old.launchY = old.y;
-      } else old.leave = "fade";
+      old.leaveT = 0;
+      old.flyDir = old.flip ? -1 : 1;
+      old.launchX = old.x; old.launchY = old.y;
+      old.leave = old.beh === "perch" ? "fly"
+        : old.beh === "owl" ? "glide"
+        : old.beh === "cuckoo" ? "fly"
+        : old.beh === "cockerel" ? "sink"
+        : old.beh === "pheasant" ? "walkoff"
+        : old.beh === "egret" ? "heronoff" : "fade";
     }
   }
 
@@ -708,6 +867,7 @@ class Scene {
     }
     this.draw(dt);
     this.spawnCritters(dt);
+    this.adaptQuality(dt);
     requestAnimationFrame(this._frame);
   }
 
@@ -906,63 +1066,192 @@ class Scene {
     c.beginPath(); c.arc(px + rr*0.72, py - hh*0.86, rr*0.68, 0, Math.PI*2); c.fill();
   }
 
-  /* The hedgerow: a run of overlapping lobes following the land, with the
-     odd tree standing up out of it. Drawn between the two ridges, so it
-     reads as a field boundary a few hundred yards off. */
-  drawHedge(c, W, H, bot) {
-    if (!this.hedge) return;
-    const mn = Math.min(W, H);
-    const col = css(mix(this.tok.ink, bot, 0.26));
-    const line = (x) => (this.hillA(x) + this.hillB(x))*0.5 + 0.012;
-    c.fillStyle = col;
-    for (const h of this.hedge) {
-      const hy = line(h.x)*H;
-      const r = h.r*mn;
-      c.beginPath(); c.arc(h.x*W, hy - r*0.5, r, 0, Math.PI*2); c.fill();
-      if (h.tree) {
-        const th = h.tree*H;
-        c.save();
-        c.strokeStyle = col; c.lineWidth = Math.max(1, mn*0.004); c.lineCap = "round";
-        c.beginPath(); c.moveTo(h.x*W, hy); c.lineTo(h.x*W, hy - th*0.7); c.stroke();
-        c.beginPath(); c.arc(h.x*W, hy - th, th*0.42, 0, Math.PI*2); c.fill();
-        c.restore();
-      }
-    }
-  }
-
-  /* Stock grazing the far slope — a body, a head that goes down and comes
-     up again, and nothing else. At this distance that is all there is. */
-  drawGrazers(c, W, H, dt, bot) {
-    if (!this.grazers) return;
-    const mn = Math.min(W, H);
-    c.fillStyle = css(mix(this.tok.ink, bot, 0.30));
-    for (const g of this.grazers) {
-      g.x += g.dir*g.sp*dt;
-      if (g.x > 1.04) g.x = -0.04; else if (g.x < -0.04) g.x = 1.04;
-      const gy = this.hillA(g.x)*H;
-      const s = mn*0.012*g.sz;
-      // most of the time the head is down; every so often it comes up
-      const up = Math.pow(Math.max(0, Math.sin(this.t*0.24 + g.ph)), 8);
-      c.save();
-      c.translate(g.x*W, gy);
-      if (g.dir < 0) c.scale(-1, 1);
-      c.beginPath(); c.ellipse(0, -s*1.15, s*1.15, s*0.62, 0, 0, Math.PI*2); c.fill();
-      c.fillRect(-s*0.8, -s*0.6, s*0.26, s*0.62);
-      c.fillRect(s*0.5, -s*0.6, s*0.26, s*0.62);
-      const hx = s*1.25, hy2 = -s*(0.55 + up*0.95);
-      c.beginPath(); c.ellipse(hx, hy2, s*0.42, s*0.3, 0.2, 0, Math.PI*2); c.fill();
-      c.restore();
-    }
-  }
-
-  /* A low shrub — a run of overlapping lobes sitting on the ground line. */
-  bushShape(c, x, yBase, r, lobes, W, H, color) {
+  /* A low shrub — a rough dome with a broken, twiggy edge. Drawn as one
+     closed outline rather than a row of circles, because a row of circles
+     looks like a row of circles. */
+  bushShape(c, x, yBase, r, seed, W, H, color) {
     const px = x*W, py = yBase*H, rr = r*Math.min(W, H);
     c.fillStyle = color;
-    for (let i = 0; i < lobes; i++) {
-      const dx = (i/Math.max(1, lobes-1) - 0.5)*rr*2.1;
-      const rad = rr*(0.68 + 0.42*Math.sin(i*1.7 + x*7));
-      c.beginPath(); c.arc(px + dx, py - rad*0.42, rad, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    const n = 14;
+    for (let i = 0; i <= n; i++) {
+      const u = i/n, ang = Math.PI*(1 + u);                 // over the top, left to right
+      const rag = 1 + 0.22*Math.sin(u*11 + seed*7) + 0.13*Math.sin(u*23 + seed*3);
+      const bx = px + Math.cos(ang)*rr*1.15;
+      const byy = py + Math.sin(ang)*rr*0.9*rag;
+      if (i === 0) c.moveTo(bx, byy); else c.lineTo(bx, byy);
+    }
+    c.lineTo(px + rr*1.15, py);
+    c.closePath(); c.fill();
+  }
+
+  /* A hedgerow: one continuous run of thorn along the field boundary, its top
+     edge broken and irregular, with a few standards — old hawthorns and ashes
+     left uncut — rising out of it, and a scatter of twigs breaking the line.
+     The height wanders along the run, as a laid hedge does where it has been
+     cut in different years. */
+  makeHedgerow(rng, baseFn) {
+    const from = rng() < 0.5 ? -0.04 : 0.22 + rng()*0.2;
+    const to = from < 0 ? 0.45 + rng()*0.5 : 1.04;
+    const waves = [];
+    for (let i = 0; i < 3; i++) {
+      waves.push({ f: 9 + rng()*18 + i*17, ph: rng()*Math.PI*2, a: (0.62 - i*0.16) });
+    }
+    const standards = [];
+    const ns = 1 + Math.floor(rng()*3);
+    for (let i = 0; i < ns; i++) {
+      const u = 0.12 + rng()*0.76;
+      standards.push({ x: from + (to - from)*u, h: 0.05 + rng()*0.055, r: 0.016 + rng()*0.018 });
+    }
+    const h0 = 0.030 + rng()*0.018;
+    const height = (x) => {
+      const u = Math.max(0, Math.min(1, (x - from)/(to - from)));
+      let k = 1;
+      for (const w of waves) k += Math.sin(x*w.f + w.ph)*w.a*0.4;
+      // taper away at the ends so the run does not stop dead
+      const taper = Math.min(1, Math.min(u, 1 - u)*9);
+      return h0 * k * taper;
+    };
+    const posts = [];
+    for (let i = 0; i < 3; i++) {
+      const x = from + (to - from)*(0.15 + rng()*0.7);
+      posts.push({ x, y: baseFn(x) - height(x)*0.92, r: 0.02 });
+    }
+    return { from, to, height, standards, posts, seed: rng() };
+  }
+
+  drawHedgerow(c, W, H, baseFn, bot) {
+    const hg = this.hedge;
+    if (!hg) return;
+    const body = css(mix(this.tok.inkDeep, bot, 0.15));
+    const twig = css(mix(this.tok.inkDeep, bot, 0.24));
+    const wind = state.weather === "breeze" ? 1 : 0.35;
+    const n = 96;
+    // The mass of the hedge: its crown ragged where the wind is working it,
+    // its foot following the ground it grows out of.
+    c.fillStyle = body;
+    c.beginPath();
+    for (let i = 0; i <= n; i++) {
+      const x = hg.from + (hg.to - hg.from)*(i/n);
+      const sway = Math.sin(this.t*1.3 + x*22)*wind*1.4*this.windWave(x);
+      const ty = (baseFn(x) - hg.height(x))*H + sway*0.3;
+      if (i === 0) c.moveTo(x*W + sway, ty); else c.lineTo(x*W + sway, ty);
+    }
+    for (let i = n; i >= 0; i--) {
+      const x = hg.from + (hg.to - hg.from)*(i/n);
+      c.lineTo(x*W, baseFn(x)*H + 5);
+    }
+    c.closePath(); c.fill();
+    // Loose growth standing proud of the cut line — the year's new shoots that
+    // give a hedge its bristled top instead of a shaved one.
+    c.strokeStyle = twig;
+    c.lineWidth = 1;
+    c.beginPath();
+    for (let i = 0; i < 64; i++) {
+      const x = hg.from + (hg.to - hg.from)*((i*0.0673 + hg.seed) % 1);
+      const hgt = hg.height(x);
+      if (hgt < 0.008) continue;
+      const tx = x*W, ty = (baseFn(x) - hgt)*H;
+      const lean = Math.sin(i*3.1 + hg.seed*9)*5 + Math.sin(this.t*1.6 + x*18)*wind*2.6;
+      const up = 4 + ((i*7) % 5)*2.6;
+      c.moveTo(tx, ty + 3);
+      c.quadraticCurveTo(tx + lean*0.4, ty - up*0.5, tx + lean, ty - up);
+    }
+    c.stroke();
+    // standards left uncut along the line
+    const trunkCol = css(mix(this.tok.inkDeep, bot, 0.12));
+    for (const st of hg.standards) {
+      this.smallTree(c, st.x, baseFn(st.x) - hg.height(st.x)*0.35, st.h, st.r, W, H, trunkCol);
+    }
+  }
+
+  /* One beast. Everything is in the proportions: the barrel is deep and not
+     very long, the legs are short — a cow standing square is about as deep
+     through the body as it is long in the leg — the back runs level from a
+     high hip to the withers, and the head hangs off a thick neck no longer
+     than the head itself. Get the neck wrong and you have drawn a horse.
+     `hd` is 0 for head up, 1 for head down in the grass. */
+  cowShape(c, bx, by, s, dir, hd, col, patch, tailSwing) {
+    c.save();
+    c.translate(bx, by);
+    c.scale(dir, 1);
+    c.fillStyle = col;
+    // Legs: short, straight, set at the corners. The far pair is a shade
+    // behind the near one, which is all the depth needed at this size.
+    for (const [lx, lw] of [[-s*0.50, 0.13], [-s*0.34, 0.12], [s*0.36, 0.12], [s*0.50, 0.13]]) {
+      this.limb(c, lx, -s*0.50, lx, 0, s*lw, s*0.085);
+    }
+    // Barrel: level back, square rump, deep brisket dropping low in front.
+    c.beginPath();
+    c.moveTo(s*0.62, -s*1.02);
+    c.lineTo(-s*0.56, -s*1.06);
+    c.quadraticCurveTo(-s*0.80, -s*1.02, -s*0.80, -s*0.80);
+    c.quadraticCurveTo(-s*0.78, -s*0.50, -s*0.52, -s*0.44);
+    c.lineTo(s*0.40, -s*0.42);
+    c.quadraticCurveTo(s*0.74, -s*0.48, s*0.74, -s*0.78);
+    c.closePath(); c.fill();
+    // The tail, swinging at flies.
+    const tw = tailSwing*s*0.12;
+    c.beginPath();
+    c.moveTo(-s*0.74, -s*1.00);
+    c.quadraticCurveTo(-s*0.88 + tw, -s*0.72, -s*0.84 + tw*1.6, -s*0.30);
+    c.lineTo(-s*0.74 + tw*1.6, -s*0.30);
+    c.quadraticCurveTo(-s*0.78 + tw, -s*0.72, -s*0.66, -s*1.00);
+    c.closePath(); c.fill();
+    // Neck and head. Short and thick, carried level with the back when it is
+    // up and swung straight down into the grass when it is not.
+    const nx = s*(0.72 + hd*0.10), ny = -s*(0.86 - hd*0.62);
+    this.limb(c, s*0.46, -s*0.96, nx, ny, s*0.38, s*0.26);
+    c.save();
+    c.translate(nx, ny);
+    c.rotate(hd*1.05);
+    c.beginPath();
+    c.moveTo(-s*0.10, -s*0.17);
+    c.quadraticCurveTo(s*0.20, -s*0.16, s*0.34, -s*0.02);
+    c.quadraticCurveTo(s*0.36, s*0.08, s*0.26, s*0.11);
+    c.quadraticCurveTo(s*0.02, s*0.17, -s*0.10, s*0.14);
+    c.closePath(); c.fill();
+    // ears held out sideways, the way a cow's are
+    c.beginPath();
+    c.ellipse(-s*0.08, -s*0.10, s*0.12, s*0.055, -0.5, 0, Math.PI*2);
+    c.ellipse(-s*0.11, s*0.07, s*0.11, s*0.05, 0.4, 0, Math.PI*2);
+    c.fill();
+    c.restore();
+    // A broken white patch over the shoulder and flank — most of them have one.
+    if (patch) {
+      c.fillStyle = patch;
+      c.beginPath();
+      c.ellipse(s*0.06, -s*0.84, s*0.30, s*0.17, 0.08, 0, Math.PI*2);
+      c.ellipse(-s*0.42, -s*0.66, s*0.16, s*0.10, -0.2, 0, Math.PI*2);
+      c.fill();
+    }
+    c.restore();
+  }
+
+  /* Cattle out on the far hill. At this distance a cow is a barrel on four
+     short legs with a dropped head, and getting that outline right matters
+     more than any detail: deep straight back, square rump, brisket low and
+     forward, head down in the grass most of the time. They stand in ones and
+     twos, swing a tail at flies, and lift their heads now and then. */
+  drawCattle(c, W, H, dt, baseFn, bot) {
+    if (!this.cattle || !this.cattle.length) return;
+    const col = css(mix(this.tok.ink, bot, 0.30));
+    const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
+    for (const cw of this.cattle) {
+      cw.next -= dt;
+      if (cw.next <= 0) {                       // up for a look, or back down to it
+        cw.head = cw.head > 0.5 ? 0 : 1;
+        cw.next = cw.head ? 8 + Math.random()*16 : 4 + Math.random()*9;
+      }
+      cw.hd = (cw.hd === undefined) ? cw.head : cw.hd + (cw.head - cw.hd)*Math.min(1, dt*1.4);
+      const s = Math.min(W, H)*0.026*cw.sz;
+      this.cowShape(c, cw.x*W, baseFn(cw.x)*H, s, cw.dir, cw.hd, col,
+        cw.ph > 2.4 ? pale : null, Math.sin(this.t*1.7 + cw.ph));
+      // a calf keeping close in, head up, all legs and no barrel yet
+      if (cw.calf) {
+        this.cowShape(c, (cw.x*W) - cw.dir*s*1.9, baseFn(cw.x - cw.dir*0.012)*H,
+          s*0.58, cw.dir, 0.15, col, null, Math.sin(this.t*2.6 + cw.ph));
+      }
     }
   }
 
@@ -1160,12 +1449,14 @@ class Scene {
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.45), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.38));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
-    this.drawGrazers(c, W, H, dt, bot);
+    this.drawCattle(c, W, H, dt, this.hillA, bot);
     this.distanceHaze(c, W, H, 0.52, 0.82, 0.075*(1 - this.nightness()*0.55));
-    this.drawHedge(c, W, H, bot);
+    this.drawHedgerow(c, W, H, this.hedgeLine, bot);
     this.drawRidge(c, this.hillB, mix(this.tok.ink, bot, 0.18), W, H);
-    const bushCol = css(mix(this.tok.inkDeep, bot, 0.15));
-    for (const bu of (this.bushes || [])) this.bushShape(c, bu.x, bu.y, bu.r, bu.lobes, W, H, bushCol);
+    const shrubCol = css(mix(this.tok.inkDeep, bot, 0.15));
+    for (const bu of (this.shrubs || [])) {
+      this.bushShape(c, bu.x, bu.y, bu.r, bu.seed, W, H, shrubCol);
+    }
     const baseY = this.hillB(this.treeX) * H;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.06));
     c.lineCap = "round";
@@ -1833,16 +2124,25 @@ class Scene {
       const sungEnd = a.singAt + a.dur;
 
       if (!a.leave && a.t > sungEnd + a.linger) {
+        a.leaveT = 0;
+        a.flyDir = a.flip ? -1 : 1;
+        a.launchX = a.x; a.launchY = a.y;
         if (a.beh === "perch") {
           // A kingfisher usually leaves its perch straight down into the water.
-          if (a.diver && this.loc === "wetland" && this.waterY && Math.random() < 0.75) {
-            a.leave = "dive"; a.leaveT = 0;
-            a.launchX = a.x; a.launchY = a.y;
-          } else {
-            a.leave = "fly"; a.leaveT = 0;
-            a.flyDir = a.flip ? -1 : 1;
-            a.launchX = a.x; a.launchY = a.y;
-          }
+          a.leave = (a.diver && this.loc === "wetland" && this.waterY && Math.random() < 0.75)
+            ? "dive" : "fly";
+        } else if (a.beh === "owl") {
+          a.leave = "glide";
+        } else if (a.beh === "cuckoo") {
+          a.leave = "fly";
+        } else if (a.beh === "cockerel") {
+          a.leave = "sink";
+        } else if (a.beh === "pheasant") {
+          // Either it walks quietly out of the frame, or it goes up like a
+          // firework — which is what a pheasant does when it has had enough.
+          a.leave = Math.random() < 0.45 ? "flush" : "walkoff";
+        } else if (a.beh === "egret") {
+          a.leave = "heronoff";
         } else {
           a.leave = "fade";
         }
@@ -1869,6 +2169,42 @@ class Scene {
           a.x = a.launchX + a.flyDir*(0.26*ft + 0.38*ft*ft);
         }
         if (a.y < -0.16 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
+      } else if (a.leave === "glide") {
+        // An owl does not spring off a branch. It tips forward, drops, and
+        // rows away low and level, out over the edge of the frame.
+        a.leaveT += dt;
+        const ft = a.leaveT;
+        a.y = a.launchY + Math.min(0.028, ft*0.10) - 0.030*ft*ft;
+        a.x = a.launchX + a.flyDir*(0.16*ft + 0.13*ft*ft);
+        if (a.y < -0.16 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
+      } else if (a.leave === "flush") {
+        // Straight up out of the grass on clattering wings, then away low.
+        a.leaveT += dt;
+        const ft = a.leaveT;
+        if (ft < 0.18) {
+          a.y = a.launchY + (a.s/H)*0.3*(ft/0.18);
+        } else {
+          const u = ft - 0.18;
+          a.y = a.launchY - (0.24*u + 0.10*u*u);
+          a.x = a.launchX + a.flyDir*(0.05*u + 0.16*u*u);
+        }
+        if (a.y < -0.16 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
+      } else if (a.leave === "walkoff") {
+        a.x += a.flyDir * 0.055 * dt;
+        if (a.x < -0.12 || a.x > 1.12) { this.actors.splice(i, 1); continue; }
+      } else if (a.leave === "heronoff") {
+        // Heavy and unhurried: a step, a heave, then a slow climb away.
+        a.leaveT += dt;
+        const ft = Math.max(0, a.leaveT - 0.5);
+        a.y = a.launchY - (0.06*ft + 0.03*ft*ft);
+        a.x = a.launchX + a.flyDir*(0.06*ft + 0.03*ft*ft);
+        if (a.y < -0.14 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
+      } else if (a.leave === "sink") {
+        // Back down the far side of the hill, out of sight behind the brow.
+        a.leaveT += dt;
+        a.y = a.launchY + a.leaveT*0.05;
+        a.x = a.launchX - a.flyDir*0.008*a.leaveT;
+        if (a.y > a.launchY + 0.06) { this.actors.splice(i, 1); continue; }
       } else if (a.leave === "fade") {
         a.alpha -= dt * 1.3;
         a.x += (a.flip ? 1 : -1) * 0.012 * dt;         // drift off rather than dissolve in place
@@ -1879,10 +2215,20 @@ class Scene {
         if (a.x < -0.05 || a.x > 1.05) { this.actors.splice(i, 1); continue; }
       }
       if (a.beh === "duck" && a.t > a.enter) a.x += a.data.dir * 0.006 * dt;
-      if (a.beh === "pheasant" && a.t > sungEnd) {
-        a.x += (a.flip ? -1 : 1) * 0.010 * dt;
+      if (a.beh === "pheasant" && a.t > sungEnd && !a.leave) {
+        a.x += (a.flip ? -1 : 1) * 0.012 * dt;
         if (a.x < -0.08 || a.x > 1.08) { this.actors.splice(i, 1); continue; }
       }
+      if (a.beh === "cockerel" && !a.leave && a.t > sungEnd) {
+        a.x += (a.flip ? -1 : 1) * 0.004 * dt;         // a slow patrol of the skyline
+        if (a.ridgeY !== null && this.hillA) a.y = this.hillA(a.x) - 0.002;
+        a.restX = a.x; a.restY = a.y;
+      }
+
+      // Life on the ground. A bird that has finished singing from a stone or a
+      // tussock does not sit there like an ornament: it takes a few steps, has
+      // a look round, and works the turf for something to eat.
+      this.forage(a, dt, singing);
 
       // Idle gestures — preening, a wing-stretch, a little hop-and-turn —
       // each scheduled at the bird's own tempo, so no two fidget alike.
@@ -1954,11 +2300,17 @@ class Scene {
       // once the bird has landed — never trailing from its feet as it flies in/out.
       const landed = a.enter > 0 ? Math.max(0, Math.min(1, (a.t - a.enter)/0.2)) : 1;
 
+      // On the ground: a hopper leaves the turf between steps, a walker keeps
+      // its feet down and swings its legs instead.
+      const hopStep = (a.ground && !a.walks && a.act === "step")
+        ? Math.max(0, Math.sin(a.hopPh || 0)) : 0;
+      const stride = (a.ground && a.walks && a.act === "step") ? a.stridePh : 0;
+
       switch (a.beh) {
         case "perch": {
           const ps = PSTYLE[a.id] || {};
-          this.drawPerchFooting(c, a.restX*W, a.restY*H, a.s, a.perchType, bot,
-            a.alpha * landed * (1 - flyProg));
+          this.drawPerchFooting(c, (a.ground ? a.x : a.restX)*W, a.restY*H, a.s,
+            a.perchType, bot, a.alpha * landed * (1 - flyProg));
           const hopG = a.gest === "hop" ? Math.abs(Math.sin(Math.PI*(a.gestT/a.gestDur)))*a.s*0.22 : 0;
           const gk = a.gest ? Math.sin(Math.PI*Math.min(1, a.gestT/a.gestDur)) : 0;
           const fluffG = a.gest === "fluff" ? gk : 0;
@@ -1967,7 +2319,7 @@ class Scene {
           const rot = diveRot ? (a.flip ? -diveRot : diveRot) : bodyRot;
           if (rot) { c.save(); c.translate(x, y); c.rotate(rot); }
           this.paintBird(c, {
-            x: rot ? 0 : x, y: rot ? 0 : y - hopBob - hopG,
+            x: rot ? 0 : x, y: (rot ? 0 : y) - hopBob - hopG - hopStep*a.s*0.45,
             s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
             color: colStr, rim: rimStr, deep: deepStr, marks: ps,
             plump: (ps.plump || 1) * (iv.puff || 1) * (1 + fluffG*0.24),
@@ -1976,6 +2328,7 @@ class Scene {
             crest: ps.crest || (iv.crest && !ps.tailUp && !ps.cap), rimLight: iv.rim,
             gest: (a.gest === "preen" || a.gest === "stretch") ? a.gest : null,
             gestK: a.gest ? a.gestT/a.gestDur : 0,
+            peck: a.peck || 0, legTuck: hopStep, stride,
             sing, breath, headTurn: headTurn + peerG*0.85, tailFlick, wingSettle,
             fly: diveRot ? 1 : Math.max(flyProg, flyIn),
             flap: diveRot ? -0.4 : (flyIn > 0 ? flapIn : flyFlap),
@@ -1984,13 +2337,47 @@ class Scene {
           if (rot) c.restore();
           break;
         }
-        case "egret": this.paintHeron(c, { x, y, s: a.s*2.3, dir: a.flip ? -1 : 1,
-          flying: false, flap: 0, color: colStr, pale: true, t: a.t, sing }); break;
-        case "pheasant": this.paintPheasant(c, { x, y, s: a.s*1.5, flip: a.flip,
-          alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr, sing,
-          walking: a.t > sungEnd, lp: a.t*5, t: a.t }); break;
-        case "owl": this.paintOwl(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, rim: rimStr,
-          deep: deepStr, night, t: a.t, headTurn, blinkPh: iv.tailPh || 0 }); break;
+        case "egret": {
+          const off = a.leave === "heronoff" ? a.leaveT : 0;
+          this.paintHeron(c, { x, y, s: a.s*2.3, dir: a.flip ? -1 : 1,
+            flying: off > 0.5, flap: off > 0.5 ? Math.sin((off - 0.5)*7) : 0,
+            crouch: off > 0 ? Math.min(1, off/0.5) : 0,
+            color: colStr, pale: true, t: a.t, sing, alpha: a.alpha });
+          break;
+        }
+        case "pheasant": {
+          const flushT = a.leave === "flush" ? a.leaveT : 0;
+          this.paintPheasant(c, { x, y, s: a.s*1.5, flip: a.flip,
+            alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr, sing,
+            walking: (a.t > sungEnd && !a.leave) || a.leave === "walkoff",
+            lp: a.t*(a.leave === "walkoff" ? 9 : 5),
+            fly: flushT ? Math.min(1, Math.max(0, (flushT - 0.16)/0.12)) : 0,
+            flap: flushT ? Math.sin(flushT*30) : 0, t: a.t });
+          break;
+        }
+        case "owl": {
+          const gl = a.leave === "glide" ? Math.min(1, a.leaveT/0.35) : 0;
+          this.paintOwl(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, rim: rimStr,
+            deep: deepStr, night, t: a.t, headTurn, blinkPh: iv.tailPh || 0,
+            breath, fly: gl, flap: gl ? Math.sin(a.leaveT*8.5) : 0,
+            flip: a.flyDir < 0, settle: wingSettle, sing });
+          break;
+        }
+        case "cuckoo": this.paintCuckoo(c, { x, y, s: a.s, flip: a.flip, alpha: a.alpha,
+          color: colStr, rim: rimStr, deep: deepStr, sing, breath, t: a.t,
+          fly: flyProg, flap: flyFlap }); break;
+        case "cockerel": {
+          // It stands on the skyline, so the hill itself hides it as it goes.
+          c.save();
+          if (a.ridgeY !== null && a.ridgeY !== undefined) {
+            c.beginPath(); c.rect(0, 0, W, a.restY*H + a.s*0.25); c.clip();
+          }
+          this.paintRooster(c, { x, y, s: a.s, flip: a.flip, alpha: a.alpha,
+            color: colStr, rim: rimStr, deep: deepStr, sing, t: a.t,
+            walking: !a.leave && a.t > sungEnd, lp: a.t*4 });
+          c.restore();
+          break;
+        }
         case "duck": this.paintDuck(c, { x, y: y + Math.sin(a.t*1.3)*1.5, s: a.s,
           flip: a.data.dir < 0, alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr,
           moorhen: a.data.moorhen, sing, breath, t: a.t }); break;
@@ -2002,6 +2389,49 @@ class Scene {
         case "frog": this.paintFrog(c, { x, y, s: a.s, alpha: a.alpha, color: col, bot, sing, breath, t: a.t }); break;
       }
     }
+  }
+
+  /* A ground bird's own business between songs. It takes a few quick steps in
+     one direction, stands and looks about, then puts its head down and works
+     the turf — a couple of pecks, sometimes three. Hoppers hop (a robin, a
+     dunnock, a sparrow); walkers walk (a lapwing, a starling, a pigeon). When
+     it has had enough of the ground it springs off as any perched bird does,
+     which is the departure the fly branch above already knows how to make. */
+  forage(a, dt, singing) {
+    if (!a.ground || a.leave) { a.peck = 0; return; }
+    if (singing || a.t < a.enter + 0.5) { a.peck = 0; a.act = null; return; }
+    if (a.hopPh === undefined) { a.hopPh = 0; a.stridePh = 0; a.peck = 0; }
+    if (!a.act || (a.actT += dt) > a.actDur) {
+      const roll = Math.random();
+      a.act = roll < 0.42 ? "step" : roll < 0.78 ? "peck" : "look";
+      a.actT = 0;
+      if (a.act === "step") {
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        a.walkTo = Math.min(0.95, Math.max(0.05, a.x + dir*(0.012 + Math.random()*0.045)));
+        a.flip = a.walkTo < a.x;
+        a.actDur = 0.4 + Math.random()*0.9;
+      } else if (a.act === "peck") {
+        a.pecks = 1 + Math.floor(Math.random()*3);
+        a.actDur = a.pecks*0.42 + 0.2;
+      } else {
+        a.actDur = 0.7 + Math.random()*1.4;
+      }
+    }
+    if (a.act === "step") {
+      const dx = a.walkTo - a.x;
+      if (Math.abs(dx) > 0.004) {
+        const step = (a.walks ? 0.035 : 0.05) * dt;
+        a.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
+        if (a.walks) a.stridePh += dt*9; else a.hopPh += dt*11;
+      }
+      a.peck = 0;
+    } else if (a.act === "peck" && a.actT < a.pecks*0.42) {
+      const u = (a.actT / 0.42) % 1;                // down fast, up a shade slower
+      a.peck = Math.pow(Math.sin(Math.PI*u), 0.6);
+    } else {
+      a.peck = 0;
+    }
+    a.restX = a.x;                                  // it stands where it has walked to
   }
 
   /* A little something under the feet so no bird stands on empty air. */
@@ -2040,9 +2470,14 @@ class Scene {
     const s = o.s, plump = o.plump || 1, sing = o.sing || 0;
     const breath = o.breath || 0, fly = o.fly || 0, mk = o.marks || {};
     const deep = o.deep || o.color;
+    const peck = o.peck || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.flip) c.scale(-1, 1);
+    // Pecking: the whole bird tips forward over its feet and the head reaches
+    // down past them, which is what makes it read as working the turf rather
+    // than nodding on the spot.
+    if (peck > 0.002) c.rotate(-peck*0.42);
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
     c.lineCap = "round"; c.lineJoin = "round";
@@ -2056,8 +2491,9 @@ class Scene {
     const gk = Math.sin(Math.PI*Math.min(1, o.gestK || 0));
     const preen = o.gest === "preen" ? gk : 0;
     const stretch = o.gest === "stretch" ? gk : 0;
-    const hx = s*0.58 + ht*s*0.10 - preen*hr*1.1;
-    const hy = cy - bry*0.55 - hr*0.85 - sing*s*0.16 + preen*hr*0.6;
+    const hx = s*0.58 + ht*s*0.10 - preen*hr*1.1 + peck*s*0.26;
+    const hy = cy - bry*0.55 - hr*0.85 - sing*s*0.16 + preen*hr*0.6
+             + peck*(bry*0.85 + legLen*0.55);
 
     // Tail — a fan of tapered feathers off the rump; it flicks at rest, fans
     // wide on take-off, and drops hard as an air-brake in the landing flare.
@@ -2075,13 +2511,19 @@ class Scene {
     }
 
     // Legs — tarsi with toes that grip. They tuck up as the bird takes wing,
-    // and swing down and forward, feet open, as it comes in to land.
-    const tuck = Math.min(1, fly*1.5) * (1 - flare*0.95);
+    // swing down and forward with the feet open as it comes in to land, and
+    // fold again at the top of a hop. A walker swings them instead.
+    const tuck = Math.min(1, Math.max(fly*1.5, o.legTuck || 0)) * (1 - flare*0.95);
+    const stride = o.stride || 0;
     if (tuck < 0.95) {
       const hipY = cy + bry*0.62;
-      for (const [hpx0, fx0] of [[-s*0.02, -s*0.12], [s*0.14, s*0.18]]) {
-        const hpx = hpx0, fx = fx0 + flare*s*0.5;
-        const fy = -tuck*legLen*0.8 - flare*s*0.1;
+      let li = 0;
+      for (const [hpx, fx0] of [[-s*0.02, -s*0.12], [s*0.14, s*0.18]]) {
+        const swing = stride ? Math.sin(stride + li*Math.PI)*s*0.22 : 0;
+        const step = stride ? Math.max(0, Math.sin(stride + li*Math.PI + 0.8))*s*0.16 : 0;
+        li++;
+        const fx = fx0 + swing + flare*s*0.5;
+        const fy = -tuck*legLen*0.8 - step - flare*s*0.1;
         c.lineWidth = Math.max(1, s*0.085);
         c.beginPath();
         c.moveTo(hpx, hipY);
@@ -2334,119 +2776,409 @@ class Scene {
     c.restore();
   }
 
+  /* A tawny owl. Round-headed — the ear-tufts belong to the long-eared, not
+     to this bird — and built like a bollard: all head and shoulders over a
+     short tail. Perched, it is never quite still: it breathes, weaves its
+     head to range a sound, shifts its feet, rouses its feathers, blinks, and
+     swells a pale throat as it hoots. It leaves by tipping off the branch, so
+     `fly` swings the whole drawing over to the flight form rather than
+     dissolving the bird where it sits. */
   paintOwl(c, o) {
-    const s = o.s, t = o.t || 0;
+    const s = o.s, t = o.t || 0, sing = o.sing || 0;
+    const fly = o.fly || 0;
     c.save();
     c.translate(o.x, o.y);
-    c.rotate(Math.sin(t*0.6)*0.02);              // the slow shift of weight
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
     c.lineCap = "round"; c.lineJoin = "round";
-    const legLen = s*0.2;
-    const brx = s*0.68, bry = s*0.98;
+    if (fly > 0.02) { this.owlFlight(c, o, fly); c.restore(); return; }
+
+    const breath = o.breath || 0;
+    const rouse = Math.pow(Math.max(0, Math.sin(t*0.37 + 1.1)), 22);   // a shake-out
+    const shuffle = Math.pow(Math.max(0, Math.sin(t*0.29 + 3.7)), 18); // shifting its feet
+    // The head-weave: owls bob and swing to judge a distance, in short bursts.
+    const weave = Math.pow(Math.max(0, Math.sin(t*0.21 + 0.6)), 6);
+    const bobX = Math.sin(t*3.0)*weave, bobY = Math.sin(t*6.1 + 0.8)*weave;
+    const settle = o.settle || 0;
+
+    c.rotate(Math.sin(t*0.6)*0.02 - sing*0.05);   // the slow shift of weight
+    const legLen = s*0.20;
+    const brx = s*0.66*(1 + rouse*0.10 + settle*0.06);
+    const bry = s*0.96*(1 + breath*0.02 + sing*0.03);
     const cy = -(legLen + bry*0.85);
-    const ex = (o.headTurn || 0)*s*0.10;
-    const hw = s*0.56, hy0 = cy - bry*0.66;
-    // talons curled round the branch
-    c.lineWidth = Math.max(1, s*0.09);
+
+    // Feathered legs down to heavy talons curled over the branch; one foot
+    // lifts and re-sets now and then.
+    c.lineWidth = Math.max(1, s*0.10);
+    for (const sd of [-1, 1]) {
+      const lift = sd < 0 ? shuffle*s*0.07 : 0;
+      c.beginPath();
+      c.moveTo(sd*s*0.17, cy + bry*0.7);
+      c.lineTo(sd*s*0.18, -s*0.02 - lift);
+      c.stroke();
+      c.lineWidth = Math.max(0.8, s*0.06);
+      c.beginPath();
+      c.moveTo(sd*s*0.18, -s*0.02 - lift);
+      c.quadraticCurveTo(sd*s*0.28, s*0.02 - lift, sd*s*0.32, s*0.05 - lift);
+      c.moveTo(sd*s*0.18, -s*0.02 - lift);
+      c.quadraticCurveTo(sd*s*0.09, s*0.03 - lift, sd*s*0.05, s*0.06 - lift);
+      c.stroke();
+      c.lineWidth = Math.max(1, s*0.10);
+    }
+
+    // Body — heavy shoulders, a soft skirt of flank feathers, and a short
+    // square tail hanging just past the perch.
     c.beginPath();
-    c.moveTo(-s*0.16, cy + bry*0.7); c.lineTo(-s*0.17, -s*0.02);
-    c.moveTo(s*0.16, cy + bry*0.7);  c.lineTo(s*0.17, -s*0.02);
-    c.stroke();
-    c.lineWidth = Math.max(0.8, s*0.06);
-    c.beginPath();
-    c.moveTo(-s*0.17, -s*0.02); c.quadraticCurveTo(-s*0.26, s*0.03, -s*0.30, s*0.06);
-    c.moveTo(-s*0.17, -s*0.02); c.quadraticCurveTo(-s*0.08, s*0.04, -s*0.05, s*0.06);
-    c.moveTo(s*0.17, -s*0.02);  c.quadraticCurveTo(s*0.08, s*0.04, s*0.05, s*0.06);
-    c.moveTo(s*0.17, -s*0.02);  c.quadraticCurveTo(s*0.26, s*0.03, s*0.30, s*0.06);
-    c.stroke();
-    // one soft continuous silhouette — tufts, round cheeks, shoulders,
-    // tapering to a tail that hangs just below the perch
-    c.beginPath();
-    c.moveTo(ex - hw*1.0, hy0 + s*0.20);
-    c.quadraticCurveTo(ex - hw*1.06, hy0 - s*0.24, ex - hw*0.8, hy0 - s*0.46);
-    c.lineTo(ex - hw*0.55, hy0 - s*0.28);
-    c.quadraticCurveTo(ex, hy0 - s*0.5, ex + hw*0.55, hy0 - s*0.28);
-    c.lineTo(ex + hw*0.8, hy0 - s*0.46);
-    c.quadraticCurveTo(ex + hw*1.06, hy0 - s*0.24, ex + hw*1.0, hy0 + s*0.20);
-    c.quadraticCurveTo(brx*1.15, cy - bry*0.1, brx*0.85, cy + bry*0.45);
-    c.quadraticCurveTo(brx*0.55, cy + bry*0.95, s*0.10, cy + bry*1.14);
-    c.lineTo(-s*0.10, cy + bry*1.14);
-    c.quadraticCurveTo(-brx*0.55, cy + bry*0.95, -brx*0.85, cy + bry*0.45);
-    c.quadraticCurveTo(-brx*1.15, cy - bry*0.1, ex - hw*1.0, hy0 + s*0.20);
+    c.moveTo(-brx*0.98, cy - bry*0.40);
+    c.quadraticCurveTo(-brx*1.16, cy + bry*0.06, -brx*0.88, cy + bry*0.48);
+    c.quadraticCurveTo(-brx*0.62, cy + bry*0.96, -s*0.13, cy + bry*1.16);
+    c.lineTo(s*0.13, cy + bry*1.16);
+    c.quadraticCurveTo(brx*0.62, cy + bry*0.96, brx*0.88, cy + bry*0.48);
+    c.quadraticCurveTo(brx*1.16, cy + bry*0.06, brx*0.98, cy - bry*0.40);
+    c.quadraticCurveTo(brx*0.6, cy - bry*0.86, 0, cy - bry*0.90);
+    c.quadraticCurveTo(-brx*0.6, cy - bry*0.86, -brx*0.98, cy - bry*0.40);
     c.closePath(); c.fill();
-    // folded wing edges and roughly etched chest barring
+
+    // Folded wing edges, and the streaked breast of a tawny.
     c.strokeStyle = o.rim;
     c.lineWidth = Math.max(0.7, s*0.05);
-    c.globalAlpha = o.alpha*0.45;
+    c.globalAlpha = o.alpha*0.42;
     c.beginPath();
-    c.moveTo(-brx*0.72, cy - bry*0.25);
-    c.quadraticCurveTo(-brx*0.85, cy + bry*0.3, -brx*0.35, cy + bry*0.9);
-    c.moveTo(brx*0.72, cy - bry*0.25);
-    c.quadraticCurveTo(brx*0.85, cy + bry*0.3, brx*0.35, cy + bry*0.9);
-    for (let r2 = 0; r2 < 4; r2++) {
-      const byy = cy - bry*0.15 + r2*bry*0.22;
-      const wdt = brx*(0.52 - r2*0.06);
-      for (let k2 = -1; k2 <= 1; k2++) {
-        const cx2 = k2*wdt*0.6 + ((r2 % 2) ? s*0.06 : -s*0.04);
-        c.moveTo(cx2 - s*0.09, byy); c.lineTo(cx2 + s*0.09, byy + s*0.02);
-      }
+    c.moveTo(-brx*0.80, cy - bry*0.28);
+    c.quadraticCurveTo(-brx*0.98, cy + bry*0.32, -brx*0.42, cy + bry*0.94);
+    c.moveTo(brx*0.80, cy - bry*0.28);
+    c.quadraticCurveTo(brx*0.98, cy + bry*0.32, brx*0.42, cy + bry*0.94);
+    for (let k = 0; k < 7; k++) {
+      const u = (k % 4)/3 - 0.5, row = Math.floor(k/4);
+      const sx2 = u*brx*1.1 + (row ? s*0.09 : -s*0.05);
+      const sy2 = cy - bry*0.05 + row*bry*0.30;
+      c.moveTo(sx2, sy2); c.lineTo(sx2 + s*0.02, sy2 + s*0.16);
     }
     c.stroke();
     c.globalAlpha = o.alpha;
-    // the facial disc — two pale rings meeting over the beak
-    const eyeY = hy0 - s*0.02, eyeDx = hw*0.42, er = s*0.28;
-    c.lineWidth = Math.max(0.8, s*0.055);
-    c.globalAlpha = o.alpha*0.6;
+
+    // The pale throat, swelling with each hoot.
+    if (sing > 0.02) {
+      c.fillStyle = `rgba(${this.tok.foamRGB}, ${0.30*sing})`;
+      c.beginPath();
+      c.ellipse(0, cy - bry*0.52, s*0.20*(0.6 + sing*0.7), s*0.15*(0.6 + sing*0.8),
+        0, 0, Math.PI*2);
+      c.fill();
+      c.fillStyle = o.color;
+    }
+
+    // ---- the head, on its own swivel ----
+    const turn = Math.max(-1, Math.min(1, o.headTurn || 0));
+    const hr = s*0.60;
+    c.save();
+    c.translate(bobX*s*0.09, cy - bry*0.58 + bobY*s*0.05);
+    c.rotate(turn*0.18 + bobX*0.06);
+    const off = turn*hr*0.26;                    // the face swings round the skull
+    c.fillStyle = o.color;
     c.beginPath();
-    c.arc(ex - eyeDx, eyeY, er*1.4, 0.5, Math.PI*2 - 0.5);
-    c.moveTo(ex + eyeDx + er*1.4*Math.cos(Math.PI - 0.5), eyeY + er*1.4*Math.sin(Math.PI - 0.5));
-    c.arc(ex + eyeDx, eyeY, er*1.4, Math.PI + 0.5, Math.PI - 0.5);
+    c.ellipse(0, 0, hr*1.02, hr*0.96, 0, 0, Math.PI*2);
+    c.fill();
+
+    // Facial disc: two shallow bowls meeting over the bill, rimmed darker.
+    const eyeDx = hr*0.40, eyeY = hr*0.02, er = hr*0.30;
+    c.strokeStyle = o.rim;
+    c.lineWidth = Math.max(0.8, s*0.055);
+    c.globalAlpha = o.alpha*0.55;
+    c.beginPath();
+    c.arc(off - eyeDx, eyeY, er*1.45, 0.55, Math.PI*2 - 0.55);
+    c.moveTo(off + eyeDx + er*1.45*Math.cos(Math.PI - 0.55),
+             eyeY + er*1.45*Math.sin(Math.PI - 0.55));
+    c.arc(off + eyeDx, eyeY, er*1.45, Math.PI + 0.55, Math.PI - 0.55);
     c.stroke();
     c.globalAlpha = o.alpha;
-    // great round eyes — pale discs, dark pupils, a glow after dark,
-    // and the occasional unhurried blink
-    const eyN = o.night || 0;
-    const blink = Math.max(0, 1 - Math.abs(((t + (o.blinkPh || 0)) % 5.3) - 4.9)*8);
+
+    // Eyes — dark, forward-set, catching the light after dark; the blink
+    // comes down from above like a shutter.
+    const night = o.night || 0;
+    const blink = Math.max(0, 1 - Math.abs(((t + (o.blinkPh || 0)) % 5.3) - 4.9)*7);
     c.fillStyle = o.rim;
     c.beginPath();
-    c.arc(ex - eyeDx, eyeY, er, 0, Math.PI*2);
-    c.arc(ex + eyeDx, eyeY, er, 0, Math.PI*2);
+    c.arc(off - eyeDx, eyeY, er, 0, Math.PI*2);
+    c.arc(off + eyeDx, eyeY, er, 0, Math.PI*2);
     c.fill();
     c.fillStyle = o.deep || o.color;
     c.beginPath();
-    c.arc(ex - eyeDx, eyeY, er*0.45, 0, Math.PI*2);
-    c.arc(ex + eyeDx, eyeY, er*0.45, 0, Math.PI*2);
+    c.arc(off - eyeDx, eyeY, er*0.48, 0, Math.PI*2);
+    c.arc(off + eyeDx, eyeY, er*0.48, 0, Math.PI*2);
     c.fill();
-    if (eyN > 0.15) {
+    if (night > 0.15) {
       const fc = this.tok.firefly;
-      c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.8*eyN*o.alpha*(1 - blink)})`;
+      c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.8*night*o.alpha*(1 - blink)})`;
       c.beginPath();
-      c.arc(ex - eyeDx, eyeY, er*0.5, 0, Math.PI*2);
-      c.arc(ex + eyeDx, eyeY, er*0.5, 0, Math.PI*2);
+      c.arc(off - eyeDx, eyeY, er*0.52, 0, Math.PI*2);
+      c.arc(off + eyeDx, eyeY, er*0.52, 0, Math.PI*2);
       c.fill();
     } else {
       c.fillStyle = `rgba(${this.tok.foamRGB}, 0.85)`;
       c.beginPath();
-      c.arc(ex - eyeDx + er*0.18, eyeY - er*0.2, er*0.1, 0, Math.PI*2);
-      c.arc(ex + eyeDx + er*0.18, eyeY - er*0.2, er*0.1, 0, Math.PI*2);
+      c.arc(off - eyeDx + er*0.2, eyeY - er*0.22, er*0.11, 0, Math.PI*2);
+      c.arc(off + eyeDx + er*0.2, eyeY - er*0.22, er*0.11, 0, Math.PI*2);
       c.fill();
     }
     if (blink > 0.02) {
       c.fillStyle = o.color;
       c.beginPath();
-      c.ellipse(ex - eyeDx, eyeY - er*(1 - blink), er*1.05, er*blink*1.1, 0, 0, Math.PI*2);
-      c.ellipse(ex + eyeDx, eyeY - er*(1 - blink), er*1.05, er*blink*1.1, 0, 0, Math.PI*2);
+      c.ellipse(off - eyeDx, eyeY - er*(1 - blink), er*1.08, er*blink*1.15, 0, 0, Math.PI*2);
+      c.ellipse(off + eyeDx, eyeY - er*(1 - blink), er*1.08, er*blink*1.15, 0, 0, Math.PI*2);
       c.fill();
     }
-    // hooked beak
-    c.fillStyle = o.color;
+
+    // Hooked bill, half-buried in the disc, opening a crack to hoot.
+    c.fillStyle = o.deep || o.color;
+    const bg = sing*hr*0.06;
     c.beginPath();
-    c.moveTo(ex - s*0.07, eyeY + er*0.75);
-    c.quadraticCurveTo(ex, eyeY + er*0.85, ex + s*0.07, eyeY + er*0.75);
-    c.quadraticCurveTo(ex + s*0.02, eyeY + er*1.35, ex, eyeY + er*1.45);
-    c.quadraticCurveTo(ex - s*0.02, eyeY + er*1.35, ex - s*0.07, eyeY + er*0.75);
+    c.moveTo(off - s*0.07, eyeY + er*0.78);
+    c.quadraticCurveTo(off, eyeY + er*0.88, off + s*0.07, eyeY + er*0.78);
+    c.quadraticCurveTo(off + s*0.02, eyeY + er*1.40 + bg, off, eyeY + er*1.50 + bg);
+    c.quadraticCurveTo(off - s*0.02, eyeY + er*1.40 + bg, off - s*0.07, eyeY + er*0.78);
     c.closePath(); c.fill();
+    c.restore();
+    c.restore();
+  }
+
+  /* The same owl on the wing: broad blunt wings on a long slow beat, head
+     pulled down between the shoulders, tail short and fanned. */
+  owlFlight(c, o, fly) {
+    const s = o.s, k = o.flap || 0;
+    c.save();
+    if (o.flip) c.scale(-1, 1);
+    c.translate(0, -s*0.9);
+    c.fillStyle = o.color;
+    const A = c.globalAlpha;
+    // An owl's wing is short-armed, very broad and blunt at the tip. The far
+    // wing sits behind the body and dimmer; the near one rides over it, so the
+    // span reads as depth rather than as a flat cross.
+    // The wing tips swing through an arc about the shoulders rather than
+    // sliding up and down a line, so the wing keeps its length at every point
+    // of the beat instead of folding into the body at the bottom of it.
+    const th = k*0.95;
+    const cth = Math.cos(th), sth = Math.sin(th);
+    c.globalAlpha = A*0.5;
+    this.wingBlade(c, -s*0.06, -s*0.10,
+      -s*(0.22 + 0.95*cth), -s*(0.10 + 0.95*sth), s*0.44);
+    c.globalAlpha = A;
+    // short square tail, barely clear of the body
+    c.beginPath();
+    c.moveTo(-s*0.36, -s*0.14);
+    c.lineTo(-s*0.80, -s*0.10); c.lineTo(-s*0.82, s*0.22); c.lineTo(-s*0.36, s*0.20);
+    c.closePath(); c.fill();
+    // body, and the big round head carried out in front of it
+    c.beginPath(); c.ellipse(0, 0, s*0.48, s*0.28, 0, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*0.48, -s*0.08, s*0.30, 0, Math.PI*2); c.fill();
+    // the facial disc catches what light there is, even in silhouette
+    c.fillStyle = o.rim || o.color;
+    c.globalAlpha = A*0.3;
+    c.beginPath(); c.ellipse(s*0.56, -s*0.08, s*0.17, s*0.21, 0, 0, Math.PI*2); c.fill();
+    c.globalAlpha = A;
+    c.fillStyle = o.color;
+    this.wingBlade(c, s*0.06, -s*0.08,
+      s*(0.26 + 1.12*cth), -s*(0.08 + 1.12*sth), s*0.50);
+    c.restore();
+  }
+
+  /* A cuckoo — long-tailed and hawk-like, which is the whole point of it: a
+     small grey falcon shape on a bare branch, wings drooped below the tail.
+     Calling, it drops the wings, cocks and fans the tail and rocks forward
+     with each note, which is exactly what a calling cuckoo does. */
+  paintCuckoo(c, o) {
+    const s = o.s, t = o.t || 0, sing = o.sing || 0, fly = o.fly || 0;
+    const deep = o.deep || o.color;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.flip) c.scale(-1, 1);
+    c.globalAlpha = o.alpha;
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineCap = "round"; c.lineJoin = "round";
+
+    if (fly > 0.02) {
+      // Low, direct and quick, on shallow beats that never rise above the body.
+      const k = o.flap || 0;
+      c.translate(0, -s*0.7);
+      const A = c.globalAlpha;
+      c.globalAlpha = A*0.6;
+      this.wingBlade(c, -s*0.05, -s*0.04, -s*1.05, -s*0.62*k - s*0.20, s*0.30);
+      c.globalAlpha = A;
+      c.beginPath(); c.ellipse(0, 0, s*0.60, s*0.20, 0, 0, Math.PI*2); c.fill();
+      // that long tail streaming out behind, still the giveaway in flight
+      c.beginPath();
+      c.moveTo(-s*0.45, -s*0.10); c.lineTo(-s*1.62, s*0.02);
+      c.lineTo(-s*1.60, s*0.10); c.lineTo(-s*0.45, s*0.14);
+      c.closePath(); c.fill();
+      c.beginPath(); c.arc(s*0.60, -s*0.06, s*0.19, 0, Math.PI*2); c.fill();
+      c.beginPath();
+      c.moveTo(s*0.72, -s*0.10); c.lineTo(s*1.02, -s*0.02); c.lineTo(s*0.72, s*0.02);
+      c.closePath(); c.fill();
+      this.wingBlade(c, s*0.05, -s*0.03, s*1.0, -s*0.78*k - s*0.24, s*0.34);
+      c.restore();
+      return;
+    }
+
+    const rock = sing*0.10;                       // it rocks forward on each note
+    c.rotate(-rock);
+    const legLen = s*0.28;
+    const brx = s*0.86, bry = s*0.46*(1 + (o.breath || 0)*0.03);
+    const cy = -(legLen + bry*0.95);
+    // short legs
+    c.lineWidth = Math.max(1, s*0.08);
+    c.beginPath();
+    c.moveTo(-s*0.05, cy + bry*0.7); c.lineTo(-s*0.08, 0);
+    c.moveTo(s*0.14, cy + bry*0.7);  c.lineTo(s*0.16, 0);
+    c.stroke();
+    // The long graduated tail, carried low and cocked up and fanned as it calls.
+    const fan = 0.10 + sing*0.13;
+    const tAng = 0.30 - sing*0.58 - (o.tailFlick || 0)*0.2;
+    const tl = s*1.55;
+    const rx = -brx*0.68, ry = cy + bry*0.06;
+    c.beginPath();
+    c.moveTo(rx, ry - s*0.16);
+    for (let k = -1; k <= 1; k++) {
+      const aa = tAng + k*fan;
+      const kl = tl*(1 - Math.abs(k)*0.14);
+      c.lineTo(rx - Math.cos(aa)*kl, ry + Math.sin(aa)*kl);
+    }
+    c.lineTo(rx, ry + s*0.16);
+    c.closePath(); c.fill();
+    // white tail-spots, the field mark that names it at any distance
+    c.fillStyle = `rgba(${this.tok.foamRGB}, 0.6)`;
+    for (let k = 1; k <= 3; k++) {
+      const d = tl*(0.34 + k*0.2);
+      c.beginPath();
+      c.arc(rx - Math.cos(tAng)*d, ry + Math.sin(tAng)*d,
+        Math.max(0.5, s*0.055), 0, Math.PI*2);
+      c.fill();
+    }
+    c.fillStyle = o.color;
+    // Body — long and level, small head, slightly decurved bill.
+    const hx = s*0.72, hy = cy - bry*0.72;
+    c.beginPath();
+    c.moveTo(-brx*0.78, cy - bry*0.22);
+    c.quadraticCurveTo(-brx*0.2, cy - bry*1.0, hx - s*0.2, hy + s*0.05);
+    c.quadraticCurveTo(hx + s*0.2, hy - s*0.02, hx + s*0.22, hy + s*0.14);
+    c.quadraticCurveTo(brx*0.5, cy + bry*0.7, -brx*0.1, cy + bry*0.9);
+    c.quadraticCurveTo(-brx*0.6, cy + bry*0.7, -brx*0.78, cy - bry*0.22);
+    c.closePath(); c.fill();
+    // Drooped wings, carried below the line of the tail.
+    c.fillStyle = deep;
+    const droop = sing*s*0.14;
+    this.wingBlade(c, s*0.24, cy - bry*0.30,
+      -brx*0.62, cy + bry*0.62 + droop, s*0.42);
+    c.fillStyle = o.color;
+    // Barred underparts.
+    c.strokeStyle = o.rim;
+    c.lineWidth = Math.max(0.5, s*0.045);
+    c.globalAlpha = o.alpha*0.5;
+    c.beginPath();
+    for (let k = 0; k < 4; k++) {
+      const bx2 = s*0.08 + k*s*0.16;
+      c.moveTo(bx2, cy + bry*0.30); c.lineTo(bx2 - s*0.05, cy + bry*0.82);
+    }
+    c.stroke();
+    c.globalAlpha = o.alpha;
+    // Bill, and the yellow eye-ring.
+    c.fillStyle = o.color;
+    const gap = sing*s*0.09;
+    c.beginPath();
+    c.moveTo(hx + s*0.16, hy + s*0.04);
+    c.quadraticCurveTo(hx + s*0.40, hy + s*0.04, hx + s*0.46, hy + s*0.14);
+    c.lineTo(hx + s*0.16, hy + s*0.16 + gap);
+    c.closePath(); c.fill();
+    c.strokeStyle = `rgba(${this.tok.amberRGB}, 0.85)`;
+    c.lineWidth = Math.max(0.6, s*0.05);
+    c.beginPath(); c.arc(hx - s*0.02, hy + s*0.05, s*0.09, 0, Math.PI*2); c.stroke();
+    c.fillStyle = deep;
+    c.beginPath(); c.arc(hx - s*0.02, hy + s*0.05, Math.max(0.5, s*0.045), 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
+  /* A farmyard cockerel on the skyline: upright, deep-breasted, a blade of
+     sickle tail feathers over the back, comb and wattles at the front. It
+     stretches its neck out and up to crow, wings held a little clear of the
+     body, and steps along the ridge between crows. */
+  paintRooster(c, o) {
+    const s = o.s, t = o.t || 0, sing = o.sing || 0;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.flip) c.scale(-1, 1);
+    c.globalAlpha = o.alpha;
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineCap = "round"; c.lineJoin = "round";
+    const legLen = s*0.30;
+    const brx = s*0.74, bry = s*0.66;
+    const cy = -(legLen + bry*0.9);
+    // legs, stepping along the brow of the hill
+    c.lineWidth = Math.max(1, s*0.09);
+    for (let i = 0; i < 2; i++) {
+      const sw = o.walking ? Math.sin((o.lp || 0) + i*Math.PI)*s*0.14 : (i ? s*0.08 : -s*0.06);
+      const lift = o.walking ? Math.max(0, Math.sin((o.lp || 0) + i*Math.PI + 0.8))*s*0.10 : 0;
+      c.beginPath();
+      c.moveTo((i ? s*0.10 : -s*0.06), cy + bry*0.72);
+      c.lineTo((i ? s*0.10 : -s*0.06) + sw, -lift);
+      c.stroke();
+    }
+    // The sickle tail — a high arc of long feathers off the rump.
+    for (let k = 0; k < 3; k++) {
+      const spread = 0.22 + k*0.16;
+      c.beginPath();
+      c.moveTo(-brx*0.7, cy + bry*0.1);
+      c.quadraticCurveTo(-brx*(1.5 + k*0.2), cy - bry*(0.9 + k*0.3),
+        -brx*(0.6 + k*0.35), cy - bry*(1.7 + k*0.28));
+      c.quadraticCurveTo(-brx*(1.1 + k*0.2), cy - bry*(0.7 + k*0.25),
+        -brx*(0.55 - spread*0.2), cy + bry*0.32);
+      c.closePath(); c.fill();
+    }
+    // Deep body, breast forward.
+    c.beginPath();
+    c.moveTo(s*0.5, cy - bry*0.5);
+    c.quadraticCurveTo(-s*0.1, cy - bry*0.9, -brx*0.72, cy - bry*0.1);
+    c.quadraticCurveTo(-brx*0.85, cy + bry*0.5, -s*0.1, cy + bry*0.86);
+    c.quadraticCurveTo(brx*0.7, cy + bry*0.7, s*0.62, cy - bry*0.02);
+    c.closePath(); c.fill();
+    // Neck and head, thrown up and back to crow.
+    const stretch = sing;
+    const nx = s*0.46 + stretch*s*0.10;
+    const hx = nx + s*0.06 - stretch*s*0.16;
+    const hy = cy - bry*(1.35 + stretch*0.75);
+    this.limb(c, s*0.34, cy - bry*0.3, hx, hy, s*0.30, s*0.17);
+    c.beginPath(); c.arc(hx, hy, s*0.19, 0, Math.PI*2); c.fill();
+    // Comb, wattles and bill — the red of them carried by the amber accent.
+    c.fillStyle = `rgba(${this.tok.amberRGB}, 0.85)`;
+    c.beginPath();
+    c.moveTo(hx - s*0.14, hy - s*0.14);
+    for (let k = 0; k < 4; k++) {
+      c.quadraticCurveTo(hx - s*0.11 + k*s*0.09, hy - s*0.36,
+        hx - s*0.06 + k*s*0.09, hy - s*0.16);
+    }
+    c.lineTo(hx - s*0.14, hy - s*0.12);
+    c.closePath(); c.fill();
+    c.beginPath();
+    c.ellipse(hx + s*0.02, hy + s*0.24, s*0.07, s*0.13, 0.1, 0, Math.PI*2);
+    c.ellipse(hx + s*0.14, hy + s*0.20, s*0.05, s*0.10, 0.2, 0, Math.PI*2);
+    c.fill();
+    const gap = sing*s*0.10;
+    c.beginPath();
+    c.moveTo(hx + s*0.15, hy - s*0.05);
+    c.lineTo(hx + s*0.40, hy + s*0.02);
+    c.lineTo(hx + s*0.15, hy + s*0.08 + gap);
+    c.closePath(); c.fill();
+    // Hackles down the neck, and an eye.
+    c.strokeStyle = o.rim;
+    c.lineWidth = Math.max(0.5, s*0.04);
+    c.globalAlpha = o.alpha*0.45;
+    c.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const u = 0.3 + k*0.2;
+      c.moveTo(hx + (s*0.34 - hx)*u - s*0.1, hy + (cy - bry*0.3 - hy)*u);
+      c.lineTo(hx + (s*0.34 - hx)*u - s*0.02, hy + (cy - bry*0.3 - hy)*u + s*0.12);
+    }
+    c.stroke();
+    c.globalAlpha = o.alpha;
+    c.fillStyle = o.deep || o.color;
+    c.beginPath(); c.arc(hx + s*0.06, hy - s*0.02, Math.max(0.5, s*0.045), 0, Math.PI*2); c.fill();
     c.restore();
   }
 
@@ -2899,7 +3631,8 @@ class Scene {
       const dir = Math.random() < 0.5 ? 1 : -1;
       const edge = this.loc === "wetland" ? (this.bankY || 0.86) - 0.005 : (this.shoreY || 0.82) + 0.02;
       this.critters.push({ kind: "heron", x: 0.25 + Math.random()*0.5, y: edge, dir,
-        mode: "stand", timer: 4 + Math.random()*5, t: 0, vx: 0, flap: 0,
+        mode: "wait", timer: 3 + Math.random()*4, t: 0, vx: 0, flap: 0,
+        neck: 0.4, phase: 0, acts: 0,
         sz: 0.85 + Math.random()*0.3 });
     }
     // a porpoise arcing through the surf — rare, unhurried
@@ -3108,89 +3841,210 @@ class Scene {
           break;
         }
         case "fox": {
+          // A fox on the field edge does more than trot past. It stops to
+          // follow a scent, cocks its head at something under the grass and
+          // freezes — and then goes up and over in the vertical mousing leap,
+          // coming down nose-first.
           cr.timer -= dt;
-          cr.actT = (cr.actT || 0) + dt;
-          const walking = cr.mode === "trot";
-          if (walking) {
+          const fS = H*0.05*(cr.sz || 1)*D.scale;
+          const pose = { crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0 };
+          if (cr.mode === "trot") {
             cr.x += cr.dir*0.028*dt*D.speed; cr.lp += dt*7;
             if (cr.timer <= 0) {
-              // it stops for a reason: a scent on the ground, a sound under
-              // the grass worth pouncing on, or just to listen
               const roll = Math.random();
-              cr.mode = roll < 0.36 ? "sniff" : roll < 0.55 ? "pounce" : "listen";
-              cr.timer = cr.mode === "pounce" ? 1.15 : 1.1 + Math.random()*2.2;
-              cr.actT = 0;
+              if (roll < 0.34 && this.t - this.lastPounce > 12) {
+                cr.mode = "listen"; cr.timer = 1.1 + Math.random()*1.1;
+              } else if (roll < 0.62) {
+                cr.mode = "sniff"; cr.timer = 1.2 + Math.random()*1.8;
+              } else { cr.mode = "pause"; cr.timer = 0.8 + Math.random()*1.8; }
             }
-          } else if (cr.timer <= 0) {
-            cr.mode = "trot"; cr.timer = 1.4 + Math.random()*2.4;
-            if (Math.random() < 0.22) cr.dir *= -1;      // thinks better of it
+          } else if (cr.mode === "pause" || cr.mode === "sniff") {
+            pose.sniff = cr.mode === "sniff" ? 1 : 0;
+            if (cr.timer <= 0) {
+              cr.mode = "trot"; cr.timer = 1.4 + Math.random()*2.4;
+              if (Math.random() < 0.22) cr.dir *= -1;     // thinks better of it
+            }
+          } else if (cr.mode === "listen") {
+            // low and absolutely still, weight back, ears fixed on one spot
+            pose.crouch = Math.min(1, (1.1 - Math.max(0, cr.timer))*1.4);
+            if (cr.timer <= 0) {
+              this.lastPounce = this.t;
+              cr.mode = "pounce"; cr.timer = 0; cr.phase = 0;
+            }
+          } else if (cr.mode === "pounce") {
+            cr.phase += dt;
+            const u = cr.phase;
+            if (u < 0.26) {                       // coil: the hindquarters gather
+              pose.crouch = 1;
+              pose.lift = Math.sin(u/0.26*Math.PI*0.5)*fS*0.10;
+            } else if (u < 0.98) {                // the leap itself
+              const k = (u - 0.26)/0.72;
+              pose.air = Math.min(1, k*4);
+              pose.lift = Math.sin(k*Math.PI)*fS*1.55;
+              pose.rot = -0.55 + k*1.85;          // nose up off the ground, down at the top
+              cr.x += cr.dir*0.02*dt;
+            } else if (u < 1.34) {                // the plunge, forefeet and nose first
+              pose.rot = 1.30 - (u - 0.98)*1.9;
+              pose.air = Math.max(0, 1 - (u - 0.98)*4);
+              pose.crouch = 1;
+            } else if (u < 2.1) {                 // nosing about in the grass
+              pose.crouch = 1;
+              pose.rot = 0.60 + Math.sin(u*9)*0.06;
+            } else {
+              cr.mode = "trot"; cr.timer = 1.6 + Math.random()*2;
+            }
           }
           if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
-          // the pounce: gathers, springs high, comes down forepaws first
-          const pk = cr.mode === "pounce" ? Math.min(1, cr.actT/1.15) : 0;
-          const pounce = pk > 0 ? Math.sin(Math.PI*pk) : 0;
-          const fS = H*0.05*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9, 0.2*(1 - cr.z*0.6)*(1 - pounce*0.8));
-          this.paintFox(c, { x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir, walking,
-            lp: cr.lp, look: cr.mode === "listen" ? Math.sin(cr.t*1.8) : 0,
-            sniff: cr.mode === "sniff" ? 1 : 0, pounce, color: D.col });
+          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9,
+            0.2*(1 - cr.z*0.6)*(1 - Math.min(1, pose.lift/(fS*0.8))));
+          this.paintFox(c, Object.assign({ x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir,
+            walking: cr.mode === "trot", lp: cr.lp,
+            look: cr.mode === "pause" ? Math.sin(cr.t*1.8) : 0,
+            ears: cr.mode === "listen" || cr.mode === "pounce" ? 1 : 0,
+            color: D.col }, pose));
           break;
         }
         case "heron": {
+          // The bird's whole day: waiting, watching the water, one deliberate
+          // step, the strike, the swallow — and eventually the heave into the
+          // air. Each state hands on to the next rather than looping in place.
           cr.timer -= dt;
-          cr.actT = (cr.actT || 0) + dt;
           if (!cr.placed) { cr.y = D.y; cr.placed = true; }   // stands at its own distance
-          if (cr.mode === "stand") {
-            // the whole point of standing there: now and then the neck goes
-            // down like a loosed spring
-            if (!cr.act && Math.random() < 0.22*dt) { cr.act = "stab"; cr.actT = 0; }
-            else if (!cr.act && Math.random() < 0.12*dt) { cr.act = "preen"; cr.actT = 0; }
-            if (cr.act === "stab" && cr.actT > 0.9) {
-              cr.act = null;
-              if (Math.random() < 0.5) this.fishRings.push({ x: cr.x, y: cr.y + 0.01, age: 0, quiet: true });
+          const pose = { neck: cr.neck || 0, strike: 0, gulp: 0, step: 0,
+            preen: 0, rouse: 0, crouch: 0 };
+          const nextIdle = () => {
+            const roll = Math.random();
+            if (roll < 0.34) { cr.mode = "stalk"; cr.timer = 1.7; cr.phase = 0; }
+            else if (roll < 0.62) { cr.mode = "watch"; cr.timer = 2 + Math.random()*3; }
+            else if (roll < 0.78) { cr.mode = "preen"; cr.timer = 1.9; }
+            else if (roll < 0.88) { cr.mode = "rouse"; cr.timer = 0.7; }
+            else { cr.mode = "wait"; cr.timer = 3 + Math.random()*4; }
+          };
+          if (cr.mode === "stand") { cr.mode = "wait"; cr.timer = 3 + Math.random()*4; }
+          if (cr.mode === "wait") {
+            cr.neck = Math.max(0.25, (cr.neck || 0.4) - dt*0.6);
+            if (cr.timer <= 0) {
+              if (++cr.acts > 6) { cr.mode = "leave"; cr.timer = 0.6; }
+              else nextIdle();
             }
-            if (cr.act === "preen" && cr.actT > 2.4) cr.act = null;
-            if (cr.timer <= 0) { cr.mode = "fly"; cr.act = null; cr.vx = cr.dir*0.03; }
-          } else {
+          } else if (cr.mode === "watch") {
+            cr.neck = Math.min(1, (cr.neck || 0.4) + dt*1.1);
+            if (cr.timer <= 0) {
+              cr.acts++;
+              if (Math.random() < 0.55) { cr.mode = "strike"; cr.phase = 0; }
+              else nextIdle();
+            }
+          } else if (cr.mode === "stalk") {
+            cr.phase = Math.min(1, (cr.phase || 0) + dt/1.7);
+            cr.neck = Math.min(0.85, (cr.neck || 0.4) + dt*0.5);
+            pose.step = cr.phase;
+            cr.x += cr.dir*0.006*dt*D.speed;
+            if (cr.phase >= 1) { cr.acts++; cr.mode = "watch"; cr.timer = 1.5 + Math.random()*2.5; }
+          } else if (cr.mode === "strike") {
+            cr.phase += dt;
+            const u = cr.phase;
+            cr.neck = 1;
+            if (u < 0.16) pose.strike = u/0.16;              // down like a loosed spring
+            else if (u < 0.30) pose.strike = 1;
+            else if (u < 0.62) pose.strike = 1 - (u - 0.30)/0.32;
+            else {
+              cr.mode = "gulp"; cr.phase = 0; cr.acts++;
+              // the water closes over where the bill went in
+              this.fishRings.push({ x: cr.x, y: cr.y + 0.008, age: 0, quiet: true });
+            }
+          } else if (cr.mode === "gulp") {
+            cr.phase += dt;
+            pose.gulp = Math.min(1, cr.phase/0.75);
+            if (cr.phase > 0.85) nextIdle();
+          } else if (cr.mode === "preen") {
+            pose.preen = Math.sin(Math.min(1, (1.9 - Math.max(0, cr.timer))/1.9)*Math.PI);
+            if (cr.timer <= 0) { cr.acts++; nextIdle(); }
+          } else if (cr.mode === "rouse") {
+            pose.rouse = Math.sin(Math.min(1, (0.7 - Math.max(0, cr.timer))/0.7)*Math.PI);
+            if (cr.timer <= 0) { cr.acts++; nextIdle(); }
+          } else if (cr.mode === "leave") {
+            pose.crouch = Math.min(1, (0.6 - Math.max(0, cr.timer))/0.6);
+            cr.neck = Math.max(0.2, (cr.neck || 0.4) - dt*1.2);
+            if (cr.timer <= 0) { cr.mode = "fly"; cr.vx = cr.dir*0.03; cr.flap = 0; }
+          } else if (cr.mode === "fly") {
             cr.x += cr.vx*dt; cr.y -= dt*0.018; cr.flap += dt*3.4;
+            cr.vx += cr.dir*0.004*dt;
             if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
           }
+          pose.neck = cr.neck;
           const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
           if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
-          this.paintHeron(c, { x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
+          this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
             flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
-            color: cr.mode === "fly" ? colDark : D.col, t: cr.t,
-            stab: cr.act === "stab" ? Math.sin(Math.PI*Math.min(1, cr.actT/0.9)) : 0,
-            preen: cr.act === "preen" ? 1 : 0 });
+            color: cr.mode === "fly" ? colDark : D.col, deep: colFar, t: cr.t }, pose));
           break;
         }
         case "porpoise": {
+          // One roll through the surface: the snout breaks first, then the
+          // back arches over, the fin comes up last and goes down last, and a
+          // smooth patch of water is left behind where it went under.
           cr.x += cr.dir*0.05*dt;
           cr.phase += dt*2.1;
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
-          const arc = Math.sin(cr.phase);          // one hump = one breach
-          if (arc > 0.03) {
-            const py = (cr.base - arc*0.05)*H;
-            this.paintPorpoise(c, { x: cr.x*W, y: py, dir: cr.dir, arc, color: colDark });
-          } else if (arc > -0.06 && Math.random() < 0.4) {
-            // a small splash ring as it slips back under
-            c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
-            c.beginPath(); c.ellipse(cr.x*W, cr.base*H, 10, 3, 0, 0, Math.PI*2); c.stroke();
+          const arc = Math.sin(cr.phase);
+          const px = cr.x*W, wy = cr.base*H;
+          if (arc > 0.02) {
+            // pitch follows the arc: nose up on the rise, down on the fall
+            this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
+              pitch: Math.cos(cr.phase)*0.34,
+              s: H*0.05, color: colDark, rim: colFar });
+          } else {
+            // between rolls: a dark shape just under, and the flat "footprint"
+            // left on the surface by the last downstroke
+            const sub = Math.max(0, 1 + arc*3);
+            if (sub > 0.02) {
+              c.globalAlpha = 0.18*sub;
+              c.fillStyle = colDark;
+              c.beginPath();
+              c.ellipse(px, wy + H*0.012, H*0.055, H*0.011, 0, 0, Math.PI*2);
+              c.fill();
+              c.globalAlpha = 1;
+            }
+            const fp = Math.max(0, 1 + arc*1.6);
+            if (fp > 0.02) {
+              c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.26*fp})`;
+              c.lineWidth = 1;
+              c.beginPath();
+              c.ellipse(px - cr.dir*H*0.03, wy, H*0.028*(2 - fp), H*0.008, 0, 0, Math.PI*2);
+              c.stroke();
+            }
           }
           break;
         }
         case "squirrel": {
+          // Bounds, sits up to handle a nut, and — the thing squirrels
+          // actually spend the autumn doing — digs a hole, drops the nut in,
+          // noses it down and pats the leaf-litter back over it.
           cr.timer -= dt;
-          cr.actT = (cr.actT || 0) + dt;
+          let dig = 0, pat = 0, bury = 0;
           if (cr.mode === "bound") {
             cr.ph += dt*9; cr.x += cr.dir*0.045*dt*D.speed;
             if (cr.timer <= 0) {
-              // up on its haunches to nibble, or scrabbling at the litter
-              cr.act = Math.random() < 0.4 ? "dig" : null;
-              cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.6; cr.actT = 0;
+              if (Math.random() < 0.45) { cr.mode = "dig"; cr.timer = 0; cr.phase = 0; }
+              else { cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.6; }
             }
+          } else if (cr.mode === "dig") {
+            cr.phase += dt;
+            const u = cr.phase;
+            if (u < 0.5) dig = u/0.5;                     // head down, paws to the ground
+            else if (u < 2.3) {                            // scrabbling: quick alternate strokes
+              dig = 1;
+              if (Math.random() < 14*dt) {                 // litter thrown back between the legs
+                this.critters.push({ kind: "litter", x: cr.x - cr.dir*0.006, y: D.y, z: cr.z,
+                  vx: -cr.dir*(0.02 + Math.random()*0.03),
+                  vy: -(0.03 + Math.random()*0.05), t: 0, life: 0.6,
+                  sz: 0.6 + Math.random()*0.8 });
+              }
+            } else if (u < 3.0) { dig = 1; bury = (u - 2.3)/0.7; }   // nose the nut down
+            else if (u < 3.7) { dig = 1 - (u - 3.0)/0.7; pat = 1; }  // pat it over
+            else { cr.mode = "sit"; cr.timer = 0.8 + Math.random()*1.4; }
           } else if (cr.timer <= 0) {
-            cr.mode = "bound"; cr.act = null; cr.timer = 0.6 + Math.random()*1.1;
+            cr.mode = "bound"; cr.timer = 0.6 + Math.random()*1.1;
             if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
@@ -3198,8 +4052,21 @@ class Scene {
           const qS = H*0.03*(cr.sz || 1)*D.scale;
           this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
           this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
-            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t, color: D.col,
-            dig: cr.act === "dig" ? 1 : 0 });
+            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t,
+            dig, bury, pat, color: D.col });
+          break;
+        }
+        case "litter": {
+          // a scrap of leaf-mould thrown back out of a squirrel's hole
+          cr.x += cr.vx*dt; cr.y += cr.vy*dt; cr.vy += 0.3*dt;
+          if (cr.t > cr.life || cr.y > D.y + 0.015) { dead = true; break; }
+          c.globalAlpha = Math.max(0, 1 - cr.t/cr.life)*0.7;
+          c.fillStyle = D.col;
+          c.beginPath();
+          c.ellipse(cr.x*W, cr.y*H, H*0.004*cr.sz*D.scale, H*0.002*cr.sz*D.scale,
+            cr.t*6, 0, Math.PI*2);
+          c.fill();
+          c.globalAlpha = 1;
           break;
         }
         case "hare": {
@@ -3560,55 +4427,88 @@ class Scene {
     c.restore();
   }
 
+  /* A red fox. Trotting it is all length and low carriage; listening it drops
+     its chest, brings its ears forward and stops dead. The mousing pounce is
+     the shape everyone knows — up almost vertically off the hind legs, front
+     paws pressed together, and down nose-first into the grass with the rump
+     in the air — so it is drawn as one continuous arc of pitch rather than a
+     hop: `rot` swings the whole animal from nose-up at the launch through
+     nose-down at the top to head-buried on landing.
+
+     air    0 on the ground, 1 with all four feet clear
+     lift   how far off the ground, in pixels
+     rot    body pitch, positive nose-down
+     crouch gathered low over the forelegs
+     ears   ears locked forward on a sound */
   paintFox(c, o) {
     const s = o.s, t = o.t || 0;
-    const sniff = o.sniff || 0, pounce = o.pounce || 0;
+    const air = o.air || 0, rot = o.rot || 0, crouch = o.crouch || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
-    // mid-pounce the whole animal leaves the ground, nose-down over the spot
-    if (pounce > 0.01) { c.translate(0, -pounce*s*0.75); c.rotate(pounce*0.42); }
+    c.translate(0, -(o.lift || 0));
+    if (rot) { c.translate(0, -s*0.5); c.rotate(rot); c.translate(0, s*0.5); }
     c.fillStyle = o.color;
     const bounce = o.walking ? Math.abs(Math.sin(o.lp))*s*0.05 : 0;
-    // legs — diagonal pairs in a trot, jointed, feet lifting
-    const off = [-0.5, -0.26, 0.32, 0.56];
-    const phs = [0, Math.PI, Math.PI, 0];
-    for (let i = 0; i < 4; i++) {
-      const lx = off[i]*s;
-      const sw = o.walking ? Math.sin(o.lp + phs[i])*0.2*s : 0;
-      const lift = o.walking ? Math.max(0, Math.sin(o.lp + phs[i] + 0.7))*0.12*s : 0;
-      // in the air the forefeet reach out ahead and the hind legs trail
-      const px = pounce*(i < 2 ? -s*0.3 : s*0.34), py = pounce*s*0.34;
-      this.leg(c, lx, -s*0.42 - bounce, lx + sw + px, -lift + py,
-        i < 2 ? 0.10 : -0.08, s*0.14, s*0.05);
+    const drop = crouch*s*0.16;              // chest lowered over the forefeet
+    // Legs. On the ground: diagonal pairs at the trot, jointed, feet lifting.
+    // Airborne: the hind pair streams out behind and the forepaws come
+    // together under the chin, which is what the leap actually looks like.
+    if (air > 0.05) {
+      // Hind legs folded up under the belly, forepaws pressed together and
+      // held out in front of the chest: the fox arrives as a closed arrow,
+      // not spread-eagled.
+      this.leg(c, -s*0.42, -s*0.44 - drop, -s*0.60, -s*0.30, -0.26, s*0.15, s*0.05);
+      this.leg(c, -s*0.24, -s*0.44 - drop, -s*0.44, -s*0.24, -0.24, s*0.14, s*0.05);
+      this.leg(c, s*0.44, -s*0.50 - drop, s*0.78, -s*0.28, 0.10, s*0.13, s*0.05);
+      this.leg(c, s*0.50, -s*0.48 - drop, s*0.82, -s*0.22, 0.10, s*0.12, s*0.05);
+    } else {
+      const off = [-0.5, -0.26, 0.32, 0.56];
+      const phs = [0, Math.PI, Math.PI, 0];
+      for (let i = 0; i < 4; i++) {
+        const lx = off[i]*s;
+        const sw = o.walking ? Math.sin(o.lp + phs[i])*0.2*s : 0;
+        // crouched, the hind legs fold up under the animal and the fore stay planted
+        const fold = i < 2 ? crouch*s*0.16 : 0;
+        const lift = o.walking ? Math.max(0, Math.sin(o.lp + phs[i] + 0.7))*0.12*s : 0;
+        this.leg(c, lx, -s*0.42 - bounce - drop + fold, lx + sw*(1 - crouch), -lift,
+          i < 2 ? 0.10 + crouch*0.14 : -0.08, s*0.14, s*0.05);
+      }
     }
-    // the brush, streaming behind at the trot
+    // The brush: streaming behind at the trot, flagged straight out and level
+    // in the air, held high as it noses into the grass.
     const tsw = o.walking ? Math.sin(o.lp*0.5)*0.1 : Math.sin(t*1.2)*0.06;
+    const tRise = air*s*0.26 + crouch*s*0.06;
     c.beginPath();
-    c.moveTo(-s*0.55, -s*0.56 - bounce);
-    c.quadraticCurveTo(-s*1.15, -s*0.7 + tsw*s, -s*1.5, -s*0.55 + tsw*s*2);
-    c.quadraticCurveTo(-s*1.62, -s*0.48 + tsw*s*2, -s*1.52, -s*0.38 + tsw*s*2);
-    c.quadraticCurveTo(-s*1.05, -s*0.28 + tsw*s, -s*0.52, -s*0.42 - bounce);
+    c.moveTo(-s*0.55, -s*0.56 - bounce - drop);
+    c.quadraticCurveTo(-s*1.15, -s*0.7 + tsw*s - tRise, -s*1.5, -s*0.55 + tsw*s*2 - tRise*1.4);
+    c.quadraticCurveTo(-s*1.62, -s*0.48 + tsw*s*2 - tRise*1.4, -s*1.52, -s*0.38 + tsw*s*2 - tRise*1.3);
+    c.quadraticCurveTo(-s*1.05, -s*0.28 + tsw*s - tRise*0.8, -s*0.52, -s*0.42 - bounce - drop);
     c.closePath(); c.fill();
     // the white tag at the tip of the brush
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.55)`;
-    c.beginPath(); c.ellipse(-s*1.5, -s*0.46 + tsw*s*2, s*0.12, s*0.08, -0.2, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.ellipse(-s*1.5, -s*0.46 + tsw*s*2 - tRise*1.35, s*0.12, s*0.08, -0.2, 0, Math.PI*2);
+    c.fill();
     c.fillStyle = o.color;
     // low sleek body with a deep chest
     c.beginPath();
-    c.moveTo(s*0.6, -s*0.72 - bounce);
-    c.quadraticCurveTo(0, -s*0.85 - bounce, -s*0.55, -s*0.72 - bounce);
+    c.moveTo(s*0.6, -s*0.72 - bounce - drop);
+    c.quadraticCurveTo(0, -s*0.85 - bounce - drop*0.6, -s*0.55, -s*0.72 - bounce);
     c.quadraticCurveTo(-s*0.9, -s*0.6 - bounce, -s*0.8, -s*0.42 - bounce);
-    c.quadraticCurveTo(-s*0.3, -s*0.3 - bounce, s*0.4, -s*0.38 - bounce);
-    c.quadraticCurveTo(s*0.75, -s*0.45 - bounce, s*0.6, -s*0.72 - bounce);
+    c.quadraticCurveTo(-s*0.3, -s*0.3 - bounce, s*0.4, -s*0.38 - bounce - drop);
+    c.quadraticCurveTo(s*0.75, -s*0.45 - bounce - drop, s*0.6, -s*0.72 - bounce - drop);
     c.closePath(); c.fill();
-    c.beginPath(); c.ellipse(s*0.5, -s*0.52 - bounce, s*0.24, s*0.3, 0.2, 0, Math.PI*2); c.fill();
-    // head — carried low, turning to listen when paused, right down to the
-    // ground when following a scent, and thrust forward over a pounce
-    const lk = o.look || 0;
-    const hx = s*0.82 + lk*s*0.05 + sniff*s*0.08 + pounce*s*0.12;
-    const hy = -s*0.72 - lk*s*0.10 - bounce + sniff*s*0.5 + pounce*s*0.16;
-    this.limb(c, s*0.5, -s*0.6 - bounce, hx, hy, s*0.3, s*0.2);
+    c.beginPath();
+    c.ellipse(s*0.5, -s*0.52 - bounce - drop, s*0.24, s*0.3, 0.2, 0, Math.PI*2); c.fill();
+    // Head — carried low, turning to listen when paused, right down to the
+    // ground when following a scent, and pushed out in front on the leap so
+    // the animal arrives nose-first.
+    const lk = o.look || 0, sniff = o.sniff || 0;
+    const reach = air*s*0.12;
+    const hx = s*0.82 + lk*s*0.05 + reach + sniff*s*0.08;
+    const hy = -s*0.72 - lk*s*0.10 - bounce - drop*0.8 + sniff*s*0.5;
+    this.limb(c, s*0.5, -s*0.6 - bounce - drop, hx, hy, s*0.3, s*0.2);
     c.beginPath(); c.arc(hx, hy, s*0.21, 0, Math.PI*2); c.fill();
     // tapered snout
     c.beginPath();
@@ -3616,15 +4516,17 @@ class Scene {
     c.quadraticCurveTo(hx + s*0.4, hy - s*0.02, hx + s*0.55, hy + s*0.08);
     c.lineTo(hx + s*0.08, hy + s*0.17);
     c.closePath(); c.fill();
-    // tall pricked ears, angling as the head turns
+    // Tall pricked ears — angled with the head, swung hard forward and
+    // together when it has something located.
+    const fwd = (o.ears || 0)*s*0.10;
     c.beginPath();
     c.moveTo(hx - s*0.14, hy - s*0.08);
-    c.lineTo(hx - s*0.20 - lk*s*0.04, hy - s*0.42);
-    c.lineTo(hx + s*0.02, hy - s*0.16);
+    c.lineTo(hx - s*0.20 - lk*s*0.04 + fwd, hy - s*0.42);
+    c.lineTo(hx + s*0.02 + fwd, hy - s*0.16);
     c.closePath();
     c.moveTo(hx + s*0.08, hy - s*0.12);
-    c.lineTo(hx + s*0.12 + lk*s*0.04, hy - s*0.44);
-    c.lineTo(hx + s*0.26, hy - s*0.14);
+    c.lineTo(hx + s*0.12 + lk*s*0.04 + fwd, hy - s*0.44);
+    c.lineTo(hx + s*0.26 + fwd, hy - s*0.14);
     c.closePath();
     c.fill();
     // eye
@@ -3633,145 +4535,272 @@ class Scene {
     c.restore();
   }
 
+  /* A grey heron. Everything about the bird is in the neck: coiled into the
+     shoulders when it is waiting, drawn out and swaying when it is watching,
+     fired straight down when it strikes, and folded into a tight kink the
+     moment it is airborne — which is what tells a heron from a crane or a
+     stork at any distance.
+
+     Poses, all optional and all 0..1:
+       neck    how far the neck is drawn up out of the shoulders
+       strike  the stab: the neck uncoils down and forward
+       gulp    the swallow that follows, running up the throat
+       step    a foot lifted and set down again, with the body carried over it
+       preen   the bill turned back into the scapulars
+       rouse   feathers shaken out, the whole bird a size larger for a moment
+       crouch  gathered to launch
+       flying  wings out, neck kinked, legs trailing (with flap for the beat) */
   paintHeron(c, o) {
-    const s = o.s, t = o.t || 0;
+    const s = o.s, t = o.t || 0, sing = o.sing || 0;
+    const pale = o.pale ? `rgba(${this.tok.foamRGB}, 0.92)` : null;
+    const body = pale || o.color;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
-    c.fillStyle = o.color; c.strokeStyle = o.color;
+    if (o.alpha !== undefined) c.globalAlpha = o.alpha;
+    c.fillStyle = body; c.strokeStyle = body;
     c.lineCap = "round"; c.lineJoin = "round";
-    if (!o.flying) {
-      // the patient stance — weight on one leg, the other cocked at times
-      const cock = Math.pow(Math.max(0, Math.sin(t*0.3 + 1)), 8);
-      c.lineWidth = Math.max(1, s*0.05);
-      c.beginPath();
-      c.moveTo(-s*0.02, -s*0.55); c.lineTo(-s*0.08, 0);
-      c.moveTo(s*0.12, -s*0.55);
-      c.lineTo(s*0.15 + cock*s*0.06, -cock*s*0.22);
-      c.moveTo(-s*0.08, 0); c.lineTo(s*0.05, s*0.02);
-      c.stroke();
-      if (cock < 0.5) {
-        c.beginPath(); c.moveTo(s*0.15, 0); c.lineTo(s*0.28, s*0.02); c.stroke();
-      }
-      // a little egret is the same bird in white, with black bill and
-      // amber feet; the grey heron keeps the ink
-      const pale = o.pale ? `rgba(${this.tok.foamRGB}, 0.92)` : null;
-      if (pale) {
-        c.fillStyle = `rgba(${this.tok.amberRGB}, 0.9)`;
-        c.beginPath();
-        c.arc(-s*0.06, 0, Math.max(1, s*0.035), 0, Math.PI*2);
-        c.arc(s*0.17, 0, Math.max(1, s*0.035), 0, Math.PI*2);
-        c.fill();
-        c.fillStyle = pale; c.strokeStyle = pale;
-      }
-      // body — deep-keeled, the wing folded along the back
-      c.beginPath();
-      c.moveTo(s*0.30, -s*0.88);
-      c.quadraticCurveTo(-s*0.15, -s*1.0, -s*0.48, -s*0.86);
-      c.quadraticCurveTo(-s*0.78, -s*0.72, -s*0.72, -s*0.6);
-      c.quadraticCurveTo(-s*0.35, -s*0.44, s*0.12, -s*0.52);
-      c.quadraticCurveTo(s*0.38, -s*0.6, s*0.30, -s*0.88);
-      c.closePath(); c.fill();
-      // plumes trailing off the back
-      c.lineWidth = Math.max(0.8, s*0.035);
-      c.beginPath();
-      c.moveTo(-s*0.3, -s*0.88); c.quadraticCurveTo(-s*0.55, -s*0.78, -s*0.72, -s*0.66);
-      c.moveTo(-s*0.2, -s*0.8);  c.quadraticCurveTo(-s*0.5, -s*0.72, -s*0.68, -s*0.58);
-      c.stroke();
-      // the neck — a true S, swaying a little as it watches the water; it
-      // uncoils entirely into a stab, or folds back over the shoulder to preen
-      const watch = Math.sin(t*0.5)*s*0.02;
-      const stab = o.stab || 0, pr = o.preen ? (0.5 + 0.5*Math.sin(t*3)) : 0;
-      c.lineWidth = Math.max(1.6, s*0.10);
-      c.beginPath();
-      c.moveTo(s*0.24, -s*0.8);
-      c.bezierCurveTo(
-        s*(0.64 + stab*0.2) + watch - pr*s*0.5, -s*(1.05 - stab*0.5) + pr*s*0.1,
-        s*(0.10 + stab*0.6) + watch - pr*s*0.6, -s*(1.28 - stab*1.0) + pr*s*0.3,
-        s*(0.40 + stab*0.55) + watch - pr*s*0.95, -s*(1.56 - stab*1.62) + pr*s*0.72);
-      c.stroke();
-      const hx = s*(0.42 + stab*0.55) + watch - pr*s*0.95;
-      const hy = -s*(1.6 - stab*1.62) + pr*s*0.72 - (o.sing || 0)*s*0.06;
-      c.beginPath(); c.ellipse(hx, hy, s*0.14, s*0.10, -0.15, 0, Math.PI*2); c.fill();
-      // dagger bill, parting a crack to croak
-      if (pale) c.fillStyle = o.color;
-      const hg = (o.sing || 0)*s*0.05;
-      c.beginPath();
-      c.moveTo(hx + s*0.06, hy - s*0.05);
-      c.lineTo(hx + s*0.6, hy + s*0.04 - hg);
-      c.lineTo(hx + s*0.06, hy + s*0.06);
-      c.closePath(); c.fill();
-      // the brow-plume swept off the crown
-      if (pale) c.strokeStyle = o.color;
-      c.lineWidth = Math.max(0.8, s*0.04);
-      c.beginPath();
-      c.moveTo(hx - s*0.04, hy - s*0.08);
-      c.quadraticCurveTo(hx - s*0.22, hy - s*0.16, hx - s*0.34, hy - s*0.12);
-      c.stroke();
-      // eye
-      c.fillStyle = pale ? o.color : `rgba(${this.tok.foamRGB}, 0.8)`;
-      c.beginPath(); c.arc(hx + s*0.02, hy - s*0.02, Math.max(0.5, s*0.03), 0, Math.PI*2); c.fill();
-    } else {
-      // flight — broad bowed wings with fingered tips, neck drawn in,
-      // legs trailing out past the tail
-      const f = o.flap;
-      const A = c.globalAlpha;
-      c.globalAlpha = A*0.7;
-      this.wingBlade(c, -s*0.05, -s*0.1, -s*0.72, -s*0.5*f - s*0.34, s*0.30);
-      c.globalAlpha = A;
-      c.beginPath(); c.ellipse(0, 0, s*0.46, s*0.16, 0, 0, Math.PI*2); c.fill();
-      c.beginPath(); c.ellipse(s*0.34, -s*0.03, s*0.18, s*0.12, -0.2, 0, Math.PI*2); c.fill();
-      c.beginPath(); c.arc(s*0.5, -s*0.08, s*0.09, 0, Math.PI*2); c.fill();
-      c.beginPath();
-      c.moveTo(s*0.56, -s*0.12); c.lineTo(s*0.95, -s*0.02); c.lineTo(s*0.56, -s*0.03);
-      c.closePath(); c.fill();
-      this.wingBlade(c, s*0.02, -s*0.08, s*0.6, -s*0.62*f - s*0.30, s*0.4);
-      c.lineWidth = Math.max(0.8, s*0.035);
-      c.beginPath();
-      for (let k = 0; k < 3; k++) {
-        const px2 = s*0.6 + k*s*0.09, py2 = -s*0.62*f - s*0.30 + k*s*0.07;
-        c.moveTo(px2 - s*0.12, py2 - s*0.02);
-        c.lineTo(px2 + s*0.08, py2 + s*0.05);
-      }
-      c.stroke();
-      c.lineWidth = Math.max(1, s*0.04);
-      c.beginPath();
-      c.moveTo(-s*0.3, s*0.04); c.lineTo(-s*0.95, s*0.14);
-      c.moveTo(-s*0.32, s*0.07); c.lineTo(-s*0.9, s*0.2);
-      c.stroke();
+
+    if (o.flying) { this.heronFlight(c, o, body, pale); c.restore(); return; }
+
+    const strike = o.strike || 0, gulp = o.gulp || 0, crouch = o.crouch || 0;
+    const preen = o.preen || 0, rouse = o.rouse || 0;
+    const step = o.step || 0;
+    // Neck: coiled by default, drawn up as it takes an interest.
+    const neck = Math.max(0, Math.min(1, o.neck === undefined ? 0.55 : o.neck));
+    const breathe = Math.sin(t*1.1)*0.012;
+
+    // ---- legs: long, and jointed backwards at the heel ----
+    // The standing leg carries the weight; the other lifts, swings and is set
+    // down deliberately, which is the whole of a heron's stalk.
+    const hipY = -s*0.52 - crouch*s*0.10;
+    const swing = Math.sin(step*Math.PI*2)*s*0.20;
+    const lift = Math.max(0, Math.sin(step*Math.PI))*s*0.26;
+    const cock = step > 0 ? 0 : Math.pow(Math.max(0, Math.sin(t*0.3 + 1)), 8);
+    c.fillStyle = body;
+    this.leg(c, -s*0.02, hipY, -s*0.06, 0, -0.16, s*0.075, s*0.035);
+    this.leg(c, s*0.12, hipY, s*0.14 + swing, -lift - cock*s*0.22, -0.16, s*0.075, s*0.035);
+    // long spread toes on the planted foot
+    if (pale) c.fillStyle = `rgba(${this.tok.amberRGB}, 0.9)`;
+    c.lineWidth = Math.max(0.8, s*0.03);
+    c.strokeStyle = pale ? `rgba(${this.tok.amberRGB}, 0.9)` : body;
+    c.beginPath();
+    c.moveTo(-s*0.06, 0); c.lineTo(s*0.10, s*0.01);
+    c.moveTo(-s*0.06, 0); c.lineTo(-s*0.20, s*0.01);
+    if (lift + cock < 0.02) {
+      c.moveTo(s*0.14, 0); c.lineTo(s*0.30, s*0.01);
+      c.moveTo(s*0.14, 0); c.lineTo(s*0.02, s*0.01);
     }
+    c.stroke();
+    c.fillStyle = body; c.strokeStyle = body;
+
+    // ---- body: deep-keeled, hunched, the folded wing over the flank ----
+    const by = -s*0.78 - crouch*s*0.06;
+    const puff = 1 + rouse*0.16;
+    c.beginPath();
+    c.moveTo(s*0.34, by - s*0.14);
+    c.quadraticCurveTo(-s*0.16, by - s*0.30*puff, -s*0.52, by - s*0.10*puff);
+    c.quadraticCurveTo(-s*0.86, by + s*0.06, -s*0.78, by + s*0.20);
+    c.quadraticCurveTo(-s*0.30, by + s*0.36*puff, s*0.16, by + s*0.26);
+    c.quadraticCurveTo(s*0.44, by + s*0.14, s*0.34, by - s*0.14);
+    c.closePath(); c.fill();
+    // the folded wing, a long grey shield laid down the flank
+    c.fillStyle = pale ? `rgba(${this.tok.foamRGB}, 0.72)` : (o.deep || o.color);
+    c.beginPath();
+    c.moveTo(s*0.20, by - s*0.14);
+    c.quadraticCurveTo(-s*0.24, by - s*0.20, -s*0.62, by + s*0.02);
+    c.quadraticCurveTo(-s*0.80, by + s*0.12, -s*0.72, by + s*0.20);
+    c.quadraticCurveTo(-s*0.24, by + s*0.28, s*0.16, by + s*0.16);
+    c.closePath(); c.fill();
+    c.fillStyle = body;
+    // scapular plumes trailing past the tail
+    c.strokeStyle = body;
+    c.lineWidth = Math.max(0.8, s*0.032);
+    c.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const y0 = by - s*0.16 + k*s*0.07;
+      c.moveTo(-s*0.30, y0);
+      c.quadraticCurveTo(-s*0.62, y0 + s*0.02, -s*0.86 - rouse*s*0.06, y0 + s*0.12);
+    }
+    c.stroke();
+
+    // ---- neck and head ----
+    // Rest is a tight S folded back on itself; drawn up, the S opens out.
+    // The strike straightens it altogether and drives the bill at the water.
+    const sway = Math.sin(t*0.5)*s*0.02*(0.3 + neck);
+    const baseX = s*0.16, baseY = by - s*0.16;
+    const up = neck*(1 - strike);
+    const kinkX = baseX + s*(0.34 - up*0.22) + sway;
+    const kinkY = baseY - s*(0.30 + up*0.34);
+    let hx = baseX + s*(0.02 + up*0.30) + sway - preen*s*0.5;
+    let hy = baseY - s*(0.48 + up*0.62) + preen*s*0.42;
+    let bAng = -0.06 - up*0.06;                       // the bill's own angle
+    if (strike > 0.001) {
+      // uncoiled: the head is thrown down and forward past the feet
+      const e = strike*strike;
+      hx = baseX + s*(0.30 + e*0.72);
+      hy = baseY - s*0.30 + e*s*1.30;
+      bAng = 0.55 + e*0.55;
+    }
+    // the throat, running a swallow up to the head
+    c.fillStyle = body;
+    const g1 = gulp;
+    this.limb(c, baseX, baseY, kinkX, kinkY,
+      s*0.15*(1 + g1*0.5*Math.max(0, 1 - Math.abs(g1 - 0.3)*3)), s*0.10);
+    this.limb(c, kinkX, kinkY, hx, hy,
+      s*0.10*(1 + g1*0.9*Math.max(0, 1 - Math.abs(g1 - 0.7)*3)), s*0.075);
+    // head
+    c.beginPath();
+    c.ellipse(hx, hy, s*0.13, s*0.095, bAng - 0.1, 0, Math.PI*2); c.fill();
+    // the dagger: long, straight, heavy at the base
+    if (pale) c.fillStyle = o.color;
+    else c.fillStyle = `rgba(${this.tok.amberRGB}, 0.85)`;
+    const bl = s*0.56, hg = sing*s*0.05;
+    c.save();
+    c.translate(hx, hy); c.rotate(bAng);
+    c.beginPath();
+    c.moveTo(s*0.04, -s*0.05);
+    c.lineTo(bl, -hg*0.4);
+    c.lineTo(s*0.04, s*0.005);
+    c.closePath(); c.fill();
+    c.beginPath();
+    c.moveTo(s*0.04, s*0.015);
+    c.lineTo(bl*0.94, hg);
+    c.lineTo(s*0.04, s*0.06);
+    c.closePath(); c.fill();
+    c.restore();
+    // black crown-stripe drawn back into two trailing crest plumes
+    c.strokeStyle = pale ? o.color : (o.deep || o.color);
+    c.lineWidth = Math.max(0.8, s*0.038);
+    c.beginPath();
+    c.moveTo(hx - s*0.02, hy - s*0.07);
+    c.quadraticCurveTo(hx - s*0.20, hy - s*0.14, hx - s*0.34, hy - s*0.10);
+    c.moveTo(hx - s*0.02, hy - s*0.05);
+    c.quadraticCurveTo(hx - s*0.20, hy - s*0.08, hx - s*0.30, hy - s*0.02);
+    c.stroke();
+    // eye, set forward so it looks along the bill
+    c.fillStyle = `rgba(${this.tok.amberRGB}, 0.9)`;
+    c.beginPath(); c.arc(hx + s*0.03, hy - s*0.02, Math.max(0.8, s*0.035), 0, Math.PI*2); c.fill();
+    c.fillStyle = pale ? o.color : (o.deep || o.color);
+    c.beginPath(); c.arc(hx + s*0.035, hy - s*0.02, Math.max(0.4, s*0.018), 0, Math.PI*2); c.fill();
     c.restore();
   }
 
+  /* The heron airborne: the neck folded back into a tight kink against the
+     shoulders, legs trailing out well past the tail, and huge bowed wings on
+     a slow deliberate beat — the near wing over the body, the far one behind
+     it and dimmer, so the span reads as depth rather than as a flat cross. */
+  heronFlight(c, o, body, pale) {
+    const s = o.s, f = o.flap || 0;
+    const A = c.globalAlpha;
+    c.fillStyle = body; c.strokeStyle = body;
+    // far wing
+    c.globalAlpha = A*0.55;
+    this.wingBlade(c, -s*0.06, -s*0.10, -s*0.78, -s*0.52*f - s*0.30, s*0.34);
+    c.globalAlpha = A;
+    // trailing legs, held together and straight out behind
+    c.lineWidth = Math.max(1, s*0.042);
+    c.beginPath();
+    c.moveTo(-s*0.34, s*0.03); c.lineTo(-s*1.02, s*0.12 - f*s*0.03);
+    c.moveTo(-s*0.34, s*0.06); c.lineTo(-s*0.98, s*0.18 - f*s*0.03);
+    c.stroke();
+    c.beginPath();
+    c.moveTo(-s*1.02, s*0.12 - f*s*0.03); c.lineTo(-s*1.18, s*0.14 - f*s*0.03);
+    c.stroke();
+    // body and tail
+    c.beginPath(); c.ellipse(0, 0, s*0.48, s*0.17, 0, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.moveTo(-s*0.32, -s*0.10); c.lineTo(-s*0.62, -s*0.02); c.lineTo(-s*0.32, s*0.08);
+    c.closePath(); c.fill();
+    // the folded neck: a shallow kink tucked down onto the shoulders
+    c.fillStyle = body;
+    this.limb(c, s*0.34, -s*0.06, s*0.20, -s*0.20, s*0.15, s*0.13);
+    this.limb(c, s*0.20, -s*0.20, s*0.48, -s*0.16, s*0.13, s*0.10);
+    c.beginPath(); c.ellipse(s*0.54, -s*0.15, s*0.12, s*0.085, -0.1, 0, Math.PI*2); c.fill();
+    c.fillStyle = pale ? o.color : `rgba(${this.tok.amberRGB}, 0.85)`;
+    c.beginPath();
+    c.moveTo(s*0.62, -s*0.18); c.lineTo(s*1.06, -s*0.10); c.lineTo(s*0.62, -s*0.09);
+    c.closePath(); c.fill();
+    c.fillStyle = body;
+    // near wing, and the fingered primaries at its tip
+    const tipX = s*0.62, tipY = -s*0.62*f - s*0.26;
+    this.wingBlade(c, s*0.04, -s*0.08, tipX, tipY, s*0.46);
+    c.strokeStyle = body;
+    c.lineWidth = Math.max(0.8, s*0.034);
+    c.beginPath();
+    for (let k = 0; k < 4; k++) {
+      const px2 = tipX + k*s*0.085, py2 = tipY + k*s*0.06;
+      c.moveTo(px2 - s*0.12, py2 - s*0.02);
+      c.lineTo(px2 + s*0.07, py2 + s*0.05);
+    }
+    c.stroke();
+  }
+
+  /* A harbour porpoise rolling through the surface. It is not a leap: the
+     animal turns over a point, so the snout breaks first, the back arches
+     across, the little triangular fin comes up last and goes down last. Only
+     what is above the waterline is drawn — the sea is a hard edge here, not a
+     wash the animal floats on top of — and it carries the pitch of its own
+     arc, nose up on the rise and down on the fall.
+
+     arc    0..1, how far clear of the water the back is
+     pitch  radians, from the slope of the arc
+     y      the waterline itself, in canvas pixels */
   paintPorpoise(c, o) {
-    const s = this.H*0.05, a = o.arc;   // a: 0..1, how far clear of the water
+    const s = o.s || this.H*0.05, a = Math.max(0, Math.min(1, o.arc));
+    const rise = a*s*0.72;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
+    // Nothing below the surface shows, so clip the sea line and let the body
+    // ride up through it.
+    c.save();
+    c.beginPath(); c.rect(-s*3, -s*4, s*6, s*4); c.clip();
+    c.translate(0, -rise);
+    c.rotate(o.pitch || 0);
     c.fillStyle = o.color;
-    // the arched back breaking the surface, filled as a solid crescent
+    // The back: a blunt-nosed, thick-bodied crescent — nothing like a dolphin's.
     c.beginPath();
-    c.moveTo(-s*1.02, s*0.24);
-    c.quadraticCurveTo(-s*0.5, -s*0.5*a - s*0.16, s*0.15, -s*0.55*a - s*0.14);
-    c.quadraticCurveTo(s*0.75, -s*0.5*a - s*0.06, s*1.02, s*0.22);
-    c.quadraticCurveTo(0, s*0.02, -s*1.02, s*0.24);
+    c.moveTo(-s*1.15, s*0.60);
+    c.quadraticCurveTo(-s*0.72, s*0.02, -s*0.15, -s*0.16);
+    c.quadraticCurveTo(s*0.52, -s*0.30, s*0.94, s*0.04);
+    c.quadraticCurveTo(s*1.10, s*0.20, s*0.98, s*0.36);
+    c.quadraticCurveTo(s*0.2, s*0.30, -s*1.15, s*0.60);
     c.closePath(); c.fill();
-    // the falcate fin, swept back like a wave about to break
+    // The dorsal fin: low, broad-based, its trailing edge nearly straight —
+    // the field mark that separates a porpoise from anything else inshore.
     c.beginPath();
-    c.moveTo(s*0.05, -s*0.5*a - s*0.10);
-    c.quadraticCurveTo(-s*0.12, -s*0.85*a - s*0.22, -s*0.4, -s*0.88*a - s*0.24);
-    c.quadraticCurveTo(-s*0.2, -s*0.62*a - s*0.12, -s*0.3, -s*0.42*a - s*0.02);
+    c.moveTo(-s*0.34, -s*0.10);
+    c.quadraticCurveTo(-s*0.30, -s*0.46, -s*0.06, -s*0.52);
+    c.quadraticCurveTo(-s*0.06, -s*0.30, s*0.04, -s*0.14);
     c.closePath(); c.fill();
-    // a wet sheen along the back, and a puff of breath as it crests
-    c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.35*a})`;
+    // A wet sheen along the crest of the back.
+    c.strokeStyle = o.rim || `rgba(${this.tok.foamRGB}, 0.35)`;
+    c.globalAlpha = 0.4*a;
+    c.lineWidth = Math.max(1, s*0.05);
+    c.beginPath();
+    c.moveTo(-s*0.62, s*0.02);
+    c.quadraticCurveTo(-s*0.05, -s*0.20, s*0.62, -s*0.02);
+    c.stroke();
+    c.globalAlpha = 1;
+    c.restore();
+    // Where it cuts the surface: a small bow wave running off the shoulder,
+    // and the puff of the blow as the back reaches its highest.
+    c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.30*a})`;
     c.lineWidth = 1;
     c.beginPath();
-    c.moveTo(-s*0.6, -s*0.3*a - s*0.02);
-    c.quadraticCurveTo(-s*0.1, -s*0.52*a - s*0.14, s*0.4, -s*0.42*a - s*0.06);
+    c.moveTo(s*0.2, s*0.02);
+    c.quadraticCurveTo(-s*0.3, s*0.12, -s*1.0, s*0.16);
+    c.moveTo(s*0.1, s*0.06);
+    c.quadraticCurveTo(-s*0.3, s*0.18, -s*0.9, s*0.24);
     c.stroke();
-    if (a > 0.85) {
-      c.fillStyle = `rgba(${this.tok.foamRGB}, ${(a - 0.85)*2})`;
-      c.beginPath(); c.arc(s*0.8, -s*0.75, s*0.1, 0, Math.PI*2); c.fill();
+    if (a > 0.8) {
+      const b = (a - 0.8)*5;
+      c.fillStyle = `rgba(${this.tok.foamRGB}, ${0.5*b*(1 - b*0.5)})`;
+      c.beginPath();
+      c.ellipse(s*0.62, -rise - s*0.55 - b*s*0.35, s*0.13*(0.5 + b), s*0.18*(0.5 + b*1.4),
+        0, 0, Math.PI*2);
+      c.fill();
     }
     c.restore();
   }
@@ -3923,12 +4952,17 @@ class Scene {
      head thrown up to crow, stepping deliberately otherwise. */
   paintPheasant(c, o) {
     const s = o.s, t = o.t || 0, sing = o.sing || 0;
+    const fly = o.fly || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.flip) c.scale(-1, 1);
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
     c.lineCap = "round"; c.lineJoin = "round";
+    // Flushing: body tilted up on the climb, neck out, the long tail streaming
+    // straight behind, and the short round wings a blur — the clatter you hear
+    // before you ever see the bird.
+    if (fly > 0.02) { this.pheasantFlush(c, o, fly); c.restore(); return; }
     const by = -s*0.6;
     // legs — stout, stepping
     for (const [lx0, ph2] of [[-s*0.16, 0], [s*0.14, Math.PI]]) {
@@ -3987,15 +5021,102 @@ class Scene {
     c.restore();
   }
 
+  /* The flush: steep, noisy and short. Short broad wings beating hard, the
+     body angled up the climb, that ridiculous tail trailing out behind. */
+  pheasantFlush(c, o, fly) {
+    const s = o.s, k = o.flap || 0;
+    c.rotate(-0.5*fly);
+    c.translate(0, -s*1.2);
+    c.fillStyle = o.color;
+    const A = c.globalAlpha;
+    c.globalAlpha = A*0.55;
+    this.wingBlade(c, -s*0.06, -s*0.05, -s*0.5, -s*0.95*k - s*0.2, s*0.68);
+    c.globalAlpha = A;
+    // the streaming tail
+    for (let j = -1; j <= 1; j++) {
+      this.limb(c, -s*0.5, -s*0.02, -s*(1.9 + Math.abs(j)*0.1), j*s*0.13, s*0.16, s*0.05);
+    }
+    c.beginPath(); c.ellipse(0, 0, s*0.62, s*0.34, 0, 0, Math.PI*2); c.fill();
+    // neck out, head up the climb
+    this.limb(c, s*0.4, -s*0.16, s*0.86, -s*0.5, s*0.22, s*0.13);
+    c.beginPath(); c.arc(s*0.9, -s*0.54, s*0.15, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.moveTo(s*1.02, -s*0.6); c.lineTo(s*1.26, -s*0.54); c.lineTo(s*1.02, -s*0.48);
+    c.closePath(); c.fill();
+    c.fillStyle = `rgba(${this.tok.amberRGB}, 0.35)`;
+    c.beginPath(); c.ellipse(-s*0.05, 0, s*0.44, s*0.24, 0, 0, Math.PI*2); c.fill();
+    c.fillStyle = o.color;
+    this.wingBlade(c, s*0.04, -s*0.04, s*0.42, -s*1.05*k - s*0.24, s*0.74);
+  }
+
   /* A red squirrel — all tail: arched over the back when it sits up to
-     nibble, streaming behind when it bounds. */
+     nibble, streaming behind when it bounds, and flat out along the ground
+     when it caches a nut. The dig is the thing squirrels actually spend an
+     autumn doing, so it is drawn properly: rump up, head down between the
+     forepaws, quick alternating strokes that throw the litter back between
+     the hind legs, the nut nosed down into the hole, and the soil patted
+     back over it with both front paws.
+
+     dig   0..1, how far into the digging posture
+     bury  0..1, the nose pushing the nut down
+     pat   1 while the forepaws tamp the litter back */
   paintSquirrel(c, o) {
     const s = o.s, t = o.t || 0;
+    const dig = o.dig || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
-    if (o.sit) {
+    if (dig > 0.02) {
+      const bury = o.bury || 0, pat = o.pat || 0;
+      // scrabble: the two forepaws alternate, fast, close under the chest
+      const scr = Math.sin(t*22), scr2 = Math.sin(t*22 + Math.PI);
+      const tamp = pat ? Math.abs(Math.sin(t*11)) : 0;
+      // The tail stays arched over the back even at work — a squirrel never
+      // puts it down — and twitches with the effort.
+      const tw = Math.sin(t*7)*s*0.10;
+      c.beginPath();
+      c.moveTo(-s*0.42, -s*0.44);
+      c.quadraticCurveTo(-s*1.10, -s*0.62 + tw, -s*1.24, -s*1.20 + tw);
+      c.quadraticCurveTo(-s*1.26, -s*1.60 + tw, -s*0.86, -s*1.62 + tw);
+      c.quadraticCurveTo(-s*1.02, -s*1.18 + tw*0.7, -s*0.90, -s*0.80);
+      c.quadraticCurveTo(-s*0.74, -s*0.42, -s*0.34, -s*0.26);
+      c.closePath(); c.fill();
+      // Rump high, shoulders down: the whole back slopes into the hole.
+      c.beginPath();
+      c.moveTo(-s*0.62, -s*0.30);
+      c.quadraticCurveTo(-s*0.66, -s*0.86*dig - s*0.16, -s*0.16, -s*0.80*dig - s*0.14);
+      c.quadraticCurveTo(s*0.24, -s*0.72*dig - s*0.14, s*0.44, -s*0.34*dig - s*0.16);
+      c.quadraticCurveTo(s*0.30, -s*0.06, -s*0.10, -s*0.06);
+      c.quadraticCurveTo(-s*0.48, -s*0.06, -s*0.62, -s*0.30);
+      c.closePath(); c.fill();
+      // hind legs braced under the raised rump
+      this.limb(c, -s*0.40, -s*0.48*dig - s*0.14, -s*0.48, -s*0.02, s*0.19, s*0.07);
+      this.limb(c, -s*0.18, -s*0.46*dig - s*0.12, -s*0.22, -s*0.02, s*0.17, s*0.06);
+      // Head down into the hole; on the bury it pushes the nut further in.
+      const hx = s*0.56 + bury*s*0.09, hy = -s*0.20 + bury*s*0.12;
+      this.limb(c, s*0.18, -s*0.44*dig - s*0.14, hx, hy, s*0.24, s*0.15);
+      c.beginPath(); c.arc(hx, hy, s*0.17, 0, Math.PI*2); c.fill();
+      c.beginPath();
+      c.moveTo(hx - s*0.08, hy - s*0.13); c.lineTo(hx - s*0.14, hy - s*0.34);
+      c.lineTo(hx + s*0.02, hy - s*0.17);
+      c.closePath(); c.fill();
+      // muzzle, pushed down at the litter
+      c.beginPath();
+      c.moveTo(hx + s*0.10, hy - s*0.06);
+      c.quadraticCurveTo(hx + s*0.30, hy + s*0.04, hx + s*0.30, hy + s*0.12);
+      c.lineTo(hx + s*0.06, hy + s*0.13);
+      c.closePath(); c.fill();
+      // forepaws: scrabbling, or flat and tamping the litter back
+      const p1 = pat ? -tamp*s*0.12 : scr*s*0.10;
+      const p2 = pat ? -tamp*s*0.12 : scr2*s*0.10;
+      this.limb(c, s*0.30, -s*0.34, s*0.52 + p1*0.5, -s*0.02 + p1, s*0.11, s*0.07);
+      this.limb(c, s*0.20, -s*0.30, s*0.42 + p2*0.5, -s*0.02 + p2, s*0.10, s*0.06);
+      // the hole itself, dark in the leaf-litter
+      c.globalAlpha = 0.35;
+      c.beginPath(); c.ellipse(s*0.58, s*0.01, s*0.24, s*0.06, 0, 0, Math.PI*2); c.fill();
+      c.globalAlpha = 1;
+    } else if (o.sit) {
       // the great tail curling up and over
       c.beginPath();
       c.moveTo(-s*0.5, -s*0.15);
@@ -4564,14 +5685,26 @@ class Scene {
       }
     }
     if (state.weather === "fog") {
-      for (const f of this.fog) {
+      // The three fog bands used to build a fresh gradient every frame, which
+      // is pure allocation churn for something that barely changes. Cache them
+      // against the height and a coarse step of the light instead.
+      const step = Math.round(night*8);
+      const key = (H|0) + "|" + step;
+      if (key !== this._fogKey) {
+        this._fogKey = key;
+        this._fogGrads = this.fog.map(f => {
+          const g = c.createLinearGradient(0, f.y*H - f.h*H, 0, f.y*H + f.h*H);
+          g.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
+          g.addColorStop(0.5, `rgba(${this.tok.fogRGB}, ${0.28 * (1 - (step/8)*0.4)})`);
+          g.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
+          return g;
+        });
+      }
+      for (let fi = 0; fi < this.fog.length; fi++) {
+        const f = this.fog[fi];
         f.x += f.sp * dt;
         const fy = f.y * H;
-        const fg = c.createLinearGradient(0, fy - f.h*H, 0, fy + f.h*H);
-        fg.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
-        fg.addColorStop(0.5, `rgba(${this.tok.fogRGB}, ${0.28 * (1-night*0.4)})`);
-        fg.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
-        c.fillStyle = fg;
+        c.fillStyle = this._fogGrads[fi];
         const drift = Math.sin(this.t*0.1 + f.x*10) * W * 0.05;
         c.fillRect(-W*0.1 + drift, fy - f.h*H, W*1.2, f.h*H*2);
       }

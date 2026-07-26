@@ -69,8 +69,8 @@ const PSTYLE = {
   wren: { sc: 0.72, tailUp: true, tail: 0.72, bill: 0.42, plump: 1.12, barring: true },
   sparrow: { sc: 0.85, bill: 0.42, plump: 1.06, cap: true, bib: true, wingbar: true },
   reedwarbler: { sc: 0.85, bill: 0.48, brow: true },
-  woodpigeon: { plump: 1.35, bill: 0.3, sc: 1.12, smallHead: true, neckPatch: true },
-  feralpigeon: { plump: 1.3, bill: 0.3, sc: 1.05, smallHead: true, sheen: true, wingbar: true },
+  woodpigeon: { plump: 1.35, bill: 0.3, sc: 1.12, smallHead: true, neckPatch: true, walks: true },
+  feralpigeon: { plump: 1.3, bill: 0.3, sc: 1.05, smallHead: true, sheen: true, wingbar: true, walks: true },
   crow: { sc: 1.2, bill: 0.72, plump: 1.05, billDeep: true, gloss: true, tail: 1.35 },
   magpie: { sc: 1.05, tail: 2.4, bill: 0.5, billDeep: true, shoulder: true, belly: true, gloss: true },
   songthrush: { sc: 0.95, bill: 0.45, plump: 1.05, speckles: true },
@@ -78,16 +78,32 @@ const PSTYLE = {
   goldfinch: { sc: 0.75, bill: 0.35, face: true, wingbar: true },
   bluetit: { sc: 0.72, bill: 0.3, plump: 1.08, cap: true, capTone: "sage", cheek: true, wash: "amber" },
   dunnock: { sc: 0.8, bill: 0.35, barring: true },
-  starling: { sc: 0.9, bill: 0.5, tail: 0.85, speckles: true, gloss: true },
+  starling: { sc: 0.9, bill: 0.5, tail: 0.85, speckles: true, gloss: true, walks: true },
   nightingale: { sc: 0.88, bill: 0.4, plump: 1.02, tailTone: "amber", tail: 1.2 },
   yellowhammer: { sc: 0.85, bill: 0.38, wash: "amber", tail: 1.2 },
   greenfinch: { sc: 0.82, bill: 0.42, wash: "sage" },
   jay: { sc: 1.05, bill: 0.5, plump: 1.1, wingPatch: true },
   jackdaw: { sc: 1.0, bill: 0.5, plump: 1.02, billDeep: true, cap: true, neckPatch: true },
   raven: { sc: 1.45, bill: 0.85, plump: 1.1, billDeep: true, gloss: true, tail: 1.4 },
-  collareddove: { sc: 1.0, bill: 0.3, plump: 1.2, smallHead: true, collar: true },
+  collareddove: { sc: 1.0, bill: 0.3, plump: 1.2, smallHead: true, collar: true, walks: true },
   kingfisher: { sc: 0.78, bill: 0.95, plump: 1.15, tail: 0.5, breast: true, sheen: true },
-  lapwing: { sc: 0.95, bill: 0.3, plump: 1.15, cap: true, belly: true, crest: true, gloss: true }
+  lapwing: { sc: 0.95, bill: 0.3, plump: 1.15, cap: true, belly: true, crest: true,
+    gloss: true, walks: true }
+};
+
+/* Counter-singing — who answers a rival, and how readily.
+   Neighbouring territory-holders answer each other back and forth across a
+   boundary, each waiting for the other to finish before replying: the
+   exchange tightens as it goes and then simply stops. Only species that
+   really do this are listed, and the shyer ones sit low: a wood pigeon
+   rarely bothers, a chiffchaff almost always does. Owls are the odd one
+   out — the pair duet rather than compete, the male's hoot answered by the
+   female's kewick — but the shape on the ear is the same. */
+const COUNTERSING = {
+  chiffchaff: 0.5, greattit: 0.45, blackbird: 0.4, wren: 0.4, robin: 0.4,
+  nightingale: 0.4, owl: 0.45, songthrush: 0.35, chaffinch: 0.35,
+  yellowhammer: 0.3, bluetit: 0.3, cuckoo: 0.3, dunnock: 0.25,
+  reedwarbler: 0.25, greenfinch: 0.2, collareddove: 0.2, woodpigeon: 0.18
 };
 
 /* Synth primitives — the building blocks of every voice. */
@@ -131,6 +147,67 @@ function burst(ac, dest, t, freq, q, dur, peak) {
   src.start(t, offset, len); src.stop(t + len + 0.02);
 }
 
+/* ---- Phrases, not notes ----------------------------------------------------
+   A song is a line, not a pile: within one phrase the notes follow each other,
+   they do not sound together. So one oscillator can sing the whole phrase —
+   re-tuned at each onset, with the gain opened and shut around it — instead of
+   a fresh oscillator and gain per note. A wren's trill drops from sixty-four
+   nodes to two, a cricket's stridulation from a hundred and seventeen to three.
+   Raising a heap of nodes in one go is exactly what makes the mix hiccup, so
+   this is what keeps a busy meadow smooth.
+
+   `ns` is [{ t, f0, f1, dur, peak }] in ascending t; any note that would run
+   into the next is trimmed to fit, so a caller can hand over its own rhythm
+   without doing the arithmetic. */
+function noteTrain(ac, dest, ns, type) {
+  if (!ns.length) return;
+  const o = ac.createOscillator();
+  o.type = type || "sine";
+  const g = ac.createGain();
+  const t0 = ns[0].t;
+  g.gain.setValueAtTime(0.0001, t0);
+  o.connect(g); g.connect(dest);
+  let end = t0;
+  for (let i = 0; i < ns.length; i++) {
+    const n = ns[i], next = ns[i + 1];
+    const d = next ? Math.max(0.01, Math.min(n.dur, next.t - n.t - 0.004)) : n.dur;
+    o.frequency.setValueAtTime(Math.max(40, n.f0), n.t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, n.f1), n.t + d);
+    g.gain.setValueAtTime(0.0001, n.t);
+    g.gain.exponentialRampToValueAtTime(n.peak, n.t + Math.min(0.02, d*0.3));
+    g.gain.exponentialRampToValueAtTime(0.0001, n.t + d);
+    end = n.t + d;
+  }
+  o.start(t0); o.stop(end + 0.05);
+}
+
+/* The same trick for noise: a run of filtered pulses — a cricket's chirp, a
+   magpie's rattle, a woodpecker's drum-roll — off one looping source through
+   one band-pass and one gain. `ps` is [{ t, freq, dur, peak }] in ascending t. */
+function pulseTrain(ac, dest, ps, q) {
+  if (!ps.length) return;
+  const buf = sharedNoise(ac);
+  const t0 = ps[0].t, last = ps[ps.length - 1];
+  const src = ac.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = "bandpass"; bp.Q.value = q;
+  bp.frequency.setValueAtTime(ps[0].freq, t0);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  for (let i = 0; i < ps.length; i++) {
+    const p = ps[i], next = ps[i + 1];
+    const d = next ? Math.max(0.006, Math.min(p.dur, next.t - p.t - 0.002)) : p.dur;
+    bp.frequency.setValueAtTime(p.freq, p.t);
+    g.gain.setValueAtTime(0.0001, p.t);
+    g.gain.exponentialRampToValueAtTime(p.peak, p.t + Math.min(0.008, d*0.3));
+    g.gain.exponentialRampToValueAtTime(0.0001, p.t + d);
+  }
+  src.connect(bp); bp.connect(g); g.connect(dest);
+  src.start(t0, Math.random() * Math.max(0, buf.duration - 0.2));
+  src.stop(last.t + last.dur + 0.08);
+}
+
 /* The species catalogue.
    habitats: where it will sing. hw: per-place weighting.
    weights: how likely at each hour. base: seconds between tries. */
@@ -141,13 +218,18 @@ const SPECIES = [
     weights: { dawn: 0.95, day: 0.3, dusk: 0.8, night: 0.02 }, base: 15,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const nn = 3 + Math.floor(r()*3);
       for (let i = 0; i < nn; i++) {
         const f = 1400 + r()*900;
-        note(ac, dest, t, f, f*(0.78 + r()*0.5), 0.15 + r()*0.13, 0.05);
+        ns.push({ t, f0: f, f1: f*(0.78 + r()*0.5), dur: 0.15 + r()*0.13, peak: 0.05 });
         t += 0.19 + r()*0.15;
       }
-      if (r() < 0.6) { note(ac, dest, t, 2800 + r()*800, 3500 + r()*900, 0.12, 0.028); t += 0.16; }
+      if (r() < 0.6) {
+        ns.push({ t, f0: 2800 + r()*800, f1: 3500 + r()*900, dur: 0.12, peak: 0.028 });
+        t += 0.16;
+      }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.2;
     } },
   { id: "greattit", name: "Great Tit", latin: "Parus major",
@@ -157,12 +239,14 @@ const SPECIES = [
     synth(ac, dest, t0, r) {
       const reps = 3 + Math.floor(r()*3);
       let t = t0;
+      const ns = [];
       const fa = 3700 + r()*300, fb = 2750 + r()*250;
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, fa, fa*0.96, 0.09, 0.042);
-        note(ac, dest, t + 0.115, fb, fb*0.94, 0.10, 0.042);
+        ns.push({ t, f0: fa, f1: fa*0.96, dur: 0.09, peak: 0.042 });
+        ns.push({ t: t + 0.115, f0: fb, f1: fb*0.94, dur: 0.10, peak: 0.042 });
         t += 0.285;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "wren", name: "Eurasian Wren", latin: "Troglodytes troglodytes",
@@ -171,12 +255,14 @@ const SPECIES = [
     weights: { dawn: 0.65, day: 0.45, dusk: 0.3, night: 0 }, base: 20,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const nn = 22 + Math.floor(r()*10);
       for (let i = 0; i < nn; i++) {
         const f = 3800 + ((i % 2) ? 700 : 0) + r()*500;
-        note(ac, dest, t, f, f*0.94, 0.03, 0.032);
+        ns.push({ t, f0: f, f1: f*0.94, dur: 0.03, peak: 0.032 });
         t += 0.033;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "chiffchaff", name: "Common Chiffchaff", latin: "Phylloscopus collybita",
@@ -186,11 +272,13 @@ const SPECIES = [
     synth(ac, dest, t0, r) {
       const reps = 5 + Math.floor(r()*5);
       let t = t0;
+      const ns = [];
       for (let i = 0; i < reps; i++) {
         const f = (i % 2 ? 2450 : 2900) + r()*180;
-        note(ac, dest, t, f, f*0.93, 0.10, 0.038);
+        ns.push({ t, f0: f, f1: f*0.93, dur: 0.10, peak: 0.038 });
         t += 0.235 + r()*0.05;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "woodpigeon", name: "Common Wood Pigeon", latin: "Columba palumbus",
@@ -200,10 +288,12 @@ const SPECIES = [
     synth(ac, dest, t0, r) {
       const seq = [[420, 0.26], [372, 0.4], [420, 0.24], [372, 0.2], [352, 0.2]];
       let t = t0;
+      const ns = [];
       for (const [f, d] of seq) {
-        note(ac, dest, t, f + r()*14, f*0.97, d, 0.055);
+        ns.push({ t, f0: f + r()*14, f1: f*0.97, dur: d, peak: 0.055 });
         t += d + 0.06;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "cuckoo", name: "Common Cuckoo", latin: "Cuculus canorus",
@@ -212,12 +302,14 @@ const SPECIES = [
     weights: { dawn: 0.4, day: 0.3, dusk: 0.15, night: 0 }, base: 34,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const reps = 1 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 742, 726, 0.22, 0.05);
-        note(ac, dest, t + 0.42, 592, 578, 0.26, 0.05);
+        ns.push({ t, f0: 742, f1: 726, dur: 0.22, peak: 0.05 });
+        ns.push({ t: t + 0.42, f0: 592, f1: 578, dur: 0.26, peak: 0.05 });
         t += 1.1;
       }
+      noteTrain(ac, dest, ns);
       return t - t0;
     } },
   { id: "robin", name: "European Robin", latin: "Erithacus rubecula",
@@ -226,12 +318,14 @@ const SPECIES = [
     weights: { dawn: 0.7, day: 0.3, dusk: 0.75, night: 0.25 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const nn = 6 + Math.floor(r()*4);
       for (let i = 0; i < nn; i++) {
         const f = 2100 + r()*1900;
-        note(ac, dest, t, f, f*(0.6 + r()*0.8), 0.07 + r()*0.12, 0.035);
+        ns.push({ t, f0: f, f1: f*(0.6 + r()*0.8), dur: 0.07 + r()*0.12, peak: 0.035 });
         t += 0.1 + r()*0.16;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.15;
     } },
   { id: "skylark", name: "Eurasian Skylark", latin: "Alauda arvensis",
@@ -241,11 +335,13 @@ const SPECIES = [
     synth(ac, dest, t0, r) {
       const dur = 2.4 + r()*1.6;
       let t = t0;
+      const ns = [];
       while (t < t0 + dur) {
         const f = 3000 + r()*1500;
-        note(ac, dest, t, f, f*(0.85 + r()*0.3), 0.05, 0.02);
+        ns.push({ t, f0: f, f1: f*(0.85 + r()*0.3), dur: 0.05, peak: 0.02 });
         t += 0.055;
       }
+      noteTrain(ac, dest, ns);
       return dur + 0.1;
     } },
   { id: "woodpecker", name: "Great Spotted Woodpecker", latin: "Dendrocopos major",
@@ -254,11 +350,13 @@ const SPECIES = [
     weights: { dawn: 0.55, day: 0.45, dusk: 0.1, night: 0 }, base: 26,
     synth(ac, dest, t0, r) {
       let t = t0, gap = 0.058;
+      const ps = [];
       const nn = 13 + Math.floor(r()*5);
       for (let i = 0; i < nn; i++) {
-        burst(ac, dest, t, 1100 + r()*300, 2, 0.022, 0.085);
+        ps.push({ t, freq: 1100 + r()*300, dur: 0.022, peak: 0.085 });
         t += gap; gap *= 0.985;
       }
+      pulseTrain(ac, dest, ps, 2);
       return t - t0 + 0.1;
     } },
   { id: "crow", name: "Carrion Crow", latin: "Corvus corone",
@@ -280,14 +378,15 @@ const SPECIES = [
     habitats: ["meadow","forest","wetland","city"], hw: { city: 0.3 },
     weights: { dawn: 0.05, day: 0, dusk: 0.3, night: 0.9 }, base: 28,
     synth(ac, dest, t0, r) {
-      note(ac, dest, t0, 400, 375, 0.75, 0.055);
+      const ns = [{ t: t0, f0: 400, f1: 375, dur: 0.75, peak: 0.055 }];
       let t = t0 + 1.5 + r()*0.5;
-      note(ac, dest, t, 385, 380, 0.12, 0.04);
+      ns.push({ t, f0: 385, f1: 380, dur: 0.12, peak: 0.04 });
       t += 0.35;
       for (let i = 0; i < 3; i++) {
-        note(ac, dest, t, 400 - i*20, 380 - i*22, 0.4, 0.05);
+        ns.push({ t, f0: 400 - i*20, f1: 380 - i*22, dur: 0.4, peak: 0.05 });
         t += 0.42;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.3;
     } },
   { id: "cricket", name: "Field Cricket", latin: "Gryllus campestris",
@@ -296,11 +395,14 @@ const SPECIES = [
     weights: { dawn: 0.05, day: 0.05, dusk: 0.55, night: 0.8 }, base: 12,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ps = [];
       const chirps = 6 + Math.floor(r()*7);
       for (let i = 0; i < chirps; i++) {
-        for (let k = 0; k < 3; k++) burst(ac, dest, t + k*0.028, 4400 + r()*300, 14, 0.02, 0.02);
+        const f = 4400 + r()*300;
+        for (let k = 0; k < 3; k++) ps.push({ t: t + k*0.028, freq: f, dur: 0.02, peak: 0.02 });
         t += 0.34 + r()*0.12;
       }
+      pulseTrain(ac, dest, ps, 14);
       return t - t0;
     } },
   { id: "frog", name: "Common Frog", latin: "Rana temporaria",
@@ -309,12 +411,14 @@ const SPECIES = [
     weights: { dawn: 0.15, day: 0.05, dusk: 0.6, night: 0.7 }, base: 14,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const nn = 8 + Math.floor(r()*7);
       const f = 95 + r()*40;
       for (let i = 0; i < nn; i++) {
-        note(ac, dest, t, f + r()*10, f*0.92, 0.055, 0.05, "sawtooth");
+        ns.push({ t, f0: f + r()*10, f1: f*0.92, dur: 0.055, peak: 0.05 });
         t += 0.072;
       }
+      noteTrain(ac, dest, ns, "sawtooth");
       return t - t0 + 0.1;
     } },
   { id: "gull", name: "Herring Gull", latin: "Larus argentatus",
@@ -323,13 +427,14 @@ const SPECIES = [
     weights: { dawn: 0.45, day: 0.65, dusk: 0.35, night: 0.03 }, base: 18,
     synth(ac, dest, t0, r) {
       let t = t0;
-      note(ac, dest, t, 1450 + r()*150, 900, 0.5, 0.03, "sawtooth");
+      const ns = [{ t, f0: 1450 + r()*150, f1: 900, dur: 0.5, peak: 0.03 }];
       t += 0.65;
       const reps = 2 + Math.floor(r()*4);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 1300 + r()*150, 1000, 0.16, 0.028, "sawtooth");
+        ns.push({ t, f0: 1300 + r()*150, f1: 1000, dur: 0.16, peak: 0.028 });
         t += 0.22;
       }
+      noteTrain(ac, dest, ns, "sawtooth");
       return t - t0 + 0.1;
     } },
   { id: "curlew", name: "Eurasian Curlew", latin: "Numenius arquata",
@@ -337,13 +442,14 @@ const SPECIES = [
     habitats: ["beach","wetland"],
     weights: { dawn: 0.55, day: 0.3, dusk: 0.5, night: 0.05 }, base: 30,
     synth(ac, dest, t0, r) {
-      note(ac, dest, t0, 880, 1750, 0.7, 0.045);
+      const ns = [{ t: t0, f0: 880, f1: 1750, dur: 0.7, peak: 0.045 }];
       let t = t0 + 0.78;
       for (let i = 0; i < 8; i++) {
         const f = 1500 + r()*450;
-        note(ac, dest, t, f, f*1.12, 0.05, 0.035);
+        ns.push({ t, f0: f, f1: f*1.12, dur: 0.05, peak: 0.035 });
         t += 0.058;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "oystercatcher", name: "Eurasian Oystercatcher", latin: "Haematopus ostralegus",
@@ -352,11 +458,13 @@ const SPECIES = [
     weights: { dawn: 0.55, day: 0.55, dusk: 0.3, night: 0.05 }, base: 22,
     synth(ac, dest, t0, r) {
       let t = t0, gap = 0.1;
+      const ns = [];
       const nn = 7 + Math.floor(r()*6);
       for (let i = 0; i < nn; i++) {
-        note(ac, dest, t, 2850 + r()*150, 2600, 0.07, 0.04);
+        ns.push({ t, f0: 2850 + r()*150, f1: 2600, dur: 0.07, peak: 0.04 });
         t += gap; gap *= 0.96;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "mallard", name: "Mallard", latin: "Anas platyrhynchos",
@@ -365,12 +473,14 @@ const SPECIES = [
     weights: { dawn: 0.5, day: 0.5, dusk: 0.45, night: 0.08 }, base: 20,
     synth(ac, dest, t0, r) {
       let t = t0, peak = 0.032;
+      const ns = [];
       const nn = 4 + Math.floor(r()*4);
       for (let i = 0; i < nn; i++) {
-        note(ac, dest, t, 330 - i*10, 255, 0.14, peak, "sawtooth");
+        ns.push({ t, f0: 330 - i*10, f1: 255, dur: 0.14, peak });
         peak *= 0.82;
         t += 0.2;
       }
+      noteTrain(ac, dest, ns, "sawtooth");
       return t - t0 + 0.1;
     } },
   { id: "reedwarbler", name: "Eurasian Reed Warbler", latin: "Acrocephalus scirpaceus",
@@ -379,13 +489,16 @@ const SPECIES = [
     weights: { dawn: 0.65, day: 0.55, dusk: 0.3, night: 0.1 }, base: 19,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [], ps = [];
       const nn = 12 + Math.floor(r()*9);
       for (let i = 0; i < nn; i++) {
         const f = 2000 + (i % 2)*700 + r()*400;
-        if (r() < 0.4) burst(ac, dest, t, f, 6, 0.05, 0.03);
-        else note(ac, dest, t, f, f*0.9, 0.06, 0.032);
+        if (r() < 0.4) ps.push({ t, freq: f, dur: 0.05, peak: 0.03 });
+        else ns.push({ t, f0: f, f1: f*0.9, dur: 0.06, peak: 0.032 });
         t += 0.09 + r()*0.04;
       }
+      noteTrain(ac, dest, ns);
+      pulseTrain(ac, dest, ps, 6);
       return t - t0 + 0.1;
     } },
   { id: "sparrow", name: "House Sparrow", latin: "Passer domesticus",
@@ -394,12 +507,14 @@ const SPECIES = [
     weights: { dawn: 0.55, day: 0.65, dusk: 0.35, night: 0 }, base: 14,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const nn = 3 + Math.floor(r()*5);
       for (let i = 0; i < nn; i++) {
         const f = 2500 + r()*1400;
-        note(ac, dest, t, f, f*(0.85 + r()*0.25), 0.08, 0.038);
+        ns.push({ t, f0: f, f1: f*(0.85 + r()*0.25), dur: 0.08, peak: 0.038 });
         t += 0.16 + r()*0.14;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "feralpigeon", name: "Feral Pigeon", latin: "Columba livia domestica",
@@ -408,10 +523,12 @@ const SPECIES = [
     weights: { dawn: 0.5, day: 0.55, dusk: 0.3, night: 0.02 }, base: 20,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       for (let i = 0; i < 3; i++) {
-        note(ac, dest, t, 320 + r()*20, 285, 0.3, 0.05);
+        ns.push({ t, f0: 320 + r()*20, f1: 285, dur: 0.3, peak: 0.05 });
         t += 0.4;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "swift", name: "Common Swift", latin: "Apus apus",
@@ -434,11 +551,13 @@ const SPECIES = [
     weights: { dawn: 0.35, day: 0.5, dusk: 0.25, night: 0 }, base: 27,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ps = [];
       const nn = 10 + Math.floor(r()*5);
       for (let i = 0; i < nn; i++) {
-        burst(ac, dest, t, 1700 + r()*300, 1.5, 0.04, 0.06);
+        ps.push({ t, freq: 1700 + r()*300, dur: 0.04, peak: 0.06 });
         t += 0.055;
       }
+      pulseTrain(ac, dest, ps, 1.5);
       return t - t0 + 0.1;
     } },
   { id: "rooster", name: "Farmyard Cockerel", latin: "Gallus gallus domesticus",
@@ -450,10 +569,12 @@ const SPECIES = [
       bp.type = "bandpass"; bp.frequency.value = 1050; bp.Q.value = 1;
       bp.connect(dest);
       let t = t0;
-      note(ac, bp, t, 620, 660, 0.18, 0.05, "sawtooth"); t += 0.24;
-      note(ac, bp, t, 750, 780, 0.16, 0.05, "sawtooth"); t += 0.22;
-      note(ac, bp, t, 900, 930, 0.3, 0.06, "sawtooth"); t += 0.36;
-      note(ac, bp, t, 830, 560, 0.55, 0.05, "sawtooth"); t += 0.6;
+      const ns = [];
+      ns.push({ t, f0: 620, f1: 660, dur: 0.18, peak: 0.05 }); t += 0.24;
+      ns.push({ t, f0: 750, f1: 780, dur: 0.16, peak: 0.05 }); t += 0.22;
+      ns.push({ t, f0: 900, f1: 930, dur: 0.3, peak: 0.06 }); t += 0.36;
+      ns.push({ t, f0: 830, f1: 560, dur: 0.55, peak: 0.05 }); t += 0.6;
+      noteTrain(ac, bp, ns, "sawtooth");
       return t - t0 + 0.2;
     } },
   { id: "songthrush", name: "Song Thrush", latin: "Turdus philomelos",
@@ -462,17 +583,19 @@ const SPECIES = [
     weights: { dawn: 0.85, day: 0.35, dusk: 0.7, night: 0.05 }, base: 16,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const phrases = 2 + Math.floor(r()*2);
       for (let p = 0; p < phrases; p++) {
         const f = 1800 + r()*1200, f2 = f*(0.7 + r()*0.6);
         const reps = 2 + Math.floor(r()*2);
         for (let i = 0; i < reps; i++) {
-          note(ac, dest, t, f, f2, 0.12, 0.05);
-          note(ac, dest, t + 0.14, f*1.1, f2*1.05, 0.08, 0.035);
+          ns.push({ t, f0: f, f1: f2, dur: 0.12, peak: 0.05 });
+          ns.push({ t: t + 0.14, f0: f*1.1, f1: f2*1.05, dur: 0.08, peak: 0.035 });
           t += 0.3;
         }
         t += 0.25 + r()*0.2;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.2;
     } },
   { id: "chaffinch", name: "Common Chaffinch", latin: "Fringilla coelebs",
@@ -481,13 +604,15 @@ const SPECIES = [
     weights: { dawn: 0.6, day: 0.6, dusk: 0.2, night: 0 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0, f = 3400 + r()*300, gap = 0.09;
+      const ns = [];
       const nn = 8 + Math.floor(r()*4);
       for (let i = 0; i < nn; i++) {
-        note(ac, dest, t, f, f*0.94, 0.05, 0.04);
+        ns.push({ t, f0: f, f1: f*0.94, dur: 0.05, peak: 0.04 });
         f *= 0.93; gap *= 0.94; t += gap;
       }
-      note(ac, dest, t, 2000, 2600, 0.14, 0.05);
-      note(ac, dest, t + 0.12, 2500, 1900, 0.12, 0.05);
+      ns.push({ t, f0: 2000, f1: 2600, dur: 0.14, peak: 0.05 });
+      ns.push({ t: t + 0.12, f0: 2500, f1: 1900, dur: 0.12, peak: 0.05 });
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.35;
     } },
   { id: "goldfinch", name: "European Goldfinch", latin: "Carduelis carduelis",
@@ -496,15 +621,17 @@ const SPECIES = [
     weights: { dawn: 0.4, day: 0.65, dusk: 0.3, night: 0 }, base: 18,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const cl = 3 + Math.floor(r()*3);
       for (let i = 0; i < cl; i++) {
         for (let k = 0; k < 3; k++) {
           const f = 3800 + r()*1500;
-          note(ac, dest, t, f, f*1.1, 0.045, 0.035);
+          ns.push({ t, f0: f, f1: f*1.1, dur: 0.045, peak: 0.035 });
           t += 0.055;
         }
         t += 0.12 + r()*0.1;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "bluetit", name: "Eurasian Blue Tit", latin: "Cyanistes caeruleus",
@@ -513,16 +640,18 @@ const SPECIES = [
     weights: { dawn: 0.6, day: 0.6, dusk: 0.2, night: 0 }, base: 16,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const hi = 2 + Math.floor(r()*2);
       for (let i = 0; i < hi; i++) {
-        note(ac, dest, t, 4200 + r()*300, 4000, 0.08, 0.04);
+        ns.push({ t, f0: 4200 + r()*300, f1: 4000, dur: 0.08, peak: 0.04 });
         t += 0.12;
       }
       const nn = 6 + Math.floor(r()*5);
       for (let k = 0; k < nn; k++) {
-        note(ac, dest, t, 3000 + r()*200, 2800, 0.035, 0.038);
+        ns.push({ t, f0: 3000 + r()*200, f1: 2800, dur: 0.035, peak: 0.038 });
         t += 0.045;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "dunnock", name: "Dunnock", latin: "Prunella modularis",
@@ -531,12 +660,14 @@ const SPECIES = [
     weights: { dawn: 0.5, day: 0.45, dusk: 0.25, night: 0 }, base: 21,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const nn = 10 + Math.floor(r()*5);
       for (let i = 0; i < nn; i++) {
         const f = 3000 + r()*1400;
-        note(ac, dest, t, f, f*(0.88 + r()*0.2), 0.05, 0.035);
+        ns.push({ t, f0: f, f1: f*(0.88 + r()*0.2), dur: 0.05, peak: 0.035 });
         t += 0.065 + r()*0.02;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "starling", name: "Common Starling", latin: "Sturnus vulgaris",
@@ -545,14 +676,17 @@ const SPECIES = [
     weights: { dawn: 0.5, day: 0.6, dusk: 0.55, night: 0 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0;
-      note(ac, dest, t, 2600 + r()*600, 900 + r()*300, 0.5, 0.032);
+      const ns = [{ t, f0: 2600 + r()*600, f1: 900 + r()*300, dur: 0.5, peak: 0.032 }];
+      const ps = [];
       t += 0.55;
       const nn = 5 + Math.floor(r()*5);
       for (let k = 0; k < nn; k++) {
-        burst(ac, dest, t, 1500 + r()*2500, 8, 0.02, 0.05);
+        ps.push({ t, freq: 1500 + r()*2500, dur: 0.02, peak: 0.05 });
         t += 0.05 + r()*0.04;
       }
-      if (r() < 0.7) { note(ac, dest, t, 1800, 3400, 0.22, 0.028); t += 0.3; }
+      if (r() < 0.7) { ns.push({ t, f0: 1800, f1: 3400, dur: 0.22, peak: 0.028 }); t += 0.3; }
+      noteTrain(ac, dest, ns);
+      pulseTrain(ac, dest, ps, 8);
       return t - t0 + 0.1;
     } },
   { id: "nightingale", name: "Common Nightingale", latin: "Luscinia megarhynchos",
@@ -561,18 +695,21 @@ const SPECIES = [
     weights: { dawn: 0.3, day: 0.05, dusk: 0.75, night: 0.9 }, base: 25,
     synth(ac, dest, t0, r) {
       let t = t0, pk = 0.014;
+      const rise = [], jug = [];
       const f = 2200 + r()*400;
       const reps = 4 + Math.floor(r()*3);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, f, f*0.98, 0.1, pk);
+        rise.push({ t, f0: f, f1: f*0.98, dur: 0.1, peak: pk });
         pk = Math.min(0.055, pk*1.55); t += 0.16;
       }
       t += 0.12;
       const nn = 5 + Math.floor(r()*4);
       for (let k = 0; k < nn; k++) {
-        note(ac, dest, t, 950 + r()*100, 720, 0.07, 0.05, "sawtooth");
+        jug.push({ t, f0: 950 + r()*100, f1: 720, dur: 0.07, peak: 0.05 });
         t += 0.09;
       }
+      noteTrain(ac, dest, rise);
+      noteTrain(ac, dest, jug, "sawtooth");
       return t - t0 + 0.15;
     } },
   { id: "yellowhammer", name: "Yellowhammer", latin: "Emberiza citrinella",
@@ -581,13 +718,15 @@ const SPECIES = [
     weights: { dawn: 0.45, day: 0.65, dusk: 0.3, night: 0 }, base: 23,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const f = 3200 + r()*250;
       const nn = 6 + Math.floor(r()*3);
       for (let i = 0; i < nn; i++) {
-        note(ac, dest, t, f, f*0.97, 0.06, 0.04);
+        ns.push({ t, f0: f, f1: f*0.97, dur: 0.06, peak: 0.04 });
         t += 0.09;
       }
-      note(ac, dest, t, f*1.35, f*1.3, 0.5, 0.032);
+      ns.push({ t, f0: f*1.35, f1: f*1.3, dur: 0.5, peak: 0.032 });
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.6;
     } },
   { id: "greenfinch", name: "European Greenfinch", latin: "Chloris chloris",
@@ -600,11 +739,13 @@ const SPECIES = [
       note(ac, dest, t + 0.02, 2750 + r()*200, 2250, 0.5, 0.014, "sawtooth");
       t += 0.7;
       if (r() < 0.6) {
+        const ns = [];
         const nn = 5 + Math.floor(r()*4);
         for (let k = 0; k < nn; k++) {
-          note(ac, dest, t, 3300 + r()*200, 3100, 0.04, 0.035);
+          ns.push({ t, f0: 3300 + r()*200, f1: 3100, dur: 0.04, peak: 0.035 });
           t += 0.05;
         }
+        noteTrain(ac, dest, ns);
       }
       return t - t0 + 0.1;
     } },
@@ -656,12 +797,14 @@ const SPECIES = [
     weights: { dawn: 0.5, day: 0.55, dusk: 0.35, night: 0 }, base: 22,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const reps = 1 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 470 + r()*15, 450, 0.22, 0.05); t += 0.3;
-        note(ac, dest, t, 440 + r()*15, 425, 0.4, 0.055); t += 0.5;
-        note(ac, dest, t, 450 + r()*15, 430, 0.13, 0.04); t += 0.45;
+        ns.push({ t, f0: 470 + r()*15, f1: 450, dur: 0.22, peak: 0.05 }); t += 0.3;
+        ns.push({ t, f0: 440 + r()*15, f1: 425, dur: 0.4, peak: 0.055 }); t += 0.5;
+        ns.push({ t, f0: 450 + r()*15, f1: 430, dur: 0.13, peak: 0.04 }); t += 0.45;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "kingfisher", name: "Common Kingfisher", latin: "Alcedo atthis",
@@ -670,11 +813,13 @@ const SPECIES = [
     weights: { dawn: 0.5, day: 0.55, dusk: 0.35, night: 0 }, base: 30,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const reps = 2 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 5200 + r()*400, 6200, 0.09, 0.035);
+        ns.push({ t, f0: 5200 + r()*400, f1: 6200, dur: 0.09, peak: 0.035 });
         t += 0.14 + r()*0.05;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "lapwing", name: "Northern Lapwing", latin: "Vanellus vanellus",
@@ -683,14 +828,17 @@ const SPECIES = [
     weights: { dawn: 0.6, day: 0.45, dusk: 0.5, night: 0.1 }, base: 26,
     synth(ac, dest, t0, r) {
       let t = t0;
-      note(ac, dest, t, 1200, 2600, 0.18, 0.045);
-      note(ac, dest, t + 0.26, 2400, 1100, 0.22, 0.045);
+      const ns = [
+        { t, f0: 1200, f1: 2600, dur: 0.18, peak: 0.045 },
+        { t: t + 0.26, f0: 2400, f1: 1100, dur: 0.22, peak: 0.045 }
+      ];
       t += 0.55;
       if (r() < 0.5) {
-        note(ac, dest, t, 1500, 2900, 0.14, 0.04);
-        note(ac, dest, t + 0.18, 2600, 1300, 0.18, 0.04);
+        ns.push({ t, f0: 1500, f1: 2900, dur: 0.14, peak: 0.04 });
+        ns.push({ t: t + 0.18, f0: 2600, f1: 1300, dur: 0.18, peak: 0.04 });
         t += 0.45;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "pheasant", name: "Common Pheasant", latin: "Phasianus colchicus",
@@ -699,12 +847,15 @@ const SPECIES = [
     weights: { dawn: 0.6, day: 0.15, dusk: 0.55, night: 0.02 }, base: 38,
     synth(ac, dest, t0, r) {
       let t = t0;
-      note(ac, dest, t, 700 + r()*60, 500, 0.14, 0.06, "sawtooth"); t += 0.18;
-      note(ac, dest, t, 900 + r()*80, 620, 0.18, 0.07, "sawtooth"); t += 0.28;
+      const ns = [], ps = [];
+      ns.push({ t, f0: 700 + r()*60, f1: 500, dur: 0.14, peak: 0.06 }); t += 0.18;
+      ns.push({ t, f0: 900 + r()*80, f1: 620, dur: 0.18, peak: 0.07 }); t += 0.28;
       for (let k = 0; k < 8; k++) {
-        burst(ac, dest, t, 300 + k*30, 1.5, 0.03, 0.04);
+        ps.push({ t, freq: 300 + k*30, dur: 0.03, peak: 0.04 });
         t += 0.035;
       }
+      noteTrain(ac, dest, ns, "sawtooth");
+      pulseTrain(ac, dest, ps, 1.5);
       return t - t0 + 0.15;
     } },
   { id: "moorhen", name: "Common Moorhen", latin: "Gallinula chloropus",
@@ -737,12 +888,13 @@ const SPECIES = [
     weights: { dawn: 0.45, day: 0.6, dusk: 0.3, night: 0 }, base: 24,
     synth(ac, dest, t0, r) {
       let t = t0;
-      note(ac, dest, t, 3100 + r()*200, 1600, 0.4, 0.038, "sawtooth");
+      const ns = [{ t, f0: 3100 + r()*200, f1: 1600, dur: 0.4, peak: 0.038 }];
       t += 0.5;
       if (r() < 0.6) {
-        note(ac, dest, t, 2900 + r()*200, 1700, 0.28, 0.032, "sawtooth");
+        ns.push({ t, f0: 2900 + r()*200, f1: 1700, dur: 0.28, peak: 0.032 });
         t += 0.35;
       }
+      noteTrain(ac, dest, ns, "sawtooth");
       return t - t0 + 0.1;
     } },
   { id: "kestrel", name: "Common Kestrel", latin: "Falco tinnunculus",
@@ -751,11 +903,13 @@ const SPECIES = [
     weights: { dawn: 0.35, day: 0.55, dusk: 0.3, night: 0 }, base: 34,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ns = [];
       const nn = 6 + Math.floor(r()*4);
       for (let i = 0; i < nn; i++) {
-        note(ac, dest, t, 2400 + r()*200, 2000, 0.07, 0.04);
+        ns.push({ t, f0: 2400 + r()*200, f1: 2000, dur: 0.07, peak: 0.04 });
         t += 0.12;
       }
+      noteTrain(ac, dest, ns);
       return t - t0 + 0.1;
     } },
   { id: "buzzard", name: "Common Buzzard", latin: "Buteo buteo",
@@ -763,8 +917,10 @@ const SPECIES = [
     habitats: ["forest","meadow"],
     weights: { dawn: 0.25, day: 0.6, dusk: 0.2, night: 0 }, base: 40,
     synth(ac, dest, t0, r) {
-      note(ac, dest, t0, 2600, 3100, 0.25, 0.038);
-      note(ac, dest, t0 + 0.28, 3000, 1400 + r()*200, 0.9, 0.04);
+      noteTrain(ac, dest, [
+        { t: t0, f0: 2600, f1: 3100, dur: 0.25, peak: 0.038 },
+        { t: t0 + 0.28, f0: 3000, f1: 1400 + r()*200, dur: 0.9, peak: 0.04 }
+      ]);
       return 1.4;
     } }
 ];
@@ -823,11 +979,13 @@ const CRITTER_VOICES = {
     desc: "an indignant chuk-chuk-chuk from a bough", tone: "amber", p: 0.65,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ps = [];
       const nn = 5 + Math.floor(r()*4);
       for (let k = 0; k < nn; k++) {
-        burst(ac, dest, t, 1400 + r()*300, 4, 0.04, 0.05);
+        ps.push({ t, freq: 1400 + r()*300, dur: 0.04, peak: 0.05 });
         t += 0.11 + r()*0.04;
       }
+      pulseTrain(ac, dest, ps, 4);
       return t - t0 + 0.1;
     } },
   otter: { id: "otter", name: "Eurasian Otter", latin: "Lutra lutra",
@@ -845,11 +1003,13 @@ const CRITTER_VOICES = {
     desc: "busy snuffling along the ground", tone: "amber", p: 0.6,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const ps = [];
       const nn = 5 + Math.floor(r()*4);
       for (let k = 0; k < nn; k++) {
-        burst(ac, dest, t, 300 + r()*150, 1, 0.06, 0.03);
+        ps.push({ t, freq: 300 + r()*150, dur: 0.06, peak: 0.03 });
         t += 0.14 + r()*0.1;
       }
+      pulseTrain(ac, dest, ps, 1);
       return t - t0 + 0.1;
     } },
   badger: { id: "badger", name: "European Badger", latin: "Meles meles",
@@ -866,4 +1026,8 @@ const CRITTER_VOICES = {
     } }
 };
 
-export { ICONS, ICON_KEY, speciesIcon, PSTYLE, note, burst, SPECIES, CRITTER_VOICES };
+export {
+  ICONS, ICON_KEY, speciesIcon, PSTYLE, COUNTERSING,
+  note, burst, noteTrain, pulseTrain,
+  SPECIES, CRITTER_VOICES
+};
