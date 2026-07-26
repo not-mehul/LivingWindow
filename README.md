@@ -85,6 +85,41 @@ means, and the ops number is what tells them apart: if it is high and the frame
 is slow, batch; if it is low and the frame is still slow, the cost is overdraw
 and no amount of batching will touch it.
 
+### The bench, and the trajectory recorder
+
+`tools/` holds two harnesses. Neither is part of the piece; both need a static
+server running and drive a headless Chromium through Playwright.
+
+```bash
+node tools/bench.mjs        label    # frame cost per place
+node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
+```
+
+`bench.mjs` reports the time a frame really takes — it hands the page a
+synthetic 60 fps clock, because `adaptQuality` otherwise settles on a different
+render scale for every scene and no two measurements can then be compared, and
+it forces both canvases to finish before stopping the clock.
+
+`trajectory.mjs` is the one to reach for before touching how anything moves. It
+seeds `Math.random`, silences the audio schedulers (they run on real timers and
+draw from the same random stream, so left alive no two runs agree), rewinds the
+scene to a fixed start, and records two things every frame for 900 frames: the
+state of every critter, actor, flyer, ripple and meteor, **and the arguments
+handed to every painter**. Both matter, and for different reasons — a state
+dump proves a deer still decides to stop grazing on the same tick, and the
+paint log proves it is still drawn with the same crouch and the same wing
+flare.
+
+How much to trust it: across two runs of the same build, all ten scenes give
+byte-identical **state**, and seven of the ten give byte-identical **paint**.
+The three that do not are the night scenes, and they differ only in firefly
+positions in the third decimal of a pixel — the fireflies are seeded during
+`reseed`, which runs when the place changes and therefore before the recorder
+puts the random stream back to a known point. So: treat any state difference as
+real, and any paint difference larger than a firefly's third decimal as real
+too. Closing that last gap means resetting the stream before the place change
+rather than after it.
+
 ### A note on caching
 
 There is no build step, so the stylesheet and every module carry an explicit

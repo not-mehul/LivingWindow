@@ -62,6 +62,14 @@ function emitSubtitle(sp, az, depth, dur) {
 const scene = new Scene(document.getElementById("scene"), document.getElementById("sky"));
 const audio = new AudioEngine({ scene, emit: emitSubtitle });
 
+/* Under ?perf=1 only, put the scene and the engine where a bench can reach
+   them. Comparing pictures can tell you the land still looks like the land;
+   it cannot tell you a deer still decides to graze at the same moment. For
+   that you need to read the animals themselves. */
+if (new URLSearchParams(location.search).has("perf")) {
+  window.__lw = { scene, audio, state };
+}
+
 /* Bind a handler by id, tolerating an element that isn't there. A stale
    cached script against fresh markup used to throw here and take every
    later control down with it; now the odd missing control is just missing. */
