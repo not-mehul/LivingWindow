@@ -47,7 +47,9 @@ const state = {
   volume: 0.75,
   spatial: true,
   subtitles: true,
-  listening: false
+  listening: false,
+  timeFlow: true,     // the hours turn on their own
+  timeSpeed: 1        // 1 = a full hour of the day every 30 minutes
 };
 function sessionSerial(seed) {
   const s = seed.toString(16).toUpperCase().padStart(8, "0");

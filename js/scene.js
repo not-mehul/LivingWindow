@@ -5,8 +5,8 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js";
-import { PSTYLE } from "./species.js";
+} from "./util.js?v=3";
+import { PSTYLE } from "./species.js?v=3";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -33,8 +33,31 @@ class Scene {
     ro.observe(canvas);
     this.resize();
     this.last = performance.now();
+    this.active = true;
     this._frame = (n) => this.frame(n);   // bound once, not re-created each frame
     requestAnimationFrame(this._frame);
+  }
+
+  /* The window shut: stop the world entirely — no drawing, no spawning, no
+     drifting on in the dark. Opening it again starts a fresh, empty land. */
+  setActive(on) {
+    if (on === this.active) return;
+    this.active = on;
+    if (on) {
+      this.last = performance.now();
+      this.warm = 0;             // judge the frame rate afresh, not on the first paint
+      requestAnimationFrame(this._frame);
+    }
+  }
+
+  /* Everything living, gone — leaving only the land itself. */
+  clearLife() {
+    this.actors.length = 0;
+    this.critters.length = 0;
+    this.flyers.length = 0;
+    this.ripples.length = 0;
+    this.fishRings.length = 0;
+    this.meteors.length = 0;
   }
 
   refreshTokens() {
@@ -153,6 +176,50 @@ class Scene {
           ph: rng()*Math.PI*2, sp: 0.004 + rng()*0.009, drift: (rng()-0.5)*0.012 });
       }
     }
+    // The near edge of the world: whatever grows right up against the glass.
+    // It is drawn last of all, so the animals pass behind it — the one cue
+    // that most convinces the eye there is depth here at all.
+    this.fg = [];
+    if (loc === "meadow") {
+      for (let i = 0; i < 15; i++) {
+        const edge = rng() < 0.78;
+        this.fg.push({ x: edge ? (rng() < 0.5 ? rng()*0.3 - 0.03 : 0.73 + rng()*0.3) : rng(),
+          h: edge ? 0.13 + rng()*0.17 : 0.05 + rng()*0.05,
+          ph: rng()*Math.PI*2, lean: (rng() - 0.5)*0.9, head: rng() < 0.3 });
+      }
+    } else if (loc === "forest") {
+      this.fgTrunks = [
+        { x: -0.02 + rng()*0.1, w: 0.028 + rng()*0.026, lean: (rng() - 0.5)*0.03 },
+        { x: 0.92 + rng()*0.1, w: 0.026 + rng()*0.03, lean: (rng() - 0.5)*0.03 }
+      ];
+      for (let i = 0; i < 5; i++) {
+        this.fg.push({ x: rng() < 0.5 ? rng()*0.24 - 0.02 : 0.78 + rng()*0.24,
+          h: 0.12 + rng()*0.1, ph: rng()*Math.PI*2,
+          lean: (rng() - 0.5)*0.8, blades: 4 + Math.floor(rng()*3) });
+      }
+    } else if (loc === "beach") {
+      for (let i = 0; i < 16; i++) {
+        const side = rng() < 0.5;
+        this.fg.push({ x: side ? rng()*0.3 - 0.02 : 0.72 + rng()*0.3,
+          h: 0.13 + rng()*0.13, ph: rng()*Math.PI*2, lean: (rng() - 0.5)*1.1 });
+      }
+    } else if (loc === "wetland") {
+      for (let i = 0; i < 9; i++) {
+        this.fg.push({ x: rng() < 0.5 ? rng()*0.26 - 0.03 : 0.77 + rng()*0.26,
+          h: 0.26 + rng()*0.2,
+          ph: rng()*Math.PI*2, lean: (rng() - 0.5)*0.5, head: rng() < 0.5 });
+      }
+    } else {
+      // Cables strung the width of the street between two poles, hanging in
+      // the catenary a real wire makes. Both ends are attached to something.
+      this.poleX = [0.06 + rng()*0.1, 0.84 + rng()*0.1];
+      this.poleTop = [0.10 + rng()*0.05, 0.13 + rng()*0.05];
+      const nWire = 2 + Math.floor(rng()*2);
+      for (let i = 0; i < nWire; i++) {
+        this.fg.push({ drop: i*0.028 + rng()*0.012, sag: 0.06 + rng()*0.05 });
+      }
+    }
+
     // Points of light glinting off moving water.
     this.glints = [];
     if (loc === "beach" || loc === "wetland") {
@@ -167,10 +234,20 @@ class Scene {
       this.hillB = this.makeRidge(rng, 0.78, 0.07);
       this.treeX = rng() < 0.5 ? 0.12 + rng()*0.1 : 0.78 + rng()*0.1;
       this.tree = this.makeTree(rng);
+      // Foliage gathered at the ends of the branches. A tree standing bare in
+      // a summer field is the one thing in this view that never looked right.
+      this.treeLeaves = [];
+      for (const sg of this.tree) {
+        if (sg.w > 1 || rng() < 0.25) continue;
+        this.treeLeaves.push({ x: sg.x2, y: sg.y2, r: 0.026 + rng()*0.03,
+          dx: (rng()-0.5)*0.02, dy: (rng()-0.5)*0.02 });
+      }
       this.grass = this.makeGrass(rng, 110, 0.03, 0.05);
-      // A hedgerow running along the near hill, a couple of far trees,
-      // wildflowers and stones.
-      this.hedge = this.makeHedgerow(rng, this.hillB);
+      // A hedgerow running across the middle distance — the field boundary
+      // that stops the middle of the picture from being an empty band of
+      // colour — then a couple of far trees, wildflowers and stones.
+      this.hedgeLine = (x) => (this.hillA(x) + this.hillB(x))*0.5 + 0.012;
+      this.hedge = this.makeHedgerow(rng, this.hedgeLine);
       // a couple of shrubs standing out on their own, away from the hedge line
       this.shrubs = [];
       for (let i = 0; i < 2 + Math.floor(rng()*3); i++) {
@@ -239,9 +316,9 @@ class Scene {
     } else if (loc === "forest") {
       this.hillA = this.makeRidge(rng, 0.55, 0.06);
       this.trunksFar = []; this.trunksMid = []; this.trunksNear = [];
-      for (let i = 0; i < 11; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 1.6 + rng()*1.4));
-      for (let i = 0; i < 7; i++)  this.trunksMid.push(this.makeTrunk(rng, 0.23 + rng()*0.10, 2.4 + rng()*1.8));
-      for (let i = 0; i < 6; i++)  this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 3.5 + rng()*3));
+      for (let i = 0; i < 11; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 2.8 + rng()*1.8, 0.85));
+      for (let i = 0; i < 7; i++)  this.trunksMid.push(this.makeTrunk(rng, 0.23 + rng()*0.10, 4.6 + rng()*2.8, 1));
+      for (let i = 0; i < 6; i++)  this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 7.5 + rng()*5, 1.25));
       this.grass = this.makeGrass(rng, 64, 0.04, 0.07);
       // undergrowth: ferns, mushrooms and a slow drift of falling leaves
       this.ferns = [];
@@ -251,6 +328,14 @@ class Scene {
       this.mushrooms = [];
       for (let i = 0; i < 6 + Math.floor(rng()*5); i++) {
         this.mushrooms.push({ x: rng(), size: 0.006 + rng()*0.011, tall: rng() < 0.5, tone: rng() });
+      }
+      // Pools of light let through the canopy. They drift as the crowns move
+      // and breathe as the leaves open and close over them.
+      this.dapples = [];
+      for (let i = 0; i < (REDUCED ? 4 : 11); i++) {
+        this.dapples.push({ x: rng(), y: 0.935 + rng()*0.055,
+          w: 0.03 + rng()*0.075, ph: rng()*Math.PI*2,
+          sp: 0.002 + rng()*0.004, tw: 0.25 + rng()*0.5 });
       }
       this.leaves = [];
       for (let i = 0; i < (REDUCED ? 4 : 13); i++) {
@@ -274,6 +359,7 @@ class Scene {
       this.horizonY = 0.50 + rng()*0.05;
       this.shoreY = 0.80 + rng()*0.03;
       this.foam = [{ p: rng() }, { p: rng() }, { p: rng() }];
+      this.wet = 0;          // how far up the sand the last wave reached
       this.duneSide = rng() < 0.5 ? 0 : 1;
       this.duneGrass = [];
       for (let i = 0; i < 32; i++) {
@@ -355,7 +441,13 @@ class Scene {
         b.smoke = rng()*Math.PI*2;
         b.lit = [];
         const n = 3 + Math.floor(rng() * 9);
-        for (let i = 0; i < n; i++) b.lit.push({ u: 0.12 + rng()*0.76, v: 0.08 + rng()*0.8, ph: rng()*Math.PI*2 });
+        for (let i = 0; i < n; i++) {
+          // Each window keeps its own hours: on for a while, off for a while,
+          // switching over minutes rather than flickering like a candle.
+          b.lit.push({ u: 0.12 + rng()*0.76, v: 0.08 + rng()*0.8, ph: rng()*Math.PI*2,
+            on: rng() < 0.72, next: 20 + rng()*160, flicker: rng() < 0.12 });
+        }
+        b.vent = rng() < 0.3 ? { u: 0.2 + rng()*0.6, ph: rng()*Math.PI*2 } : null;
       }
       // street-level lamps that warm the pavement after dark
       this.streetlamps = [];
@@ -409,10 +501,19 @@ class Scene {
     grow(0, 0, -Math.PI/2 + (rng()-0.5)*0.2, 0.13, 4);
     return segs;
   }
-  makeTrunk(rng, top, w) {
+  makeTrunk(rng, top, w, crown) {
     const canopy = [];
-    const nb = 2 + Math.floor(rng()*3);
-    for (let i = 0; i < nb; i++) canopy.push({ dx: (rng()-0.5)*0.10, dy: (rng()-0.3)*0.08, r: 0.04 + rng()*0.05 });
+    const k = crown || 1;
+    const nb = 4 + Math.floor(rng()*3);
+    // The clump always has a blob square on the trunk top, and the rest are
+    // gathered tightly around it — a crown grows out of its own tree.
+    canopy.push({ dx: 0, dy: -0.012*k, r: (0.042 + rng()*0.032)*k });
+    for (let i = 1; i < nb; i++) {
+      // spread wider than tall, so a crown sits in the air like a crown and
+      // not like a ball balanced on a pole
+      canopy.push({ dx: (rng()-0.5)*0.075*k, dy: (rng()-0.62)*0.032*k,
+        r: (0.028 + rng()*0.038)*k });
+    }
     return { x: 0.05 + rng()*0.9, top, w, lean: (rng()-0.5)*0.02, canopy };
   }
   makeSkyline(rng, hBase, hVar, wMin, wVar) {
@@ -621,7 +722,11 @@ class Scene {
       id, x: x01, y: y01, perchType,
       s: Math.max(3.5, Math.min(16, 15.5 - depth*0.62)) * hs * ivar.scale,   // far = smaller, near = bigger
       t: 0, dur, alpha: 1, flip: x01 > 0.55, ivar,
-      linger: 1.4 + Math.random()*1.8, leave: null,
+      // Most callers say their piece and move on. About a third settle in:
+      // they stay a good while, preening and looking about the place, and
+      // leave in their own time.
+      linger: Math.random() < 0.34 ? 14 + Math.random()*34 : 2 + Math.random()*4.5,
+      leave: null,
       depthMix: Math.min(0.42, 0.10 + depth*0.013), data: {}
     };
     if (sp.layer === "far") {
@@ -679,27 +784,41 @@ class Scene {
       a.linger = 4.5 + Math.random()*6;
     }
 
-    // Entrance: the behaviour branch has fixed the resting spot; arrive there by
-    // gliding (fliers) or hopping in from the side (ground), fading up as we go,
-    // and only begin the call once settled (a.singAt).
+    // Entrance: the behaviour branch has fixed the resting spot; arrive there
+    // from off the frame, and only begin the call once settled (a.singAt).
     a.restX = a.x; a.restY = a.y;
     a.enter = enter; a.singAt = enter;
     a.enterFromX = a.x; a.enterFromY = a.y;
     if (enter > 0) {
-      a.alpha = 0;
       const ground = a.beh === "frog" || a.beh === "wader" || a.beh === "duck";
-      const side = a.flip ? 1 : -1;
       if (a.beh === "cockerel") {
         // Comes up over the brow of the hill from the farm on the far side.
-        a.enterFromX = a.restX - side*0.012;
+        a.alpha = 0;
+        a.enterFromX = a.restX + (a.flip ? -1 : 1)*0.012;
         a.enterFromY = a.restY + 0.035;
       } else if (a.beh === "cuckoo") {
-        a.enterFromX = a.restX + side*(0.10 + Math.random()*0.06);
+        // In along the skyline on quick shallow beats, to the treetop.
+        a.alpha = 0;
+        a.enterFromX = a.restX + (a.flip ? 1 : -1)*(0.10 + Math.random()*0.06);
         a.enterFromY = a.restY - 0.01;
+      } else if (a.beh === "perch") {
+        // A bird arrives on the wing: in over the edge of the frame, down
+        // across the open air, a flare at the last moment, and only then is
+        // it standing on the branch. Nothing simply appears out of nothing.
+        a.flightIn = true;
+        a.alpha = 1;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        a.enterFromX = side < 0 ? -0.14 : 1.14;
+        a.enterFromY = Math.max(0.04, a.restY - (0.16 + Math.random()*0.26));
+        a.flip = side > 0;                     // it faces the way it is going
       } else if (ground) {
+        a.alpha = 0;
+        const side = a.flip ? 1 : -1;
         a.enterFromX = a.restX + side * (0.06 + Math.random()*0.05);
         a.enterFromY = a.restY;
       } else {
+        a.alpha = 0;
+        const side = a.flip ? 1 : -1;
         a.enterFromX = a.restX + side * (0.04 + Math.random()*0.04);
         a.enterFromY = a.restY - (0.06 + Math.random()*0.06);
       }
@@ -707,7 +826,21 @@ class Scene {
     }
 
     this.actors.push(a);
-    if (this.actors.length > 7) this.actors.shift();
+    // With settlers about, the stage can fill. Rather than blinking the
+    // earliest guest out of existence, ask it to leave the way it arrived.
+    if (this.actors.length > 8) {
+      const old = this.actors.find(x => !x.leave);
+      if (!old) { this.actors.shift(); return; }
+      old.leaveT = 0;
+      old.flyDir = old.flip ? -1 : 1;
+      old.launchX = old.x; old.launchY = old.y;
+      old.leave = old.beh === "perch" ? "fly"
+        : old.beh === "owl" ? "glide"
+        : old.beh === "cuckoo" ? "fly"
+        : old.beh === "cockerel" ? "sink"
+        : old.beh === "pheasant" ? "walkoff"
+        : old.beh === "egret" ? "heronoff" : "fade";
+    }
   }
 
   fishRise(x01) {
@@ -724,6 +857,7 @@ class Scene {
   }
 
   frame(now) {
+    if (!this.active) return;                // the window is shut; nothing stirs
     const dt = Math.min(0.05, (now - this.last) / 1000);
     this.last = now;
     this.t += dt;
@@ -790,6 +924,7 @@ class Scene {
     this.drawActors(c, W, H, dt, bot, night);
     this.drawCritters(c, W, H, dt, bot, night);
     this.drawFlyers(c, W, H, dt, bot);
+    this.drawForeground(c, W, H, dt, bot);   // the near edge, over everything living
     this.drawFireflies(c, W, H, dt, night);
     this.drawWeather(c, W, H, dt, night);
     this.drawRipples(c, W, H, dt);
@@ -859,10 +994,13 @@ class Scene {
     const wf = state.weather === "breeze" ? 3 : 1;
     const af = (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
     for (const cl of this.clouds) {
-      cl.x += cl.s * dt * wf;
+      // Big clouds are near ones: they cross faster and hold their colour,
+      // while the small far ones hang almost still and pale away.
+      const near = Math.max(0, Math.min(1, (cl.w - 0.16)/0.22));
+      cl.x += cl.s * dt * wf * (0.5 + near);
       if (cl.x > 1.3) cl.x = -0.3;
       const cw = cl.w * W;
-      this.drawGlow(c, rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af);
+      this.drawGlow(c, rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af * (0.62 + near*0.5));
     }
   }
 
@@ -1117,6 +1255,49 @@ class Scene {
     }
   }
 
+  /* ---- depth ----
+     Where a ground animal stands, how large it looks, and how much air is
+     between it and the pane. z runs 0 at the glass to 1 at the far edge of
+     the walkable ground. Things further off sit higher in the frame, are
+     smaller, move more slowly across it, and are washed toward the colour
+     of the sky — the three cues that do most of the work of distance. */
+  groundBand() {
+    // The near end sits on the lit ground, not down in the dark strip at the
+    // very bottom of the frame — an animal standing there is a black shape on
+    // black. The far end stops short of the ridge it would otherwise climb.
+    switch (this.loc) {
+      case "meadow":  return [0.930, 0.872];
+      case "forest":  return [0.945, 0.898];
+      case "beach":   return [(this.shoreY || 0.82) + 0.125, (this.shoreY || 0.82) + 0.03];
+      case "wetland": return [(this.bankY || 0.86) + 0.035, (this.bankY || 0.86) - 0.008];
+      default:        return [0.978, 0.952];
+    }
+  }
+  groundDepth(z, bot) {
+    const [near, far] = this.groundBand();
+    const zz = Math.max(0, Math.min(1, z === undefined ? 0.5 : z));
+    return {
+      y: near + (far - near)*zz,
+      scale: 1.22 - zz*0.62,
+      speed: 1 - zz*0.55,
+      // A light touch only: these animals stand on dark ground but against
+      // a pale far hill, so contrast runs both ways and a strong ramp would
+      // lose them at one end or the other.
+      col: css(mix(this.tok.inkDeep, bot, 0.03 + zz*0.10))
+    };
+  }
+
+  /* The small dark pool a body casts on the ground beneath it. Nothing
+     grounds an animal like the shadow it stands in. */
+  contactShadow(c, x, y, w, alpha) {
+    if (alpha <= 0.01) return;
+    c.save();
+    c.globalAlpha = alpha;
+    c.fillStyle = css(this.tok.inkDeep);
+    c.beginPath(); c.ellipse(x, y, w, Math.max(1, w*0.22), 0, 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
   /* Roughly how bright the day is — for daytime-only touches like motes. */
   dayness() {
     const m = this.timeMix, total = m.dawn + m.day + m.dusk + m.night || 1;
@@ -1149,6 +1330,104 @@ class Scene {
     c.globalAlpha = 1;
   }
 
+  /* The nearest layer of all, drawn over the animals: grass and reeds
+     against the glass, trunks at the frame's edge, a cable across the
+     street. Almost black, and swaying wider than anything behind it,
+     because it is close. */
+  drawForeground(c, W, H, dt, bot) {
+    if (!this.fg) return;
+    const wa = this.windAmt();
+    const near = css(mix(this.tok.inkDeep, bot, 0.015));
+    const mn = Math.min(W, H);
+
+    if (this.loc === "forest" && this.fgTrunks) {
+      c.fillStyle = near;
+      for (const tr of this.fgTrunks) {
+        const sway = Math.sin(this.t*0.7 + tr.x*5)*3*wa;
+        const bw = tr.w*W;
+        c.beginPath();
+        c.moveTo(tr.x*W - bw*0.5, H);
+        c.lineTo(tr.x*W - bw*0.5 + tr.lean*W + sway, -2);
+        c.lineTo(tr.x*W + bw*0.5 + tr.lean*W + sway, -2);
+        c.lineTo(tr.x*W + bw*0.5, H);
+        c.closePath(); c.fill();
+      }
+    }
+    if (this.loc === "city") {
+      const [pxL, pxR] = this.poleX, [ptL, ptR] = this.poleTop;
+      const swing = Math.sin(this.t*0.5)*2.5*wa;
+      c.strokeStyle = near; c.fillStyle = near; c.lineCap = "round";
+      // the two poles the wires hang from, and their crossarms
+      c.lineWidth = 5;
+      for (const [px, pt] of [[pxL, ptL], [pxR, ptR]]) {
+        c.beginPath(); c.moveTo(px*W, H + 4); c.lineTo(px*W, pt*H); c.stroke();
+        c.lineWidth = 3;
+        c.beginPath();
+        c.moveTo(px*W - 13, pt*H + 8); c.lineTo(px*W + 13, pt*H + 8);
+        c.moveTo(px*W - 9, pt*H + 20); c.lineTo(px*W + 9, pt*H + 20);
+        c.stroke();
+        c.lineWidth = 5;
+      }
+      // and the wires between them, each hanging a little lower than the last
+      c.lineWidth = 1.8;
+      for (const w of this.fg) {
+        const yL = (ptL + 0.02 + w.drop)*H, yR = (ptR + 0.02 + w.drop)*H;
+        const sag = w.sag*H + swing;
+        c.beginPath();
+        c.moveTo(pxL*W, yL);
+        c.quadraticCurveTo((pxL + pxR)*0.5*W, (yL + yR)*0.5 + sag*2, pxR*W, yR);
+        c.stroke();
+        // and the same wires carrying on off both edges of the frame
+        c.beginPath();
+        c.moveTo(pxL*W, yL);
+        c.quadraticCurveTo(pxL*W*0.5, yL + sag*0.7, -6, yL - 6);
+        c.moveTo(pxR*W, yR);
+        c.quadraticCurveTo((pxR + 1)*0.5*W, yR + sag*0.7, W + 6, yR - 6);
+        c.stroke();
+      }
+      return;
+    }
+
+    c.strokeStyle = near; c.fillStyle = near;
+    c.lineCap = "round";
+    for (const g of this.fg) {
+      const gx = g.x*W, gy = H + 4, len = g.h*H;
+      const sway = Math.sin(this.t*1.5 + g.ph)*11*wa*this.windWave(g.x) + g.lean*7;
+      c.lineWidth = Math.max(2, mn*0.009);
+      c.beginPath();
+      c.moveTo(gx, gy);
+      c.quadraticCurveTo(gx + sway*0.4, gy - len*0.6, gx + sway, gy - len);
+      c.stroke();
+      if (g.blades) {                       // a near fern, fronds and all
+        c.lineWidth = Math.max(1, mn*0.004);
+        for (let k = 1; k <= g.blades; k++) {
+          const t2 = k/(g.blades + 1);
+          const bx = gx + sway*t2, by = gy - len*t2, bl = len*0.3*(1 - t2*0.5);
+          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5); c.stroke();
+          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5); c.stroke();
+        }
+      } else if (g.head) {                  // a seed head, heavy at the tip
+        c.save();
+        c.translate(gx + sway, gy - len);
+        c.rotate(sway*0.012);
+        c.beginPath(); c.ellipse(0, mn*0.008, mn*0.006, mn*0.022, 0, 0, Math.PI*2); c.fill();
+        c.restore();
+      }
+    }
+  }
+
+  /* The air itself, thickening with distance: a soft band of haze lying
+     along the far ground. It is what keeps the middle distance from
+     reading as a flat cut-out. */
+  distanceHaze(c, W, H, y0, y1, strength) {
+    const g = c.createLinearGradient(0, y0*H, 0, y1*H);
+    g.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
+    g.addColorStop(0.45, `rgba(${this.tok.fogRGB}, ${strength})`);
+    g.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
+    c.fillStyle = g;
+    c.fillRect(0, y0*H, W, (y1 - y0)*H);
+  }
+
   /* Sparse points of light flashing off moving water. */
   drawWaterGlints(c, W, H, y0, y1, night) {
     if (!this.glints) return;
@@ -1171,8 +1450,9 @@ class Scene {
     const farTree = css(mix(this.tok.ink, bot, 0.38));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
     this.drawCattle(c, W, H, dt, this.hillA, bot);
+    this.distanceHaze(c, W, H, 0.52, 0.82, 0.075*(1 - this.nightness()*0.55));
+    this.drawHedgerow(c, W, H, this.hedgeLine, bot);
     this.drawRidge(c, this.hillB, mix(this.tok.ink, bot, 0.18), W, H);
-    this.drawHedgerow(c, W, H, this.hillB, bot);
     const shrubCol = css(mix(this.tok.inkDeep, bot, 0.15));
     for (const bu of (this.shrubs || [])) {
       this.bushShape(c, bu.x, bu.y, bu.r, bu.seed, W, H, shrubCol);
@@ -1190,7 +1470,20 @@ class Scene {
       c.lineTo(this.treeX*W + s.x2*W*0.5 + sway, baseY + s.y2*H*0.9);
       c.stroke();
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.04));
+    // the crown, swaying with the branches that carry it
+    if (this.treeLeaves) {
+      const mnT = Math.min(W, H);
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
+      for (const lf of this.treeLeaves) {
+        const sway = Math.sin(this.t*1.1 + lf.y*8) * 3.6 *
+          (state.weather === "breeze" ? 0.85 : 0.22) * treeWind;
+        c.beginPath();
+        c.arc(this.treeX*W + (lf.x + lf.dx)*W*0.5 + sway,
+          baseY + (lf.y + lf.dy)*H*0.9, lf.r*mnT, 0, Math.PI*2);
+        c.fill();
+      }
+    }
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
     c.beginPath();
     c.moveTo(0, H); c.lineTo(0, H*0.92);
     c.quadraticCurveTo(W*0.5, H*0.88, W, H*0.93);
@@ -1226,17 +1519,30 @@ class Scene {
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.5), W, H);
     const wa = this.windAmt();
     const mn = Math.min(W, H);
+    // One long breath of wind that every crown answers together, over the top
+    // of each tree's own smaller motion — a wood moves as one thing.
+    const gust = 1 + 0.85*Math.sin(this.t*0.23 + (this.gustPh || 0))
+                   + 0.3*Math.sin(this.t*0.61 + 1.7);
     const drawTrunk = (tr, colStr) => {
       const groundY = H * 0.93;
       const topY = H * tr.top;
-      const sway = Math.sin(this.t*1.1 + tr.x*9) * 2.2 * wa * this.windWave(tr.x);
+      const sway = (Math.sin(this.t*1.1 + tr.x*9)*0.55 + gust*1.15)
+        * 2.2 * wa * this.windWave(tr.x);
       c.strokeStyle = colStr; c.fillStyle = colStr;
       c.lineCap = "round";
       c.lineWidth = tr.w;
       const bx = tr.x*W + tr.lean*W*2 + sway;
+      // the butt of the tree, where it spreads into the ground
+      c.beginPath();
+      c.moveTo(tr.x*W - tr.w*1.15, groundY + 2);
+      c.quadraticCurveTo(tr.x*W - tr.w*0.55, groundY - H*0.05, tr.x*W - tr.w*0.5, groundY - H*0.09);
+      c.lineTo(tr.x*W + tr.w*0.5, groundY - H*0.09);
+      c.quadraticCurveTo(tr.x*W + tr.w*0.55, groundY - H*0.05, tr.x*W + tr.w*1.15, groundY + 2);
+      c.closePath(); c.fill();
       c.beginPath();
       c.moveTo(tr.x*W, groundY);
-      c.quadraticCurveTo(tr.x*W + tr.lean*W, (groundY+topY)/2, bx, topY);
+      // carried a little way up into the crown, so the join is never a gap
+      c.quadraticCurveTo(tr.x*W + tr.lean*W, (groundY+topY)/2, bx, topY - H*0.03);
       c.stroke();
       for (const b of tr.canopy) {
         c.beginPath();
@@ -1256,14 +1562,38 @@ class Scene {
     c.fillStyle = haze; c.fillRect(0, H*0.42, W, H*0.4);
     const nearCol = css(mix(this.tok.inkDeep, bot, 0.10));
     for (const tr of this.trunksNear) drawTrunk(tr, nearCol);
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05));
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
     c.fillRect(0, H*0.93, W, H*0.07);
+    this.drawDapples(c, W, H, dt, gust);
     this.drawFerns(c, W, H, bot);
     this.drawMushrooms(c, W, H, bot);
     this.drawGrassTufts(c, W, H, this.grass, () => 0.93,
       css(mix(this.tok.inkDeep, bot, 0.12)));
     this.drawMotes(c, W, H, dt, this.dayness());
     this.drawFallingLeaves(c, W, H, dt, bot);
+  }
+
+  /* Light through the canopy, pooled on the floor. It slides with the gust
+     the crowns are answering, so the light and the trees move together. */
+  drawDapples(c, W, H, dt, gust) {
+    if (!this.dapples) return;
+    const day = this.dayness();
+    if (day < 0.12) return;
+    const mn = Math.min(W, H);
+    c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+    for (const d of this.dapples) {
+      d.x += d.sp*dt;
+      if (d.x > 1.08) d.x -= 1.16;
+      const tw = 0.55 + 0.45*Math.sin(this.t*d.tw + d.ph);
+      const a = day*0.085*tw;
+      if (a < 0.01) continue;
+      const px = (d.x + gust*0.004)*W, py = d.y*H;
+      c.globalAlpha = a;
+      c.beginPath();
+      c.ellipse(px, py, d.w*W*0.5, d.w*W*0.13, 0, 0, Math.PI*2);
+      c.fill();
+    }
+    c.globalAlpha = 1;
   }
 
   drawFerns(c, W, H, bot) {
@@ -1324,6 +1654,8 @@ class Scene {
     c.fillRect(0, hy, W, sy - hy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.14)`;
     c.fillRect(0, hy, W, 1);
+    this.distanceHaze(c, W, H, this.horizonY - 0.07, this.horizonY + 0.1,
+      0.09*(1 - night*0.55));
     if (this.islet) {
       const ix = this.islet.x*W, iy = hy + (sy - hy)*0.14;
       const iw = this.islet.w*W, ih = this.islet.h*H;
@@ -1368,6 +1700,7 @@ class Scene {
     c.fillRect(0, sy, W, H - sy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.10)`;
     c.fillRect(0, sy, W, 3);
+    this.drawWetSand(c, W, H, dt, top, bot, night);
     // pebbles and the odd shell strewn along the tide line
     for (const pb of (this.pebbles || [])) {
       const r = pb.r*Math.min(W, H);
@@ -1399,17 +1732,82 @@ class Scene {
       css(mix(this.tok.inkDeep, bot, 0.18)));
   }
 
+  /* The sand the sea has just been over. It runs up the beach behind each
+     wave and drains slowly back, and while it is wet it holds the light —
+     the sky, the sun, and a smear of whatever is standing on it. */
+  drawWetSand(c, W, H, dt, top, bot, night) {
+    const sy = this.shoreY;
+    // the wave's reach, chasing up quickly and draining away slowly
+    let reach = 0;
+    for (const f of this.foam) {
+      const ease = f.p*f.p;
+      reach = Math.max(reach, (0.12 + 0.88*ease) * Math.sin(Math.PI*Math.min(1, f.p*1.1)));
+    }
+    const target = reach*0.14;
+    this.wet += (target - this.wet) * Math.min(1, dt*(target > this.wet ? 3.2 : 0.5));
+    if (this.wet < 0.004) return;
+    const y0 = sy*H, y1 = (sy + this.wet)*H;
+
+    // the sheen itself, brightest at the water's edge
+    const g = c.createLinearGradient(0, y0, 0, y1);
+    g.addColorStop(0, `rgba(${this.tok.foamRGB}, ${0.3*(1 - night*0.45)})`);
+    g.addColorStop(0.55, `rgba(${this.tok.foamRGB}, ${0.13*(1 - night*0.45)})`);
+    g.addColorStop(1, `rgba(${this.tok.foamRGB}, 0)`);
+    c.fillStyle = g;
+    c.fillRect(0, y0, W, y1 - y0);
+
+    // the sun or moon laid out along it in a soft column
+    if (this.celX !== undefined) {
+      const lg = c.createLinearGradient(0, y0, 0, y1);
+      lg.addColorStop(0, `rgba(${this.tok.foamRGB}, 0.22)`);
+      lg.addColorStop(1, `rgba(${this.tok.foamRGB}, 0)`);
+      c.fillStyle = lg;
+      c.fillRect(this.celX*W - W*0.045, y0, W*0.09, y1 - y0);
+    }
+
+    // and the posts standing in it, upside down and coming apart
+    c.save();
+    c.beginPath(); c.rect(0, y0, W, y1 - y0); c.clip();
+    c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.2));
+    c.lineCap = "round";
+    for (const p of this.posts) {
+      const h = p.h*H*0.75;
+      c.globalAlpha = 0.3;
+      c.lineWidth = 3;
+      c.beginPath();
+      c.moveTo(p.x*W, y0);
+      c.lineTo(p.x*W + Math.sin(this.t*0.9 + p.x*6)*2.5, y0 + h);
+      c.stroke();
+    }
+    // the ripple of the drained water breaking the reflections
+    c.globalAlpha = 0.16;
+    c.strokeStyle = `rgba(${this.tok.foamRGB}, 1)`;
+    c.lineWidth = 1;
+    for (let k = 0; k < 4; k++) {
+      const ry = y0 + (y1 - y0)*(0.2 + k*0.22);
+      c.beginPath();
+      c.moveTo(0, ry + Math.sin(this.t*0.7 + k)*1.5);
+      c.lineTo(W, ry + Math.sin(this.t*0.7 + k + 2)*1.5);
+      c.stroke();
+    }
+    c.restore();
+    c.globalAlpha = 1;
+  }
+
   drawWetland(c, W, H, dt, top, bot, night) {
     this.drawSkyBirds(c, W, H, dt, bot, night);
     this.drawRidge(c, this.treeline, mix(this.tok.ink, bot, 0.42), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.36));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
+    this.distanceHaze(c, W, H, this.treeline(0.5) - 0.06, this.waterY + 0.06,
+      0.08*(1 - this.nightness()*0.55));
     const wy = this.waterY * H, by = this.bankY * H;
     const wg = c.createLinearGradient(0, wy, 0, by);
     wg.addColorStop(0, css(mix(this.tok.sea, top, 0.45)));
     wg.addColorStop(1, css(mix(this.tok.sea, bot, 0.20)));
     c.fillStyle = wg;
     c.fillRect(0, wy, W, by - wy);
+    this.drawReflections(c, W, H, top, bot, night);
     this.drawWaterGlints(c, W, H, wy, by, night);
     if (this.celX !== undefined) {
       const lx = this.celX * W;
@@ -1468,7 +1866,8 @@ class Scene {
         c.beginPath(); c.arc(fr.x*W, fr.y*H, 2, 0, Math.PI*2); c.fill();
       }
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.06));
+    this.drawWaterMist(c, W, H, dt, night);
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.15));
     c.beginPath();
     c.moveTo(0, H); c.lineTo(0, by);
     c.quadraticCurveTo(W*0.5, by - H*0.015, W, by);
@@ -1495,6 +1894,68 @@ class Scene {
     this.drawMotes(c, W, H, dt, this.dayness());
   }
 
+  /* The far bank, upside down in the water below it: the treeline and its
+     trees, squashed, dimmed, and cut across by every ripple that passes. */
+  drawReflections(c, W, H, top, bot, night) {
+    const wy = this.waterY*H;
+    // A reflection only reaches a little way out from the bank it belongs to,
+    // and it is broken up the further it comes — so it lives in a shallow
+    // band just below the far shore, not across the whole pool.
+    const zone = Math.min((this.bankY - this.waterY)*0.42, 0.13) * H;
+    c.save();
+    c.beginPath(); c.rect(0, wy, W, zone); c.clip();
+    const col = css(mix(this.tok.ink, bot, 0.52));
+    const water = css(mix(this.tok.sea, top, 0.45));
+    c.globalAlpha = 0.34*(1 - night*0.5);
+    c.fillStyle = col;
+    // the trees along the bank, upside down and squashed
+    for (const t of (this.distantTrees || [])) {
+      const drop = (this.waterY - t.y)*0.5;
+      const ty = wy + drop*H;
+      const rr = t.r*Math.min(W, H)*0.85, hh = t.h*H*0.5;
+      c.fillRect(t.x*W - rr*0.11, ty, rr*0.22, hh);
+      c.beginPath(); c.ellipse(t.x*W, ty + hh, rr, rr*0.7, 0, 0, Math.PI*2); c.fill();
+    }
+    // the ripples that pass through them: strips of open water laid back over
+    // the reflection, never erasing the pool itself
+    c.fillStyle = water;
+    for (let k = 0; k < 10; k++) {
+      const ry = wy + zone*(0.05 + k*0.1) + Math.sin(this.t*0.55 + k*1.3)*2;
+      c.globalAlpha = (0.34 + (k % 3)*0.13) * (0.35 + k/12);
+      c.fillRect(0, ry, W, 1.4 + (k % 2));
+    }
+    // and it fades out entirely before it reaches the middle of the water
+    const fade = c.createLinearGradient(0, wy, 0, wy + zone);
+    fade.addColorStop(0, `rgba(0,0,0,0)`);
+    fade.addColorStop(1, water);
+    c.globalAlpha = 0.85;
+    c.fillStyle = fade;
+    c.fillRect(0, wy, W, zone);
+    c.restore();
+    c.globalAlpha = 1;
+  }
+
+  /* Mist lying on the water before the sun has any strength in it. */
+  drawWaterMist(c, W, H, dt, night) {
+    const dawnish = this.timeMix.dawn /
+      (this.timeMix.dawn + this.timeMix.day + this.timeMix.dusk + this.timeMix.night || 1);
+    const a = dawnish*0.95 + (state.weather === "fog" ? 0.45 : 0);
+    if (a < 0.02) return;
+    const wy = this.waterY*H, by = this.bankY*H;
+    this.mistX = (this.mistX || 0) + dt*0.004;
+    for (let k = 0; k < 3; k++) {
+      const band = wy + (by - wy)*(0.04 + k*0.19);
+      const h = (by - wy)*(0.2 + k*0.06);
+      const drift = Math.sin(this.mistX*6 + k*2)*W*0.05;
+      const g = c.createLinearGradient(0, band - h, 0, band + h);
+      g.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
+      g.addColorStop(0.5, `rgba(${this.tok.fogRGB}, ${a*(0.42 - k*0.09)})`);
+      g.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
+      c.fillStyle = g;
+      c.fillRect(-W*0.1 + drift, band - h, W*1.2, h*2);
+    }
+  }
+
   drawCity(c, W, H, dt, bot, night) {
     this.drawSkyBirds(c, W, H, dt, bot, night);
     const groundY = H * 0.95;
@@ -1502,6 +1963,9 @@ class Scene {
     for (const b of this.backBlocks) {
       c.fillRect(b.x*W, groundY - (b.h + 0.18)*H, b.w*W, (b.h + 0.18)*H);
     }
+    // The air between the two skylines, so the near blocks come forward off
+    // the far ones instead of sitting in the same plane.
+    this.distanceHaze(c, W, H, 0.30, 0.98, 0.115*(1 - night*0.5));
     const frontColor = mix(this.tok.inkDeep, bot, 0.10);
     const frontStr = css(frontColor);
     c.fillStyle = frontStr;
@@ -1535,13 +1999,45 @@ class Scene {
       for (const b of this.frontBlocks) {
         const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = groundY - bh;
         for (const wnd of b.lit) {
-          const flick = 0.75 + 0.25*Math.sin(this.t*0.6 + wnd.ph);
-          c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.55 * night * flick})`;
+          // somebody comes home, somebody goes to bed
+          wnd.next -= dt;
+          if (wnd.next <= 0) {
+            wnd.on = !wnd.on;
+            wnd.next = (wnd.on ? 45 : 25) + Math.random()*150;
+            wnd.fade = 0;
+          }
+          wnd.fade = Math.min(1, (wnd.fade === undefined ? 1 : wnd.fade) + dt*0.7);
+          const lvl = (wnd.on ? wnd.fade : 1 - wnd.fade);
+          if (lvl < 0.02) continue;
+          const flick = wnd.flicker ? 0.75 + 0.25*Math.sin(this.t*3.1 + wnd.ph) : 1;
+          c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.55 * night * lvl * flick})`;
           c.fillRect(bx + wnd.u*bw, byTop + wnd.v*bh, 2.5, 3.5);
         }
       }
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.04));
+    // steam standing off a rooftop vent, leaning with the wind
+    const wv = this.windAmt();
+    for (const b of this.frontBlocks) {
+      if (!b.vent) continue;
+      const bx = b.x*W, bw = b.w*W, byTop = groundY - b.h*H;
+      const vx = bx + b.vent.u*bw;
+      c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+      for (let k = 0; k < 5; k++) {
+        const age = ((this.t*0.16 + b.vent.ph + k*0.2) % 1);
+        const rise = age*H*0.13;
+        const a = (1 - age)*0.13*(0.5 + wv);
+        if (a < 0.01) continue;
+        c.globalAlpha = a;
+        c.beginPath();
+        c.arc(vx + Math.sin(age*3 + b.vent.ph)*8 + age*26*wv,
+          byTop - 3 - rise, 3 + age*13, 0, Math.PI*2);
+        c.fill();
+      }
+      c.globalAlpha = 1;
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.16));
+      c.fillRect(vx - 3, byTop - 5, 6, 5);
+    }
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
     c.fillRect(0, groundY, W, H - groundY);
     // street lamps warming the pavement after dark
     if (night > 0.2 && this.streetlamps) {
@@ -1601,13 +2097,24 @@ class Scene {
       const a = this.actors[i];
       a.t += dt;
 
-      // Entrance: glide/hop from the arrival offset to the resting spot, fading in.
+      // Entrance. A flying bird crosses the open air on a curve, losing speed
+      // as it comes in; everything else glides or hops the short way in.
+      const px0 = a.x, py0 = a.y;
       if (a.enter > 0 && a.t < a.enter) {
-        const k = a.t / a.enter, e = k*k*(3 - 2*k);   // smoothstep
-        a.x = a.enterFromX + (a.restX - a.enterFromX) * e;
-        a.y = a.enterFromY + (a.restY - a.enterFromY) * e;
-        a.alpha = Math.min(1, e * 1.3);
-      } else if (a.enter > 0 && !a.leave && a.alpha < 1) {
+        const k = a.t / a.enter;
+        if (a.flightIn) {
+          const ex = 1 - Math.pow(1 - k, 2.4);         // quick out, slow in
+          const ey = k*k*(3 - 2*k);
+          a.x = a.enterFromX + (a.restX - a.enterFromX)*ex;
+          a.y = a.enterFromY + (a.restY - a.enterFromY)*ey - Math.sin(Math.PI*k)*0.035;
+          a.alpha = 1;
+        } else {
+          const e = k*k*(3 - 2*k);                     // smoothstep
+          a.x = a.enterFromX + (a.restX - a.enterFromX) * e;
+          a.y = a.enterFromY + (a.restY - a.enterFromY) * e;
+          a.alpha = Math.min(1, e * 1.3);
+        }
+      } else if (a.enter > 0 && !a.leave && (a.alpha < 1 || a.flightIn)) {
         a.x = a.restX; a.y = a.restY; a.alpha = 1;
       }
 
@@ -1650,27 +2157,26 @@ class Scene {
           this.actors.splice(i, 1); continue;
         }
       } else if (a.leave === "fly") {
-        // A real departure: gather, spring, then climb away on beating wings.
+        // A real departure: gather, spring, then climb away on beating wings
+        // and out over the edge of the frame — not a dissolve in mid-air.
         a.leaveT += dt;
         const crouch = 0.16;
         if (a.leaveT < crouch) {
           a.y = a.launchY + (a.s/H)*0.16*(a.leaveT/crouch);
         } else {
           const ft = a.leaveT - crouch;
-          a.y = a.launchY - (a.s/H)*0.16 - (0.05*ft + 0.05*ft*ft);
-          a.x = a.launchX + a.flyDir*(0.05*ft + 0.03*ft*ft);
-          a.alpha = Math.max(0, 1 - ft*0.72);
+          a.y = a.launchY - (a.s/H)*0.16 - (0.10*ft + 0.19*ft*ft);
+          a.x = a.launchX + a.flyDir*(0.26*ft + 0.38*ft*ft);
         }
-        if (a.alpha <= 0.02 || a.y < -0.12 || a.x < -0.14 || a.x > 1.14) { this.actors.splice(i, 1); continue; }
+        if (a.y < -0.16 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
       } else if (a.leave === "glide") {
-        // An owl does not spring off a branch. It tips forward, drops, and is
-        // simply gone — rowing away low on soundless wings.
+        // An owl does not spring off a branch. It tips forward, drops, and
+        // rows away low and level, out over the edge of the frame.
         a.leaveT += dt;
         const ft = a.leaveT;
         a.y = a.launchY + Math.min(0.028, ft*0.10) - 0.030*ft*ft;
-        a.x = a.launchX + a.flyDir*(0.09*ft + 0.05*ft*ft);
-        a.alpha = Math.max(0, 1 - Math.max(0, ft - 1.1)*0.85);
-        if (a.alpha <= 0.02 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
+        a.x = a.launchX + a.flyDir*(0.16*ft + 0.13*ft*ft);
+        if (a.y < -0.16 || a.x < -0.2 || a.x > 1.2) { this.actors.splice(i, 1); continue; }
       } else if (a.leave === "flush") {
         // Straight up out of the grass on clattering wings, then away low.
         a.leaveT += dt;
@@ -1731,9 +2237,15 @@ class Scene {
       if (a.beh === "perch" && !a.leave && !singingNow && a.t > a.enter + 0.6) {
         if (a.nextGest === undefined) a.nextGest = a.t + 1.5 + Math.random()*(iv0.lookEvery || 3);
         if (!a.gest && a.t >= a.nextGest) {
-          a.gest = ["preen", "stretch", "hop"][Math.floor(Math.random()*3)];
+          // preening, a wing stretched, a hop about-face, feathers fluffed
+          // out, or a long look at something only it can see
+          a.gest = ["preen", "stretch", "hop", "fluff", "peer", "preen", "fluff"]
+            [Math.floor(Math.random()*7)];
           a.gestT = 0;
-          a.gestDur = a.gest === "hop" ? 0.35 : 0.9 + Math.random()*0.5;
+          a.gestDur = a.gest === "hop" ? 0.35
+            : a.gest === "fluff" ? 0.7 + Math.random()*0.6
+            : a.gest === "peer" ? 1.2 + Math.random()*1.4
+            : 0.9 + Math.random()*0.5;
         }
       }
       if (a.gest) {
@@ -1765,7 +2277,25 @@ class Scene {
         ? Math.abs(Math.sin(a.t*13)) * a.s * 0.12 : 0;
       // Departure: 0 while perched, ramping to 1 once the bird springs into flight.
       const flyProg = a.leave === "fly" ? Math.max(0, Math.min(1, (a.leaveT - 0.16)/0.14)) : 0;
-      const flyFlap = flyProg > 0 ? Math.sin(a.leaveT*20) : 0;
+      const flyFlap = flyProg > 0 ? Math.sin(a.leaveT*21) : 0;
+      // Arrival: wings out and beating all the way in, then held high and
+      // forward for the flare that kills the last of the speed.
+      const inK = (a.flightIn && a.enter > 0 && a.t < a.enter) ? a.t/a.enter : -1;
+      const flare = inK >= 0 ? Math.pow(Math.max(0, inK - 0.7)/0.3, 1.4) : 0;
+      const flyIn = inK >= 0 ? Math.max(0, 1 - Math.pow(Math.max(0, inK - 0.86)/0.14, 2)) : 0;
+      const flapIn = inK >= 0 ? (flare > 0.15 ? 0.55 + flare*0.45 : Math.sin(a.t*23)) : 0;
+      // The body follows its own path: nose down on the descent, up in the
+      // flare, up again on the climb out.
+      let bodyRot = 0;
+      if (inK >= 0 || flyProg > 0) {
+        const vx = (a.x - px0), vy = (a.y - py0);
+        if (Math.abs(vx) > 1e-6 || Math.abs(vy) > 1e-6) {
+          const ang = Math.atan2(vy*H, Math.max(1e-4, Math.abs(vx*W)));
+          a.pitch = (a.pitch === undefined ? ang : a.pitch + (ang - a.pitch)*Math.min(1, dt*8));
+        }
+        bodyRot = Math.max(-0.55, Math.min(0.55, (a.pitch || 0)*0.75)) - flare*0.42;
+        if (a.flip) bodyRot = -bodyRot;
+      }
       // The perch twig belongs in the scene: draw it at the resting spot, and only
       // once the bird has landed — never trailing from its feet as it flies in/out.
       const landed = a.enter > 0 ? Math.max(0, Math.min(1, (a.t - a.enter)/0.2)) : 1;
@@ -1782,24 +2312,29 @@ class Scene {
           this.drawPerchFooting(c, (a.ground ? a.x : a.restX)*W, a.restY*H, a.s,
             a.perchType, bot, a.alpha * landed * (1 - flyProg));
           const hopG = a.gest === "hop" ? Math.abs(Math.sin(Math.PI*(a.gestT/a.gestDur)))*a.s*0.22 : 0;
+          const gk = a.gest ? Math.sin(Math.PI*Math.min(1, a.gestT/a.gestDur)) : 0;
+          const fluffG = a.gest === "fluff" ? gk : 0;
+          const peerG = a.gest === "peer" ? gk : 0;
           const diveRot = a.leave === "dive" ? Math.min(1.35, a.leaveT*3) : 0;
-          if (diveRot) { c.save(); c.translate(x, y); c.rotate(a.flip ? -diveRot : diveRot); }
+          const rot = diveRot ? (a.flip ? -diveRot : diveRot) : bodyRot;
+          if (rot) { c.save(); c.translate(x, y); c.rotate(rot); }
           this.paintBird(c, {
-            x: diveRot ? 0 : x,
-            y: diveRot ? 0 : y - hopBob - hopG - hopStep*a.s*0.45,
+            x: rot ? 0 : x, y: (rot ? 0 : y) - hopBob - hopG - hopStep*a.s*0.45,
             s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
             color: colStr, rim: rimStr, deep: deepStr, marks: ps,
-            plump: (ps.plump || 1) * (iv.puff || 1),
+            plump: (ps.plump || 1) * (iv.puff || 1) * (1 + fluffG*0.24),
             tailLen: (ps.tail || 1.1) * (iv.tail || 1), tailUp: !!ps.tailUp,
             billLen: ps.bill || 0.45,
             crest: ps.crest || (iv.crest && !ps.tailUp && !ps.cap), rimLight: iv.rim,
             gest: (a.gest === "preen" || a.gest === "stretch") ? a.gest : null,
             gestK: a.gest ? a.gestT/a.gestDur : 0,
             peck: a.peck || 0, legTuck: hopStep, stride,
-            sing, breath, headTurn, tailFlick, wingSettle,
-            fly: diveRot ? 1 : flyProg, flap: diveRot ? -0.4 : flyFlap, t: a.t
+            sing, breath, headTurn: headTurn + peerG*0.85, tailFlick, wingSettle,
+            fly: diveRot ? 1 : Math.max(flyProg, flyIn),
+            flap: diveRot ? -0.4 : (flyIn > 0 ? flapIn : flyFlap),
+            flare, t: a.t
           });
-          if (diveRot) c.restore();
+          if (rot) c.restore();
           break;
         }
         case "egret": {
@@ -1960,12 +2495,13 @@ class Scene {
     const hy = cy - bry*0.55 - hr*0.85 - sing*s*0.16 + preen*hr*0.6
              + peck*(bry*0.85 + legLen*0.55);
 
-    // Tail — a fan of tapered feathers off the rump; it flicks at rest and
-    // fans wide on take-off. A magpie's centre feathers run longest.
-    const tAng = (o.tailUp ? -0.9 : 0.34) - (o.tailFlick || 0)*0.5 - fly*0.55;
+    // Tail — a fan of tapered feathers off the rump; it flicks at rest, fans
+    // wide on take-off, and drops hard as an air-brake in the landing flare.
+    const flare = o.flare || 0;
+    const tAng = (o.tailUp ? -0.9 : 0.34) - (o.tailFlick || 0)*0.5 - fly*0.55 + flare*1.15;
     const tl = (o.tailLen || 1.1)*s*1.15;
     const rtx = -brx*0.72, rty = cy - bry*0.02;
-    const spread = 0.12 + fly*0.15;
+    const spread = 0.12 + fly*0.15 + flare*0.18;
     for (let k = -1; k <= 1; k++) {
       const aa = tAng + k*spread;
       const kl = tl*(1 - Math.abs(k)*(mk.shoulder ? 0.18 : 0.10));
@@ -1974,9 +2510,10 @@ class Scene {
       c.beginPath(); c.arc(tx2, ty2, s*0.08, 0, Math.PI*2); c.fill();
     }
 
-    // Legs — tarsi with toes that grip; they tuck up as the bird takes wing,
-    // and again at the top of a hop. A walker swings them instead.
-    const tuck = Math.min(1, Math.max(fly*1.5, o.legTuck || 0));
+    // Legs — tarsi with toes that grip. They tuck up as the bird takes wing,
+    // swing down and forward with the feet open as it comes in to land, and
+    // fold again at the top of a hop. A walker swings them instead.
+    const tuck = Math.min(1, Math.max(fly*1.5, o.legTuck || 0)) * (1 - flare*0.95);
     const stride = o.stride || 0;
     if (tuck < 0.95) {
       const hipY = cy + bry*0.62;
@@ -1985,8 +2522,8 @@ class Scene {
         const swing = stride ? Math.sin(stride + li*Math.PI)*s*0.22 : 0;
         const step = stride ? Math.max(0, Math.sin(stride + li*Math.PI + 0.8))*s*0.16 : 0;
         li++;
-        const fx = fx0 + swing;
-        const fy = -tuck*legLen*0.8 - step;
+        const fx = fx0 + swing + flare*s*0.5;
+        const fy = -tuck*legLen*0.8 - step - flare*s*0.1;
         c.lineWidth = Math.max(1, s*0.085);
         c.beginPath();
         c.moveTo(hpx, hipY);
@@ -3005,7 +3542,7 @@ class Scene {
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "deer", x: dir > 0 ? -0.08 : 1.08, dir,
         tx: 0.25 + Math.random()*0.5, state: "enter", t: 0, timer: 0,
-        head: 0, cycles: 2 + Math.floor(Math.random()*2), lp: 0,
+        head: 0, cycles: 2 + Math.floor(Math.random()*3), lp: 0, bp: 0,
         sz: 0.85 + Math.random()*0.3 });
     }
     if (this.loc === "beach" && night < 0.5 && n("runner") < 4 && P(0.05)) {
@@ -3132,6 +3669,9 @@ class Scene {
     for (let i = this.critters.length - 1; i >= 0; i--) {
       const cr = this.critters[i];
       cr.t += dt;
+      // where this individual stands in the depth of the field, decided once
+      if (cr.z === undefined) cr.z = Math.random();
+      const D = this.groundDepth(cr.z, bot);
       let dead = false;
       switch (cr.kind) {
         case "butterfly": {
@@ -3172,7 +3712,7 @@ class Scene {
         }
         case "deer": {
           const walking = cr.state === "enter" || cr.state === "leave" || cr.state === "walkbit";
-          if (walking) { cr.x += cr.dir*0.02*dt; cr.lp += dt*6; }
+          if (walking) { cr.x += cr.dir*0.02*dt*D.speed; cr.lp += dt*6; }
           if (cr.state === "enter" || cr.state === "walkbit") {
             if ((cr.dir > 0 && cr.x >= cr.tx) || (cr.dir < 0 && cr.x <= cr.tx)) { cr.state = "grazedown"; }
           } else if (cr.state === "grazedown") {
@@ -3185,84 +3725,145 @@ class Scene {
             cr.head = Math.max(0, cr.head - dt*1.4);
             if (cr.head <= 0) {
               cr.cycles--;
-              if (cr.cycles <= 0) { cr.state = "leave"; }
-              else {
+              if (cr.cycles <= 0) {
+                cr.state = "leave";
+                // now and then something spooks it and it goes in bounds
+                cr.bounding = Math.random() < 0.4;
+                cr.bp = 0;
+              } else if (Math.random() < 0.45) {
+                // head up, ears forward, listening — the longest it ever holds still
+                cr.state = "alert"; cr.timer = 1.8 + Math.random()*3;
+              } else {
                 cr.state = "walkbit";
                 cr.tx = Math.min(0.9, Math.max(0.1, cr.x + cr.dir*(0.06 + Math.random()*0.08)));
               }
             }
+          } else if (cr.state === "alert") {
+            cr.timer -= dt;
+            if (cr.timer <= 0) {
+              cr.state = "walkbit";
+              if (Math.random() < 0.3) cr.dir *= -1;     // moves off the other way
+              cr.tx = Math.min(0.9, Math.max(0.1, cr.x + cr.dir*(0.06 + Math.random()*0.1)));
+            }
           } else if (cr.state === "leave") {
+            if (cr.bounding) { cr.x += cr.dir*0.055*dt*D.speed; cr.bp += dt*7; }
             if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           }
-          this.paintDeer(c, { x: cr.x*W, y: 0.93*H, s: H*0.075*(cr.sz || 1), dir: cr.dir,
-            head: cr.head, walking, lp: cr.lp, color: colDark, t: cr.t,
-            grazing: cr.state === "graze" });
+          const bound = cr.bounding && cr.state === "leave"
+            ? Math.max(0, Math.sin(cr.bp)) : 0;
+          const dS = H*0.075*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - bound));
+          this.paintDeer(c, { x: cr.x*W, y: (D.y - bound*0.035)*H,
+            s: dS, dir: cr.dir,
+            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: D.col, t: cr.t,
+            grazing: cr.state === "graze", alert: cr.state === "alert", bound });
           break;
         }
         case "runner": {
           cr.timer -= dt;
           if (cr.mode === "dash") {
-            cr.x += cr.dir*0.11*dt; cr.ph += dt*30;
+            cr.x += cr.dir*0.11*dt*D.speed; cr.ph += dt*30;
             if (cr.timer <= 0) { cr.mode = "pause"; cr.timer = 0.5 + Math.random()*1.2; }
           } else if (cr.timer <= 0) {
             cr.mode = "dash"; cr.timer = 0.35 + Math.random()*0.5;
             if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
-          this.paintSanderling(c, cr.x*W, ((this.shoreY || 0.82) + 0.035)*H,
-            cr.dir, cr.mode === "dash", cr.ph, colDark);
+          // standing still, it works the wet sand with quick jabs of the bill
+          const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
+          c.save(); c.translate(cr.x*W, D.y*H); c.scale(D.scale, D.scale);
+          this.contactShadow(c, 0, 1, 5, 0.16*(1 - cr.z*0.6));
+          this.paintSanderling(c, 0, 0, cr.dir, cr.mode === "dash", cr.ph, D.col, probe);
+          c.restore();
           break;
         }
         case "cat": {
           const b = this.frontBlocks && this.frontBlocks[cr.b];
           if (!b) { dead = true; break; }
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "walk") {
             cr.u += cr.dir * 0.02 * dt / Math.max(0.04, b.w);
-            if (Math.random() < 0.12*dt) { cr.mode = "sit"; cr.timer = 2 + Math.random()*3; }
+            if (Math.random() < 0.12*dt) {
+              // it stops to sit, or to stretch out the length of itself
+              cr.mode = Math.random() < 0.25 ? "stretch" : "sit";
+              cr.timer = cr.mode === "stretch" ? 1.4 : 2 + Math.random()*4;
+              cr.actT = 0;
+            }
             if (cr.u < -0.05 || cr.u > 1.05) { dead = true; break; }
           } else {
             cr.timer -= dt;
-            if (cr.timer <= 0) cr.mode = "walk";
+            if (cr.mode === "sit" && !cr.act && Math.random() < 0.25*dt) {
+              cr.act = "groom"; cr.actT = 0;                 // a wash, while it's sitting
+              cr.actDur = 2 + Math.random()*2.5;
+            }
+            if (cr.act && cr.actT > cr.actDur) cr.act = null;
+            if (cr.timer <= 0) {
+              cr.mode = "walk"; cr.act = null;
+              if (Math.random() < 0.3) cr.dir *= -1;         // turns and goes back
+            }
           }
           cr.x = b.x + cr.u*b.w;      // kept current, so its voice comes from the right roof
           this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
-            sit: cr.mode === "sit", t: cr.t, color: colDark });
+            sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
+            groom: cr.act === "groom" ? 1 : 0,
+            stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
           break;
         }
         case "rabbit": {
           cr.timer -= dt;
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "hop") {
-            cr.hopPh += dt*7; cr.x += cr.dir*0.05*dt;
-            if (cr.timer <= 0) { cr.mode = "sit"; cr.timer = 0.6 + Math.random()*1.6; cr.hopPh = 0; }
+            cr.hopPh += dt*7; cr.x += cr.dir*0.05*dt*D.speed;
+            if (cr.timer <= 0) {
+              // it settles to crop the grass, wash its face, or just sit up
+              const roll = Math.random();
+              cr.act = roll < 0.42 ? "nibble" : roll < 0.62 ? "wash" : null;
+              cr.mode = "sit";
+              cr.timer = (cr.act ? 2 : 0.6) + Math.random()*2.2;
+              cr.hopPh = 0; cr.actT = 0;
+            }
           } else {
             cr.ear = Math.max(0, (cr.ear || 0) - dt*2);
             if (Math.random() < 0.6*dt) cr.ear = 1;
-            if (cr.timer <= 0) { cr.mode = "hop"; cr.timer = 0.25 + Math.random()*0.4; }
+            if (cr.timer <= 0) {
+              cr.mode = "hop"; cr.act = null; cr.timer = 0.25 + Math.random()*0.5;
+              if (Math.random() < 0.2) cr.dir *= -1;
+            }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
           const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
-          this.paintRabbit(c, { x: cr.x*W, y: 0.9*H - hop*H*0.035, s: H*0.032*(cr.sz || 1),
-            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: colDark });
+          const rS = H*0.032*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
+          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
+            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
+            t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
+            wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
           break;
         }
         case "fox": {
-          // A fox on the field edge does more than trot past. It stops, cocks
-          // its head at something under the grass, freezes — and then goes up
-          // and over in the vertical mousing leap, coming down nose-first.
+          // A fox on the field edge does more than trot past. It stops to
+          // follow a scent, cocks its head at something under the grass and
+          // freezes — and then goes up and over in the vertical mousing leap,
+          // coming down nose-first.
           cr.timer -= dt;
-          const gy = this.loc === "forest" ? 0.925 : 0.9;
-          const fs = H*0.05*(cr.sz || 1);
-          let pose = { crouch: 0, lift: 0, rot: 0, air: 0 };
+          const fS = H*0.05*(cr.sz || 1)*D.scale;
+          const pose = { crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0 };
           if (cr.mode === "trot") {
-            cr.x += cr.dir*0.028*dt; cr.lp += dt*7;
+            cr.x += cr.dir*0.028*dt*D.speed; cr.lp += dt*7;
             if (cr.timer <= 0) {
-              // most pauses are just a pause; now and then it hears something
-              if (Math.random() < 0.45 && this.t - this.lastPounce > 12) {
+              const roll = Math.random();
+              if (roll < 0.34 && this.t - this.lastPounce > 12) {
                 cr.mode = "listen"; cr.timer = 1.1 + Math.random()*1.1;
+              } else if (roll < 0.62) {
+                cr.mode = "sniff"; cr.timer = 1.2 + Math.random()*1.8;
               } else { cr.mode = "pause"; cr.timer = 0.8 + Math.random()*1.8; }
             }
-          } else if (cr.mode === "pause") {
-            if (cr.timer <= 0) { cr.mode = "trot"; cr.timer = 1.4 + Math.random()*2.2; }
+          } else if (cr.mode === "pause" || cr.mode === "sniff") {
+            pose.sniff = cr.mode === "sniff" ? 1 : 0;
+            if (cr.timer <= 0) {
+              cr.mode = "trot"; cr.timer = 1.4 + Math.random()*2.4;
+              if (Math.random() < 0.22) cr.dir *= -1;     // thinks better of it
+            }
           } else if (cr.mode === "listen") {
             // low and absolutely still, weight back, ears fixed on one spot
             pose.crouch = Math.min(1, (1.1 - Math.max(0, cr.timer))*1.4);
@@ -3275,11 +3876,11 @@ class Scene {
             const u = cr.phase;
             if (u < 0.26) {                       // coil: the hindquarters gather
               pose.crouch = 1;
-              pose.lift = Math.sin(u/0.26*Math.PI*0.5)*fs*0.10;
+              pose.lift = Math.sin(u/0.26*Math.PI*0.5)*fS*0.10;
             } else if (u < 0.98) {                // the leap itself
               const k = (u - 0.26)/0.72;
               pose.air = Math.min(1, k*4);
-              pose.lift = Math.sin(k*Math.PI)*fs*1.55;
+              pose.lift = Math.sin(k*Math.PI)*fS*1.55;
               pose.rot = -0.55 + k*1.85;          // nose up off the ground, down at the top
               cr.x += cr.dir*0.02*dt;
             } else if (u < 1.34) {                // the plunge, forefeet and nose first
@@ -3294,12 +3895,13 @@ class Scene {
             }
           }
           if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
-          this.paintFox(c, { x: cr.x*W, y: gy*H, s: fs, dir: cr.dir,
+          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9,
+            0.2*(1 - cr.z*0.6)*(1 - Math.min(1, pose.lift/(fS*0.8))));
+          this.paintFox(c, Object.assign({ x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir,
             walking: cr.mode === "trot", lp: cr.lp,
             look: cr.mode === "pause" ? Math.sin(cr.t*1.8) : 0,
             ears: cr.mode === "listen" || cr.mode === "pounce" ? 1 : 0,
-            crouch: pose.crouch, lift: pose.lift, rot: pose.rot, air: pose.air,
-            color: colDark });
+            color: D.col }, pose));
           break;
         }
         case "heron": {
@@ -3307,7 +3909,7 @@ class Scene {
           // step, the strike, the swallow — and eventually the heave into the
           // air. Each state hands on to the next rather than looping in place.
           cr.timer -= dt;
-          const hs = H*0.085*(cr.sz || 1);
+          if (!cr.placed) { cr.y = D.y; cr.placed = true; }   // stands at its own distance
           const pose = { neck: cr.neck || 0, strike: 0, gulp: 0, step: 0,
             preen: 0, rouse: 0, crouch: 0 };
           const nextIdle = () => {
@@ -3317,7 +3919,6 @@ class Scene {
             else if (roll < 0.78) { cr.mode = "preen"; cr.timer = 1.9; }
             else if (roll < 0.88) { cr.mode = "rouse"; cr.timer = 0.7; }
             else { cr.mode = "wait"; cr.timer = 3 + Math.random()*4; }
-            cr.hunts = (cr.hunts || 0);
           };
           if (cr.mode === "stand") { cr.mode = "wait"; cr.timer = 3 + Math.random()*4; }
           if (cr.mode === "wait") {
@@ -3337,7 +3938,7 @@ class Scene {
             cr.phase = Math.min(1, (cr.phase || 0) + dt/1.7);
             cr.neck = Math.min(0.85, (cr.neck || 0.4) + dt*0.5);
             pose.step = cr.phase;
-            cr.x += cr.dir*0.006*dt;
+            cr.x += cr.dir*0.006*dt*D.speed;
             if (cr.phase >= 1) { cr.acts++; cr.mode = "watch"; cr.timer = 1.5 + Math.random()*2.5; }
           } else if (cr.mode === "strike") {
             cr.phase += dt;
@@ -3349,7 +3950,7 @@ class Scene {
             else {
               cr.mode = "gulp"; cr.phase = 0; cr.acts++;
               // the water closes over where the bill went in
-              if (this.loc === "wetland") this.fishRings.push({ x: cr.x, y: cr.y + 0.005, age: 0, quiet: true });
+              this.fishRings.push({ x: cr.x, y: cr.y + 0.008, age: 0, quiet: true });
             }
           } else if (cr.mode === "gulp") {
             cr.phase += dt;
@@ -3371,9 +3972,11 @@ class Scene {
             if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
           }
           pose.neck = cr.neck;
-          this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: hs, dir: cr.dir,
+          const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
+          if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
+          this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
             flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
-            color: colDark, deep: colFar, t: cr.t }, pose));
+            color: cr.mode === "fly" ? colDark : D.col, deep: colFar, t: cr.t }, pose));
           break;
         }
         case "porpoise": {
@@ -3387,8 +3990,8 @@ class Scene {
           const px = cr.x*W, wy = cr.base*H;
           if (arc > 0.02) {
             // pitch follows the arc: nose up on the rise, down on the fall
-            const pitch = Math.cos(cr.phase)*0.34;
-            this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc, pitch,
+            this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
+              pitch: Math.cos(cr.phase)*0.34,
               s: H*0.05, color: colDark, rim: colFar });
           } else {
             // between rolls: a dark shape just under, and the flat "footprint"
@@ -3420,10 +4023,10 @@ class Scene {
           cr.timer -= dt;
           let dig = 0, pat = 0, bury = 0;
           if (cr.mode === "bound") {
-            cr.ph += dt*9; cr.x += cr.dir*0.045*dt;
+            cr.ph += dt*9; cr.x += cr.dir*0.045*dt*D.speed;
             if (cr.timer <= 0) {
               if (Math.random() < 0.45) { cr.mode = "dig"; cr.timer = 0; cr.phase = 0; }
-              else { cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.2; }
+              else { cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.6; }
             }
           } else if (cr.mode === "dig") {
             cr.phase += dt;
@@ -3432,8 +4035,8 @@ class Scene {
             else if (u < 2.3) {                            // scrabbling: quick alternate strokes
               dig = 1;
               if (Math.random() < 14*dt) {                 // litter thrown back between the legs
-                this.critters.push({ kind: "litter", x: cr.x - cr.dir*0.006,
-                  y: 0.925, vx: -cr.dir*(0.02 + Math.random()*0.03),
+                this.critters.push({ kind: "litter", x: cr.x - cr.dir*0.006, y: D.y, z: cr.z,
+                  vx: -cr.dir*(0.02 + Math.random()*0.03),
                   vy: -(0.03 + Math.random()*0.05), t: 0, life: 0.6,
                   sz: 0.6 + Math.random()*0.8 });
               }
@@ -3441,23 +4044,27 @@ class Scene {
             else if (u < 3.7) { dig = 1 - (u - 3.0)/0.7; pat = 1; }  // pat it over
             else { cr.mode = "sit"; cr.timer = 0.8 + Math.random()*1.4; }
           } else if (cr.timer <= 0) {
-            cr.mode = "bound"; cr.timer = 0.6 + Math.random()*1.0;
+            cr.mode = "bound"; cr.timer = 0.6 + Math.random()*1.1;
+            if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
           const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
-          this.paintSquirrel(c, { x: cr.x*W, y: (0.925 - hopY)*H, s: H*0.03*(cr.sz || 1),
+          const qS = H*0.03*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
+          this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
             dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t,
-            dig, bury, pat, color: colDark });
+            dig, bury, pat, color: D.col });
           break;
         }
         case "litter": {
           // a scrap of leaf-mould thrown back out of a squirrel's hole
           cr.x += cr.vx*dt; cr.y += cr.vy*dt; cr.vy += 0.3*dt;
-          if (cr.t > cr.life || cr.y > 0.94) { dead = true; break; }
+          if (cr.t > cr.life || cr.y > D.y + 0.015) { dead = true; break; }
           c.globalAlpha = Math.max(0, 1 - cr.t/cr.life)*0.7;
-          c.fillStyle = colDark;
+          c.fillStyle = D.col;
           c.beginPath();
-          c.ellipse(cr.x*W, cr.y*H, H*0.004*cr.sz, H*0.002*cr.sz, cr.t*6, 0, Math.PI*2);
+          c.ellipse(cr.x*W, cr.y*H, H*0.004*cr.sz*D.scale, H*0.002*cr.sz*D.scale,
+            cr.t*6, 0, Math.PI*2);
           c.fill();
           c.globalAlpha = 1;
           break;
@@ -3465,38 +4072,65 @@ class Scene {
         case "hare": {
           cr.timer -= dt;
           if (cr.mode === "lope") {
-            cr.ph += dt*8; cr.x += cr.dir*0.07*dt;
-            if (cr.timer <= 0 && Math.random() < 0.6) {
-              cr.mode = "alert"; cr.timer = 1.2 + Math.random()*2;
-            } else if (cr.timer <= 0) cr.timer = 1 + Math.random()*1.5;
+            cr.ph += dt*8; cr.x += cr.dir*0.07*dt*D.speed;
+            if (cr.timer <= 0) {
+              const roll = Math.random();
+              // it sits bolt upright to look, or drops its head to the grass
+              cr.mode = roll < 0.5 ? "alert" : roll < 0.78 ? "graze" : "lope";
+              cr.timer = cr.mode === "lope" ? 1 + Math.random()*1.5 : 1.6 + Math.random()*3;
+            }
           } else if (cr.timer <= 0) {
-            cr.mode = "lope"; cr.timer = 1.5 + Math.random()*2;
+            cr.mode = "lope"; cr.timer = 1.5 + Math.random()*2.4;
+            if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
           const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
           const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
-          this.paintHare(c, { x: cr.x*W, y: (0.9 - lift)*H, s: H*0.042*(cr.sz || 1),
-            dir: cr.dir, hop: st, alert: cr.mode === "alert", color: colDark });
+          const hS = H*0.042*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
+          this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
+            dir: cr.dir, hop: st, alert: cr.mode === "alert",
+            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: D.col });
           break;
         }
         case "hedgehog": {
           cr.timer -= dt;
+          cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "shuffle") {
-            cr.x += cr.dir*0.008*dt;
-            if (cr.timer <= 0) { cr.mode = "pause"; cr.timer = 1 + Math.random()*2; }
+            cr.x += cr.dir*0.008*dt*D.speed;
+            if (cr.timer <= 0) {
+              // stops dead, nose up, reading the air
+              cr.mode = Math.random() < 0.45 ? "sniffup" : "pause";
+              cr.timer = 1 + Math.random()*2.2; cr.actT = 0;
+            }
           } else if (cr.timer <= 0) {
-            cr.mode = "shuffle"; cr.timer = 2 + Math.random()*3;
+            cr.mode = "shuffle"; cr.timer = 2 + Math.random()*3.5;
+            if (Math.random() < 0.2) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
-          this.paintHedgehog(c, { x: cr.x*W, y: 0.94*H, s: H*0.026*(cr.sz || 1),
-            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: colDark, rim: colFar });
+          const gS = H*0.026*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, gS*0.85, 0.18*(1 - cr.z*0.6));
+          this.paintHedgehog(c, { x: cr.x*W, y: D.y*H, s: gS,
+            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: D.col, rim: colFar,
+            sniffUp: cr.mode === "sniffup" ? Math.min(1, cr.actT*2) : 0 });
           break;
         }
         case "badger": {
-          cr.x += cr.dir*0.014*dt; cr.lp += dt*5;
+          cr.timer = (cr.timer || 0) - dt;
+          cr.actT = (cr.actT || 0) + dt;
+          if (cr.mode === "dig") {
+            if (cr.timer <= 0) { cr.mode = "trundle"; cr.timer = 4 + Math.random()*6; }
+          } else {
+            cr.x += cr.dir*0.014*dt*D.speed; cr.lp += dt*5;
+            // it stops to rootle at the ground, which is most of what it does
+            if (cr.timer <= 0) { cr.mode = "dig"; cr.timer = 2 + Math.random()*3; cr.actT = 0; }
+          }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          this.paintBadger(c, { x: cr.x*W, y: 0.935*H, s: H*0.045*(cr.sz || 1),
-            dir: cr.dir, lp: cr.lp, color: colDark });
+          const bS = H*0.045*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, bS*0.95, 0.2*(1 - cr.z*0.6));
+          this.paintBadger(c, { x: cr.x*W, y: D.y*H, s: bS,
+            dir: cr.dir, lp: cr.lp, color: D.col,
+            dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
           break;
         }
         case "otter": {
@@ -3504,17 +4138,26 @@ class Scene {
           if (cr.mode === "swim") {
             cr.x += cr.dir*0.03*dt; cr.ph += dt*3;
             if (cr.timer <= 0) {
-              cr.mode = "under"; cr.timer = 1.2 + Math.random()*1.8;
-              this.fishRings.push({ x: cr.x, y: cr.y, age: 0, quiet: true });
+              // down for a fish, or over onto its back for a moment
+              if (Math.random() < 0.35) { cr.mode = "roll"; cr.timer = 1.6 + Math.random()*1.6; cr.actT = 0; }
+              else {
+                cr.mode = "under"; cr.timer = 1.2 + Math.random()*1.8;
+                this.fishRings.push({ x: cr.x, y: cr.y, age: 0, quiet: true });
+              }
             }
+          } else if (cr.mode === "roll") {
+            cr.actT = (cr.actT || 0) + dt;
+            cr.x += cr.dir*0.008*dt*D.speed;
+            if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
           } else {
             cr.x += cr.dir*0.02*dt;
             if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
-          if (cr.mode === "swim") {
+          if (cr.mode !== "under") {
             this.paintOtter(c, { x: cr.x*W, y: cr.y*H, s: H*0.03*(cr.sz || 1),
-              dir: cr.dir, ph: cr.ph, color: colDark });
+              dir: cr.dir, ph: cr.ph, color: colDark,
+              roll: cr.mode === "roll" ? Math.sin(Math.PI*Math.min(1, cr.actT/3)) : 0 });
           }
           break;
         }
@@ -3619,9 +4262,11 @@ class Scene {
     c.translate(-s*0.84, by - s*0.12); c.rotate(-0.5 - tf*0.7);
     c.beginPath(); c.ellipse(-s*0.1, 0, s*0.14, s*0.06, 0, 0, Math.PI*2); c.fill();
     c.restore();
-    // neck and head, lowering to graze; a nibble once it's down
+    // neck and head, lowering to graze; a nibble once it's down. Standing
+    // alert the head comes up higher still; in a bound it reaches forward.
     const nib = o.grazing ? Math.sin(t*7)*0.025*s : 0;
-    const hx = s*0.95, hy = -s*1.46 + o.head*s*1.34 + nib;
+    const hx = s*0.95 + (o.bound || 0)*s*0.12;
+    const hy = -s*1.46 + o.head*s*1.34 + nib - (o.alert ? s*0.1 : 0);
     this.limb(c, s*0.52, by - s*0.10, hx, hy, s*0.34, s*0.16);
     // head — brow, tapering muzzle, jaw
     c.save(); c.translate(hx, hy); c.rotate(o.head*0.95);
@@ -3632,11 +4277,13 @@ class Scene {
     c.quadraticCurveTo(s*0.05, s*0.14, -s*0.12, s*0.10);
     c.closePath(); c.fill();
     c.restore();
-    // tall ears, swivelling at a sound
-    const ef = Math.pow(Math.max(0, Math.sin(t*0.7 + 5)), 14);
+    // tall ears, swivelling at a sound — and pricked hard forward when it
+    // has heard something and is standing to work out what
+    const al = o.alert ? 1 : 0;
+    const ef = al ? 1 : Math.pow(Math.max(0, Math.sin(t*0.7 + 5)), 14);
     c.beginPath();
-    c.ellipse(hx - s*0.05, hy - s*0.17, s*0.055, s*0.15, -0.5 - ef*0.4, 0, Math.PI*2);
-    c.ellipse(hx + s*0.12, hy - s*0.16, s*0.055, s*0.15, 0.1 + ef*0.3, 0, Math.PI*2);
+    c.ellipse(hx - s*0.05, hy - s*0.17 - al*s*0.03, s*0.055, s*(0.15 + al*0.02), -0.5 - ef*0.4, 0, Math.PI*2);
+    c.ellipse(hx + s*0.12, hy - s*0.16 - al*s*0.03, s*0.055, s*(0.15 + al*0.02), 0.1 + ef*0.3, 0, Math.PI*2);
     c.fill();
     // eye
     c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.45));
@@ -3660,17 +4307,41 @@ class Scene {
       c.quadraticCurveTo(-6.5, -4.4, -5.2, -2.2);
       c.quadraticCurveTo(-3.6, -0.6, -1.6, -1.2);
       c.closePath(); c.fill();
+      const st = o.stretch || 0;
+      if (st > 0.05) {
+        // the full stretch: chest down on the ground, forelegs reaching away,
+        // haunches up behind, tail straight over the back
+        c.beginPath();
+        c.moveTo(-4.6, -6.2);
+        c.quadraticCurveTo(0, -5.2, 5.2, -1.6);
+        c.quadraticCurveTo(6.4, -0.6, 5.2, -0.2);
+        c.quadraticCurveTo(0, -0.6, -4.6, -2.2);
+        c.closePath(); c.fill();
+        c.beginPath(); c.ellipse(-4.4, -4.6, 3.2, 3.4, 0, 0, Math.PI*2); c.fill();  // raised rump
+        c.beginPath(); c.ellipse(7.2, -0.4, 2.6, 0.9, 0.06, 0, Math.PI*2); c.fill(); // reaching paws
+        c.beginPath(); c.ellipse(-4.2, -0.6, 1.2, 0.7, 0, 0, Math.PI*2); c.fill();   // hind foot
+        // head low between the shoulders
+        c.beginPath(); c.arc(6.6, -2.4, 2.1, 0, Math.PI*2); c.fill();
+        c.beginPath();
+        c.moveTo(5.2, -3.8); c.lineTo(4.8, -5.8); c.lineTo(6.5, -4.4);
+        c.moveTo(7.4, -4.1); c.lineTo(8.4, -5.7); c.lineTo(8.4, -3.8);
+        c.closePath(); c.fill();
+        c.restore();
+        return;
+      }
       // haunches, upright chest, forepaws set together
       c.beginPath(); c.ellipse(0, -3.4, 3.7, 4.3, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(-1.2, -1.5, 3.5, 1.9, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(1.2, -5.8, 2.1, 3.4, 0.1, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(2.2, -0.4, 1.5, 0.8, 0, 0, Math.PI*2); c.fill();
-      // head — the slow look-around
-      const lk = Math.sin(o.t*0.7)*0.8;
-      c.beginPath(); c.arc(1.2 + lk, -9.4, 2.4, 0, Math.PI*2); c.fill();
+      // head — the slow look-around, or bent right down to wash a shoulder
+      const gr = o.groom ? (0.5 + 0.5*Math.sin(o.t*5)) : 0;
+      const lk = gr ? -1.6*gr : Math.sin(o.t*0.7)*0.8;
+      const hyC = -9.4 + gr*4.6;
+      c.beginPath(); c.arc(1.2 + lk, hyC, 2.4, 0, Math.PI*2); c.fill();
       c.beginPath();
-      c.moveTo(-0.6 + lk, -10.9); c.lineTo(-1.2 + lk, -13.1); c.lineTo(0.9 + lk, -11.5);
-      c.moveTo(1.9 + lk, -11.3); c.lineTo(3.3 + lk, -12.9); c.lineTo(3.3 + lk, -10.8);
+      c.moveTo(-0.6 + lk, hyC - 1.5); c.lineTo(-1.2 + lk, hyC - 3.7); c.lineTo(0.9 + lk, hyC - 2.1);
+      c.moveTo(1.9 + lk, hyC - 1.9); c.lineTo(3.3 + lk, hyC - 3.5); c.lineTo(3.3 + lk, hyC - 1.4);
       c.closePath(); c.fill();
     } else {
       // tail carried high, curling over at the tip
@@ -3728,8 +4399,10 @@ class Scene {
     c.beginPath();
     c.ellipse(-st*s*0.08, -s*0.5, s*(0.8 + st*0.25), s*(0.56 - st*0.12), -st*0.15, 0, Math.PI*2);
     c.fill();
-    // head and muzzle
-    const hx = s*(0.66 + st*0.18), hy = -s*(0.95 + st*0.05) - st*s*0.08;
+    // head and muzzle — down in the grass when it is cropping
+    const nib = o.nibble ? 1 : 0;
+    const bob = nib ? Math.sin((o.t || 0)*9)*s*0.03 : 0;
+    const hx = s*(0.66 + st*0.18), hy = -s*(0.95 + st*0.05) - st*s*0.08 + nib*s*0.62 + bob;
     c.beginPath(); c.arc(hx, hy, s*0.33, 0, Math.PI*2); c.fill();
     c.beginPath(); c.ellipse(hx + s*0.26, hy + s*0.06, s*0.13, s*0.10, 0.2, 0, Math.PI*2); c.fill();
     // long ears — laid back mid-leap, up and swivelling at rest
@@ -3737,9 +4410,14 @@ class Scene {
     const back = st*0.9 - ea*0.35;
     this.limb(c, hx - s*0.05, hy - s*0.14, hx - s*0.2 - back*s*0.5, hy - s*0.9 + back*s*0.35, s*0.16, s*0.08);
     this.limb(c, hx + s*0.13, hy - s*0.12, hx + s*0.1 - back*s*0.55, hy - s*0.95 + back*s*0.4, s*0.16, s*0.08);
-    // forelegs — reaching for the landing, or tucked neatly under
+    // forelegs — reaching for the landing, tucked neatly under, or brought
+    // up to the face to wash it
     if (st > 0.05) {
       this.limb(c, s*0.5, -s*0.55, s*(0.75 + st*0.2), -s*0.12, s*0.14, s*0.06);
+    } else if (o.wash) {
+      const wv = o.wash;
+      this.limb(c, s*0.42, -s*0.5, hx + s*0.16, hy + s*0.16 + wv*s*0.1, s*0.13, s*0.07);
+      this.limb(c, s*0.5, -s*0.5, hx + s*0.26, hy + s*0.1 - wv*s*0.12, s*0.12, s*0.07);
     } else {
       this.limb(c, s*0.42, -s*0.3, s*0.5, -s*0.02, s*0.14, s*0.07);
     }
@@ -3823,11 +4501,13 @@ class Scene {
     c.closePath(); c.fill();
     c.beginPath();
     c.ellipse(s*0.5, -s*0.52 - bounce - drop, s*0.24, s*0.3, 0.2, 0, Math.PI*2); c.fill();
-    // Head — carried low, turning to listen when paused, and pushed right out
-    // in front on the leap so the animal arrives nose-first.
-    const lk = o.look || 0;
+    // Head — carried low, turning to listen when paused, right down to the
+    // ground when following a scent, and pushed out in front on the leap so
+    // the animal arrives nose-first.
+    const lk = o.look || 0, sniff = o.sniff || 0;
     const reach = air*s*0.12;
-    const hx = s*0.82 + lk*s*0.05 + reach, hy = -s*0.72 - lk*s*0.10 - bounce - drop*0.8;
+    const hx = s*0.82 + lk*s*0.05 + reach + sniff*s*0.08;
+    const hy = -s*0.72 - lk*s*0.10 - bounce - drop*0.8 + sniff*s*0.5;
     this.limb(c, s*0.5, -s*0.6 - bounce - drop, hx, hy, s*0.3, s*0.2);
     c.beginPath(); c.arc(hx, hy, s*0.21, 0, Math.PI*2); c.fill();
     // tapered snout
@@ -4225,11 +4905,12 @@ class Scene {
 
   /* A sanderling — leaning into its dash, legs a twinkle of steps,
      drawn up straight when it pauses. */
-  paintSanderling(c, x, y, dir, dash, ph, colDark) {
+  paintSanderling(c, x, y, dir, dash, ph, colDark, probe) {
     c.save();
     c.translate(x, y);
     if (dir < 0) c.scale(-1, 1);
-    c.rotate(dash ? 0.16 : 0);
+    // stopped, it tips forward to jab its bill into the sand
+    c.rotate(dash ? 0.16 : (probe || 0)*0.5);
     c.fillStyle = colDark; c.strokeStyle = colDark; c.lineCap = "round";
     // plump little body with a short tail
     c.beginPath();
@@ -4447,16 +5128,22 @@ class Scene {
       // haunch and upright body
       c.beginPath(); c.ellipse(-s*0.05, -s*0.32, s*0.42, s*0.34, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(s*0.12, -s*0.62, s*0.26, s*0.36, 0.15, 0, Math.PI*2); c.fill();
-      // head with ear tufts, bobbing as it nibbles
+      // head with ear tufts, bobbing as it nibbles — or right down at the
+      // litter, front paws scrabbling something under the leaves
+      const dig = o.dig ? 1 : 0;
+      const scrabble = dig ? Math.sin(t*14) : 0;
       const nib = Math.sin(t*9)*s*0.03;
-      const hy = -s*1.02 + nib;
-      c.beginPath(); c.arc(s*0.22, hy, s*0.2, 0, Math.PI*2); c.fill();
+      const hy = -s*1.02 + nib + dig*s*0.5;
+      c.beginPath(); c.arc(s*0.22 + dig*s*0.14, hy, s*0.2, 0, Math.PI*2); c.fill();
       c.beginPath();
       c.moveTo(s*0.08, hy - s*0.14); c.lineTo(s*0.04, hy - s*0.36); c.lineTo(s*0.18, hy - s*0.18);
       c.moveTo(s*0.28, hy - s*0.16); c.lineTo(s*0.32, hy - s*0.38); c.lineTo(s*0.42, hy - s*0.16);
       c.closePath(); c.fill();
-      // forepaws held up together
-      c.beginPath(); c.ellipse(s*0.32, -s*0.72 + nib, s*0.1, s*0.07, 0.3, 0, Math.PI*2); c.fill();
+      // forepaws held up together, or working at the ground
+      c.beginPath();
+      c.ellipse(s*(0.32 + dig*0.22), -s*0.72 + nib + dig*(s*0.62 + scrabble*s*0.07),
+        s*0.1, s*0.07, 0.3, 0, Math.PI*2);
+      c.fill();
       // eye
       c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
       c.beginPath(); c.arc(s*0.28, hy - s*0.04, Math.max(0.6, s*0.05), 0, Math.PI*2); c.fill();
@@ -4490,6 +5177,25 @@ class Scene {
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
+    if (o.graze) {
+      // head down in the grass on a stretched neck, haunches high behind,
+      // ears swept back but still clear of the line of the back
+      const bob = Math.sin((o.t || 0)*8)*s*0.03;
+      c.beginPath();
+      c.ellipse(-s*0.28, -s*0.52, s*0.72, s*0.4, -0.12, 0, Math.PI*2); c.fill();
+      this.limb(c, -s*0.55, -s*0.5, -s*0.68, -s*0.04, s*0.3, s*0.09);
+      this.limb(c, s*0.28, -s*0.5, s*0.38, -s*0.03, s*0.13, s*0.06);
+      const hx = s*0.82, hy = -s*0.2 + bob;
+      this.limb(c, s*0.28, -s*0.62, hx - s*0.06, hy - s*0.06, s*0.26, s*0.17);
+      c.beginPath(); c.arc(hx, hy, s*0.19, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(hx + s*0.16, hy + s*0.07, s*0.11, s*0.07, 0.35, 0, Math.PI*2); c.fill();
+      this.limb(c, hx - s*0.1, hy - s*0.14, hx - s*0.5, hy - s*0.72, s*0.12, s*0.06);
+      this.limb(c, hx + s*0.02, hy - s*0.15, hx - s*0.3, hy - s*0.8, s*0.12, s*0.06);
+      c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
+      c.beginPath(); c.arc(hx + s*0.05, hy - s*0.07, Math.max(0.6, s*0.045), 0, Math.PI*2); c.fill();
+      c.restore();
+      return;
+    }
     if (o.alert) {
       // sat up on its haunches, ears up, utterly still
       c.beginPath(); c.ellipse(-s*0.15, -s*0.4, s*0.5, s*0.4, 0, 0, Math.PI*2); c.fill();
@@ -4536,6 +5242,8 @@ class Scene {
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color; c.strokeStyle = o.color; c.lineCap = "round";
     const bob = Math.sin(t*7)*s*0.02;
+    const up = o.sniffUp || 0;         // front lifted, nose reading the air
+    if (up > 0.01) { c.translate(0, 0); c.rotate(-up*0.22); }
     // feet, shuffling
     c.lineWidth = Math.max(1, s*0.08);
     c.beginPath();
@@ -4549,14 +5257,15 @@ class Scene {
     c.quadraticCurveTo(s*0.55, -s*0.7 + bob, s*0.72, -s*0.16 + bob);
     c.quadraticCurveTo(s*0.4, -s*0.02, -s*0.78, -s*0.04 + bob);
     c.closePath(); c.fill();
-    // snout, down and questing
+    // snout, down and questing — or raised, twitching, into the wind
     const sniff = Math.sin(t*5)*s*0.03;
+    const ny = sniff - up*s*0.34;
     c.beginPath();
     c.moveTo(s*0.6, -s*0.3 + bob);
-    c.quadraticCurveTo(s*0.95, -s*0.12 + sniff, s*1.04, s*0.0 + sniff);
+    c.quadraticCurveTo(s*0.95, -s*0.12 + ny, s*1.04, ny);
     c.lineTo(s*0.62, -s*0.05);
     c.closePath(); c.fill();
-    c.beginPath(); c.arc(s*1.04, sniff, Math.max(0.7, s*0.05), 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*1.04, ny, Math.max(0.7, s*0.05), 0, Math.PI*2); c.fill();
     // spines — short strokes fanned over the dome
     c.strokeStyle = o.rim || o.color;
     c.lineWidth = Math.max(0.5, s*0.04);
@@ -4581,11 +5290,13 @@ class Scene {
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
+    const dig = o.dig || 0;            // head down, forepaws working the ground
     // short legs, trundling
     const off2 = [-0.45, -0.2, 0.25, 0.45];
     for (let i = 0; i < 4; i++) {
       const sw = Math.sin((o.lp || 0) + (i % 2)*Math.PI + Math.floor(i/2)*1.2)*s*0.1;
-      this.limb(c, off2[i]*s, -s*0.3, off2[i]*s + sw, 0, s*0.16, s*0.08);
+      const dg = i > 1 ? dig*s*0.12 : 0;
+      this.limb(c, off2[i]*s, -s*0.3, off2[i]*s + sw + dg, 0, s*0.16, s*0.08);
     }
     // broad low body
     c.beginPath();
@@ -4595,18 +5306,19 @@ class Scene {
     c.quadraticCurveTo(-s*0.1, -s*0.06, s*0.5, -s*0.14);
     c.quadraticCurveTo(s*0.75, -s*0.3, s*0.55, -s*0.5);
     c.closePath(); c.fill();
-    // wedge head, held low
+    // wedge head, held low — lower still, and swinging, when it digs
+    const dy = dig*s*0.16;
     c.beginPath();
     c.moveTo(s*0.5, -s*0.44);
-    c.quadraticCurveTo(s*0.95, -s*0.3, s*1.1, -s*0.08);
+    c.quadraticCurveTo(s*0.95, -s*0.3 + dy, s*1.1, -s*0.08 + dy);
     c.lineTo(s*0.55, -s*0.12);
     c.closePath(); c.fill();
     // the two white face stripes
     c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.75)`;
     c.lineWidth = Math.max(0.8, s*0.06);
     c.beginPath();
-    c.moveTo(s*1.05, -s*0.1); c.lineTo(s*0.58, -s*0.34);
-    c.moveTo(s*1.02, -s*0.16); c.lineTo(s*0.62, -s*0.42);
+    c.moveTo(s*1.05, -s*0.1 + dy); c.lineTo(s*0.58, -s*0.34);
+    c.moveTo(s*1.02, -s*0.16 + dy); c.lineTo(s*0.62, -s*0.42);
     c.stroke();
     // small round ear
     c.fillStyle = o.color;
@@ -4617,11 +5329,25 @@ class Scene {
   /* An otter swimming — a head, a rolling hump of back, a tail-tip, all
      threaded along the waterline; it dives and is gone. */
   paintOtter(c, o) {
-    const s = o.s, ph = o.ph || 0;
+    const s = o.s, ph = o.ph || 0, roll = o.roll || 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
+    if (roll > 0.02) {
+      // over onto its back, paws up, carried along by the current
+      c.beginPath(); c.ellipse(0, -s*0.14, s*0.86, s*0.24, 0.05, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(s*0.72, -s*0.24, s*0.24, s*0.18, -0.2, 0, Math.PI*2); c.fill();
+      const paw = Math.sin(ph*2)*s*0.06;
+      this.limb(c, s*0.2, -s*0.28, s*0.3 + paw, -s*0.56, s*0.1, s*0.06);
+      this.limb(c, -s*0.02, -s*0.28, s*0.06 - paw, -s*0.54, s*0.1, s*0.06);
+      c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
+      c.beginPath();
+      c.moveTo(-s*0.8, s*0.02); c.quadraticCurveTo(-s*1.5, s*0.1, -s*2.1, s*0.3);
+      c.stroke();
+      c.restore();
+      return;
+    }
     // wake
     c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.3)`; c.lineWidth = 1;
     c.beginPath();
@@ -4633,17 +5359,17 @@ class Scene {
     c.beginPath(); c.ellipse(s*0.82, -s*0.12, s*0.12, s*0.08, 0.1, 0, Math.PI*2); c.fill();
     c.beginPath(); c.arc(s*0.42, -s*0.32, s*0.06, 0, Math.PI*2); c.fill();  // ear
     // the rolling back, rising and falling as it swims
-    const roll = 0.5 + 0.5*Math.sin(ph);
+    const hump = 0.5 + 0.5*Math.sin(ph);
     c.beginPath();
     c.moveTo(s*0.25, s*0.02);
-    c.quadraticCurveTo(-s*0.15, -s*0.4*roll - s*0.08, -s*0.6, s*0.0);
+    c.quadraticCurveTo(-s*0.15, -s*0.4*hump - s*0.08, -s*0.6, s*0.0);
     c.closePath(); c.fill();
     // tail-tip breaking behind
-    const roll2 = 0.5 + 0.5*Math.sin(ph - 1.4);
-    if (roll2 > 0.4) {
+    const hump2 = 0.5 + 0.5*Math.sin(ph - 1.4);
+    if (hump2 > 0.4) {
       c.beginPath();
       c.moveTo(-s*0.85, s*0.03);
-      c.quadraticCurveTo(-s*1.05, -s*0.22*roll2, -s*1.3, s*0.02);
+      c.quadraticCurveTo(-s*1.05, -s*0.22*hump2, -s*1.3, s*0.02);
       c.closePath(); c.fill();
     }
     // eye
@@ -4761,7 +5487,7 @@ class Scene {
   }
 
   drawFlyers(c, W, H, dt, bot) {
-    const col = css(mix(this.tok.ink, bot, 0.2));
+    const colNear = mix(this.tok.ink, bot, 0.2);
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];
       f.age = (f.age || 0) + dt;
@@ -4803,7 +5529,11 @@ class Scene {
                   f.kind === "buzzard" || f.kind === "kestrel" ? 0 : Math.sin(f.ph*0.3)*4;
       const fy = f.y*H + bob;
       const dir = (f.vx || 0.01) >= 0 ? 1 : -1;
-      c.globalAlpha = Math.min(1, f.age*2);
+      // A small bird in the sky is a distant one: it loses itself in the air
+      // by the same amount that it has lost its size.
+      const far = Math.max(0, Math.min(1, 1 - (f.size - 2.4)/9));
+      const col = css(mix(colNear, bot, far*0.45));
+      c.globalAlpha = Math.min(1, f.age*2) * (1 - far*0.3);
       if (f.kind === "gull") this.paintGullFlight(c, fx, fy, f.size, dir, f.ph, col);
       else if (f.kind === "swift") this.paintSwiftFlight(c, fx, fy, f.size, dir, f.ph, col);
       else if (f.kind === "lark") this.paintLarkFlight(c, fx, fy, f.size, f.ph, col, f.hold > 0);

@@ -20,9 +20,26 @@ python3 -m http.server 8000
 npx serve .
 ```
 
-Then open <http://localhost:8000/>. Sound begins when you press **Begin
-listening** (a browser gesture is required to start audio); headphones are
-recommended, as each voice is placed spatially.
+Then open <http://localhost:8000/>. The window starts shut: press **Begin
+listening** and the casement swings open (a browser gesture is required to
+start audio). Headphones are recommended, as each voice is placed spatially.
+
+Closing the window again — the last button in the top-right of the frame —
+swings the leaves shut, stops every voice and every animal, and ends the
+session. Nothing is kept: opening it again draws a fresh seed and a new
+serial. The piece is meant to be ephemeral, so there is no pause and no way
+back to an hour you have closed.
+
+Left to itself the light moves on: dawn gives way to day, dusk, night and
+round again, an hour of the day every half hour. Both the turning and its
+pace live under **The passing of time** in settings.
+
+The shuffle button in the frame's top-right corner takes you somewhere
+else entirely — a new place, a new hour, and freshly generated ground,
+drawn from a new seed. The serial in the header follows it, since that
+serial *is* the land you are looking at. Choosing a place by hand from
+settings does not re-roll the seed, so a place you leave and come back to
+during a session is exactly as you left it.
 
 ## Project layout
 
@@ -41,11 +58,25 @@ js/
                   drifting inhabitants.
   audio.js        The `AudioEngine` class — wind, aeolian drift, per-place ambience,
                   turn-taking voices, and the odd church bell.
-  main.js         Entry point: theme toggle, subtitles / field notes, and all DOM wiring.
+  main.js         Entry point: theme toggle, the casement (opening and shutting the
+                  window), the turning of the hours, subtitles, and all DOM wiring.
                   Boots the scene and the audio engine.
   bestiary.js     Logic for the bestiary page. Borrows the Scene's painters and the
                   species' synths; adds nothing to the piece itself.
 ```
+
+### A note on caching
+
+There is no build step, so the stylesheet and every module carry an explicit
+`?v=N` on their URLs — in `index.html`, `bestiary.html`, and on every `import`
+inside `js/`. Browsers cache scripts and styles far more eagerly than markup,
+and a cached script running against fresh markup fails in confusing ways (a
+handler that binds to a control which no longer exists throws, and every
+control wired after it silently stops working). **Bump the number everywhere
+at once when shipping a change**; keeping them equal is what guarantees the
+whole app is one version. As a second line of defence, `main.js` binds through
+a small `on(id, …)` helper that warns about a missing control instead of
+taking the rest of the page down with it.
 
 ### How the modules fit together
 
@@ -115,6 +146,8 @@ draws and sings. It honours the same Dawn/Dusk themes and
   would actually live (see `habitats` / `hw` in `species.js`). The same applies to
   behaviour: the fox's mousing pounce, the heron's strike, the squirrel caching a
   nut and the cuckoo's drooped-wing calling posture are all drawn from life.
+- **Ephemeral.** There is no pause and no going back. A shut window keeps no
+  time, holds no animals and makes no sound; opening it begins somewhere new.
 - **Cheap to run.** A phrase costs two audio nodes, not two per note
   (`noteTrain` / `pulseTrain` in `species.js`), every voice's signal chain is
   unwired from the graph once it has decayed, and the canvas holds to a pixel

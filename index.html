@@ -4,7 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Living Window</title>
-<link rel="stylesheet" href="css/styles.css">
+<link rel="icon" href="favicon.svg?v=3" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css?v=3">
 </head>
 <body>
 
@@ -27,16 +28,25 @@
     <p class="tagline">An open casement onto a small wild place. The land composes itself — no two hours are alike, and none will come again.</p>
   </header>
 
-  <div class="window-frame" id="windowFrame">
+  <div class="window-frame closed" id="windowFrame">
     <div class="window-inner">
       <canvas id="scene"></canvas>
 
+      <!-- The casement itself: two leaves that swing open and shut. -->
+      <div class="casement" id="casement" aria-hidden="true">
+        <div class="casement-leaf left"><span class="casement-handle"></span></div>
+        <div class="casement-leaf right"><span class="casement-handle"></span></div>
+      </div>
+
       <div class="window-tools">
-        <button class="icon-btn" id="diceBtn" aria-label="Somewhere else — a place at random" title="Somewhere else">
+        <button class="icon-btn" id="diceBtn" aria-label="Elsewhere — a new landscape, place and hour at random" title="Elsewhere — new ground, another hour">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5M4 20 21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
         </button>
-        <button class="icon-btn" id="fsBtn" aria-label="View fullscreen">
+        <button class="icon-btn" id="fsBtn" aria-label="View fullscreen" title="Fullscreen">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+        </button>
+        <button class="icon-btn" id="closeWinBtn" aria-label="Close the window" title="Close the window">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M8.5 8 4.5 12l4 4M15.5 8l4 4-4 4"/></svg>
         </button>
       </div>
 
@@ -51,24 +61,12 @@
       <div class="begin-overlay" id="beginOverlay">
         <div class="begin-card">
           <div class="begin-title">Open the window</div>
-          <p class="begin-note">Sound begins when you do. Headphones recommended — the land is spatial.</p>
+          <p class="begin-note">Sound begins when you do. Headphones recommended — the land is spatial. Close it again and the hour is gone for good.</p>
           <button class="btn-primary" id="beginBtn">Begin listening</button>
         </div>
       </div>
     </div>
   </div>
-
-  <div class="actions-row">
-    <button class="btn-primary" id="pauseBtn" disabled>Pause</button>
-    <button class="btn-muted" id="reseedBtn">New session</button>
-  </div>
-
-  <section class="notes-section">
-    <div class="section-label">Field Notes — recent calls</div>
-    <div class="notes-panel" id="notesPanel">
-      <div class="notes-empty" id="notesEmpty">Nothing yet. The land is holding its breath.</div>
-    </div>
-  </section>
 
   <footer>
     <div><span class="term">Generative.</span> Every voice is synthesized in real time from a fresh seed. No recording, no loop — no session resembles the last.</div>
@@ -140,6 +138,23 @@
         </div>
       </div>
 
+      <div class="control-group wide">
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Let the hours turn</div>
+            <div class="switch-hint">Dawn gives way to day, to dusk, to night, and round again.</div>
+          </div>
+          <button class="mini-switch" id="timeFlowSwitch" role="switch" aria-checked="true" aria-label="Let the hours turn"><span class="knob"></span></button>
+        </div>
+        <div class="slider-row inset" id="timeSpeedRow">
+          <span class="slider-label">Each hour lasts</span>
+          <input type="range" id="timeSpeedSlider" min="0" max="100" value="50" aria-label="How long each hour lasts">
+          <span class="slider-val wide-val" id="timeSpeedVal">30 min</span>
+        </div>
+      </div>
+
+      <hr class="settings-divider">
+
       <div class="control-group">
         <span class="field-label">Life — density of voices</span>
         <div class="slider-row">
@@ -177,6 +192,6 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=3"></script>
 </body>
 </html>

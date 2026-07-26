@@ -6,9 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js";
-import { SPECIES, PSTYLE, CRITTER_VOICES, speciesIcon } from "./species.js";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js";
+import { Scene } from "./scene.js?v=3";
+import { SPECIES, PSTYLE, CRITTER_VOICES, speciesIcon } from "./species.js?v=3";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=3";
 
 /* One Scene on a hidden canvas lends us its painters and tokens. */
 const scene = new Scene(document.getElementById("bz-hidden"));
@@ -379,21 +379,23 @@ for (const sp of SPECIES) {
 const CRITTERS = [
   { id: "deer", name: "Roe Deer", latin: "Capreolus capreolus",
     desc: "steps from the trees to graze, then melts away", sky: "dawn",
-    modes: ["walk", "graze"], where: [{ h: "forest", w: 1 }],
+    modes: ["walk", "graze", "alert", "bound"], where: [{ h: "forest", w: 1 }],
     when: { dawn: 0.8, day: 0.05, dusk: 0.8, night: 0.15 },
-    appears: "Rare — crosses the forest floor at first and last light, pausing to graze.",
+    appears: "Rare — crosses the forest floor at first and last light, grazing, standing to listen, and bounding off if startled.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.82;
       groundBand(c, W, H, P, gy);
-      scene.paintDeer(c, { x: W*0.5, y: gy, s: 34, dir: 1,
-        head: mode === "graze" ? 1 : 0, walking: mode === "walk", lp: tm*6,
-        color: P.col, t: tm, grazing: mode === "graze" });
+      const bound = mode === "bound" ? Math.max(0, Math.sin(tm*7)) : 0;
+      scene.paintDeer(c, { x: W*0.5, y: gy - bound*16, s: 34, dir: 1,
+        head: mode === "graze" ? 1 : 0, walking: mode === "walk" || bound > 0, lp: tm*6,
+        color: P.col, t: tm, grazing: mode === "graze",
+        alert: mode === "alert", bound });
     } },
   { id: "fox", name: "Red Fox", latin: "Vulpes vulpes",
     desc: "trots the field edge between dusk and dawn", sky: "dusk",
-    modes: ["trot", "listen", "pounce"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }],
+    modes: ["trot", "listen", "sniff", "pounce"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }],
     when: { dawn: 0.6, day: 0, dusk: 0.7, night: 0.6 },
-    appears: "Trots through low ground after dusk, pausing to listen with turned ears — and now and then going straight up and over in the mousing pounce, coming down nose-first.",
+    appears: "Trots through low ground after dusk, stopping to follow a scent or to listen with turned ears — and now and then going straight up and over in the mousing pounce, coming down nose-first.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.82;
       groundBand(c, W, H, P, gy);
@@ -418,34 +420,39 @@ const CRITTERS = [
       }
       scene.paintFox(c, Object.assign({ x: W*0.5, y: gy, s, dir: 1,
         walking: mode === "trot", lp: tm*7,
-        ears: mode === "trot" ? 0 : 1,
+        ears: mode === "trot" || mode === "sniff" ? 0 : 1,
+        sniff: mode === "sniff" ? 1 : 0,
         look: mode === "listen" ? Math.sin(tm*1.8)*0.3 : 0, color: P.col, t: tm }, pose));
     } },
   { id: "rabbit", name: "European Rabbit", latin: "Oryctolagus cuniculus",
     desc: "hops the meadow in fits and starts", sky: "day",
-    modes: ["hop", "sit"], where: [{ h: "meadow", w: 1 }],
+    modes: ["hop", "sit", "nibble", "wash"], where: [{ h: "meadow", w: 1 }],
     when: { dawn: 0.6, day: 0.6, dusk: 0.3, night: 0 },
-    appears: "Crosses the meadow in daylight when the weather is calm — hop, pause, hop.",
+    appears: "Crosses the meadow in calm daylight — hop, pause, hop — stopping to crop the grass or wash its face.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.8;
       groundBand(c, W, H, P, gy);
       const hop = mode === "hop" ? Math.max(0, Math.sin(tm*7)) : 0;
       scene.paintRabbit(c, { x: W*0.5, y: gy - hop*16, s: 26, dir: 1,
-        hop, sit: mode === "sit",
-        ear: mode === "sit" ? Math.pow(Math.max(0, Math.sin(tm*0.9)), 8) : 0, color: P.col });
+        hop, sit: mode !== "hop", t: tm,
+        ear: mode === "sit" ? Math.pow(Math.max(0, Math.sin(tm*0.9)), 8) : 0, color: P.col,
+        nibble: mode === "nibble" ? 1 : 0,
+        wash: mode === "wash" ? 0.5 + 0.5*Math.sin(tm*9) : 0 });
     } },
   { id: "cat", name: "House Cat", latin: "Felis catus",
     desc: "keeps its own hours on the rooftops", sky: "night",
-    modes: ["walk", "sit"], where: [{ h: "city", w: 1 }],
+    modes: ["walk", "sit", "groom", "stretch"], where: [{ h: "city", w: 1 }],
     when: { dawn: 0, day: 0, dusk: 0.2, night: 0.8 },
-    appears: "Walks the city parapets after dark, sitting a while where it pleases.",
+    appears: "Walks the city parapets after dark, sitting where it pleases, washing, and stretching the length of itself.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.8;
       c.fillStyle = css(mix(scene.tok.inkDeep, P.bot, 0.10));
       c.fillRect(0, gy, W, H - gy);
       c.save();
       c.translate(W*0.5, gy); c.scale(3.2, 3.2);
-      scene.paintCat(c, { x: 0, y: 0, dir: 1, sit: mode === "sit", t: tm, color: P.col });
+      scene.paintCat(c, { x: 0, y: 0, dir: 1, sit: mode !== "walk", t: tm, color: P.col,
+        groom: mode === "groom" ? 1 : 0,
+        stretch: mode === "stretch" ? 0.5 + 0.5*Math.sin(tm*1.6) : 0 });
       c.restore();
     } },
   { id: "heron", name: "Grey Heron", latin: "Ardea cinerea",
@@ -544,7 +551,7 @@ const CRITTERS = [
     } },
   { id: "runner", name: "Sanderling", latin: "Calidris alba",
     desc: "chases the sea's hem back and forth", sky: "day",
-    modes: ["dash", "pause"], where: [{ h: "beach", w: 1 }],
+    modes: ["dash", "probe"], where: [{ h: "beach", w: 1 }],
     when: { dawn: 0.6, day: 0.7, dusk: 0.5, night: 0 },
     appears: "Runs the tide line through the daylight hours in little bursts.",
     draw(c, W, H, tm, mode, P) {
@@ -552,7 +559,8 @@ const CRITTERS = [
       sandBand(c, W, H, P, gy);
       c.save();
       c.translate(W*0.5, gy); c.scale(3, 3);
-      scene.paintSanderling(c, 0, 0, 1, mode === "dash", tm*30, P.col);
+      scene.paintSanderling(c, 0, 0, 1, mode === "dash", tm*30, P.col,
+        mode === "probe" ? Math.max(0, Math.sin(tm*7)) : 0);
       c.restore();
     } },
   { id: "skein", name: "Greylag Skein", latin: "Anser anser",
@@ -595,7 +603,7 @@ const CRITTERS = [
     } },
   { id: "hare", name: "Brown Hare", latin: "Lepus europaeus",
     desc: "long legs and longer ears at the field edge", sky: "dawn",
-    modes: ["lope", "alert"], where: [{ h: "meadow", w: 1 }],
+    modes: ["lope", "alert", "graze"], where: [{ h: "meadow", w: 1 }],
     when: { dawn: 0.7, day: 0.5, dusk: 0.7, night: 0.1 },
     appears: "Lopes the open meadow at first and last light, drawn up tall when it stops.",
     draw(c, W, H, tm, mode, P) {
@@ -603,40 +611,42 @@ const CRITTERS = [
       groundBand(c, W, H, P, gy);
       const st = mode === "lope" ? 0.5 + 0.5*Math.sin(tm*8) : 0;
       const lift = mode === "lope" ? Math.max(0, Math.sin(tm*8))*7 : 0;
-      scene.paintHare(c, { x: W*0.5, y: gy - lift, s: 30, dir: 1,
-        hop: st, alert: mode === "alert", color: P.col });
+      scene.paintHare(c, { x: W*0.5, y: gy - lift, s: 30, dir: 1, t: tm,
+        hop: st, alert: mode === "alert", graze: mode === "graze" ? 1 : 0, color: P.col });
     } },
   { id: "hedgehog", name: "European Hedgehog", latin: "Erinaceus europaeus",
     desc: "a shuffling dome of spines, nose down", sky: "night",
-    modes: ["shuffle"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }, { h: "city", w: 1 }],
+    modes: ["shuffle", "sniff up"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }, { h: "city", w: 1 }],
     when: { dawn: 0.1, day: 0, dusk: 0.3, night: 0.9 },
     appears: "Works the ground after dark, snuffling as it goes.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.84;
       groundBand(c, W, H, P, gy);
-      scene.paintHedgehog(c, { x: W*0.5, y: gy, s: 26, dir: 1, t: tm,
-        color: P.col, rim: P.rim });
+      scene.paintHedgehog(c, { x: W*0.5, y: gy, s: 26, dir: 1,
+        t: mode === "shuffle" ? tm : 0.1, color: P.col, rim: P.rim,
+        sniffUp: mode === "sniff up" ? 1 : 0 });
     } },
   { id: "badger", name: "European Badger", latin: "Meles meles",
     desc: "trundles its night rounds, striped and certain", sky: "night",
-    modes: ["trundle"], where: [{ h: "forest", w: 1 }],
+    modes: ["trundle", "dig"], where: [{ h: "forest", w: 1 }],
     when: { dawn: 0.1, day: 0, dusk: 0.3, night: 0.9 },
     appears: "Rare — crosses the forest floor deep in the night, head down.",
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.84;
       groundBand(c, W, H, P, gy);
-      scene.paintBadger(c, { x: W*0.5, y: gy, s: 34, dir: 1, lp: tm*5, color: P.col });
+      scene.paintBadger(c, { x: W*0.5, y: gy, s: 34, dir: 1, lp: tm*5, color: P.col,
+        dig: mode === "dig" ? 0.5 + 0.5*Math.sin(tm*11) : 0 });
     } },
   { id: "otter", name: "Eurasian Otter", latin: "Lutra lutra",
     desc: "threads the water, dives, surfaces further on", sky: "day",
-    modes: ["swim"], where: [{ h: "wetland", w: 1 }],
+    modes: ["swim", "roll"], where: [{ h: "wetland", w: 1 }],
     when: { dawn: 0.7, day: 0.5, dusk: 0.7, night: 0.2 },
     appears: "Swims the open water outside the darkest hours, diving and resurfacing.",
     draw(c, W, H, tm, mode, P) {
       const wy = H*0.6;
       waterBand(c, W, H, P, wy);
       scene.paintOtter(c, { x: W*0.5 + Math.sin(tm*0.5)*20, y: wy + 20, s: 26,
-        dir: 1, ph: tm*3, color: P.col });
+        dir: 1, ph: tm*3, color: P.col, roll: mode === "roll" ? 1 : 0 });
     } },
   { id: "bee", name: "Bumblebee", latin: "Bombus terrestris",
     desc: "a furred knot of purpose among the flowers", sky: "day",
