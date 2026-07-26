@@ -65,6 +65,23 @@ js/
                   species' synths; adds nothing to the piece itself.
 ```
 
+### Watching what a frame costs
+
+Open the piece with `?perf=1` — <http://localhost:8000/?perf=1> — and a small
+readout sits in the corner of the window: the smoothed frame time and the frame
+rate that implies, the number of rasterization submissions the frame made
+(every `stroke`, `fill` and blit), the render scale the adaptive quality has
+settled on, and the size of the backing store. It is a bench, not part of the
+piece: without the flag the counting wrappers are never installed and the
+canvas context is left exactly as the browser handed it over.
+
+What it is for is knowing which of the two costs you are looking at. A frame
+here is either *submissions* — many small strokes, each rasterized separately —
+or *fill-rate*, a few very large translucent blits. They are fixed by opposite
+means, and the ops number is what tells them apart: if it is high and the frame
+is slow, batch; if it is low and the frame is still slow, the cost is overdraw
+and no amount of batching will touch it.
+
 ### A note on caching
 
 There is no build step, so the stylesheet and every module carry an explicit
@@ -152,7 +169,10 @@ draws and sings. It honours the same Dawn/Dusk themes and
   (`noteTrain` / `pulseTrain` in `species.js`), every voice's signal chain is
   unwired from the graph once it has decayed, and the canvas holds to a pixel
   budget with an adaptive render scale, so full screen on a dense display stays
-  smooth.
+  smooth. Anything drawn many times in one colour — grass, reeds, ferns, the
+  rain — goes down as a single path and is stroked once rather than once
+  apiece; the land's fixed outlines are kept as `Path2D` and refilled, not
+  rebuilt, each frame.
 - **Accessible.** Honours `prefers-reduced-motion` and `prefers-color-scheme`, and
   ships light ("Dawn") and dark ("Dusk") themes.
 - **Private.** No dependencies, no build step, no network calls. Just static files.

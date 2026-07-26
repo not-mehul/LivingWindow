@@ -10,6 +10,14 @@ import { PSTYLE } from "./species.js?v=3";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
+/* A bench, not part of the piece: open the page with ?perf=1 and the window
+   keeps a readout of what each frame costs. What it counts is rasterization
+   submissions — every stroke, fill and blit — because that, and not arithmetic,
+   is what a frame here is made of. Absent the flag nothing below runs at all
+   and the context is left exactly as the browser handed it over. */
+const PERF = typeof location !== "undefined" &&
+  new URLSearchParams(location.search).has("perf");
+
 class Scene {
   constructor(canvas) {
     this.canvas = canvas;
@@ -27,6 +35,11 @@ class Scene {
     this.lastHedgehog = -999; this.lastBadger = -999; this.lastOtter = -999;
     this.lastPounce = -999;
     this.timeMix = { dawn: 1, day: 0, dusk: 0, night: 0 };
+    // Outlines of land that never move between reseeds, kept as Path2D and
+    // refilled each frame. Keyed on the shape function that generated them;
+    // emptied by reseed (new land) and by resize (same land, new pixels).
+    this._paths = new Map();
+    if (PERF) this.countOps();
     this.refreshTokens();
     this.reseed(state.seed);
     const ro = new ResizeObserver(() => this.resize());
@@ -89,6 +102,44 @@ class Scene {
     this.tok.fireflyRGB = (fc[0]|0) + "," + (fc[1]|0) + "," + (fc[2]|0);
   }
 
+  /* Shadow the context's drawing calls with counting versions of themselves.
+     Only ever called under ?perf=1 — the allocation each wrapper makes would
+     be its own kind of lie in a frame we are trying to measure, so it is kept
+     off the road entirely rather than switched off inside. */
+  countOps() {
+    this.ops = 0;
+    for (const m of ["stroke", "fill", "fillRect", "strokeRect", "drawImage", "fillText"]) {
+      const orig = this.ctx[m].bind(this.ctx);
+      this.ctx[m] = (...a) => { this.ops++; return orig(...a); };
+    }
+  }
+
+  /* The readout itself, painted last so it sits over the land. Held still for
+     a quarter-second at a time: a number that changes sixty times a second
+     cannot be read, and this one exists to be read. */
+  drawPerf(c, dt) {
+    const ops = this.ops;
+    this._perfT = (this._perfT || 0) + dt;
+    if (this._perfT > 0.25) { this._perfOps = ops; this._perfT = 0; }
+    const lines = [
+      `${(this.frameMs || 0).toFixed(1)} ms · ${(1000/Math.max(0.01, this.frameMs || 16.7)).toFixed(0)} fps`,
+      `${this._perfOps || 0} raster ops/frame`,
+      `dpr ${(this.dpr || 1).toFixed(2)} · quality ${(this.quality || 1).toFixed(2)}`,
+      `${this.canvas.width}×${this.canvas.height} · ${this.loc}`
+    ];
+    c.save();
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.globalAlpha = 1;
+    c.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    c.textBaseline = "top";
+    c.fillStyle = "rgba(0,0,0,0.62)";
+    c.fillRect(8, 8, 190, 12 + lines.length*14);
+    c.fillStyle = "#9fe89f";
+    for (let i = 0; i < lines.length; i++) c.fillText(lines[i], 14, 14 + i*14);
+    c.restore();
+    this.ops = 0;                 // the readout's own ops are not the frame's
+  }
+
   /* A cached radial-glow sprite (colour → transparent), so glows blit with one
      drawImage instead of building a new gradient every frame. */
   glowSprite(rgb) {
@@ -117,6 +168,7 @@ class Scene {
   reseed(seedBase) {
     const loc = state.location;
     const rng = mulberry32((seedBase ^ LOC_HASH[loc]) >>> 0);
+    this._paths.clear();         // fresh ground: every kept outline is stale
     this.loc = loc;
     this.flyers = []; this.ripples = [];
     this.actors = []; this.critters = [];
@@ -549,6 +601,7 @@ class Scene {
     this.W = w; this.H = h;
     this._skyKey = null;         // the sky gradient is keyed on height
     this._fogKey = null;
+    this._paths.clear();         // land outlines are in pixels, and these have changed
   }
 
   /* Watch the frame time and give ground if the browser cannot keep up. Some
@@ -928,6 +981,7 @@ class Scene {
     this.drawFireflies(c, W, H, dt, night);
     this.drawWeather(c, W, H, dt, night);
     this.drawRipples(c, W, H, dt);
+    if (PERF) this.drawPerf(c, dt);
   }
 
   drawCelestial(c, W, H, top, night, dt) {
@@ -1008,30 +1062,43 @@ class Scene {
     return state.weather === "breeze" ? 1 : (state.weather === "rain" ? 0.5 : 0.25);
   }
 
+  /* A hundred and ten blades of grass in one colour and one width. Stroked
+     one at a time that is a hundred and ten separate rasterizations; gathered
+     into a single path it is one, for the same picture. The rain has always
+     been drawn this way (see drawWeather) — everything that shares a pen
+     should be. */
   drawGrassTufts(c, W, H, grass, baseYfn, color) {
     c.strokeStyle = color;
     c.lineWidth = 1;
     const wa = this.windAmt();
+    c.beginPath();
     for (const gr of grass) {
       const gx = gr.x * W;
       const gy = baseYfn(gr.x) * H;
       const sway = Math.sin(this.t*1.8 + gr.ph) * 6 * wa * this.windWave(gr.x) + gr.lean*4;
-      c.beginPath();
       c.moveTo(gx, gy + 4);
       c.quadraticCurveTo(gx + sway*0.4, gy - gr.h*H*0.6, gx + sway, gy - gr.h*H);
-      c.stroke();
     }
+    c.stroke();
   }
 
+  /* A ridge is sixty-one points of summed sine, and not one of them moves from
+     one frame to the next — only the light on it does, as the hour turns. So
+     the outline is built once and kept, and each frame only asks for it to be
+     filled again in whatever colour the hour has reached. */
   drawRidge(c, fn, color, W, H) {
+    let p = this._paths.get(fn);
+    if (!p) {
+      p = new Path2D();
+      p.moveTo(0, H);
+      const n = 60;
+      for (let i = 0; i <= n; i++) p.lineTo((i/n)*W, fn(i/n)*H);
+      p.lineTo(W, H);
+      p.closePath();
+      this._paths.set(fn, p);
+    }
     c.fillStyle = css(color);
-    c.beginPath();
-    c.moveTo(0, H);
-    const n = 60;
-    for (let i = 0; i <= n; i++) c.lineTo((i/n)*W, fn(i/n)*H);
-    c.lineTo(W, H);
-    c.closePath();
-    c.fill();
+    c.fill(p);
   }
 
   /* Far-off birds adrift in the upper sky — a couple of quiet wingbeats. */
@@ -1390,30 +1457,45 @@ class Scene {
 
     c.strokeStyle = near; c.fillStyle = near;
     c.lineCap = "round";
+    // Three pens, so three passes: the stalks, the fronds, the seed heads.
+    // Drawn plant by plant this alternated pen every few strokes and paid for
+    // a rasterization each time; drawn pen by pen it is three.
+    const fgSway = (g) => Math.sin(this.t*1.5 + g.ph)*11*wa*this.windWave(g.x) + g.lean*7;
+
+    c.lineWidth = Math.max(2, mn*0.009);
+    c.beginPath();
     for (const g of this.fg) {
-      const gx = g.x*W, gy = H + 4, len = g.h*H;
-      const sway = Math.sin(this.t*1.5 + g.ph)*11*wa*this.windWave(g.x) + g.lean*7;
-      c.lineWidth = Math.max(2, mn*0.009);
-      c.beginPath();
+      const gx = g.x*W, gy = H + 4, len = g.h*H, sway = fgSway(g);
       c.moveTo(gx, gy);
       c.quadraticCurveTo(gx + sway*0.4, gy - len*0.6, gx + sway, gy - len);
-      c.stroke();
-      if (g.blades) {                       // a near fern, fronds and all
-        c.lineWidth = Math.max(1, mn*0.004);
-        for (let k = 1; k <= g.blades; k++) {
-          const t2 = k/(g.blades + 1);
-          const bx = gx + sway*t2, by = gy - len*t2, bl = len*0.3*(1 - t2*0.5);
-          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5); c.stroke();
-          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5); c.stroke();
-        }
-      } else if (g.head) {                  // a seed head, heavy at the tip
-        c.save();
-        c.translate(gx + sway, gy - len);
-        c.rotate(sway*0.012);
-        c.beginPath(); c.ellipse(0, mn*0.008, mn*0.006, mn*0.022, 0, 0, Math.PI*2); c.fill();
-        c.restore();
+    }
+    c.stroke();
+
+    c.lineWidth = Math.max(1, mn*0.004);
+    c.beginPath();
+    for (const g of this.fg) {
+      if (!g.blades) continue;              // a near fern, fronds and all
+      const gx = g.x*W, gy = H + 4, len = g.h*H, sway = fgSway(g);
+      for (let k = 1; k <= g.blades; k++) {
+        const t2 = k/(g.blades + 1);
+        const bx = gx + sway*t2, by = gy - len*t2, bl = len*0.3*(1 - t2*0.5);
+        c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5);
+        c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5);
       }
     }
+    c.stroke();
+
+    c.beginPath();
+    for (const g of this.fg) {
+      if (g.blades || !g.head) continue;    // a seed head, heavy at the tip
+      const gx = g.x*W, gy = H + 4, len = g.h*H, sway = fgSway(g);
+      const th = sway*0.012, sn = Math.sin(th), cs = Math.cos(th);
+      const ox = mn*0.008, rx = mn*0.006, ry = mn*0.022;
+      const cx = gx + sway - ox*sn, cy = gy - len + ox*cs;
+      c.moveTo(cx + rx*cs, cy + rx*sn);
+      c.ellipse(cx, cy, rx, ry, th, 0, Math.PI*2);
+    }
+    c.fill();
   }
 
   /* The air itself, thickening with distance: a soft band of haze lying
@@ -1499,19 +1581,30 @@ class Scene {
     this.drawMotes(c, W, H, dt, this.dayness());
   }
 
+  /* Stems first, all of them in one path: they share a colour and a width, and
+     the colour is opaque, so gathering them changes nothing but the number of
+     times the rasterizer is asked. The heads cannot join them — they are drawn
+     at 0.82, and two translucent petals that overlap must darken each other,
+     which only happens if each is laid down in its own turn. */
   drawFlowers(c, W, H, baseYfn, bot) {
     if (!this.flowers) return;
     const wa = this.windAmt();
     c.lineWidth = 1;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.16));   // stems share one colour
+    c.beginPath();
     for (const f of this.flowers) {
       const gx = f.x*W, gy = baseYfn(f.x)*H;
       const sway = Math.sin(this.t*1.6 + f.ph)*5*wa*this.windWave(f.x);
-      const tx = gx + sway, ty = gy - f.h*H;
-      c.beginPath(); c.moveTo(gx, gy + 3); c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, tx, ty); c.stroke();
+      c.moveTo(gx, gy + 3);
+      c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, gx + sway, gy - f.h*H);
+    }
+    c.stroke();
+    for (const f of this.flowers) {
+      const gx = f.x*W, gy = baseYfn(f.x)*H;
+      const sway = Math.sin(this.t*1.6 + f.ph)*5*wa*this.windWave(f.x);
       const rgb = f.tone < 0.4 ? this.tok.amberRGB : f.tone < 0.72 ? this.tok.sageRGB : this.tok.cloudRGB;
       c.fillStyle = `rgba(${rgb}, 0.82)`;
-      c.beginPath(); c.arc(tx, ty, Math.max(1.3, f.h*H*0.11), 0, Math.PI*2); c.fill();
+      c.beginPath(); c.arc(gx + sway, gy - f.h*H, Math.max(1.3, f.h*H*0.11), 0, Math.PI*2); c.fill();
     }
   }
 
@@ -1596,23 +1689,36 @@ class Scene {
     c.globalAlpha = 1;
   }
 
+  /* Sixteen ferns, each a midrib and a fan of fronds, came to something like
+     a hundred and seventy strokes a frame. There are only two pens in the
+     whole thicket — a thick one for the ribs and a thin one for the fronds —
+     so it is two passes and two strokes, in the order the pens change. */
   drawFerns(c, W, H, bot) {
     if (!this.ferns) return;
     const wa = this.windAmt();
+    const sway = (f) => Math.sin(this.t*1.4 + f.x*10)*4*wa*this.windWave(f.x) + f.lean*6;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.13)); c.lineCap = "round";
+
+    c.lineWidth = 1.5;
+    c.beginPath();
     for (const f of this.ferns) {
-      const gx = f.x*W, gy = 0.93*H, len = f.size*H;
-      const sway = Math.sin(this.t*1.4 + f.x*10)*4*wa*this.windWave(f.x) + f.lean*6;
-      c.lineWidth = 1.5;
-      c.beginPath(); c.moveTo(gx, gy + 3);
-      c.quadraticCurveTo(gx + sway*0.5, gy - len*0.5, gx + sway, gy - len); c.stroke();
-      c.lineWidth = 1;
+      const gx = f.x*W, gy = 0.93*H, len = f.size*H, sw = sway(f);
+      c.moveTo(gx, gy + 3);
+      c.quadraticCurveTo(gx + sw*0.5, gy - len*0.5, gx + sw, gy - len);
+    }
+    c.stroke();
+
+    c.lineWidth = 1;
+    c.beginPath();
+    for (const f of this.ferns) {
+      const gx = f.x*W, gy = 0.93*H, len = f.size*H, sw = sway(f);
       for (let i = 1; i <= f.blades; i++) {
-        const t = i/(f.blades + 1), bx = gx + sway*t, by = gy - len*t, bl = len*0.28*(1 - t*0.5);
-        c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5); c.stroke();
-        c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5); c.stroke();
+        const t = i/(f.blades + 1), bx = gx + sw*t, by = gy - len*t, bl = len*0.28*(1 - t*0.5);
+        c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5);
+        c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5);
       }
     }
+    c.stroke();
   }
 
   drawMushrooms(c, W, H, bot) {
@@ -1875,22 +1981,30 @@ class Scene {
     const wa = this.windAmt();
     const reedCol = css(mix(this.tok.inkDeep, bot, 0.10));
     c.strokeStyle = reedCol; c.fillStyle = reedCol; c.lineWidth = 1.3;
+    const reedSway = (r) => Math.sin(this.t*1.3 + r.ph) * 7 * wa * this.windWave(r.x) + r.lean*5;
+    // Forty-two stems in one pen: one path, one stroke.
+    c.beginPath();
     for (const r of this.reeds) {
-      const rx = r.x * W;
-      const sway = Math.sin(this.t*1.3 + r.ph) * 7 * wa * this.windWave(r.x) + r.lean*5;
-      const topX = rx + sway, topY = by - r.h*H;
-      c.beginPath();
+      const rx = r.x * W, sway = reedSway(r);
       c.moveTo(rx, by + 3);
-      c.quadraticCurveTo(rx + sway*0.35, by - r.h*H*0.55, topX, topY);
-      c.stroke();
-      if (r.head) {
-        c.save();
-        c.translate(topX, topY);
-        c.rotate(sway * 0.01);
-        c.beginPath(); c.ellipse(0, 2, 2, 7, 0, 0, Math.PI*2); c.fill();
-        c.restore();
-      }
+      c.quadraticCurveTo(rx + sway*0.35, by - r.h*H*0.55, rx + sway, by - r.h*H);
     }
+    c.stroke();
+    // The seed heads used to each take a save/translate/rotate. An ellipse can
+    // carry its own rotation, so the tilt goes into the arc itself and the
+    // offset that the rotation used to carry is applied by hand: (0, 2) turned
+    // through the same angle. Same heads, one fill.
+    c.beginPath();
+    for (const r of this.reeds) {
+      if (!r.head) continue;
+      const sway = reedSway(r), th = sway * 0.01;
+      const sn = Math.sin(th), cs = Math.cos(th);
+      // where translate(topX, topY) → rotate(th) → ellipse(0, 2, …) puts the centre
+      const cx = r.x*W + sway - 2*sn, cy = by - r.h*H + 2*cs;
+      c.moveTo(cx + 2*cs, cy + 2*sn);   // the arc's own start, or it joins the last head
+      c.ellipse(cx, cy, 2, 7, th, 0, Math.PI*2);
+    }
+    c.fill();
     this.drawMotes(c, W, H, dt, this.dayness());
   }
 
