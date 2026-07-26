@@ -134,12 +134,28 @@ for (const place of PLACES) {
        elapse during a wall-clock wait varies from run to run, so without this
        each recording begins at a different scene time — and since almost every
        motion here is a sine of this.t, a two-frame head start changes every
-       number downstream. Rewind the clock, empty the stage, clear the spawn
-       cooldowns, settle the hour, and put the random stream back to its seed. */
+       number downstream.
+
+       clearLife() empties the stage but deliberately leaves the weather and the
+       scenery alone: fireflies, motes, clouds, sky birds, rain, dapples, leaves,
+       cattle and lit windows all belong to the land, are built in reseed, and go
+       on drifting from the moment the page loaded. So they too arrive at the
+       recording carrying however many frames happened to pass — which is what
+       used to leave three night scenes disagreeing about where the fireflies
+       were, in the third decimal of a pixel.
+
+       reseed() rebuilds every one of those arrays, and does it from mulberry32
+       rather than Math.random, so one call puts the whole landscape back to a
+       known state. Its own two Math.random uses are made repeatable by seeding
+       the stream first; it is seeded again afterwards so the recording proper
+       starts from the top. */
     await page.evaluate(() => {
       const s = window.__lw.scene;
       window.__reseedRandom();
+      s.reseed(window.__lw.state.seed);
+      window.__reseedRandom();
       s.t = 0;
+      s.mistX = 0;              // accumulates monotonically, and reseed misses it
       s.clearLife();
       for (const k of Object.keys(s)) if (/^last[A-Z]/.test(k)) s[k] = -999;
       for (const ph of ['dawn', 'day', 'dusk', 'night']) {

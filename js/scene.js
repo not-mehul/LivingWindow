@@ -927,6 +927,7 @@ class Scene {
     for (const ph of PHASES) {
       this.timeMix[ph] += ((state.time === ph ? 1 : 0) - this.timeMix[ph]) * k;
     }
+    this.update(dt);
     this.draw(dt);
     this.spawnCritters(dt);
     this.adaptQuality(dt);
@@ -974,8 +975,8 @@ class Scene {
     const p = this.skyPainter;
     p.begin(W, H, this.dpr);
     p.sky(top, bot);
-    this.drawCelestial(p, W, H, top, night, dt);
-    this.drawClouds(p, W, H, dt, night);
+    this.drawCelestial(p, W, H, top, night);
+    this.drawClouds(p, W, H, night);
     p.end();
 
     switch (this.loc) {
@@ -990,16 +991,85 @@ class Scene {
     this.drawCritters(c, W, H, dt, bot, night);
     this.drawFlyers(c, W, H, dt, bot);
     this.drawForeground(c, W, H, dt, bot);   // the near edge, over everything living
-    this.drawFireflies(c, W, H, dt, night);
-    this.drawWeather(c, W, H, dt, night);
-    this.drawRipples(c, W, H, dt);
+    // Stepped here, not in update(), until actors/critters/flyers move across —
+    // see the prefix note on update(). Each sits exactly where it always did.
+    this.updateFireflies(dt, night); this.drawFireflies(c, W, H, night);
+    this.updateWeather(dt);          this.drawWeather(c, W, H, night);
+    this.updateRipples(dt);          this.drawRipples(c, W, H);
     if (PERF) this.drawPerf(c, dt);
+  }
+
+  /* Everything that moves, moved — and nothing drawn.
+
+     The order here is not a matter of taste. Eight of these consume the shared
+     Math.random stream, and the critters spawn from it too, so the sequence has
+     to be the one the painting used to reach them in. Shuffle two of these lines
+     and the same seed grows a different set of animals.
+
+     Because update() runs entirely before draw(), whatever has moved in here has
+     to be a *prefix* of the old draw order. The moment a later system moves
+     across while an earlier one is still drawing-and-mutating, the two swap
+     places in the stream. So the systems arrive here in draw order, and the ones
+     still to come are stepped from draw() at exactly the point they always sat. */
+  update(dt) {
+    const night = this.nightness();
+    this.updateCelestial(dt);
+    this.updateClouds(dt);
+    this.updateLocation(dt, night);
+    // actors, critters and flyers still move inside their own painting; when
+    // they arrive here, the three stepped at the end of draw() follow them, and
+    // spawnCritters comes back off the end of frame().
+  }
+
+  /* Each place keeps its own weather of moving parts, and each is stepped in the
+     order its painter used to reach them — the cattle before the motes in the
+     meadow, the foam before the sand it wets on the shore. */
+  updateLocation(dt, night) {
+    switch (this.loc) {
+      case "meadow":
+        this.updateSkyBirds(dt); this.updateCattle(dt); this.updateMotes(dt);
+        break;
+      case "forest":
+        this.updateDapples(dt); this.updateMotes(dt); this.updateFallingLeaves(dt);
+        break;
+      case "beach":
+        this.updateSkyBirds(dt); this.updateFoam(dt); this.updateWetSand(dt);
+        break;
+      case "wetland":
+        this.updateSkyBirds(dt); this.updateFishRings(dt);
+        this.updateWaterMist(dt); this.updateMotes(dt);
+        break;
+      case "city":
+        this.updateSkyBirds(dt); this.updateCityWindows(dt, night);
+        break;
+    }
+  }
+
+  /* Shooting stars only ever ran while the moon was up — the loop sat inside the
+     test for whether to draw the moon at all — so the same gate stands here. */
+  updateCelestial(dt) {
+    const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
+    if (m.night / total <= 0.03) return;
+    for (let i = this.meteors.length - 1; i >= 0; i--) {
+      const mt = this.meteors[i];
+      mt.age += dt; mt.x += mt.vx*dt; mt.y += mt.vy*dt;
+      if (mt.age > mt.life) { this.meteors.splice(i, 1); continue; }
+    }
+  }
+
+  updateClouds(dt) {
+    const wf = state.weather === "breeze" ? 3 : 1;
+    for (const cl of this.clouds) {
+      const near = Math.max(0, Math.min(1, (cl.w - 0.16)/0.22));
+      cl.x += cl.s * dt * wf * (0.5 + near);
+      if (cl.x > 1.3) cl.x = -0.3;
+    }
   }
 
   /* `p` is a sky painter, not the 2D context: the same calls go to the GPU or
      back onto the canvas depending on what the machine can offer. The shapes
      and their order are written once, here, so both roads lead to one picture. */
-  drawCelestial(p, W, H, top, night, dt) {
+  drawCelestial(p, W, H, top, night) {
     // Stars, brightening as the light fails.
     if (night > 0.05 && this.stars) {
       const rgb = this.tok.cloudRGB;              // one colour; vary alpha per star
@@ -1036,8 +1106,6 @@ class Scene {
       // shooting stars
       for (let i = this.meteors.length - 1; i >= 0; i--) {
         const mt = this.meteors[i];
-        mt.age += dt; mt.x += mt.vx*dt; mt.y += mt.vy*dt;
-        if (mt.age > mt.life) { this.meteors.splice(i, 1); continue; }
         const al = (1 - mt.age/mt.life) * 0.7 * moonA;
         p.seg(this.tok.cloudRGB, mt.x*W, mt.y*H,
           (mt.x - mt.vx*0.10)*W, (mt.y - mt.vy*0.10)*H, 1.2, al);
@@ -1046,16 +1114,13 @@ class Scene {
     }
   }
 
-  drawClouds(p, W, H, dt, night) {
+  drawClouds(p, W, H, night) {
     const rgb = this.tok.cloudRGB;
-    const wf = state.weather === "breeze" ? 3 : 1;
     const af = (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
     for (const cl of this.clouds) {
       // Big clouds are near ones: they cross faster and hold their colour,
       // while the small far ones hang almost still and pale away.
       const near = Math.max(0, Math.min(1, (cl.w - 0.16)/0.22));
-      cl.x += cl.s * dt * wf * (0.5 + near);
-      if (cl.x > 1.3) cl.x = -0.3;
       const cw = cl.w * W;
       p.glow(rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af * (0.62 + near*0.5));
     }
@@ -1105,13 +1170,19 @@ class Scene {
   }
 
   /* Far-off birds adrift in the upper sky — a couple of quiet wingbeats. */
-  drawSkyBirds(c, W, H, dt, bot, night) {
+  updateSkyBirds(dt) {
+    if (!this.skyBirds) return;
+    for (const b of this.skyBirds) {
+      b.x += b.sp*dt; b.ph += dt*4;
+      if (b.x > 1.15) b.x -= 1.3; else if (b.x < -0.15) b.x += 1.3;
+    }
+  }
+
+  drawSkyBirds(c, W, H, bot, night) {
     if (!this.skyBirds) return;
     const col = css(mix(this.tok.ink, bot, 0.45));
     c.strokeStyle = col; c.lineCap = "round"; c.lineWidth = 1.1;
     for (const b of this.skyBirds) {
-      b.x += b.sp*dt; b.ph += dt*4;
-      if (b.x > 1.15) b.x -= 1.3; else if (b.x < -0.15) b.x += 1.3;
       const a = 0.5 * (1 - night*0.7);
       if (a < 0.04) continue;
       const px = b.x*W, py = (b.y + Math.sin(b.ph*0.3)*0.004)*H, s = b.size;
@@ -1303,10 +1374,8 @@ class Scene {
      more than any detail: deep straight back, square rump, brisket low and
      forward, head down in the grass most of the time. They stand in ones and
      twos, swing a tail at flies, and lift their heads now and then. */
-  drawCattle(c, W, H, dt, baseFn, bot) {
+  updateCattle(dt) {
     if (!this.cattle || !this.cattle.length) return;
-    const col = css(mix(this.tok.ink, bot, 0.30));
-    const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
     for (const cw of this.cattle) {
       cw.next -= dt;
       if (cw.next <= 0) {                       // up for a look, or back down to it
@@ -1314,6 +1383,14 @@ class Scene {
         cw.next = cw.head ? 8 + Math.random()*16 : 4 + Math.random()*9;
       }
       cw.hd = (cw.hd === undefined) ? cw.head : cw.hd + (cw.head - cw.hd)*Math.min(1, dt*1.4);
+    }
+  }
+
+  drawCattle(c, W, H, baseFn, bot) {
+    if (!this.cattle || !this.cattle.length) return;
+    const col = css(mix(this.tok.ink, bot, 0.30));
+    const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
+    for (const cw of this.cattle) {
       const s = Math.min(W, H)*0.026*cw.sz;
       this.cowShape(c, cw.x*W, baseFn(cw.x)*H, s, cw.dir, cw.hd, col,
         cw.ph > 2.4 ? pale : null, Math.sin(this.t*1.7 + cw.ph));
@@ -1381,16 +1458,25 @@ class Scene {
   }
 
   /* Slow motes of pollen or dust adrift in the daytime air. */
-  drawMotes(c, W, H, dt, dayish) {
+  /* Motes hang still in the dark. The old code reached its return before it
+     reached the drift, which made that behaviour rather than an optimization. */
+  updateMotes(dt) {
     if (!this.motes) return;
-    const a0 = dayish*0.55;
-    if (a0 < 0.03) return;
-    c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+    if (this.dayness()*0.55 < 0.03) return;
     for (const m of this.motes) {
       m.y -= m.sp*dt;
       m.x += (m.drift + Math.sin(this.t*0.3 + m.ph)*0.006)*dt;
       if (m.y < 0.24) { m.y = 0.96; m.x = Math.random(); }
       else if (m.x < -0.02) m.x = 1.02; else if (m.x > 1.02) m.x = -0.02;
+    }
+  }
+
+  drawMotes(c, W, H, dayish) {
+    if (!this.motes) return;
+    const a0 = dayish*0.55;
+    if (a0 < 0.03) return;
+    c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+    for (const m of this.motes) {
       const tw = 0.5 + 0.5*Math.sin(this.t*0.8 + m.ph);
       const a = a0*tw*0.5;
       if (a < 0.02) continue;
@@ -1530,11 +1616,11 @@ class Scene {
   }
 
   drawMeadow(c, W, H, dt, bot) {
-    this.drawSkyBirds(c, W, H, dt, bot, this.nightness());
+    this.drawSkyBirds(c, W, H, bot, this.nightness());
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.45), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.38));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
-    this.drawCattle(c, W, H, dt, this.hillA, bot);
+    this.drawCattle(c, W, H, this.hillA, bot);
     this.distanceHaze(c, W, H, 0.52, 0.82, 0.075*(1 - this.nightness()*0.55));
     this.drawHedgerow(c, W, H, this.hedgeLine, bot);
     this.drawRidge(c, this.hillB, mix(this.tok.ink, bot, 0.18), W, H);
@@ -1581,7 +1667,7 @@ class Scene {
     }
     this.drawFlowers(c, W, H, groundYn, bot);
     this.drawGrassTufts(c, W, H, this.grass, groundYn, css(mix(this.tok.inkDeep, bot, 0.10)));
-    this.drawMotes(c, W, H, dt, this.dayness());
+    this.drawMotes(c, W, H, this.dayness());
   }
 
   /* Stems first, all of them in one path: they share a colour and a width, and
@@ -1660,26 +1746,36 @@ class Scene {
     for (const tr of this.trunksNear) drawTrunk(tr, nearCol);
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
     c.fillRect(0, H*0.93, W, H*0.07);
-    this.drawDapples(c, W, H, dt, gust);
+    this.drawDapples(c, W, H, gust);
     this.drawFerns(c, W, H, bot);
     this.drawMushrooms(c, W, H, bot);
     this.drawGrassTufts(c, W, H, this.grass, () => 0.93,
       css(mix(this.tok.inkDeep, bot, 0.12)));
-    this.drawMotes(c, W, H, dt, this.dayness());
-    this.drawFallingLeaves(c, W, H, dt, bot);
+    this.drawMotes(c, W, H, this.dayness());
+    this.drawFallingLeaves(c, W, H, bot);
   }
 
   /* Light through the canopy, pooled on the floor. It slides with the gust
      the crowns are answering, so the light and the trees move together. */
-  drawDapples(c, W, H, dt, gust) {
+  /* The dapples stand still in a dull wood. That is the old behaviour — the
+     drift sat behind the same test that decided whether to paint at all — and
+     it has to be kept now the two are apart. */
+  updateDapples(dt) {
+    if (!this.dapples) return;
+    if (this.dayness() < 0.12) return;
+    for (const d of this.dapples) {
+      d.x += d.sp*dt;
+      if (d.x > 1.08) d.x -= 1.16;
+    }
+  }
+
+  drawDapples(c, W, H, gust) {
     if (!this.dapples) return;
     const day = this.dayness();
     if (day < 0.12) return;
     const mn = Math.min(W, H);
     c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
     for (const d of this.dapples) {
-      d.x += d.sp*dt;
-      if (d.x > 1.08) d.x -= 1.16;
       const tw = 0.55 + 0.45*Math.sin(this.t*d.tw + d.ph);
       const a = day*0.085*tw;
       if (a < 0.01) continue;
@@ -1739,14 +1835,20 @@ class Scene {
     }
   }
 
-  drawFallingLeaves(c, W, H, dt, bot) {
+  updateFallingLeaves(dt) {
     if (!this.leaves) return;
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.18));
     for (const l of this.leaves) {
       l.y += l.sp*dt;
       l.x += (l.drift + Math.sin(this.t*1.2 + l.ph)*0.02)*dt;
       l.rot += dt*1.6;
       if (l.y > 0.96) { l.y = 0.28 + Math.random()*0.12; l.x = Math.random(); }
+    }
+  }
+
+  drawFallingLeaves(c, W, H, bot) {
+    if (!this.leaves) return;
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.18));
+    for (const l of this.leaves) {
       c.save(); c.translate(l.x*W, l.y*H); c.rotate(l.rot);
       c.beginPath(); c.ellipse(0, 0, 3.2, 1.4, 0, 0, Math.PI*2); c.fill();
       c.restore();
@@ -1754,7 +1856,7 @@ class Scene {
   }
 
   drawBeach(c, W, H, dt, top, bot, night) {
-    this.drawSkyBirds(c, W, H, dt, bot, night);
+    this.drawSkyBirds(c, W, H, bot, night);
     const hy = this.horizonY * H, sy = this.shoreY * H;
     const sg = c.createLinearGradient(0, hy, 0, sy);
     sg.addColorStop(0, css(mix(this.tok.sea, top, 0.40)));
@@ -1785,8 +1887,6 @@ class Scene {
       c.fillRect(lx - W*0.03, hy, W*0.06, sy - hy);
     }
     for (const f of this.foam) {
-      f.p += dt / 10;
-      if (f.p > 1) f.p -= 1;
       const ease = f.p * f.p;
       const fy = hy + (sy - hy) * (0.12 + 0.88 * ease);
       const alpha = Math.sin(Math.PI * Math.min(1, f.p*1.1)) * 0.4;
@@ -1809,7 +1909,7 @@ class Scene {
     c.fillRect(0, sy, W, H - sy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.10)`;
     c.fillRect(0, sy, W, 3);
-    this.drawWetSand(c, W, H, dt, top, bot, night);
+    this.drawWetSand(c, W, H, top, bot, night);
     // pebbles and the odd shell strewn along the tide line
     for (const pb of (this.pebbles || [])) {
       const r = pb.r*Math.min(W, H);
@@ -1841,12 +1941,21 @@ class Scene {
       css(mix(this.tok.inkDeep, bot, 0.18)));
   }
 
-  /* The sand the sea has just been over. It runs up the beach behind each
-     wave and drains slowly back, and while it is wet it holds the light —
-     the sky, the sun, and a smear of whatever is standing on it. */
-  drawWetSand(c, W, H, dt, top, bot, night) {
-    const sy = this.shoreY;
-    // the wave's reach, chasing up quickly and draining away slowly
+  updateFoam(dt) {
+    if (!this.foam) return;
+    for (const f of this.foam) {
+      f.p += dt / 10;
+      if (f.p > 1) f.p -= 1;
+    }
+  }
+
+  /* How far up the sand the last wave reached, chasing up quickly and draining
+     away slowly. This reads the foam, so it must run after updateFoam — and
+     unlike the mist and the motes it is *not* gated: the old code reached its
+     `this.wet < 0.004` return only after the accumulation, so the sand goes on
+     drying whether or not there is anything left to draw. */
+  updateWetSand(dt) {
+    if (!this.foam) return;
     let reach = 0;
     for (const f of this.foam) {
       const ease = f.p*f.p;
@@ -1854,6 +1963,38 @@ class Scene {
     }
     const target = reach*0.14;
     this.wet += (target - this.wet) * Math.min(1, dt*(target > this.wet ? 3.2 : 0.5));
+  }
+
+  updateFishRings(dt) {
+    for (let i = this.fishRings.length - 1; i >= 0; i--) {
+      const fr = this.fishRings[i];
+      fr.age += dt;
+      if (fr.age > 1.6) { this.fishRings.splice(i, 1); continue; }
+    }
+  }
+
+  /* Lights only come on and go off after dark, which is where the old loop sat:
+     inside the test for whether to draw any lit windows at all. */
+  updateCityWindows(dt, night) {
+    if (night <= 0.12 || !this.frontBlocks) return;
+    for (const b of this.frontBlocks) {
+      for (const wnd of b.lit) {
+        wnd.next -= dt;
+        if (wnd.next <= 0) {
+          wnd.on = !wnd.on;
+          wnd.next = (wnd.on ? 45 : 25) + Math.random()*150;
+          wnd.fade = 0;
+        }
+        wnd.fade = Math.min(1, (wnd.fade === undefined ? 1 : wnd.fade) + dt*0.7);
+      }
+    }
+  }
+
+  /* The sand the sea has just been over. It runs up the beach behind each
+     wave and drains slowly back, and while it is wet it holds the light —
+     the sky, the sun, and a smear of whatever is standing on it. */
+  drawWetSand(c, W, H, top, bot, night) {
+    const sy = this.shoreY;
     if (this.wet < 0.004) return;
     const y0 = sy*H, y1 = (sy + this.wet)*H;
 
@@ -1904,7 +2045,7 @@ class Scene {
   }
 
   drawWetland(c, W, H, dt, top, bot, night) {
-    this.drawSkyBirds(c, W, H, dt, bot, night);
+    this.drawSkyBirds(c, W, H, bot, night);
     this.drawRidge(c, this.treeline, mix(this.tok.ink, bot, 0.42), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.36));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
@@ -1962,8 +2103,6 @@ class Scene {
     // fish rises
     for (let i = this.fishRings.length - 1; i >= 0; i--) {
       const fr = this.fishRings[i];
-      fr.age += dt;
-      if (fr.age > 1.6) { this.fishRings.splice(i, 1); continue; }
       const p = fr.age / 1.6;
       c.strokeStyle = `rgba(${this.tok.foamRGB}, ${(1-p)*0.35})`;
       c.lineWidth = 1;
@@ -1975,7 +2114,7 @@ class Scene {
         c.beginPath(); c.arc(fr.x*W, fr.y*H, 2, 0, Math.PI*2); c.fill();
       }
     }
-    this.drawWaterMist(c, W, H, dt, night);
+    this.drawWaterMist(c, W, H, night);
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.15));
     c.beginPath();
     c.moveTo(0, H); c.lineTo(0, by);
@@ -2008,7 +2147,7 @@ class Scene {
       c.ellipse(cx, cy, 2, 7, th, 0, Math.PI*2);
     }
     c.fill();
-    this.drawMotes(c, W, H, dt, this.dayness());
+    this.drawMotes(c, W, H, this.dayness());
   }
 
   /* The far bank, upside down in the water below it: the treeline and its
@@ -2053,13 +2192,23 @@ class Scene {
   }
 
   /* Mist lying on the water before the sun has any strength in it. */
-  drawWaterMist(c, W, H, dt, night) {
+  /* How much mist there is at all, which is also the test for whether it
+     drifts: the advance of mistX used to sit behind this same return. */
+  mistAmt() {
     const dawnish = this.timeMix.dawn /
       (this.timeMix.dawn + this.timeMix.day + this.timeMix.dusk + this.timeMix.night || 1);
-    const a = dawnish*0.95 + (state.weather === "fog" ? 0.45 : 0);
+    return dawnish*0.95 + (state.weather === "fog" ? 0.45 : 0);
+  }
+
+  updateWaterMist(dt) {
+    if (this.mistAmt() < 0.02) return;
+    this.mistX = (this.mistX || 0) + dt*0.004;
+  }
+
+  drawWaterMist(c, W, H, night) {
+    const a = this.mistAmt();
     if (a < 0.02) return;
     const wy = this.waterY*H, by = this.bankY*H;
-    this.mistX = (this.mistX || 0) + dt*0.004;
     for (let k = 0; k < 3; k++) {
       const band = wy + (by - wy)*(0.04 + k*0.19);
       const h = (by - wy)*(0.2 + k*0.06);
@@ -2074,7 +2223,7 @@ class Scene {
   }
 
   drawCity(c, W, H, dt, bot, night) {
-    this.drawSkyBirds(c, W, H, dt, bot, night);
+    this.drawSkyBirds(c, W, H, bot, night);
     const groundY = H * 0.95;
     c.fillStyle = css(mix(this.tok.ink, bot, 0.42));
     for (const b of this.backBlocks) {
@@ -2116,14 +2265,7 @@ class Scene {
       for (const b of this.frontBlocks) {
         const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = groundY - bh;
         for (const wnd of b.lit) {
-          // somebody comes home, somebody goes to bed
-          wnd.next -= dt;
-          if (wnd.next <= 0) {
-            wnd.on = !wnd.on;
-            wnd.next = (wnd.on ? 45 : 25) + Math.random()*150;
-            wnd.fade = 0;
-          }
-          wnd.fade = Math.min(1, (wnd.fade === undefined ? 1 : wnd.fade) + dt*0.7);
+          // somebody comes home, somebody goes to bed — see updateCityWindows
           const lvl = (wnd.on ? wnd.fade : 1 - wnd.fade);
           if (lvl < 0.02) continue;
           const flick = wnd.flicker ? 0.75 + 0.25*Math.sin(this.t*3.1 + wnd.ph) : 1;
@@ -5761,13 +5903,22 @@ class Scene {
     c.restore();
   }
 
-  drawFireflies(c, W, H, dt, night) {
+  /* Fireflies hold still in the daylight and in the rain, which is the same
+     test that decides whether any of them are drawn. */
+  updateFireflies(dt, night) {
+    const ffA = night * (state.weather === "rain" ? 0.15 : 1);
+    if (ffA < 0.05 || !this.fireflies.length) return;
+    for (const ff of this.fireflies) {
+      ff.x += (ff.dx + Math.sin(this.t*0.3 + ff.ph)*0.006) * dt;
+      if (ff.x < 0) ff.x = 1; if (ff.x > 1) ff.x = 0;
+    }
+  }
+
+  drawFireflies(c, W, H, night) {
     const ffA = night * (state.weather === "rain" ? 0.15 : 1);
     if (ffA < 0.05 || !this.fireflies.length) return;
     const rgb = this.tok.fireflyRGB;
     for (const ff of this.fireflies) {
-      ff.x += (ff.dx + Math.sin(this.t*0.3 + ff.ph)*0.006) * dt;
-      if (ff.x < 0) ff.x = 1; if (ff.x > 1) ff.x = 0;
       const blink = Math.max(0, Math.sin(this.t*ff.sp*2 + ff.ph));
       const a = blink*blink * 0.8 * ffA;
       if (a < 0.03) continue;
@@ -5776,15 +5927,34 @@ class Scene {
     }
   }
 
-  drawWeather(c, W, H, dt, night) {
+  /* Only the weather that is actually falling moves: rain drops and blown seeds
+     each advance under their own test for the weather, exactly as before. */
+  updateWeather(dt) {
+    if (state.weather === "rain") {
+      for (const d of this.rain) {
+        d.y += d.sp * dt * 1.6;
+        d.x += dt * 0.02;
+        if (d.y > 1) { d.y = -0.05; d.x = Math.random(); }
+      }
+    }
+    if (state.weather === "breeze") {
+      for (const s of this.seeds) {
+        s.x += s.sp * dt * 2;
+        s.ph += dt;
+        if (s.x > 1.05) { s.x = -0.05; s.y = 0.3 + Math.random()*0.5; }
+      }
+    }
+    if (state.weather === "fog") {
+      for (const f of this.fog) f.x += f.sp * dt;
+    }
+  }
+
+  drawWeather(c, W, H, night) {
     if (state.weather === "rain") {
       c.strokeStyle = `rgba(${this.tok.rainRGB}, 0.35)`;
       c.lineWidth = 1;
       c.beginPath();
       for (const d of this.rain) {
-        d.y += d.sp * dt * 1.6;
-        d.x += dt * 0.02;
-        if (d.y > 1) { d.y = -0.05; d.x = Math.random(); }
         const rx = d.x*W, ry = d.y*H;
         c.moveTo(rx, ry);
         c.lineTo(rx - W*0.004, ry + d.len*H);
@@ -5794,9 +5964,6 @@ class Scene {
     if (state.weather === "breeze") {
       c.fillStyle = `rgba(${this.tok.cloudRGB}, 0.5)`;
       for (const s of this.seeds) {
-        s.x += s.sp * dt * 2;
-        s.ph += dt;
-        if (s.x > 1.05) { s.x = -0.05; s.y = 0.3 + Math.random()*0.5; }
         const sx = s.x*W, sy = s.y*H + Math.sin(s.ph*1.3)*10;
         c.beginPath(); c.arc(sx, sy, 1.3, 0, Math.PI*2); c.fill();
       }
@@ -5819,7 +5986,6 @@ class Scene {
       }
       for (let fi = 0; fi < this.fog.length; fi++) {
         const f = this.fog[fi];
-        f.x += f.sp * dt;
         const fy = f.y * H;
         c.fillStyle = this._fogGrads[fi];
         const drift = Math.sin(this.t*0.1 + f.x*10) * W * 0.05;
@@ -5828,11 +5994,17 @@ class Scene {
     }
   }
 
-  drawRipples(c, W, H, dt) {
+  updateRipples(dt) {
     for (let i = this.ripples.length - 1; i >= 0; i--) {
       const r = this.ripples[i];
       r.age += dt;
       if (r.age > r.life) { this.ripples.splice(i, 1); continue; }
+    }
+  }
+
+  drawRipples(c, W, H) {
+    for (let i = this.ripples.length - 1; i >= 0; i--) {
+      const r = this.ripples[i];
       const p = r.age / r.life;
       const rx = r.x*W, ry = r.y*H;
       for (let k = 0; k < 3; k++) {

@@ -1,5 +1,7 @@
-# Dependencies (should none ever be added)
+# Dependencies (should none ever be added). The bare entry also covers a
+# symlink to a global install, which is how tools/ finds Playwright.
 node_modules/
+node_modules
 
 # Editor / OS cruft
 .DS_Store
