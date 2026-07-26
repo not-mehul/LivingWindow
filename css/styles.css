@@ -63,6 +63,11 @@
   --scene-fog-rgb:    226, 214, 190;
   --scene-firefly:    #fcd34d;
   --scene-glass-edge: rgba(245,236,217,0.08);
+
+  /* The casement leaves — old wood, a shade off the room behind them */
+  --casement-face:  #332b22;
+  --casement-edge:  #483d2f;
+  --casement-groove: rgba(0,0,0,0.55);
 }
 
 [data-theme="light"] {
@@ -125,6 +130,10 @@
   --scene-fog-rgb:    240, 231, 212;
   --scene-firefly:    #e0a92a;
   --scene-glass-edge: rgba(90,72,44,0.12);
+
+  --casement-face:  #ddd0b6;
+  --casement-edge:  #c9b998;
+  --casement-groove: rgba(120,95,50,0.28);
 }
 
 /* ============================================================ */
@@ -277,7 +286,81 @@ h1 em { font-style: italic; color: var(--accent-amber); }
   border: 1px solid var(--scene-glass-edge);
   border-radius: 2px;
   overflow: hidden;
+  perspective: 1400px;
 }
+
+/* ---------- The casement — two leaves that swing open and shut ---------- */
+.casement {
+  position: absolute; inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+.casement-leaf {
+  position: absolute; top: 0; bottom: 0;
+  width: 50.4%;
+  background:
+    linear-gradient(180deg, rgba(var(--cream-rgb), 0.07), transparent 38%),
+    var(--casement-face);
+  border: 1px solid var(--casement-edge);
+  backface-visibility: hidden;
+  /* The swing carries the motion; the fade waits until the leaf is nearly
+     edge-on, so you see it travel rather than simply dissolve. */
+  transition: transform 1.15s cubic-bezier(0.62, 0.02, 0.24, 1),
+              opacity 0.4s ease 0.72s,
+              filter 1.15s ease;
+}
+.casement-leaf.left  { left: 0;  transform-origin: left center; }
+.casement-leaf.right { right: 0; transform-origin: right center; }
+/* the raised panel set into each leaf */
+.casement-leaf::before {
+  content: ""; position: absolute; inset: 14px;
+  border: 1px solid var(--casement-groove);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--cream-rgb), 0.07),
+    0 1px 0 rgba(var(--cream-rgb), 0.05);
+}
+/* the meeting stile, and the shadow the leaf throws into the reveal */
+.casement-leaf::after {
+  content: ""; position: absolute; top: 0; bottom: 0; width: 34px;
+  pointer-events: none;
+}
+.casement-leaf.left::after {
+  right: -1px;
+  border-right: 1px solid rgba(var(--accent-amber-rgb), 0.28);
+  background: linear-gradient(90deg, transparent, rgba(var(--shadow-rgb), calc(0.22 * var(--shadow-strength))));
+}
+.casement-leaf.right::after {
+  left: -1px;
+  border-left: 1px solid rgba(var(--accent-amber-rgb), 0.28);
+  background: linear-gradient(270deg, transparent, rgba(var(--shadow-rgb), calc(0.22 * var(--shadow-strength))));
+}
+/* the little catch on each leaf, near the meeting stile */
+.casement-handle {
+  position: absolute; top: 50%; margin-top: -11px;
+  width: 5px; height: 22px;
+  background: var(--accent-amber);
+  border-radius: 1px;
+  box-shadow: 0 1px 3px rgba(var(--shadow-rgb), calc(0.5 * var(--shadow-strength)));
+  z-index: 1;
+}
+.casement-leaf.left .casement-handle { right: 7px; }
+.casement-leaf.right .casement-handle { left: 7px; }
+
+/* Open — the resting state: the leaves stand wide, swung back out of sight. */
+.casement-leaf.left  { transform: rotateY(-107deg); opacity: 0; filter: brightness(1.45); }
+.casement-leaf.right { transform: rotateY(107deg);  opacity: 0; filter: brightness(1.45); }
+/* Shut: they meet in the middle and the land is hidden. Coming to, they
+   darken at once rather than fading in late as they do on the way out. */
+.window-frame.closed .casement-leaf.left,
+.window-frame.closed .casement-leaf.right {
+  transform: rotateY(0deg);
+  opacity: 1;
+  filter: none;
+  transition-delay: 0s;
+}
+/* Nothing to reach for while the window is shut. */
+.window-frame.closed .window-tools { opacity: 0; pointer-events: none; }
+.window-tools { transition: opacity 0.5s ease; }
 #scene {
   display: block;
   width: 100%;
@@ -356,12 +439,10 @@ h1 em { font-style: italic; color: var(--accent-amber); }
 .icon-btn:hover { color: var(--text-heading); }
 .icon-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
 
-/* ---------- Begin overlay (modal on the glass) ---------- */
+/* ---------- Begin overlay (the card pinned to the shut casement) ----------
+   No scrim: the closed leaves already stand between you and the land. */
 .begin-overlay {
   position: absolute; inset: 0;
-  background: var(--modal-backdrop);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
   display: flex; align-items: center; justify-content: center;
   z-index: 5;
   transition: opacity 0.5s;
@@ -496,13 +577,17 @@ h1 em { font-style: italic; color: var(--accent-amber); }
 .btn-square:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 
 /* ---------- Controls ---------- */
+/* Two even columns, so paired controls (Hour/Weather, Life/Loudness) sit
+   shoulder to shoulder and nothing stretches to match its neighbour. */
 .controls-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-  gap: 1.4rem 1.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.3rem 1.8rem;
+  align-items: start;
 }
 .control-group { min-width: 0; }
 .control-group.wide { grid-column: 1 / -1; }
+.controls-grid .settings-divider { grid-column: 1 / -1; margin: 0.1rem 0; }
 
 .segmented {
   display: flex;
@@ -564,6 +649,19 @@ input[type="range"]:focus-visible { outline: 2px solid var(--focus-ring); outlin
   color: var(--text-dim);
   min-width: 3ch; text-align: right;
 }
+.slider-val.wide-val { min-width: 7ch; }
+/* a slider that belongs to the switch above it, stepped in beneath it */
+.slider-row.inset { padding: 0.15rem 0 0.1rem 0; }
+.slider-label {
+  font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
+    Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-size: 0.75rem;
+  color: var(--text-faint);
+  flex: none;
+}
+/* the cycle speed means nothing while the hours are held still */
+.slider-row.disabled { opacity: 0.4; pointer-events: none; }
 
 .switch-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -599,56 +697,6 @@ input[type="range"]:focus-visible { outline: 2px solid var(--focus-ring); outlin
   background: var(--accent-bright);
 }
 
-.actions-row {
-  display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap;
-  margin-top: 1.25rem;
-}
-
-/* ---------- Field notes ---------- */
-.notes-section { margin-top: 3rem; padding-top: 3rem; border-top: 1px solid var(--border-soft); }
-.notes-panel {
-  background: var(--panel-bg);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  border: 1px solid var(--border-soft);
-  border-radius: 2px;
-}
-.note-row {
-  display: flex; gap: 0.9rem; align-items: center;
-  padding: 0.7rem 1.25rem;
-}
-.note-row + .note-row { border-top: 1px solid var(--border-faint); }
-.note-time {
-  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo,
-    Consolas, "Liberation Mono", monospace;
-  font-size: 0.6875rem;
-  color: var(--text-faint);
-  flex: none;
-}
-.note-species {
-  font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
-    Georgia, "Times New Roman", serif;
-  color: var(--text-heading);
-  font-size: 0.9375rem;
-  flex: none;
-}
-.note-desc {
-  font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
-    Georgia, "Times New Roman", serif;
-  font-style: italic;
-  font-size: 0.8125rem;
-  color: var(--text-dim);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.notes-empty {
-  padding: 1.25rem;
-  font-family: "Iowan Old Style", "Apple Garamond", Baskerville,
-    Georgia, "Times New Roman", serif;
-  font-style: italic; font-size: 0.875rem;
-  color: var(--text-faint);
-  text-align: center;
-}
-
 /* ---------- Footer ---------- */
 footer {
   margin-top: 3.5rem; padding-top: 2rem;
@@ -667,7 +715,6 @@ footer .term { font-style: italic; color: var(--text-dim); }
   h1 { font-size: 3rem; }
   header { margin-bottom: 2.5rem; }
   #scene { height: 44vh; }
-  .note-desc { white-space: normal; }
   .segmented button { font-size: 0.8125rem; padding: 0.55rem 0.1rem; }
 }
 @media (prefers-reduced-motion: reduce) {

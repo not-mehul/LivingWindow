@@ -6,8 +6,8 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js";
-import { SPECIES, CRITTER_VOICES, note, burst } from "./species.js";
+import { mulberry32, REDUCED, state } from "./util.js?v=3";
+import { SPECIES, CRITTER_VOICES, note, burst } from "./species.js?v=3";
 
 class AudioEngine {
   constructor({ scene, emit }) {
@@ -19,8 +19,10 @@ class AudioEngine {
     this.gen = 0;             // scheduler generation; bumped to stop old loops
     this.quietUntil = 0;
     this.activeVoices = 0;   // live synthesized calls, capped for a calm mix
-    this.maxVoices = 6;
     this.rng = mulberry32((state.seed ^ 0xA0D10) >>> 0);
+    this.breath = 1;
+    this.chorusPh = this.rng()*Math.PI*2;
+    this.chorusPeriod = 240 + this.rng()*200;   // four to seven minutes
   }
 
   /* A one-shot timer that removes itself from the pending set when it fires,
@@ -104,6 +106,28 @@ class AudioEngine {
     this.voiceGain = ac.createGain(); this.voiceGain.gain.value = 0.9;
     this.voiceGain.connect(this.voiceFilter);
     this.voiceFilter.connect(this.master);
+
+    // The air a distant call has to cross: a handful of early reflections off
+    // the ground and whatever is standing about, rolled off at both ends and
+    // fed back just enough to hang for a moment. Near voices are sent almost
+    // none of it; far ones a good deal, which is what tells you they are far.
+    this.airIn = ac.createGain();
+    const airHP = ac.createBiquadFilter();
+    airHP.type = "highpass"; airHP.frequency.value = 320;
+    const airLP = ac.createBiquadFilter();
+    airLP.type = "lowpass"; airLP.frequency.value = 3400;
+    for (const d of [0.031, 0.057, 0.089, 0.134]) {
+      const dl = ac.createDelay(0.5); dl.delayTime.value = d;
+      const g = ac.createGain(); g.gain.value = 0.42 - d;
+      this.airIn.connect(dl); dl.connect(g); g.connect(airHP);
+    }
+    const tail = ac.createDelay(0.5); tail.delayTime.value = 0.117;
+    const fb = ac.createGain(); fb.gain.value = 0.33;
+    airHP.connect(airLP);
+    airLP.connect(tail); tail.connect(fb); fb.connect(airHP);
+    this.airGain = ac.createGain(); this.airGain.gain.value = 0.5;
+    airLP.connect(this.airGain);
+    this.airGain.connect(this.master);
 
     // wind bed
     this.windGain = ac.createGain(); this.windGain.gain.value = 0;
@@ -191,11 +215,13 @@ class AudioEngine {
     const locAeo = { meadow: 1, forest: 0.55, beach: 0.7, wetland: 0.8, city: 0.3 };
     this.aeoBase = aeoT[w] * locAeo[L] * 0.16;
     this.set(this.aeoGain.gain, this.aeoBase, 2);
-    this.set(this.rainGain.gain, w === "rain" ? 0.16 : 0);
+    this.rainTarget = w === "rain" ? 0.16 : 0;
+    this.set(this.rainGain.gain, this.rainTarget * (this.breath || 1));
     // Leaf hiss follows the wind: a still, clear day in the wood is quiet.
     const leafBase = L === "forest" ? 0.10 : L === "wetland" ? 0.05 : 0;
     const leafWeather = { clear: 0.4, breeze: 1.7, rain: 1.1, fog: 0.7 }[w] || 1;
-    this.set(this.leavesGain.gain, leafBase * leafWeather);
+    this.leafTarget = leafBase * leafWeather;
+    this.set(this.leavesGain.gain, this.leafTarget * (this.breath || 1));
     this.set(this.trafficGain.gain, L === "city" ? 0.05 : 0);
     // The sea's resting hiss between waves — kept low so the waves themselves carry.
     const surfWeather = { clear: 1, breeze: 1.5, rain: 1.3, fog: 0.9 }[w] || 1;
@@ -211,6 +237,8 @@ class AudioEngine {
 
   retune() {
     this.rng = mulberry32((state.seed ^ 0xA0D10) >>> 0);
+    this.chorusPh = this.rng()*Math.PI*2;
+    this.chorusPeriod = 240 + this.rng()*200;
     if (!this.ac) return;
     const roots = [174.6, 196, 220, 233.1, 261.6];
     const modes = [[1, 1.125, 1.333, 1.5, 1.875], [1, 1.2, 1.5, 1.6, 2], [1, 1.125, 1.25, 1.5, 1.667]];
@@ -226,12 +254,19 @@ class AudioEngine {
     const ac = this.ac;
     const lp = ac.createBiquadFilter();
     lp.type = "lowpass";
-    lp.frequency.value = 16000 / (1 + depth*0.12);
+    // Air swallows the top of a sound over distance: a far bird is duller as
+    // well as quieter, which is most of what makes it sound far away.
+    lp.frequency.value = 15000 / (1 + depth*0.24);
     // A single distance-loudness stage for both listening modes: near voices are
     // clearly louder than far ones, so distance reads whether or not spatial is on.
     const dg = ac.createGain();
     dg.gain.value = Math.max(0.2, Math.min(1, 5 / (3.2 + depth)));
     lp.connect(dg);
+    if (this.airIn) {                       // the further off, the more room
+      const send = ac.createGain();
+      send.gain.value = Math.min(0.6, depth*0.042);
+      dg.connect(send); send.connect(this.airIn);
+    }
     if (state.spatial && ac.createPanner) {
       const p = ac.createPanner();
       p.panningModel = "HRTF";
@@ -267,7 +302,7 @@ class AudioEngine {
     const ac = this.ac, r = this.rng;
     // Hold a calm ceiling on how many voices sound at once — the surest guard
     // against the mix stuttering when the land gets busy.
-    if (this.activeVoices >= this.maxVoices) return 0.5;
+    if (this.activeVoices >= this.voiceCap()) return 0.5;
     let x01, y01, depth, perchType = null;
     if (sp.layer === "perch" && this.scene.perches && this.scene.perches.length) {
       const p = this.scene.perches[Math.floor(r()*this.scene.perches.length)];
@@ -318,15 +353,19 @@ class AudioEngine {
         const habOK = sp.habitats.includes(state.location);
         const hw = habOK ? ((sp.hw && sp.hw[state.location] !== undefined) ? sp.hw[state.location] : 1) : 0;
         const wcut = state.weather === "rain" ? 0.35 : state.weather === "fog" ? 0.8 : 1;
-        const eff = w * hw * wcut * (0.1 + state.activity * 1.2);
-        let wait = sp.base * 1000 * (0.8 + this.rng()*1.6) / (0.35 + state.activity*1.3);
+        const curve = this.chorusCurve();
+        const eff = w * hw * wcut * (0.02 + state.activity * 1.25) * curve;
+        let wait = sp.base * 1000 * (0.8 + this.rng()*1.6)
+          / Math.max(0.12, (0.18 + state.activity*1.5) * curve);
         if (eff > 0 && this.rng() < Math.min(0.8, eff * 0.85)) {
           const nowMs = performance.now();
           if (sp.chorus || nowMs >= this.quietUntil) {
             const dur = this.performCall(sp);
             if (!sp.chorus) {
-              let gap = (2.0 + this.rng()*3.5 - state.activity*2.5) * 1000;
-              if (state.time === "dawn") gap *= 0.4;
+              // Silence is part of the score: the emptier the setting, the
+              // longer the land is left to itself between voices.
+              let gap = (2.5 + this.rng()*4.0) * (1.7 - state.activity) * 1000;
+              if (state.time === "dawn") gap *= 0.45;
               this.quietUntil = nowMs + dur*1000 + Math.max(400, gap);
             }
             wait = Math.max(wait, 6000);
@@ -341,10 +380,49 @@ class AudioEngine {
   startGusts(gen) {
     const gust = () => {
       if (!this.running || gen !== this.gen) return;
-      this.set(this.windGain.gain, this.windBase * (0.55 + this.rng()*0.95), 1.6);
+      const f = 0.55 + this.rng()*0.95;
+      this.set(this.windGain.gain, this.windBase * (this.breath || 1) * f, 1.6);
+      // What the wind does to the leaves is the same thing it does to the
+      // grass you can see moving: the two should rise and fall together.
+      if (this.leafTarget) {
+        this.set(this.leavesGain.gain,
+          this.leafTarget * (this.breath || 1) * (0.4 + f*0.85), 2.2);
+      }
       setTimeout(gust, 4000 + this.rng()*5500);
     };
     setTimeout(gust, 2500);
+  }
+
+  /* The weather has long tides in it as well as gusts. Every half minute or
+     so the whole bed is given a new weight and takes the best part of a
+     minute to get there, so the room breathes instead of holding one note. */
+  startBreath(gen) {
+    const breathe = () => {
+      if (!this.running || gen !== this.gen) return;
+      this.breath = 0.68 + this.rng()*0.62;
+      this.set(this.windGain.gain, this.windBase * this.breath, 26);
+      this.set(this.rainGain.gain, (this.rainTarget || 0) * this.breath, 24);
+      this.set(this.surfGain.gain, this.surfFloor * this.breath, 22);
+      if (this.leafTarget) this.set(this.leavesGain.gain, this.leafTarget * this.breath, 24);
+      setTimeout(breathe, 24000 + this.rng()*16000);
+    };
+    setTimeout(breathe, 3000);
+  }
+
+  /* The shape of an hour. At dawn and dusk the land fills up and empties
+     again over some minutes; at noon and midnight it holds steadier. A
+     chorus should have a tide, not a rate. */
+  chorusCurve() {
+    const t = (this.ac ? this.ac.currentTime : 0);
+    const slow = 0.5 + 0.5*Math.sin(t*2*Math.PI/(this.chorusPeriod || 300) + (this.chorusPh || 0));
+    const swing = (state.time === "dawn" || state.time === "dusk") ? 0.8 : 0.34;
+    return 1 - swing*0.5 + swing*slow;
+  }
+
+  /* How many voices may sound at once — a quiet setting should mean a quiet
+     room, not the same room with softer birds. */
+  voiceCap() {
+    return 2 + Math.round(state.activity * 4);
   }
 
   startSwells(gen) {
@@ -365,7 +443,7 @@ class AudioEngine {
     const tick = () => {
       if (!this.running || gen !== this.gen) return;
       const crs = (this.scene.critters || []).filter(cr => CRITTER_VOICES[cr.kind]);
-      if (crs.length && this.activeVoices < this.maxVoices) {
+      if (crs.length && this.activeVoices < this.voiceCap()) {
         const cr = crs[Math.floor(this.rng()*crs.length)];
         const v = CRITTER_VOICES[cr.kind];
         if (this.rng() < v.p && cr.x >= -0.02 && cr.x <= 1.02) {
@@ -531,7 +609,7 @@ class AudioEngine {
   resumeSchedulers() {
     this.activeVoices = 0;   // a paused engine clears its in-flight voice timers
     const gen = ++this.gen;  // stamp this run; older scheduler loops self-stop
-    this.startGusts(gen); this.startSwells(gen);
+    this.startGusts(gen); this.startSwells(gen); this.startBreath(gen);
     this.startSchedulers(gen);
     this.startCritterVoiceScheduler(gen);
     this.startFlyerScheduler(gen);
@@ -539,15 +617,28 @@ class AudioEngine {
     this.startCarScheduler(gen); this.startBellScheduler(gen);
   }
 
+  /* Silence, and the schedulers stopped. The master gain is cut to nothing
+     first: calls already handed to the audio clock would otherwise resume
+     mid-phrase when the context does. */
   pause() {
     this.running = false;
     this.gen++;              // halt every recurring scheduler loop
     this.clearTimers();
-    if (this.ac) this.ac.suspend();
+    if (this.ac) {
+      const g = this.master.gain;
+      g.cancelScheduledValues(this.ac.currentTime);
+      g.setValueAtTime(0, this.ac.currentTime);
+      this.ac.suspend();
+    }
   }
 
   resume() {
-    if (this.ac) this.ac.resume();
+    if (this.ac) {
+      this.ac.resume();
+      const g = this.master.gain;
+      g.cancelScheduledValues(this.ac.currentTime);
+      g.setValueAtTime(state.volume, this.ac.currentTime);
+    }
     this.running = true;
     this.resumeSchedulers();
   }
