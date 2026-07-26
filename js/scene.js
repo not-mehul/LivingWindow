@@ -987,9 +987,9 @@ class Scene {
       case "city": this.drawCity(c, W, H, dt, bot, night); break;
     }
 
-    this.drawActors(c, W, H, dt, bot, night);
+    this.updateActors(dt);           this.drawActors(c, W, H, bot, night);
     this.drawCritters(c, W, H, dt, bot, night);
-    this.drawFlyers(c, W, H, dt, bot);
+    this.updateFlyers(dt);           this.drawFlyers(c, W, H, bot);
     this.drawForeground(c, W, H, dt, bot);   // the near edge, over everything living
     // Stepped here, not in update(), until actors/critters/flyers move across —
     // see the prefix note on update(). Each sits exactly where it always did.
@@ -2351,7 +2351,10 @@ class Scene {
   }
 
   /* ---- the singers, drawn where they sing ---- */
-  drawActors(c, W, H, dt, bot, night) {
+  /* What each singer on stage decides to do: come in, settle, fidget, sing,
+     forage, and leave by whatever means its kind leaves by. Paired with
+     drawActors below, which paints whatever survives this. */
+  updateActors(dt) {
     for (let i = this.actors.length - 1; i >= 0; i--) {
       const a = this.actors[i];
       a.t += dt;
@@ -2518,6 +2521,29 @@ class Scene {
         }
       }
 
+      /* The pitch a bird settles into on the way in or out is smoothed, so it
+         is state and belongs here. It is the one thing in the old body that sat
+         among the derived values and still had to move: px0/py0 are captured at
+         the top of this loop and read only here, so with this they never cross
+         into the painting at all. W and H come off the scene because the angle
+         is measured in pixels, and so depends on the shape of the frame. */
+      const inK0 = (a.flightIn && a.enter > 0 && a.t < a.enter) ? a.t/a.enter : -1;
+      const flyProg0 = a.leave === "fly" ? Math.max(0, Math.min(1, (a.leaveT - 0.16)/0.14)) : 0;
+      if (inK0 >= 0 || flyProg0 > 0) {
+        const vx = (a.x - px0), vy = (a.y - py0);
+        if (Math.abs(vx) > 1e-6 || Math.abs(vy) > 1e-6) {
+          const ang = Math.atan2(vy*this.H, Math.max(1e-4, Math.abs(vx*this.W)));
+          a.pitch = (a.pitch === undefined ? ang : a.pitch + (ang - a.pitch)*Math.min(1, dt*8));
+        }
+      }
+    }
+  }
+
+  /* …and how it looks doing it. Paired with updateActors above; every value
+     below is derived afresh from the state that pass left behind. */
+  drawActors(c, W, H, bot, night) {
+    for (let i = this.actors.length - 1; i >= 0; i--) {
+      const a = this.actors[i];
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
       const rimStr = css(mix(col, bot, 0.6));            // a touch lighter, for rim/eye
@@ -2547,11 +2573,7 @@ class Scene {
       // flare, up again on the climb out.
       let bodyRot = 0;
       if (inK >= 0 || flyProg > 0) {
-        const vx = (a.x - px0), vy = (a.y - py0);
-        if (Math.abs(vx) > 1e-6 || Math.abs(vy) > 1e-6) {
-          const ang = Math.atan2(vy*H, Math.max(1e-4, Math.abs(vx*W)));
-          a.pitch = (a.pitch === undefined ? ang : a.pitch + (ang - a.pitch)*Math.min(1, dt*8));
-        }
+        // a.pitch is smoothed in updateActors; here it is only read.
         bodyRot = Math.max(-0.55, Math.min(0.55, (a.pitch || 0)*0.75)) - flare*0.42;
         if (a.flip) bodyRot = -bodyRot;
       }
@@ -5745,8 +5767,9 @@ class Scene {
     c.restore();
   }
 
-  drawFlyers(c, W, H, dt, bot) {
-    const colNear = mix(this.tok.ink, bot, 0.2);
+  /* Birds on the wing. Paired with drawFlyers below — the flight is decided
+     here, the wings are drawn there. */
+  updateFlyers(dt) {
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];
       f.age = (f.age || 0) + dt;
@@ -5783,6 +5806,14 @@ class Scene {
                       f.kind === "lark" ? 22 : f.kind === "tern" ? 7 : 11);
       }
       if (f.x < -0.12 || f.x > 1.12 || f.y < -0.05) { this.flyers.splice(i, 1); continue; }
+    }
+  }
+
+  /* …and the wings. Paired with updateFlyers above. */
+  drawFlyers(c, W, H, bot) {
+    const colNear = mix(this.tok.ink, bot, 0.2);
+    for (let i = this.flyers.length - 1; i >= 0; i--) {
+      const f = this.flyers[i];
       const fx = f.x*W;
       const bob = f.kind === "swift" ? Math.sin(f.ph*0.5)*9 :
                   f.kind === "buzzard" || f.kind === "kestrel" ? 0 : Math.sin(f.ph*0.3)*4;

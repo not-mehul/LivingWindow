@@ -28,8 +28,34 @@ const initScript = () => {
   performance.now = () => virt;
   window.__frameNo = 0;
   window.__log = [];
+  /* Rewinding the scene has to happen on a frame boundary, not whenever an
+     evaluate() happens to land. Dropped in mid-frame it lands before or after
+     that frame's callback depending on the wind, and the recording then begins
+     one frame early or late — which shifts this.t by a sixtieth for the whole
+     run and, since nearly every motion is a sine of it, changes every number
+     downstream. So the harness asks, and the wrapper performs it here. */
+  window.__resetPending = false;
+  window.__doReset = () => {
+    const s = window.__lw.scene;
+    window.__reseedRandom();
+    s.reseed(window.__lw.state.seed);
+    window.__reseedRandom();
+    s.t = 0;
+    s.mistX = 0;
+    s.clearLife();
+    for (const k of Object.keys(s)) if (/^last[A-Z]/.test(k)) s[k] = -999;
+    for (const ph of ['dawn', 'day', 'dusk', 'night']) {
+      s.timeMix[ph] = (window.__lw.state.time === ph) ? 1 : 0;
+    }
+    window.__log = []; window.__paint = []; window.__recording = true;
+  };
+
   window.requestAnimationFrame = (cb) => raf((t) => {
     if (t !== lastReal) { lastReal = t; virt += 1000 / 60; window.__frameNo++; }
+    if (window.__resetPending && window.__lw) {
+      window.__resetPending = false;
+      window.__doReset();
+    }
     const r = cb(virt);
     const lw = window.__lw;
     if (lw && window.__recording) {
@@ -48,6 +74,11 @@ const initScript = () => {
         dump(s.ripples,  ['x','y','age']).join('|'),
         dump(s.meteors,  ['x','y','age']).join('|')
       ].join('§'));
+      /* Stop on the exact frame, in here rather than from outside. Waiting for
+         the count to reach its mark and then switching off over the wire lets
+         however many frames run in the meantime slip into the log, so two runs
+         end up different lengths for no reason of their own. */
+      if (window.__log.length >= (window.__frameTarget || 0)) window.__recording = false;
     }
     return r;
   });
@@ -130,41 +161,23 @@ for (const place of PLACES) {
     await page.click('#settingsClose');
     await page.waitForTimeout(300);
 
-    /* Start every recording from one known state. The number of frames that
-       elapse during a wall-clock wait varies from run to run, so without this
-       each recording begins at a different scene time — and since almost every
-       motion here is a sine of this.t, a two-frame head start changes every
-       number downstream.
-
+    /* Ask for the rewind, and let the frame loop perform it (see __doReset).
        clearLife() empties the stage but deliberately leaves the weather and the
        scenery alone: fireflies, motes, clouds, sky birds, rain, dapples, leaves,
        cattle and lit windows all belong to the land, are built in reseed, and go
-       on drifting from the moment the page loaded. So they too arrive at the
-       recording carrying however many frames happened to pass — which is what
-       used to leave three night scenes disagreeing about where the fireflies
-       were, in the third decimal of a pixel.
-
-       reseed() rebuilds every one of those arrays, and does it from mulberry32
-       rather than Math.random, so one call puts the whole landscape back to a
-       known state. Its own two Math.random uses are made repeatable by seeding
-       the stream first; it is seeded again afterwards so the recording proper
-       starts from the top. */
-    await page.evaluate(() => {
-      const s = window.__lw.scene;
-      window.__reseedRandom();
-      s.reseed(window.__lw.state.seed);
-      window.__reseedRandom();
-      s.t = 0;
-      s.mistX = 0;              // accumulates monotonically, and reseed misses it
-      s.clearLife();
-      for (const k of Object.keys(s)) if (/^last[A-Z]/.test(k)) s[k] = -999;
-      for (const ph of ['dawn', 'day', 'dusk', 'night']) {
-        s.timeMix[ph] = (window.__lw.state.time === ph) ? 1 : 0;
-      }
-      window.__log = []; window.__paint = []; window.__recording = true;
-    });
-    await page.waitForFunction((n) => window.__log.length >= n, FRAMES, { timeout: 120000 });
-    await page.evaluate(() => { window.__recording = false; });
+       on drifting from the moment the page loaded. reseed() rebuilds every one
+       of those arrays, from mulberry32 rather than Math.random, so one call puts
+       the whole landscape back to a known state. */
+    await page.evaluate((n) => {
+      window.__frameTarget = n;
+      window.__resetPending = true;
+    }, FRAMES);
+    // Both halves matter: the rewind must have happened (so this is not the
+    // previous scene's finished log being mistaken for this one's) and the new
+    // log must have filled to its mark.
+    await page.waitForFunction(
+      () => window.__resetPending === false && window.__log.length >= window.__frameTarget,
+      null, { timeout: 120000 });
     const log = await page.evaluate(() => window.__log.slice());
     const paint = await page.evaluate(() => window.__paint.slice());
     writeFileSync(`${OUT}/${place}-${hour}.txt`, log.join('\n'));
