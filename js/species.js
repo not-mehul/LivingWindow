@@ -61,6 +61,24 @@ function speciesIcon(sp, size) {
 /* Perched-bird styling per species (used by the scene): body proportions plus
    the field marks that let an etched silhouette read as its species at a
    glance — a robin's warm bib, a magpie's white scapulars, a tit's dark cap. */
+/* How a perched bird carries itself between songs: the rate and depth of its
+   breathing, of the glances it takes, of the flick of its tail, and the pulse of
+   the bill while it sings. These were literals in two places — once in the
+   window and once again in the bestiary — which meant a number tuned against a
+   card at close range was not the number the window would use. Now both read
+   this, so the bestiary's studio is editing the thing itself.
+
+   Rates are radians a second; `sharp` raises a sine to a power to turn a smooth
+   swell into an occasional twitch. */
+const ANIM = {
+  breathRate: 2.0,                     // the slow rise and fall of the body
+  headRate: 0.8, headAmt: 0.20,        // an idle turn of the head
+  lookRate: 0.5, lookSharp: 6, lookAmt: 0.5,   // and now and then a longer look
+  tailRate: 1.15, tailSharp: 8,        // a tail flicked, not waved
+  settle: 0.55,                        // seconds of wing-settling on arrival
+  singBase: 0.3, singAmt: 0.7, singRate: 11    // the bill through a phrase
+};
+
 const PSTYLE = {
   blackbird: { bill: 0.5, tail: 1.3, billTone: "amber", eyeRing: true },
   robin: { sc: 0.9, bill: 0.38, plump: 1.08, breast: true },
@@ -1027,7 +1045,7 @@ const CRITTER_VOICES = {
 };
 
 export {
-  ICONS, ICON_KEY, speciesIcon, PSTYLE, COUNTERSING,
+  ICONS, ICON_KEY, speciesIcon, PSTYLE, ANIM, COUNTERSING,
   note, burst, noteTrain, pulseTrain,
   SPECIES, CRITTER_VOICES
 };

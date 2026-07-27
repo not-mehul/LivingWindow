@@ -53,7 +53,9 @@ js/
   util.js         Shared primitives: seeded PRNG, colour math, world constants, and the
                   single mutable `state` object.
   species.js      The voices and their marks: field-guide pictograms, the low-level synth
-                  primitives, and the species catalogue (habitat, hour weighting, synth).
+                  primitives, the species catalogue (habitat, hour weighting, synth), and
+                  two tables the bestiary's studio edits — `PSTYLE`, each species' field
+                  marks, and `ANIM`, the idle motion every perched bird shares.
   scene.js        The `Scene` class — canvas rendering of the five landscapes and their
                   drifting inhabitants.
   sky.js          The sky and what hangs in it — gradient, stars, sun, moon, clouds —
@@ -87,14 +89,14 @@ and no amount of batching will touch it.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds two harnesses. Neither is part of the piece; both need a static
+`tools/` holds five harnesses. None is part of the piece; all need a static
 server running and drive a headless Chromium through Playwright.
 
 ```bash
 node tools/bench.mjs        label    # frame cost per place
 node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
 node tools/critters.mjs              # every creature through update and paint
-node tools/actors.mjs                # every singer, and every way of leaving
+node tools/actors.mjs [outfile]      # every singer, and every way of leaving
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
 ```
 
@@ -138,6 +140,15 @@ depends on its species — so each is hunted for deliberately: the place is
 reseeded, the hour forced, the cooldowns cleared, and every creature and every
 manner of leaving is stepped through both halves. Run all four before trusting
 a change to how anything moves.
+
+Give `actors.mjs` a filename and it writes down every argument handed to every
+painter, so two builds can be compared value for value and not merely for
+whether they threw. That is how the shared `ANIM` table was proved to have
+changed nothing: 1.43 million recorded values, byte-identical before and after.
+It quiets the audio, stops the scene's own frame loop and reseeds the random
+stream before recording, because an actor's build — its scale, its plumpness,
+which way it looks and when — is drawn from `Math.random` the moment it is
+spawned.
 
 `tools/gradient.mjs` watches for banding, which is the one thing that cannot be
 caught by comparing pictures. An eight-bit buffer has to step a smooth ramp
@@ -215,6 +226,42 @@ The bestiary imports the live `Scene` painters and `SPECIES` catalogue, so it
 can never drift out of date: what you inspect there is exactly what the window
 draws and sings. It honours the same Dawn/Dusk themes and
 `prefers-reduced-motion`.
+
+### The studio — tuning marks and motion
+
+Press **Studio** in the header and click any picture. Two tables drive the
+birds, and the panel edits them both:
+
+- **Marks** — `PSTYLE` in `species.js`, a species' own field marks: how long a
+  bill, how plump a body, whether it carries a cap, a wingbar, a crest. Numbers
+  become sliders, marks become checkboxes, tones become a choice of amber or
+  sage. There is an **add a mark** picker too, over every mark any species uses,
+  so a dunnock can be given a crest to see how it looks.
+- **Motion** — `ANIM` in `species.js`, the rates and depths of the idle motion
+  every perched bird shares: the swell of its breathing, how often it glances
+  about and how far, the flick of the tail, the pulse of the bill through a
+  phrase. These used to be literals written out twice, once in the window and
+  once in the bestiary, which meant a number tuned against a card at close range
+  was not the number the window would use. Now both read `ANIM`, so what you
+  tune here is the thing itself.
+
+Every control is generated from the data rather than written out by hand, so a
+mark added to `PSTYLE` or a rate added to `ANIM` turns up in the panel on its
+own, with a slider range taken from the spread of that value across all the
+species. `perchDraw` reads both tables afresh every frame, so edits show
+immediately — nothing to rebuild, nothing to wire.
+
+**Copy JS** gives you the edited rows in the formatting `species.js` already
+uses, ready to paste back; **Reset this** and **Reset all** restore the shipped
+values. Edits persist in `localStorage` under `lw.bestiary.studio` so a reload
+does not lose your work — the bestiary only, never read by the window, which
+keeps its promise that nothing is kept.
+
+What the studio cannot reach: the eighteen birds with their own painters (the
+owl, the cuckoo, the pheasant and the rest) and every mammal keep their shapes
+as literal numbers inside the painting code, with no table standing between. The
+panel says so rather than offering sliders that would move nothing. Motion is
+shared by all of them, so that half still applies.
 
 ## Behaviour worth knowing about
 

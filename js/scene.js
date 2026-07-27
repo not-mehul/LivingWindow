@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=5";
-import { PSTYLE } from "./species.js?v=5";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=5";
+} from "./util.js?v=6";
+import { PSTYLE, ANIM } from "./species.js?v=6";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=6";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -2558,7 +2558,8 @@ class Scene {
       // song's start and length, so they are worked out again here rather than
       // carried over from the pass that moved it.
       const st = a.t - a.singAt;
-      const sing = (st >= 0 && st < a.dur) ? 0.3 + 0.7*Math.abs(Math.sin(st*11)) : 0;
+      const sing = (st >= 0 && st < a.dur)
+        ? ANIM.singBase + ANIM.singAmt*Math.abs(Math.sin(st*ANIM.singRate)) : 0;
       const sungEnd = a.singAt + a.dur;
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
@@ -2569,11 +2570,13 @@ class Scene {
       // Idle life: breathing, the odd glance and tail-flick, a wing-settle on arrival.
       const iv = a.ivar || {};
       const settled = a.enter > 0 ? Math.max(0, a.t - a.enter) : a.t;
-      const breath = Math.sin(a.t*2.0 + (iv.breathPh || 0));
-      const headTurn = Math.sin(a.t*0.8 + (iv.headPh || 0)) * 0.20
-                     + Math.pow(Math.max(0, Math.sin(a.t*0.5 + (iv.headPh || 0)*1.7)), 6) * 0.5;
-      const tailFlick = Math.pow(Math.max(0, Math.sin(a.t*1.15 + (iv.tailPh || 0))), 8);
-      const wingSettle = Math.max(0, 1 - settled/0.55);
+      // Rates and depths live in ANIM (species.js), where the bestiary's studio
+      // can reach them and the two pages cannot drift apart.
+      const breath = Math.sin(a.t*ANIM.breathRate + (iv.breathPh || 0));
+      const headTurn = Math.sin(a.t*ANIM.headRate + (iv.headPh || 0)) * ANIM.headAmt
+                     + Math.pow(Math.max(0, Math.sin(a.t*ANIM.lookRate + (iv.headPh || 0)*1.7)), ANIM.lookSharp) * ANIM.lookAmt;
+      const tailFlick = Math.pow(Math.max(0, Math.sin(a.t*ANIM.tailRate + (iv.tailPh || 0))), ANIM.tailSharp);
+      const wingSettle = Math.max(0, 1 - settled/ANIM.settle);
       const hopBob = (a.enter > 0 && a.t < a.enter && a.beh === "perch")
         ? Math.abs(Math.sin(a.t*13)) * a.s * 0.12 : 0;
       // Departure: 0 while perched, ramping to 1 once the bird springs into flight.
