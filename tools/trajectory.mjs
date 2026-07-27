@@ -24,7 +24,7 @@ const initScript = () => {
   };
   window.__reseedRandom = () => { a = 0x9e3779b9; };
   const raf = window.requestAnimationFrame.bind(window);
-  let virt = 0, lastReal = -1;
+  let virt = 0, lastReal = -1, lastLoggedT = null;
   performance.now = () => virt;
   window.__frameNo = 0;
   window.__log = [];
@@ -47,6 +47,7 @@ const initScript = () => {
     for (const ph of ['dawn', 'day', 'dusk', 'night']) {
       s.timeMix[ph] = (window.__lw.state.time === ph) ? 1 : 0;
     }
+    lastLoggedT = null;
     window.__log = []; window.__paint = []; window.__recording = true;
   };
 
@@ -58,8 +59,14 @@ const initScript = () => {
     }
     const r = cb(virt);
     const lw = window.__lw;
-    if (lw && window.__recording) {
+    /* One entry per simulation step, not per callback. This wrapper sees every
+       rAF anybody registers — the scene's, and Playwright's own waitForFunction,
+       which polls on rAF — so logging unconditionally recorded some frames twice
+       and left two runs misaligned by an entry for no reason of their own.
+       Keying on the scene's own clock ties each line to one step of the world. */
+    if (lw && window.__recording && lw.scene.t !== lastLoggedT) {
       const s = lw.scene;
+      lastLoggedT = s.t;
       // Round hard: these are floats accumulated in a slightly different order
       // after the refactor, and the question is whether the behaviour matches,
       // not whether the last bit of a double does.
@@ -88,6 +95,14 @@ const browser = await chromium.launch({
   executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader']
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+/* Say so, loudly. A throw inside frame() breaks the rAF chain and the world
+   simply stops; without this the only symptom is the recording quietly failing
+   to fill, and the timeout that follows says nothing about why. */
+const pageErrors = [];
+page.on('pageerror', e => {
+  pageErrors.push(e.message);
+  console.error('  PAGEERROR: ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n     '));
+});
 await page.addInitScript(initScript);
 await page.goto((process.env.BENCH_URL || 'http://127.0.0.1:8123/') + '?perf=1',
   { waitUntil: 'networkidle' });
@@ -187,3 +202,7 @@ for (const place of PLACES) {
   }
 }
 await browser.close();
+if (pageErrors.length) {
+  console.error(`\n${pageErrors.length} page error(s) — the recording cannot be trusted.`);
+  process.exit(1);
+}

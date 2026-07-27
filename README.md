@@ -93,6 +93,8 @@ server running and drive a headless Chromium through Playwright.
 ```bash
 node tools/bench.mjs        label    # frame cost per place
 node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
+node tools/critters.mjs              # every creature through update and paint
+node tools/actors.mjs                # every singer, and every way of leaving
 ```
 
 `bench.mjs` reports the time a frame really takes — it hands the page a
@@ -117,8 +119,24 @@ positions in the third decimal of a pixel — the fireflies are seeded during
 `reseed`, which runs when the place changes and therefore before the recorder
 puts the random stream back to a known point. So: treat any state difference as
 real, and any paint difference larger than a firefly's third decimal as real
-too. Closing that last gap means resetting the stream before the place change
-rather than after it.
+too.
+
+What it cannot see is **actors**. Singers arrive only when the audio schedulers
+call for them, and the recorder has to silence those schedulers to be
+deterministic at all — they run on real timers and draw from the same
+`Math.random` stream the critters spawn from. So no recording contains a single
+bird on a perch, and one can come out byte-identical while `drawActors` is
+thoroughly broken. That is not hypothetical: it is how a missing `sing`
+shipped.
+
+`tools/critters.mjs` and `tools/actors.mjs` close that hole by driving the cast
+directly rather than waiting for it. Time is the enemy of coverage here — a fox
+keeps a ninety-second cooldown, a cat walks a city roofline only after dark,
+litter is kicked up by a badger that has decided to dig, and a bird's exit
+depends on its species — so each is hunted for deliberately: the place is
+reseeded, the hour forced, the cooldowns cleared, and every creature and every
+manner of leaving is stepped through both halves. Run all four before trusting
+a change to how anything moves.
 
 ### A note on caching
 

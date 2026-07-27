@@ -929,6 +929,12 @@ class Scene {
     }
     this.update(dt);
     this.draw(dt);
+    /* New arrivals come after the frame is drawn, which is where they always
+       came, and it is load-bearing rather than incidental: a creature's painter
+       reads values its update pass leaves behind — the fox's crouch, the
+       dragonfly's jitter — so anything spawned before the painting would be
+       drawn a frame before it had ever been stepped, and asked for a pose it
+       does not yet have. */
     this.spawnCritters(dt);
     this.adaptQuality(dt);
     requestAnimationFrame(this._frame);
@@ -987,15 +993,13 @@ class Scene {
       case "city": this.drawCity(c, W, H, dt, bot, night); break;
     }
 
-    this.updateActors(dt);           this.drawActors(c, W, H, bot, night);
-    this.drawCritters(c, W, H, dt, bot, night);
-    this.updateFlyers(dt);           this.drawFlyers(c, W, H, bot);
+    this.drawActors(c, W, H, bot, night);
+    this.drawCritters(c, W, H, bot, night);
+    this.drawFlyers(c, W, H, bot);
     this.drawForeground(c, W, H, dt, bot);   // the near edge, over everything living
-    // Stepped here, not in update(), until actors/critters/flyers move across —
-    // see the prefix note on update(). Each sits exactly where it always did.
-    this.updateFireflies(dt, night); this.drawFireflies(c, W, H, night);
-    this.updateWeather(dt);          this.drawWeather(c, W, H, night);
-    this.updateRipples(dt);          this.drawRipples(c, W, H);
+    this.drawFireflies(c, W, H, night);
+    this.drawWeather(c, W, H, night);
+    this.drawRipples(c, W, H);
     if (PERF) this.drawPerf(c, dt);
   }
 
@@ -1006,19 +1010,20 @@ class Scene {
      to be the one the painting used to reach them in. Shuffle two of these lines
      and the same seed grows a different set of animals.
 
-     Because update() runs entirely before draw(), whatever has moved in here has
-     to be a *prefix* of the old draw order. The moment a later system moves
-     across while an earlier one is still drawing-and-mutating, the two swap
-     places in the stream. So the systems arrive here in draw order, and the ones
-     still to come are stepped from draw() at exactly the point they always sat. */
+     Spawning is not here: it runs from frame(), after the painting, for the
+     reason given there. So this is everything that *moves*, not everything that
+     happens — worth knowing before hanging a fixed timestep off it. */
   update(dt) {
     const night = this.nightness();
     this.updateCelestial(dt);
     this.updateClouds(dt);
     this.updateLocation(dt, night);
-    // actors, critters and flyers still move inside their own painting; when
-    // they arrive here, the three stepped at the end of draw() follow them, and
-    // spawnCritters comes back off the end of frame().
+    this.updateActors(dt);
+    this.updateCritters(dt);
+    this.updateFlyers(dt);
+    this.updateFireflies(dt, night);
+    this.updateWeather(dt);
+    this.updateRipples(dt);
   }
 
   /* Each place keeps its own weather of moving parts, and each is stepped in the
@@ -2355,6 +2360,10 @@ class Scene {
      forage, and leave by whatever means its kind leaves by. Paired with
      drawActors below, which paints whatever survives this. */
   updateActors(dt) {
+    /* A departure is measured against the bird's drawn size — how far it crouches
+       and how steeply it climbs are both a fraction of a.s in pixels — so this
+       pass needs the height of the frame. Same number draw() is handed. */
+    const H = this.H;
     for (let i = this.actors.length - 1; i >= 0; i--) {
       const a = this.actors[i];
       a.t += dt;
@@ -2544,6 +2553,13 @@ class Scene {
   drawActors(c, W, H, bot, night) {
     for (let i = this.actors.length - 1; i >= 0; i--) {
       const a = this.actors[i];
+      // Where the bird is in its call: how wide the bill is open, and whether it
+      // has finished and can get on with something else. Both fall out of the
+      // song's start and length, so they are worked out again here rather than
+      // carried over from the pass that moved it.
+      const st = a.t - a.singAt;
+      const sing = (st >= 0 && st < a.dur) ? 0.3 + 0.7*Math.abs(Math.sin(st*11)) : 0;
+      const sungEnd = a.singAt + a.dur;
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
       const rimStr = css(mix(col, bot, 0.6));            // a touch lighter, for rim/eye
@@ -3944,9 +3960,19 @@ class Scene {
     }
   }
 
-  drawCritters(c, W, H, dt, bot, night) {
-    const colDark = css(mix(this.tok.inkDeep, bot, 0.12));
-    const colFar = css(mix(this.tok.ink, bot, 0.5));
+  /* What every wild thing in the frame is doing. Paired case for case with
+     drawCritters below, in the same order, so the two read side by side: this
+     one decides, that one draws. Anything a painter needs that is worked out
+     along the way is either recomputed there from the state left here, or —
+     where it is accumulated across the branches rather than derived — written
+     onto the critter at the end of its case. */
+  updateCritters(dt) {
+    const bot = this.skyColors()[1];
+    /* The fox measures its own crouch and reach against its drawn size, so this
+       one pass needs the height of the frame. It is the same number draw() is
+       handed — resize() sets both — and the same colours, because frame() has
+       already settled timeMix before either pass runs. */
+    const H = this.H;
     for (let i = this.critters.length - 1; i >= 0; i--) {
       const cr = this.critters[i];
       cr.t += dt;
@@ -3959,8 +3985,6 @@ class Scene {
           cr.x += (cr.drift + Math.sin(cr.t*0.8 + cr.ph)*0.015)*dt;
           cr.y += (Math.sin(cr.t*1.9 + cr.ph)*0.05 + Math.cos(cr.t*0.6)*0.02)*dt;
           if (cr.t > cr.life || cr.x < -0.05 || cr.x > 1.05) { dead = true; break; }
-          const al = Math.max(0, Math.min(1, cr.life - cr.t)) * 0.85;
-          this.paintButterfly(c, cr.x*W, cr.y*H, cr.t, cr.ph, al, colDark);
           break;
         }
         case "dragonfly": {
@@ -3979,7 +4003,8 @@ class Scene {
             if (Math.abs(cr.tx - cr.x) < 0.008) { cr.mode = "hover"; cr.timer = 0.8 + Math.random()*1.6; }
           }
           if (cr.t > cr.life) { dead = true; break; }
-          this.paintDragonfly(c, cr.x*W + jx, cr.y*H + jy, cr.t, colDark);
+          cr.jx = jx;
+          cr.jy = jy;
           break;
         }
         case "bat": {
@@ -3988,7 +4013,6 @@ class Scene {
           cr.x += cr.vx*dt; cr.y += cr.vy*dt;
           cr.y = Math.max(0.05, Math.min(0.6, cr.y));
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          this.paintBat(c, cr.x*W, cr.y*H, cr.size, cr.t, colDark);
           break;
         }
         case "deer": {
@@ -4030,14 +4054,6 @@ class Scene {
             if (cr.bounding) { cr.x += cr.dir*0.055*dt*D.speed; cr.bp += dt*7; }
             if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           }
-          const bound = cr.bounding && cr.state === "leave"
-            ? Math.max(0, Math.sin(cr.bp)) : 0;
-          const dS = H*0.075*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - bound));
-          this.paintDeer(c, { x: cr.x*W, y: (D.y - bound*0.035)*H,
-            s: dS, dir: cr.dir,
-            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: D.col, t: cr.t,
-            grazing: cr.state === "graze", alert: cr.state === "alert", bound });
           break;
         }
         case "runner": {
@@ -4051,11 +4067,6 @@ class Scene {
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
           // standing still, it works the wet sand with quick jabs of the bill
-          const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
-          c.save(); c.translate(cr.x*W, D.y*H); c.scale(D.scale, D.scale);
-          this.contactShadow(c, 0, 1, 5, 0.16*(1 - cr.z*0.6));
-          this.paintSanderling(c, 0, 0, cr.dir, cr.mode === "dash", cr.ph, D.col, probe);
-          c.restore();
           break;
         }
         case "cat": {
@@ -4084,10 +4095,6 @@ class Scene {
             }
           }
           cr.x = b.x + cr.u*b.w;      // kept current, so its voice comes from the right roof
-          this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
-            sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
-            groom: cr.act === "groom" ? 1 : 0,
-            stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
           break;
         }
         case "rabbit": {
@@ -4112,13 +4119,6 @@ class Scene {
             }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
-          const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
-          const rS = H*0.032*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
-          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
-            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
-            t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
-            wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
           break;
         }
         case "fox": {
@@ -4176,13 +4176,7 @@ class Scene {
             }
           }
           if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
-          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9,
-            0.2*(1 - cr.z*0.6)*(1 - Math.min(1, pose.lift/(fS*0.8))));
-          this.paintFox(c, Object.assign({ x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir,
-            walking: cr.mode === "trot", lp: cr.lp,
-            look: cr.mode === "pause" ? Math.sin(cr.t*1.8) : 0,
-            ears: cr.mode === "listen" || cr.mode === "pounce" ? 1 : 0,
-            color: D.col }, pose));
+          cr.pose = pose;
           break;
         }
         case "heron": {
@@ -4253,11 +4247,7 @@ class Scene {
             if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
           }
           pose.neck = cr.neck;
-          const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
-          if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
-          this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
-            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
-            color: cr.mode === "fly" ? colDark : D.col, deep: colFar, t: cr.t }, pose));
+          cr.pose = pose;
           break;
         }
         case "porpoise": {
@@ -4267,34 +4257,6 @@ class Scene {
           cr.x += cr.dir*0.05*dt;
           cr.phase += dt*2.1;
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
-          const arc = Math.sin(cr.phase);
-          const px = cr.x*W, wy = cr.base*H;
-          if (arc > 0.02) {
-            // pitch follows the arc: nose up on the rise, down on the fall
-            this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
-              pitch: Math.cos(cr.phase)*0.34,
-              s: H*0.05, color: colDark, rim: colFar });
-          } else {
-            // between rolls: a dark shape just under, and the flat "footprint"
-            // left on the surface by the last downstroke
-            const sub = Math.max(0, 1 + arc*3);
-            if (sub > 0.02) {
-              c.globalAlpha = 0.18*sub;
-              c.fillStyle = colDark;
-              c.beginPath();
-              c.ellipse(px, wy + H*0.012, H*0.055, H*0.011, 0, 0, Math.PI*2);
-              c.fill();
-              c.globalAlpha = 1;
-            }
-            const fp = Math.max(0, 1 + arc*1.6);
-            if (fp > 0.02) {
-              c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.26*fp})`;
-              c.lineWidth = 1;
-              c.beginPath();
-              c.ellipse(px - cr.dir*H*0.03, wy, H*0.028*(2 - fp), H*0.008, 0, 0, Math.PI*2);
-              c.stroke();
-            }
-          }
           break;
         }
         case "squirrel": {
@@ -4329,25 +4291,15 @@ class Scene {
             if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
-          const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
-          const qS = H*0.03*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
-          this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
-            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t,
-            dig, bury, pat, color: D.col });
+          cr.dig = dig;
+          cr.bury = bury;
+          cr.pat = pat;
           break;
         }
         case "litter": {
           // a scrap of leaf-mould thrown back out of a squirrel's hole
           cr.x += cr.vx*dt; cr.y += cr.vy*dt; cr.vy += 0.3*dt;
           if (cr.t > cr.life || cr.y > D.y + 0.015) { dead = true; break; }
-          c.globalAlpha = Math.max(0, 1 - cr.t/cr.life)*0.7;
-          c.fillStyle = D.col;
-          c.beginPath();
-          c.ellipse(cr.x*W, cr.y*H, H*0.004*cr.sz*D.scale, H*0.002*cr.sz*D.scale,
-            cr.t*6, 0, Math.PI*2);
-          c.fill();
-          c.globalAlpha = 1;
           break;
         }
         case "hare": {
@@ -4365,13 +4317,6 @@ class Scene {
             if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
-          const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
-          const hS = H*0.042*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
-          this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
-            dir: cr.dir, hop: st, alert: cr.mode === "alert",
-            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: D.col });
           break;
         }
         case "hedgehog": {
@@ -4389,11 +4334,6 @@ class Scene {
             if (Math.random() < 0.2) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
-          const gS = H*0.026*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, gS*0.85, 0.18*(1 - cr.z*0.6));
-          this.paintHedgehog(c, { x: cr.x*W, y: D.y*H, s: gS,
-            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: D.col, rim: colFar,
-            sniffUp: cr.mode === "sniffup" ? Math.min(1, cr.actT*2) : 0 });
           break;
         }
         case "badger": {
@@ -4407,11 +4347,6 @@ class Scene {
             if (cr.timer <= 0) { cr.mode = "dig"; cr.timer = 2 + Math.random()*3; cr.actT = 0; }
           }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          const bS = H*0.045*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, bS*0.95, 0.2*(1 - cr.z*0.6));
-          this.paintBadger(c, { x: cr.x*W, y: D.y*H, s: bS,
-            dir: cr.dir, lp: cr.lp, color: D.col,
-            dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
           break;
         }
         case "otter": {
@@ -4435,6 +4370,179 @@ class Scene {
             if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
+          break;
+        }
+        case "bee": {
+          cr.x += (cr.drift + Math.sin(cr.t*1.3 + cr.ph)*0.02)*dt;
+          cr.y += Math.sin(cr.t*2.2 + cr.ph)*0.02*dt;
+          if (cr.t > cr.life || cr.x < -0.04 || cr.x > 1.04) { dead = true; break; }
+          break;
+        }
+        case "skein": {
+          cr.x += cr.vx*dt;
+          if (cr.x < -0.25 || cr.x > 1.25) { dead = true; break; }
+          break;
+        }
+      }
+      if (dead) this.critters.splice(i, 1);
+    }
+  }
+
+  /* …and how all of it looks. Paired case for case with updateCritters above. */
+  drawCritters(c, W, H, bot, night) {
+    const colDark = css(mix(this.tok.inkDeep, bot, 0.12));
+    const colFar = css(mix(this.tok.ink, bot, 0.5));
+    for (let i = this.critters.length - 1; i >= 0; i--) {
+      const cr = this.critters[i];
+      const D = this.groundDepth(cr.z, bot);
+      switch (cr.kind) {
+        case "butterfly": {
+          const al = Math.max(0, Math.min(1, cr.life - cr.t)) * 0.85;
+          this.paintButterfly(c, cr.x*W, cr.y*H, cr.t, cr.ph, al, colDark);
+          break;
+        }
+        case "dragonfly": {
+          this.paintDragonfly(c, cr.x*W + cr.jx, cr.y*H + cr.jy, cr.t, colDark);
+          break;
+        }
+        case "bat": {
+          this.paintBat(c, cr.x*W, cr.y*H, cr.size, cr.t, colDark);
+          break;
+        }
+        case "deer": {
+          const walking = cr.state === "enter" || cr.state === "leave" || cr.state === "walkbit";
+          const bound = cr.bounding && cr.state === "leave"
+            ? Math.max(0, Math.sin(cr.bp)) : 0;
+          const dS = H*0.075*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - bound));
+          this.paintDeer(c, { x: cr.x*W, y: (D.y - bound*0.035)*H,
+            s: dS, dir: cr.dir,
+            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: D.col, t: cr.t,
+            grazing: cr.state === "graze", alert: cr.state === "alert", bound });
+          break;
+        }
+        case "runner": {
+          const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
+          c.save(); c.translate(cr.x*W, D.y*H); c.scale(D.scale, D.scale);
+          this.contactShadow(c, 0, 1, 5, 0.16*(1 - cr.z*0.6));
+          this.paintSanderling(c, 0, 0, cr.dir, cr.mode === "dash", cr.ph, D.col, probe);
+          c.restore();
+          break;
+        }
+        case "cat": {
+          const b = this.frontBlocks && this.frontBlocks[cr.b];
+          this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
+            sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
+            groom: cr.act === "groom" ? 1 : 0,
+            stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
+          break;
+        }
+        case "rabbit": {
+          const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
+          const rS = H*0.032*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
+          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
+            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
+            t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
+            wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
+          break;
+        }
+        case "fox": {
+          const fS = H*0.05*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9,
+            0.2*(1 - cr.z*0.6)*(1 - Math.min(1, cr.pose.lift/(fS*0.8))));
+          this.paintFox(c, Object.assign({ x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir,
+            walking: cr.mode === "trot", lp: cr.lp,
+            look: cr.mode === "pause" ? Math.sin(cr.t*1.8) : 0,
+            ears: cr.mode === "listen" || cr.mode === "pounce" ? 1 : 0,
+            color: D.col }, cr.pose));
+          break;
+        }
+        case "heron": {
+          const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
+          if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
+          this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
+            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
+            color: cr.mode === "fly" ? colDark : D.col, deep: colFar, t: cr.t }, cr.pose));
+          break;
+        }
+        case "porpoise": {
+          const arc = Math.sin(cr.phase);
+          const px = cr.x*W, wy = cr.base*H;
+          if (arc > 0.02) {
+            // pitch follows the arc: nose up on the rise, down on the fall
+            this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
+              pitch: Math.cos(cr.phase)*0.34,
+              s: H*0.05, color: colDark, rim: colFar });
+          } else {
+            // between rolls: a dark shape just under, and the flat "footprint"
+            // left on the surface by the last downstroke
+            const sub = Math.max(0, 1 + arc*3);
+            if (sub > 0.02) {
+              c.globalAlpha = 0.18*sub;
+              c.fillStyle = colDark;
+              c.beginPath();
+              c.ellipse(px, wy + H*0.012, H*0.055, H*0.011, 0, 0, Math.PI*2);
+              c.fill();
+              c.globalAlpha = 1;
+            }
+            const fp = Math.max(0, 1 + arc*1.6);
+            if (fp > 0.02) {
+              c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.26*fp})`;
+              c.lineWidth = 1;
+              c.beginPath();
+              c.ellipse(px - cr.dir*H*0.03, wy, H*0.028*(2 - fp), H*0.008, 0, 0, Math.PI*2);
+              c.stroke();
+            }
+          }
+          break;
+        }
+        case "squirrel": {
+          const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
+          const qS = H*0.03*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
+          this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
+            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t,
+            dig: cr.dig, bury: cr.bury, pat: cr.pat, color: D.col });
+          break;
+        }
+        case "litter": {
+          c.globalAlpha = Math.max(0, 1 - cr.t/cr.life)*0.7;
+          c.fillStyle = D.col;
+          c.beginPath();
+          c.ellipse(cr.x*W, cr.y*H, H*0.004*cr.sz*D.scale, H*0.002*cr.sz*D.scale,
+            cr.t*6, 0, Math.PI*2);
+          c.fill();
+          c.globalAlpha = 1;
+          break;
+        }
+        case "hare": {
+          const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
+          const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
+          const hS = H*0.042*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
+          this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
+            dir: cr.dir, hop: st, alert: cr.mode === "alert",
+            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: D.col });
+          break;
+        }
+        case "hedgehog": {
+          const gS = H*0.026*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, gS*0.85, 0.18*(1 - cr.z*0.6));
+          this.paintHedgehog(c, { x: cr.x*W, y: D.y*H, s: gS,
+            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: D.col, rim: colFar,
+            sniffUp: cr.mode === "sniffup" ? Math.min(1, cr.actT*2) : 0 });
+          break;
+        }
+        case "badger": {
+          const bS = H*0.045*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, bS*0.95, 0.2*(1 - cr.z*0.6));
+          this.paintBadger(c, { x: cr.x*W, y: D.y*H, s: bS,
+            dir: cr.dir, lp: cr.lp, color: D.col,
+            dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
+          break;
+        }
+        case "otter": {
           if (cr.mode !== "under") {
             this.paintOtter(c, { x: cr.x*W, y: cr.y*H, s: H*0.03*(cr.sz || 1),
               dir: cr.dir, ph: cr.ph, color: colDark,
@@ -4443,9 +4551,6 @@ class Scene {
           break;
         }
         case "bee": {
-          cr.x += (cr.drift + Math.sin(cr.t*1.3 + cr.ph)*0.02)*dt;
-          cr.y += Math.sin(cr.t*2.2 + cr.ph)*0.02*dt;
-          if (cr.t > cr.life || cr.x < -0.04 || cr.x > 1.04) { dead = true; break; }
           const alB = Math.max(0, Math.min(1, (cr.life - cr.t)))*0.9;
           c.globalAlpha = alB;
           this.paintBee(c, cr.x*W, (cr.y + Math.sin(cr.t*14)*0.004)*H,
@@ -4454,8 +4559,6 @@ class Scene {
           break;
         }
         case "skein": {
-          cr.x += cr.vx*dt;
-          if (cr.x < -0.25 || cr.x > 1.25) { dead = true; break; }
           const trail = -Math.sign(cr.vx);
           const gdir = Math.sign(cr.vx);
           c.strokeStyle = colFar; c.fillStyle = colFar; c.lineCap = "round";
@@ -4469,7 +4572,6 @@ class Scene {
           break;
         }
       }
-      if (dead) this.critters.splice(i, 1);
     }
   }
 
