@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=4";
-import { PSTYLE } from "./species.js?v=4";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=4";
+} from "./util.js?v=5";
+import { PSTYLE } from "./species.js?v=5";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=5";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 

@@ -23,6 +23,22 @@
    fallback cannot quietly drift away from the real thing.
    ============================================================ */
 
+/* An eight-bit buffer cannot hold a smooth ramp: somewhere it has to step, and
+   where the ramp is shallow those steps are wide enough to see. The canvas never
+   showed them because Skia dithers its gradients — and dithers the radial sprite
+   the old glow was blitted from — so the 2D path got it free, twice over. The
+   GPU has to be told, and this is the telling.
+
+   Interleaved gradient noise: one dot product and two fracts, no texture and no
+   sin, so nothing here depends on a driver's idea of trigonometric precision.
+   It is keyed on gl_FragCoord and on nothing else. A time term would break the
+   bands more thoroughly and set the whole sky crawling, and on a piece this slow
+   the crawl would be far worse than the banding it cured. */
+const DITHER = `
+float ign(vec2 p) {
+  return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}`;
+
 const VERT_SKY = `#version 300 es
 in vec2 a_corner;
 out float v_y;
@@ -37,12 +53,17 @@ in float v_y;
 uniform vec3 u_top;
 uniform vec3 u_bot;
 out vec4 o;
+${DITHER}
 void main() {
   /* v_y is 1 at the top of the screen, and the canvas gradient runs from its
      top colour at y=0 down to its bottom colour at y=H. Interpolating the two
      componentwise in sRGB is what a canvas linear gradient does, so this is
      the same ramp and not merely a similar one. */
-  o = vec4(mix(u_bot, u_top, v_y), 1.0);
+  vec3 c = mix(u_bot, u_top, v_y);
+  /* Half a level, and the same offset for all three channels — the way Skia
+     does it. Per-channel offsets would dither each one independently and speckle
+     the sky with colour. */
+  o = vec4(c + (ign(gl_FragCoord.xy) - 0.5) / 255.0, 1.0);
 }`;
 
 const VERT_SPRITE = `#version 300 es
@@ -71,14 +92,35 @@ in vec2 v_local;
 in vec4 v_color;
 in float v_kind;
 out vec4 o;
+${DITHER}
 void main() {
+  vec3 rgb = v_color.rgb;
   float a = v_color.a;
   if (v_kind < 0.5) {
     /* A soft blob. The canvas version is a radial gradient from the colour at
        full alpha in the centre to the same colour at zero on the rim, and a
        canvas gradient ramps linearly between its stops — so the falloff is
        1 - r, not a smoothstep and not a gaussian. */
-    a *= max(0.0, 1.0 - length(v_local));
+    float f = max(0.0, 1.0 - length(v_local));
+    a *= f;
+    /* This is the shape that bands: a sun's halo is a ramp half a frame wide,
+       and the shallowest thing drawn here.
+
+       Dither the colour, not the alpha. Alpha is a blend factor, so nudging it
+       by d moves the result by d * (src - dst) — and the contrast it lands
+       against is the sky behind, which the shader cannot read and which runs
+       from nine levels under a dawn sun to two hundred under a winter moon. No
+       single amplitude serves both: enough to break the dawn halo puts visible
+       grain around the moon. Nudging the *colour* moves the result by d * a
+       instead, so dividing by a lands half a level every time, whatever it is
+       drawn over — and the awkward constant disappears with it.
+
+       Only where the blob actually is: the quad's corners lie outside the circle
+       and must stay at nothing, or every glow would wear a faint square of
+       noise. The offset differs from the sky's so the two do not reinforce. */
+    if (f > 0.0) {
+      rgb += (ign(gl_FragCoord.xy + 17.0) - 0.5) / (255.0 * max(a, 0.03));
+    }
   } else if (v_kind < 1.5) {
     /* A disc, feathered across one pixel, standing in for the antialiasing
        the canvas gives an arc for free. */
@@ -86,9 +128,10 @@ void main() {
     float w = max(fwidth(d), 1e-4);
     a *= 1.0 - smoothstep(1.0 - w, 1.0, d);
   }
-  /* kind 2 is a plain rectangle — stars and their spikes — and takes the
-     alpha unaltered. */
-  o = vec4(v_color.rgb, a);
+  /* kind 2 is a plain rectangle — stars and their spikes — and takes the alpha
+     unaltered. Nothing to dither: its alpha is flat across the quad, so there is
+     no ramp to step, and a star is two pixels wide besides. */
+  o = vec4(rgb, a);
 }`;
 
 const GLOW = 0, DISC = 1, RECT = 2;

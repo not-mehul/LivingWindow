@@ -95,6 +95,7 @@ node tools/bench.mjs        label    # frame cost per place
 node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
 node tools/critters.mjs              # every creature through update and paint
 node tools/actors.mjs                # every singer, and every way of leaving
+node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
 ```
 
 `bench.mjs` reports the time a frame really takes — it hands the page a
@@ -137,6 +138,24 @@ depends on its species — so each is hunted for deliberately: the place is
 reseeded, the hour forced, the cooldowns cleared, and every creature and every
 manner of leaving is stepped through both halves. Run all four before trusting
 a change to how anything moves.
+
+`tools/gradient.mjs` watches for banding, which is the one thing that cannot be
+caught by comparing pictures. An eight-bit buffer has to step a smooth ramp
+somewhere, and Skia hides those steps by dithering its gradients — so the 2D
+path got it free and the GPU had to be told. When it was not, the sun and moon
+wore rings and the dusk halo stepped in bands two hundred pixels wide, while a
+whole-image comparison reported better than 99% agreement: a dither is a
+difference of one level, and that comparison was counting differences greater
+than two.
+
+So this measures the thing itself. Along a line across a smooth ramp, how far do
+you travel before the colour changes at all? Short runs read as smooth; a long
+run *is* a band. It pins the scene (seeded randomness, a synthetic clock, a
+reseed before each shot) so both backends photograph the same sky, takes the
+median over forty columns and thirty rows so one line passing behind a cloud
+cannot skew it, and then requires the GPU to come within 1.6× of the canvas at
+every place and hour. Undithered, thirty-nine of the forty bands fail, some by
+forty-fold; dithered, none do.
 
 ### A note on caching
 
