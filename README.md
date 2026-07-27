@@ -68,6 +68,11 @@ js/
                   Boots the scene and the audio engine.
   bestiary.js     Logic for the bestiary page. Borrows the Scene's painters and the
                   species' synths; adds nothing to the piece itself.
+  rig.js          Creatures as data rather than as code: the part kinds, the pose
+                  blending, and the starting skeletons. Read by the window.
+  rigs.js         Which creatures are drawn from a rig. Ships empty; an entry here
+                  is the only way a drawn creature reaches the window.
+  rigedit.js      The drawing bench in the bestiary. Not loaded by the window.
 ```
 
 ### Watching what a frame costs
@@ -89,7 +94,7 @@ and no amount of batching will touch it.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds five harnesses. None is part of the piece; all need a static
+`tools/` holds six harnesses. None is part of the piece; all need a static
 server running and drive a headless Chromium through Playwright.
 
 ```bash
@@ -98,6 +103,7 @@ node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
 node tools/critters.mjs              # every creature through update and paint
 node tools/actors.mjs [outfile]      # every singer, and every way of leaving
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
+node tools/rigedit.mjs               # the drawing bench, driven by a synthetic hand
 ```
 
 `bench.mjs` reports the time a frame really takes — it hands the page a
@@ -167,6 +173,17 @@ median over forty columns and thirty rows so one line passing behind a cloud
 cannot skew it, and then requires the GPU to come within 1.6× of the canvas at
 every place and hour. Undithered, thirty-nine of the forty bands fail, some by
 forty-fold; dithered, none do.
+
+`tools/rigedit.mjs` drives the drawing bench (below) the way a hand would:
+it opens a creature, loads a skeleton, adds a shape, drags it, drags one of its
+points, names a pose, moves the shape again so that pose differs from rest, and
+plays the result back. Every check asserts on the **rig** — the data the editor
+exists to produce — rather than on pixels, because "the shape moved" is a fact
+about the rig and "something changed on screen" is not. Two of its checks are
+there because they each caught something real: that every creature the picker
+offers shows its painter in ghost, which found a cat drawn twelve pixels tall
+because its painter takes no scale; and that nothing the bench makes reaches
+`js/rigs.js`, which is the promise the piece makes about itself.
 
 ### A note on caching
 
@@ -261,7 +278,67 @@ What the studio cannot reach: the eighteen birds with their own painters (the
 owl, the cuckoo, the pheasant and the rest) and every mammal keep their shapes
 as literal numbers inside the painting code, with no table standing between. The
 panel says so rather than offering sliders that would move nothing. Motion is
-shared by all of them, so that half still applies.
+shared by all of them, so that half still applies. Redrawing those creatures is
+what the next section is for.
+
+### Draw a creature — the rig bench
+
+The studio moves numbers that already exist. It cannot help with an animal
+whose *shape* is wrong, because every mammal and every bespoke bird is a
+function — `paintDeer` is four jointed legs, a body of six bezier segments and a
+tail on a nested transform, written out in units of the creature's own scale.
+That is why they stay sharp at any size and recolour with the hour, and also why
+the only way to change one has been to edit the code.
+
+Press **Draw a creature** and pick one. A rig is the same animal expressed as
+**parts** instead of as statements — the same units, the same primitives — so it
+can be laid out with a mouse and lose nothing by it.
+
+- **Its painter shows through in ghost.** You are not drawing from nothing; you
+  are drawing over the animal you mean to replace, on a pale day sky with the
+  ground under it, because a dark silhouette against light is what these
+  creatures *are*.
+- **Start from a skeleton** — a four-legged animal, or a perching bird. Not a
+  deer, but the parts an animal has, jointed and stacked in the right order and
+  named. The work becomes dragging eight handles onto the ghost rather than
+  placing fifteen shapes from scratch.
+- **Draw and reshape.** Add outlines, rounds, tapers, jointed legs and wings.
+  Click a part to select it, drag its body to move it, drag its points to
+  reshape it, alt-click a point to take it away. Colours are the theme's three
+  slots — `color`, `deep`, `rim` — never literals, so a rigged creature answers
+  to dusk exactly as a painted one does.
+- **Poses are named arrangements** — `graze`, `alert` — and the runtime blends
+  between them by weight, which is what the window's crossfades already are.
+  Bind a pose to the flag that brings it on (`grazing`, `flap`, `walking`) and it
+  changes on exactly the tick the painter would have. **▶ play** walks the poses
+  in turn and reads out the blend as it goes.
+- **A stride is not a pose.** For the motion no arrangement can hold — a leg
+  through a step, a wing through a beat — give a part a **cycle**: it reads the
+  same stride phase the engine already counts, so a rigged leg swings in time
+  with a painted one.
+
+Only creatures whose painters answer to a scale are offered, and the bench works
+that out by asking each one rather than by keeping a list: it draws the painter
+twice at two sizes and sees whether the picture changes. A painter that ignores
+its scale gives back the same bytes both times. The cat is one — it is drawn in
+flat pixels and sized by whoever calls it — so a cat rig could never be applied,
+and rather than let you spend an afternoon on one that would silently do
+nothing, the picker leaves it out.
+
+**How a rig reaches the window.** It does not, until you put it there. Drafts
+live in `localStorage` under `lw.bestiary.rigs` and are visible only to the
+bestiary. **Copy JS** gives you the entry; paste it into `js/rigs.js`:
+
+```js
+RIGS.deer = { parts: [ … ], poses: { rest: { … }, graze: { … } }, when: { … } };
+```
+
+That file ships empty by design. Where a rig exists it stands in for the painter
+of the same name — one swap on `Scene.prototype` serves the window and the
+bestiary both, so no call site needs to know which creatures are data and which
+are code. Where none exists, nothing about that creature changes: there is no
+automatic conversion and no half state. Keeping the drafts out of the shipped
+file is what lets the piece go on being only the files you can read.
 
 ## Behaviour worth knowing about
 

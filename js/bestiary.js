@@ -6,9 +6,10 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=6";
-import { SPECIES, PSTYLE, ANIM, CRITTER_VOICES, speciesIcon } from "./species.js?v=6";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=6";
+import { Scene } from "./scene.js?v=7";
+import { SPECIES, PSTYLE, ANIM, CRITTER_VOICES, speciesIcon } from "./species.js?v=7";
+import { mountEditor } from "./rigedit.js?v=7";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=7";
 
 /* One Scene on a hidden canvas lends us its painters and tokens. */
 const scene = new Scene(document.getElementById("bz-hidden"));
@@ -1107,4 +1108,96 @@ document.getElementById("bz-st-resetall").addEventListener("click", () => {
   }
   Object.assign(ANIM, SHIPPED.anim);
   if (tuning) selectEntry(tuning); else { buildMotion(); touched(); }
+});
+
+
+/* ============================================================
+   The rig editor — opened from the header, or from a card.
+
+   Each creature is handed a `paint` for the bench to show in ghost: a direct
+   call to its own painter at the bench's scale, so a badly-drawn animal can be
+   redrawn over itself. Only the creatures whose painters take a parameter
+   object can be traced this way — the small critters and the flight forms take
+   loose arguments — and those are the mammals and the bespoke birds, which is
+   what the editor is for. Of those, only the ones that answer to a scale are
+   offered; see `scaleAware` below for why, and for how that is decided.
+   ============================================================ */
+const RIGGABLE = [
+  ["deer", "paintDeer"], ["fox", "paintFox"], ["badger", "paintBadger"],
+  ["otter", "paintOtter"], ["hare", "paintHare"], ["hedgehog", "paintHedgehog"],
+  ["squirrel", "paintSquirrel"], ["cat", "paintCat"], ["rabbit", "paintRabbit"],
+  ["owl", "paintOwl"], ["cuckoo", "paintCuckoo"], ["rooster", "paintRooster"],
+  ["duck", "paintDuck"], ["woodpecker", "paintWoodpecker"], ["wader", "paintWader"],
+  ["frog", "paintFrog"], ["heron", "paintHeron"], ["pheasant", "paintPheasant"],
+  ["porpoise", "paintPorpoise"], ["bird", "paintBird"]
+];
+
+const nameFor = (id) => {
+  const c = CARDS.find(x => x.id === id || (x.sp && x.sp.id === id));
+  return c ? c.name : id.charAt(0).toUpperCase() + id.slice(1);
+};
+const latinFor = (id) => {
+  const c = CARDS.find(x => x.id === id || (x.sp && x.sp.id === id));
+  return c ? c.latin : "";
+};
+
+/* Everything a painter might reach for, at the size the bench works at. One
+   object, so the ghost and the probe below ask each painter the same question. */
+const benchParams = (x, y, s, t = 0, lp = 0, walking = false) => ({
+  x, y, s, dir: 1, alpha: 1, t, lp, walking,
+  color: "#000", deep: "#000", rim: "#000", bot: [40, 33, 23, 1],
+  head: 0, dig: 0, pat: 0, bury: 0,
+  pose: { crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0 },
+  marks: {}, plump: 1, tailLen: 1.1, billLen: 0.45, sing: 0, breath: 0,
+  headTurn: 0, tailFlick: 0, wingSettle: 0, fly: 0, flap: 0, flare: 0,
+  night: 0, blinkPh: 0, mode: "walk"
+});
+
+/* Can this creature be rigged at all? A rig is written in units of `s`, so a
+   painter that ignores `s` has no scale for one to be in — the cat is drawn in
+   flat pixels and sized by whoever calls it, and a cat rig would be quietly
+   dropped by the dispatch for want of an `s` to multiply by. Offering such a
+   creature would let you spend an afternoon drawing something that could never
+   be used, so ask each painter rather than keep a list: draw it at two sizes
+   and see whether the picture changes. A painter that ignores its scale gives
+   back the same bytes both times, which makes this an exact answer and not a
+   judgement about how much bigger is big enough. */
+const probe = document.createElement("canvas");
+probe.width = probe.height = 72;
+const probeCtx = probe.getContext("2d", { willReadFrequently: true });
+function scaleAware(fn) {
+  const ink = (s) => {
+    probeCtx.setTransform(1, 0, 0, 1, 0, 0);
+    probeCtx.clearRect(0, 0, 72, 72);
+    probeCtx.fillStyle = "#000";
+    try { scene[fn](probeCtx, benchParams(36, 52, s)); } catch { return null; }
+    const d = probeCtx.getImageData(0, 0, 72, 72).data;
+    let h = 0x811c9dc5, n = 0;
+    for (let i = 3; i < d.length; i += 4) { if (d[i] > 8) n++; h = Math.imul(h ^ d[i], 16777619); }
+    return { h: h >>> 0, n };
+  };
+  const a = ink(7), b = ink(20);
+  return !!(a && b && a.n > 0 && b.n > 0 && a.h !== b.h);
+}
+
+const rigCards = RIGGABLE
+  .filter(([, fn]) => typeof scene[fn] === "function" && scaleAware(fn))
+  .map(([id, fn]) => ({
+    id, name: nameFor(id), latin: latinFor(id),
+    /* The ghost. Called with the bench's own parameters, and guarded because a
+       painter asked for a pose it never expected can throw — better a missing
+       ghost than a dead bench. */
+    paint(c, o) {
+      const p = benchParams(o.x, o.y, o.s * 0.9, o.t, o.lp, o.walking);
+      p.color = o.color; p.deep = o.deep; p.rim = o.rim;
+      scene[fn](c, p);
+    }
+  }));
+
+const editor = mountEditor(scene, rigCards, () => {
+  if (REDUCED) registry.forEach(r => renderEntry(r, performance.now()));
+});
+document.getElementById("bz-rig-open").addEventListener("click", () => {
+  document.getElementById("rig-pick").focus();
+  document.getElementById("rig").classList.remove("hidden");
 });

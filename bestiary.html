@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Living Window — Bestiary</title>
-<link rel="icon" href="favicon.svg?v=6" type="image/svg+xml">
-<link rel="stylesheet" href="css/styles.css?v=6">
+<link rel="icon" href="favicon.svg?v=7" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css?v=7">
 <style>
   /* Page-local layout only — every colour comes from the shared tokens. */
   body.bestiary {
@@ -119,6 +119,60 @@
     body.studio-open { padding-right: 1.5rem; }
     #bz-studio { width: 100%; }
   }
+
+  /* ---- the rig editor: a bench for drawing the creatures ---- */
+  #rig { position: fixed; inset: 0; z-index: 40; display: grid;
+    grid-template-columns: 1fr 21rem; background: var(--bg-grad-mid); }
+  #rig.hidden { display: none; }
+  .rig-stage { position: relative; display: flex; flex-direction: column; min-width: 0; }
+  .rig-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+    padding: 0.7rem 1rem; border-bottom: 1px solid var(--border-faint); }
+  .rig-bar .grow { flex: 1; }
+  #rig-canvas { flex: 1; width: 100%; display: block; touch-action: none; cursor: crosshair; }
+  .rig-side { border-left: 1px solid var(--border); background: var(--panel-bg);
+    padding: 0.9rem 1rem 2rem; overflow-y: auto; font-size: 0.78rem; }
+  .rig-side h4 { margin: 1.1rem 0 0.5rem; font-size: 0.64rem; font-weight: normal;
+    letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-faint);
+    border-bottom: 1px solid var(--border-faint); padding-bottom: 0.3rem; }
+  .rig-side h4:first-child { margin-top: 0; }
+  #rig-who { font-size: 1rem; color: var(--text-heading); }
+  #rig-who .latin { font-style: italic; color: var(--text-faint); font-size: 0.74rem; }
+  #rig-status { margin: 0.2rem 0 0; font-size: 0.7rem; font-style: italic; color: var(--text-dim); }
+  #rig button, #rig select { background: var(--chip-bg); color: var(--text-body);
+    border: 1px solid var(--border); border-radius: 999px; font: inherit;
+    font-size: 0.74rem; padding: 0.24rem 0.75rem; cursor: pointer; }
+  #rig select { border-radius: 5px; }
+  #rig button:hover { background: var(--chip-bg-hover); }
+  #rig button[aria-pressed="true"] { border-color: var(--accent-amber); color: var(--accent-amber); }
+  .rig-part { display: flex !important; justify-content: space-between; gap: 0.5rem;
+    width: 100%; border-radius: 5px !important; margin-bottom: 0.2rem; text-align: left; }
+  .rig-part.on { border-color: var(--accent-amber); color: var(--accent-amber); }
+  .rig-part .k { color: var(--text-faint); font-size: 0.66rem; }
+  .rig-pose { margin: 0 0.1rem 0.25rem 0; }
+  .rig-pose.on { border-color: var(--accent-amber); color: var(--accent-amber); }
+  .rig-posex { display: inline-block; margin: 0 0.4rem 0.25rem 0; padding: 0 0.2rem;
+    color: var(--text-faint); cursor: pointer; font-size: 0.8rem; line-height: 1.4; }
+  .rig-posex:hover, .rig-posex:focus { color: #c9806e; outline: none; }
+  .rig-f { display: grid; grid-template-columns: 3.6rem 1fr auto; align-items: center;
+    gap: 0.4rem; margin: 0.25rem 0; }
+  .rig-f > label { color: var(--text-muted); }
+  .rig-f input[type="range"] { accent-color: var(--accent-amber); width: 100%; }
+  .rig-f input[type="checkbox"] { accent-color: var(--accent-amber); justify-self: start; }
+  .rig-f .val { color: var(--text-dim); font-variant-numeric: tabular-nums; font-size: 0.7rem; }
+  .rig-mini { margin: 0.35rem 0.3rem 0 0; }
+  .rig-posebox { margin-top: 0.4rem; display: grid; gap: 0.3rem; }
+  .rig-posebox.hidden { display: none; }
+  .rig-posebox input { background: var(--chip-bg); color: var(--text-body);
+    border: 1px solid var(--border); border-radius: 5px; font: inherit;
+    font-size: 0.74rem; padding: 0.24rem 0.5rem; width: 100%; }
+  #rig-now:empty { display: none; }
+  .rig-mini.danger { border-color: rgba(190,90,70,0.5); color: #c9806e; }
+  .rig-hint { margin: 0.3rem 0; font-size: 0.7rem; font-style: italic; color: var(--text-dim); }
+  #rig-out { width: 100%; min-height: 6rem; margin-top: 0.5rem; resize: vertical;
+    background: var(--chip-bg); color: var(--text-dim); border: 1px solid var(--border-faint);
+    border-radius: 5px; font-family: ui-monospace, Menlo, monospace; font-size: 0.62rem;
+    padding: 0.4rem; white-space: pre; }
+  @media (max-width: 900px) { #rig { grid-template-columns: 1fr; } .rig-side { display: none; } }
 </style>
 </head>
 <body class="bestiary">
@@ -130,7 +184,8 @@
     <div class="bz-controls">
       <button id="bz-theme" type="button">Dusk / Dawn</button>
       <label>voice volume <input id="bz-vol" type="range" min="0" max="1" step="0.05" value="0.8"></label>
-      <button id="bz-studio-toggle" type="button" aria-expanded="false">Studio</button>
+      <button id="bz-studio-toggle" type="button" aria-expanded="false">Marks</button>
+      <button id="bz-rig-open" type="button">Draw a creature</button>
     </div>
   </header>
   <section class="bz-section">
@@ -161,7 +216,68 @@
       aria-label="Generated source"></textarea>
   </aside>
 
+  <!-- The rig editor. Opened from the header; edits the creature as parts and
+       poses rather than as code, with its painter showing through in ghost. -->
+  <div id="rig" class="hidden">
+    <div class="rig-stage">
+      <div class="rig-bar">
+        <div>
+          <div id="rig-who">—</div>
+          <p id="rig-status"></p>
+        </div>
+        <span class="grow"></span>
+        <select id="rig-pick" aria-label="Creature"></select>
+        <select id="rig-start" aria-label="Start from a skeleton">
+          <option value="">start from…</option>
+        </select>
+        <select id="rig-add" aria-label="Add a shape">
+          <option value="">add a shape…</option>
+          <option value="poly">outline</option>
+          <option value="ellipse">round</option>
+          <option value="limb">taper</option>
+          <option value="leg">jointed leg</option>
+          <option value="wing">wing</option>
+        </select>
+        <button id="rig-ghost" type="button" aria-pressed="true">ghost</button>
+        <button id="rig-play" type="button" aria-pressed="false">▶ play</button>
+        <button id="rig-undo" type="button">undo</button>
+        <button id="rig-close" type="button" aria-label="Close the editor">✕</button>
+      </div>
+      <canvas id="rig-canvas"></canvas>
+    </div>
+    <aside class="rig-side">
+      <h4>Parts</h4>
+      <div id="rig-parts"></div>
+      <h4>Poses</h4>
+      <div id="rig-poses"></div>
+      <p id="rig-now" class="rig-hint"></p>
+      <button id="rig-newpose" class="rig-mini" type="button">+ pose</button>
+      <div id="rig-posebox" class="rig-posebox hidden">
+        <input id="rig-posename" type="text" placeholder="name it — graze, alert" spellcheck="false">
+        <input id="rig-posewhen" type="text" list="rig-flags" spellcheck="false"
+          placeholder="shows when… (optional)">
+        <datalist id="rig-flags">
+          <option value="walking"><option value="grazing"><option value="alert">
+          <option value="bound"><option value="head"><option value="sing">
+          <option value="fly"><option value="flap"><option value="flare">
+          <option value="dig"><option value="pat"><option value="bury">
+          <option value="night"><option value="sniff">
+        </datalist>
+        <div>
+          <button id="rig-poseadd" class="rig-mini" type="button">add</button>
+          <button id="rig-posecancel" class="rig-mini" type="button">cancel</button>
+        </div>
+      </div>
+      <h4>Selected</h4>
+      <div id="rig-props"></div>
+      <h4>Source</h4>
+      <button id="rig-copy" class="rig-mini" type="button">Copy JS</button>
+      <button id="rig-reset" class="rig-mini danger" type="button">Discard rig</button>
+      <textarea id="rig-out" readonly spellcheck="false" aria-label="Generated rig"></textarea>
+    </aside>
+  </div>
+
   <canvas id="bz-hidden" width="60" height="60" style="display:none"></canvas>
-  <script type="module" src="js/bestiary.js?v=6"></script>
+  <script type="module" src="js/bestiary.js?v=7"></script>
 </body>
 </html>

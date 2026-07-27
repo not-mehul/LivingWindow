@@ -5,9 +5,11 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=6";
-import { PSTYLE, ANIM } from "./species.js?v=6";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=6";
+} from "./util.js?v=7";
+import { PSTYLE, ANIM } from "./species.js?v=7";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=7";
+import { RIGS } from "./rigs.js?v=7";
+import { paintRig, poseWeights } from "./rig.js?v=7";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -6155,6 +6157,28 @@ class Scene {
       c.beginPath(); c.arc(rx, ry, 2, 0, Math.PI*2); c.fill();
     }
   }
+}
+
+/* Where a rig exists it stands in for the painter of the same name. Both the
+   window and the bestiary draw through these methods, so one swap here serves
+   both, and no call site needs to know which creatures are data and which are
+   code. A creature with no rig is left entirely alone — there is no third
+   state, and nothing is converted behind anyone's back.
+
+   Only the painters that take a parameter object are eligible. The small
+   critters and the flight forms take loose arguments and are not the ones this
+   is for; giving them a rig would need their signatures changed first. */
+for (const name of Object.getOwnPropertyNames(Scene.prototype)) {
+  if (!/^paint[A-Z]/.test(name)) continue;
+  const id = name.slice(5).toLowerCase();
+  const original = Scene.prototype[name];
+  Scene.prototype[name] = function (c, o, ...rest) {
+    const rig = RIGS[id];
+    if (rig && o && typeof o === "object" && o.s !== undefined) {
+      return paintRig(this, c, rig, { ...o, weights: o.weights || poseWeights(rig, o) });
+    }
+    return original.call(this, c, o, ...rest);
+  };
 }
 
 export { Scene };

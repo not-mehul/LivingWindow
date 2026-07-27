@@ -6,8 +6,8 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=6";
-import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst } from "./species.js?v=6";
+import { mulberry32, REDUCED, state } from "./util.js?v=7";
+import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst } from "./species.js?v=7";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 function disconnect(...nodes) {

@@ -93,7 +93,7 @@ if (LOG) await page.evaluate(() => window.__armPaint && window.__armPaint());
 
 const results = await page.evaluate(async () => {
   const { scene: s, state } = window.__lw;
-  const mod = await import('./js/species.js?v=6');
+  const mod = await import('./js/species.js?v=7');
   const SPECIES = mod.SPECIES;
   const PHASES = ['dawn', 'day', 'dusk', 'night'];
   const out = [];
