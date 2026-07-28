@@ -399,4 +399,4 @@ function makeSkyPainter(glCanvas, scene) {
   return new Canvas2DSky(scene);
 }
 
-export { GLSky, Canvas2DSky, makeSkyPainter };
+export { Canvas2DSky, makeSkyPainter };

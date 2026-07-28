@@ -66,7 +66,7 @@ function speciesIcon(sp, size) {
    the bill while it sings. These were literals in two places — once in the
    window and once again in the bestiary — which meant a number tuned against a
    card at close range was not the number the window would use. Now both read
-   this, so the bestiary's studio is editing the thing itself.
+   this, so a change here shows up in the same motion on both pages.
 
    Rates are radians a second; `sharp` raises a sine to a power to turn a smooth
    swell into an occasional twitch. */
@@ -1044,8 +1044,11 @@ const CRITTER_VOICES = {
     } }
 };
 
+/* Only what another module actually asks for. `ICONS`, `ICON_KEY`, `noteTrain`
+   and `pulseTrain` are the machinery behind `speciesIcon` and the synths and are
+   used here alone. */
 export {
-  ICONS, ICON_KEY, speciesIcon, PSTYLE, ANIM, COUNTERSING,
-  note, burst, noteTrain, pulseTrain,
+  speciesIcon, PSTYLE, ANIM, COUNTERSING,
+  note, burst,
   SPECIES, CRITTER_VOICES
 };

@@ -6,10 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=7";
-import { SPECIES, PSTYLE, ANIM, CRITTER_VOICES, speciesIcon } from "./species.js?v=7";
-import { mountEditor } from "./rigedit.js?v=7";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=7";
+import { Scene } from "./scene.js?v=8";
+import { SPECIES, PSTYLE, ANIM, CRITTER_VOICES, speciesIcon } from "./species.js?v=8";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=8";
 
 /* One Scene on a hidden canvas lends us its painters and tokens. */
 const scene = new Scene(document.getElementById("bz-hidden"));
@@ -688,10 +687,14 @@ function buildCard(card) {
     el.appendChild(v);
   }
 
+  /* Name over Latin, as a field guide sets it. Side by side they fight for a
+     narrow card: a two-word name wraps and the Latin is left stranded up beside
+     the first half of it. */
   const title = document.createElement("div");
   title.className = "bz-title";
   title.innerHTML = `<span class="bz-icon">${speciesIcon(card.sp || { id: card.id }, 20)}</span>`
-    + `<span>${card.name}</span><span class="latin">${card.latin}</span>`;
+    + `<span class="bz-names"><span class="bz-name">${card.name}</span>`
+    + `<span class="latin">${card.latin}</span></span>`;
   el.appendChild(title);
 
   const desc = document.createElement("p");
@@ -766,7 +769,6 @@ function buildCard(card) {
     + (card.every ? ` <strong>·</strong> tries a call about every ${card.every}s.` : "");
   el.appendChild(note);
 
-  entry.el = el;          // the studio marks the card it is tuning
   registry.push(entry);
   return el;
 }
@@ -803,11 +805,6 @@ function renderEntry(entry, now) {
 }
 function frame(now) {
   for (const entry of visible) renderEntry(entry, now);
-  /* Whatever the studio has under the lamp stays live even when it is not in
-     view. Opening the panel reflows the grid, which can carry the very card you
-     just clicked off the screen — and a bench that freezes the thing you are
-     tuning is worse than no bench. */
-  if (tuning && !visible.has(tuning)) renderEntry(tuning, now);
   if (!REDUCED) requestAnimationFrame(frame);
 }
 if (REDUCED) {
@@ -817,387 +814,24 @@ if (REDUCED) {
   requestAnimationFrame(frame);
 }
 
-/* ---- theme toggle, mirroring main.js ---- */
-document.getElementById("bz-theme").addEventListener("click", () => {
-  const isLight = document.documentElement.getAttribute("data-theme") === "light";
-  if (isLight) document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.setAttribute("data-theme", "light");
+/* ---- theme toggle, mirroring main.js ----
+   The same switch the window uses, driven the same way, and starting from the
+   same place: whatever the system asks for. The palettes are rebuilt after,
+   because every card's sky and every creature's colour is read from the tokens
+   the theme just changed. */
+const themeSwitch = document.getElementById("bz-theme");
+function applyTheme(mode) {
+  if (mode === "light") document.documentElement.setAttribute("data-theme", "light");
+  else document.documentElement.removeAttribute("data-theme");
+  const isLight = mode === "light";
+  themeSwitch.setAttribute("aria-checked", String(isLight));
+  themeSwitch.setAttribute("aria-label", isLight ? "Switch to dark theme" : "Switch to light theme");
+  document.getElementById("bz-moon").classList.toggle("active", !isLight);
+  document.getElementById("bz-sun").classList.toggle("active", isLight);
   buildPalettes();
   if (REDUCED) registry.forEach(r => renderEntry(r, performance.now()));
+}
+themeSwitch.addEventListener("click", () => {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
 });
-
-/* ============================================================
-   The studio — a bench for tuning how the creatures look and move.
-
-   Two tables drive the birds: PSTYLE, which carries each species' marks (how
-   long a bill, how plump a body, whether it has a cap or a wingbar), and ANIM,
-   which carries the rates and depths of the idle motion they all share. Both
-   are plain data, and perchDraw reads them afresh on every frame — so editing
-   the table *is* editing the bird, with nothing to rebuild and nothing to wire.
-
-   Every control below is generated from the data rather than written out by
-   hand. Add a mark to a species in species.js and a control for it appears
-   here on its own; add a rate to ANIM and the same. The ranges come from the
-   spread of the values themselves across all the species, so a slider for
-   `bill` covers the range of real bills and not some invented nought-to-one.
-
-   What it cannot reach: the eighteen birds with their own painters (the owl,
-   the cuckoo, the pheasant and the rest) and every mammal keep their shapes as
-   literal numbers inside the painting code, with no table to stand between.
-   The studio says so plainly rather than offering sliders that would move
-   nothing. Motion is shared by all of them, so that half still applies.
-   ============================================================ */
-
-const SHIPPED = { pstyle: JSON.parse(JSON.stringify(PSTYLE)), anim: { ...ANIM } };
-const STORE = "lw.bestiary.studio";      // the bestiary only: never read by the piece
-const TONES = ["", "amber", "sage"];
-
-/* The observed spread of each numeric mark across every species, which is a
-   better range for a slider than anything invented. */
-const SPREAD = (() => {
-  const out = {};
-  for (const row of Object.values(SHIPPED.pstyle)) {
-    for (const [k, v] of Object.entries(row)) {
-      if (typeof v !== "number") continue;
-      const s = out[k] || (out[k] = { min: v, max: v });
-      s.min = Math.min(s.min, v); s.max = Math.max(s.max, v);
-    }
-  }
-  for (const s of Object.values(out)) {
-    const pad = Math.max(0.1, (s.max - s.min) * 0.6);
-    s.lo = Math.max(0, +(s.min - pad).toFixed(2));
-    s.hi = +(s.max + pad).toFixed(2);
-  }
-  return out;
-})();
-/* Every mark any species uses, so one that has none can still be given one. */
-const ALL_MARKS = [...new Set(Object.values(SHIPPED.pstyle).flatMap(Object.keys))].sort();
-
-function loadSaved() {
-  try {
-    const raw = localStorage.getItem(STORE);
-    if (!raw) return;
-    const saved = JSON.parse(raw);
-    for (const [id, row] of Object.entries(saved.pstyle || {})) {
-      PSTYLE[id] = { ...(PSTYLE[id] || {}), ...row };
-      for (const [k, v] of Object.entries(row)) if (v === null) delete PSTYLE[id][k];
-    }
-    Object.assign(ANIM, saved.anim || {});
-  } catch (e) { console.warn("studio: could not read saved edits —", e.message); }
-}
-function save() {
-  const pstyle = {};
-  for (const [id, row] of Object.entries(PSTYLE)) {
-    const base = SHIPPED.pstyle[id] || {};
-    const diff = {};
-    for (const k of new Set([...Object.keys(base), ...Object.keys(row)])) {
-      if (row[k] !== base[k]) diff[k] = k in row ? row[k] : null;
-    }
-    if (Object.keys(diff).length) pstyle[id] = diff;
-  }
-  const anim = {};
-  for (const [k, v] of Object.entries(ANIM)) if (v !== SHIPPED.anim[k]) anim[k] = v;
-  const any = Object.keys(pstyle).length || Object.keys(anim).length;
-  try {
-    if (any) localStorage.setItem(STORE, JSON.stringify({ pstyle, anim }));
-    else localStorage.removeItem(STORE);
-  } catch (e) { /* private mode, or a full quota: the edits simply won't outlive the tab */ }
-  return { pstyle, anim };
-}
-loadSaved();
-
-/* ---- control builders. Each returns a row and reports its own changes. ---- */
-function fieldRow(label, control, valueEl) {
-  const row = document.createElement("div");
-  row.className = "bz-f" + (valueEl ? "" : " bool");
-  const l = document.createElement("label");
-  l.textContent = label;
-  row.append(l, control);
-  if (valueEl) row.append(valueEl);
-  return row;
-}
-function numberField(label, obj, key, lo, hi, shipped, onChange) {
-  const val = document.createElement("span");
-  val.className = "val";
-  const input = document.createElement("input");
-  input.type = "range";
-  input.min = lo; input.max = hi;
-  input.step = (hi - lo) > 6 ? 0.1 : 0.01;
-  input.value = obj[key];
-  const paint = () => {
-    val.textContent = (+obj[key]).toFixed(input.step === "0.1" ? 1 : 2);
-    row.classList.toggle("changed", obj[key] !== shipped);
-  };
-  input.addEventListener("input", () => { obj[key] = +input.value; paint(); onChange(); });
-  const row = fieldRow(label, input, val);
-  paint();
-  return row;
-}
-function boolField(label, obj, key, shipped, onChange) {
-  const input = document.createElement("input");
-  input.type = "checkbox";
-  input.checked = !!obj[key];
-  const row = fieldRow(label, input, null);
-  const paint = () => row.classList.toggle("changed", !!obj[key] !== !!shipped);
-  input.addEventListener("change", () => { obj[key] = input.checked; paint(); onChange(); });
-  paint();
-  return row;
-}
-function toneField(label, obj, key, shipped, onChange) {
-  const sel = document.createElement("select");
-  for (const t of TONES) {
-    const o = document.createElement("option");
-    o.value = t; o.textContent = t || "—";
-    sel.appendChild(o);
-  }
-  sel.value = obj[key] || "";
-  const row = fieldRow(label, sel, null);
-  const paint = () => row.classList.toggle("changed", (obj[key] || "") !== (shipped || ""));
-  sel.addEventListener("change", () => {
-    if (sel.value) obj[key] = sel.value; else delete obj[key];
-    paint(); onChange();
-  });
-  paint();
-  return row;
-}
-
-/* ---- the panel ---- */
-const stWho = document.getElementById("bz-st-who");
-const stHint = document.getElementById("bz-st-hint");
-const stMarks = document.getElementById("bz-st-marks");
-const stMotion = document.getElementById("bz-st-motion");
-const stOut = document.getElementById("bz-st-out");
-let tuning = null;                        // the entry currently under the lamp
-
-const touched = () => {
-  const { pstyle, anim } = save();
-  stOut.value = sourceFor(pstyle, anim);
-  if (REDUCED) registry.forEach(r => renderEntry(r, performance.now()));
-};
-
-/* What to paste back into species.js, in the formatting species.js already
-   uses — a row per species, and ANIM's changed rates. */
-function sourceFor(pstyleDiff, animDiff) {
-  const lines = [];
-  const lit = (v) => typeof v === "string" ? `"${v}"` : String(v);
-  for (const id of Object.keys(pstyleDiff)) {
-    const row = PSTYLE[id];
-    const body = Object.entries(row).map(([k, v]) => `${k}: ${lit(v)}`).join(", ");
-    lines.push(`  ${id}: { ${body} },`);
-  }
-  if (Object.keys(animDiff).length) {
-    if (lines.length) lines.push("");
-    lines.push("// ANIM — changed values only");
-    for (const [k, v] of Object.entries(animDiff)) lines.push(`  ${k}: ${v},`);
-  }
-  return lines.length ? lines.join("\n") : "No edits yet.";
-}
-
-function buildMarks(id, name, latin) {
-  stMarks.innerHTML = "";
-  stWho.innerHTML = `${name} <span class="latin">${latin || ""}</span>`;
-  const editable = !!SHIPPED.pstyle[id];
-  if (!editable) {
-    stHint.textContent = "This one is drawn by its own painter, with its shape "
-      + "written as numbers in the painting code — there is no table of marks to "
-      + "tune. The motion below still applies to it.";
-    return;
-  }
-  stHint.textContent = "Marks come from PSTYLE. Changes show at once, here and in the window.";
-  const row = PSTYLE[id], base = SHIPPED.pstyle[id];
-  const h = document.createElement("h3");
-  h.textContent = "Marks";
-  stMarks.appendChild(h);
-
-  const keys = [...new Set([...Object.keys(base), ...Object.keys(row)])].sort();
-  for (const k of keys) {
-    const v = k in row ? row[k] : base[k];
-    if (typeof v === "number") {
-      const sp = SPREAD[k] || { lo: 0, hi: Math.max(1, v * 2) };
-      stMarks.appendChild(numberField(k, row, k, sp.lo, sp.hi, base[k], touched));
-    } else if (typeof v === "boolean") {
-      stMarks.appendChild(boolField(k, row, k, base[k], touched));
-    } else {
-      stMarks.appendChild(toneField(k, row, k, base[k], touched));
-    }
-  }
-
-  // and anything this species has not got yet
-  const spare = ALL_MARKS.filter(k => !(k in row));
-  if (spare.length) {
-    const wrap = document.createElement("div");
-    wrap.className = "bz-st-add";
-    const sel = document.createElement("select");
-    sel.innerHTML = `<option value="">add a mark…</option>`
-      + spare.map(k => `<option value="${k}">${k}</option>`).join("");
-    const add = document.createElement("button");
-    add.type = "button"; add.textContent = "add";
-    add.addEventListener("click", () => {
-      const k = sel.value;
-      if (!k) return;
-      // take the shape of the value from whatever the other species use for it
-      const sample = Object.values(SHIPPED.pstyle).find(r => k in r)[k];
-      row[k] = typeof sample === "number" ? (SPREAD[k] ? +((SPREAD[k].min + SPREAD[k].max) / 2).toFixed(2) : 1)
-             : typeof sample === "boolean" ? true : "amber";
-      touched();
-      buildMarks(id, name, latin);
-    });
-    wrap.append(sel, add);
-    stMarks.appendChild(wrap);
-  }
-}
-
-function buildMotion() {
-  stMotion.innerHTML = "";
-  const h = document.createElement("h3");
-  h.textContent = "Motion — shared by every bird";
-  stMotion.appendChild(h);
-  for (const k of Object.keys(SHIPPED.anim)) {
-    const base = SHIPPED.anim[k];
-    const hi = k.endsWith("Sharp") ? 16 : Math.max(1, +(base * 3).toFixed(2));
-    stMotion.appendChild(numberField(k, ANIM, k, 0, hi, base, touched));
-  }
-}
-
-function selectEntry(entry) {
-  if (tuning && tuning.el) tuning.el.classList.remove("tuning");
-  tuning = entry;
-  if (entry.el) entry.el.classList.add("tuning");
-  buildMarks(entry.card.id, entry.card.name, entry.card.latin);
-  buildMotion();
-  touched();
-  document.body.classList.add("studio-open");
-  document.getElementById("bz-studio-toggle").setAttribute("aria-expanded", "true");
-  // The panel has just narrowed the grid; keep the subject where it can be seen.
-  if (entry.el) entry.el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-}
-
-for (const r of registry) {
-  if (!r.canvas) continue;
-  r.canvas.addEventListener("click", () => selectEntry(r));
-}
-
-document.getElementById("bz-studio-toggle").addEventListener("click", () => {
-  const open = document.body.classList.toggle("studio-open");
-  document.getElementById("bz-studio-toggle").setAttribute("aria-expanded", String(open));
-  if (open && !tuning) { buildMotion(); touched(); }
-});
-document.getElementById("bz-st-close").addEventListener("click", () => {
-  document.body.classList.remove("studio-open");
-  document.getElementById("bz-studio-toggle").setAttribute("aria-expanded", "false");
-});
-document.getElementById("bz-st-copy").addEventListener("click", async (e) => {
-  const btn = e.currentTarget, was = btn.textContent;
-  try { await navigator.clipboard.writeText(stOut.value); btn.textContent = "copied"; }
-  catch (err) { stOut.select(); btn.textContent = "select + copy"; }
-  setTimeout(() => { btn.textContent = was; }, 1400);
-});
-document.getElementById("bz-st-reset").addEventListener("click", () => {
-  if (!tuning) return;
-  const id = tuning.card.id;
-  if (SHIPPED.pstyle[id]) {
-    for (const k of Object.keys(PSTYLE[id])) delete PSTYLE[id][k];
-    Object.assign(PSTYLE[id], SHIPPED.pstyle[id]);
-  }
-  selectEntry(tuning);
-});
-document.getElementById("bz-st-resetall").addEventListener("click", () => {
-  for (const [id, base] of Object.entries(SHIPPED.pstyle)) {
-    for (const k of Object.keys(PSTYLE[id])) delete PSTYLE[id][k];
-    Object.assign(PSTYLE[id], base);
-  }
-  Object.assign(ANIM, SHIPPED.anim);
-  if (tuning) selectEntry(tuning); else { buildMotion(); touched(); }
-});
-
-
-/* ============================================================
-   The rig editor — opened from the header, or from a card.
-
-   Each creature is handed a `paint` for the bench to show in ghost: a direct
-   call to its own painter at the bench's scale, so a badly-drawn animal can be
-   redrawn over itself. Only the creatures whose painters take a parameter
-   object can be traced this way — the small critters and the flight forms take
-   loose arguments — and those are the mammals and the bespoke birds, which is
-   what the editor is for. Of those, only the ones that answer to a scale are
-   offered; see `scaleAware` below for why, and for how that is decided.
-   ============================================================ */
-const RIGGABLE = [
-  ["deer", "paintDeer"], ["fox", "paintFox"], ["badger", "paintBadger"],
-  ["otter", "paintOtter"], ["hare", "paintHare"], ["hedgehog", "paintHedgehog"],
-  ["squirrel", "paintSquirrel"], ["cat", "paintCat"], ["rabbit", "paintRabbit"],
-  ["owl", "paintOwl"], ["cuckoo", "paintCuckoo"], ["rooster", "paintRooster"],
-  ["duck", "paintDuck"], ["woodpecker", "paintWoodpecker"], ["wader", "paintWader"],
-  ["frog", "paintFrog"], ["heron", "paintHeron"], ["pheasant", "paintPheasant"],
-  ["porpoise", "paintPorpoise"], ["bird", "paintBird"]
-];
-
-const nameFor = (id) => {
-  const c = CARDS.find(x => x.id === id || (x.sp && x.sp.id === id));
-  return c ? c.name : id.charAt(0).toUpperCase() + id.slice(1);
-};
-const latinFor = (id) => {
-  const c = CARDS.find(x => x.id === id || (x.sp && x.sp.id === id));
-  return c ? c.latin : "";
-};
-
-/* Everything a painter might reach for, at the size the bench works at. One
-   object, so the ghost and the probe below ask each painter the same question. */
-const benchParams = (x, y, s, t = 0, lp = 0, walking = false) => ({
-  x, y, s, dir: 1, alpha: 1, t, lp, walking,
-  color: "#000", deep: "#000", rim: "#000", bot: [40, 33, 23, 1],
-  head: 0, dig: 0, pat: 0, bury: 0,
-  pose: { crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0 },
-  marks: {}, plump: 1, tailLen: 1.1, billLen: 0.45, sing: 0, breath: 0,
-  headTurn: 0, tailFlick: 0, wingSettle: 0, fly: 0, flap: 0, flare: 0,
-  night: 0, blinkPh: 0, mode: "walk"
-});
-
-/* Can this creature be rigged at all? A rig is written in units of `s`, so a
-   painter that ignores `s` has no scale for one to be in — the cat is drawn in
-   flat pixels and sized by whoever calls it, and a cat rig would be quietly
-   dropped by the dispatch for want of an `s` to multiply by. Offering such a
-   creature would let you spend an afternoon drawing something that could never
-   be used, so ask each painter rather than keep a list: draw it at two sizes
-   and see whether the picture changes. A painter that ignores its scale gives
-   back the same bytes both times, which makes this an exact answer and not a
-   judgement about how much bigger is big enough. */
-const probe = document.createElement("canvas");
-probe.width = probe.height = 72;
-const probeCtx = probe.getContext("2d", { willReadFrequently: true });
-function scaleAware(fn) {
-  const ink = (s) => {
-    probeCtx.setTransform(1, 0, 0, 1, 0, 0);
-    probeCtx.clearRect(0, 0, 72, 72);
-    probeCtx.fillStyle = "#000";
-    try { scene[fn](probeCtx, benchParams(36, 52, s)); } catch { return null; }
-    const d = probeCtx.getImageData(0, 0, 72, 72).data;
-    let h = 0x811c9dc5, n = 0;
-    for (let i = 3; i < d.length; i += 4) { if (d[i] > 8) n++; h = Math.imul(h ^ d[i], 16777619); }
-    return { h: h >>> 0, n };
-  };
-  const a = ink(7), b = ink(20);
-  return !!(a && b && a.n > 0 && b.n > 0 && a.h !== b.h);
-}
-
-const rigCards = RIGGABLE
-  .filter(([, fn]) => typeof scene[fn] === "function" && scaleAware(fn))
-  .map(([id, fn]) => ({
-    id, name: nameFor(id), latin: latinFor(id),
-    /* The ghost. Called with the bench's own parameters, and guarded because a
-       painter asked for a pose it never expected can throw — better a missing
-       ghost than a dead bench. */
-    paint(c, o) {
-      const p = benchParams(o.x, o.y, o.s * 0.9, o.t, o.lp, o.walking);
-      p.color = o.color; p.deep = o.deep; p.rim = o.rim;
-      scene[fn](c, p);
-    }
-  }));
-
-const editor = mountEditor(scene, rigCards, () => {
-  if (REDUCED) registry.forEach(r => renderEntry(r, performance.now()));
-});
-document.getElementById("bz-rig-open").addEventListener("click", () => {
-  document.getElementById("rig-pick").focus();
-  document.getElementById("rig").classList.remove("hidden");
-});
+applyTheme(matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");

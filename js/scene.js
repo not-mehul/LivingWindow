@@ -5,11 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=7";
-import { PSTYLE, ANIM } from "./species.js?v=7";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=7";
-import { RIGS } from "./rigs.js?v=7";
-import { paintRig, poseWeights } from "./rig.js?v=7";
+} from "./util.js?v=8";
+import { PSTYLE, ANIM } from "./species.js?v=8";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=8";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -2572,8 +2570,8 @@ class Scene {
       // Idle life: breathing, the odd glance and tail-flick, a wing-settle on arrival.
       const iv = a.ivar || {};
       const settled = a.enter > 0 ? Math.max(0, a.t - a.enter) : a.t;
-      // Rates and depths live in ANIM (species.js), where the bestiary's studio
-      // can reach them and the two pages cannot drift apart.
+      // Rates and depths live in ANIM (species.js), which the bestiary reads too,
+      // so the window and the cards cannot drift apart.
       const breath = Math.sin(a.t*ANIM.breathRate + (iv.breathPh || 0));
       const headTurn = Math.sin(a.t*ANIM.headRate + (iv.headPh || 0)) * ANIM.headAmt
                      + Math.pow(Math.max(0, Math.sin(a.t*ANIM.lookRate + (iv.headPh || 0)*1.7)), ANIM.lookSharp) * ANIM.lookAmt;
@@ -6157,28 +6155,6 @@ class Scene {
       c.beginPath(); c.arc(rx, ry, 2, 0, Math.PI*2); c.fill();
     }
   }
-}
-
-/* Where a rig exists it stands in for the painter of the same name. Both the
-   window and the bestiary draw through these methods, so one swap here serves
-   both, and no call site needs to know which creatures are data and which are
-   code. A creature with no rig is left entirely alone — there is no third
-   state, and nothing is converted behind anyone's back.
-
-   Only the painters that take a parameter object are eligible. The small
-   critters and the flight forms take loose arguments and are not the ones this
-   is for; giving them a rig would need their signatures changed first. */
-for (const name of Object.getOwnPropertyNames(Scene.prototype)) {
-  if (!/^paint[A-Z]/.test(name)) continue;
-  const id = name.slice(5).toLowerCase();
-  const original = Scene.prototype[name];
-  Scene.prototype[name] = function (c, o, ...rest) {
-    const rig = RIGS[id];
-    if (rig && o && typeof o === "object" && o.s !== undefined) {
-      return paintRig(this, c, rig, { ...o, weights: o.weights || poseWeights(rig, o) });
-    }
-    return original.call(this, c, o, ...rest);
-  };
 }
 
 export { Scene };
