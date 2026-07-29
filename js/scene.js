@@ -5,11 +5,19 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=8";
-import { PSTYLE, ANIM } from "./species.js?v=8";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=8";
+} from "./util.js?v=9";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose } from "./species.js?v=9";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=9";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
+
+/* The gaits are written around a stride of 1; the animals keep their phases in
+   radians, as they always have, so that a rate tuned by eye stays the number it
+   was. TURN is the one conversion between the two. */
+const TURN = 1/(Math.PI*2);
+/* One reused pair for `gaitFoot` to fill — a foot's reach and its lift. Four
+   calls an animal a frame is not a place to be allocating. */
+const FOOT = [0, 0];
 
 /* A bench, not part of the piece: open the page with ?perf=1 and the window
    keeps a readout of what each frame costs. What it counts is rasterization
@@ -4054,7 +4062,7 @@ class Scene {
               cr.tx = Math.min(0.9, Math.max(0.1, cr.x + cr.dir*(0.06 + Math.random()*0.1)));
             }
           } else if (cr.state === "leave") {
-            if (cr.bounding) { cr.x += cr.dir*0.055*dt*D.speed; cr.bp += dt*7; }
+            if (cr.bounding) { cr.x += cr.dir*0.055*dt*D.speed; cr.bp += dt*10; }
             if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           }
           break;
@@ -4104,7 +4112,7 @@ class Scene {
           cr.timer -= dt;
           cr.actT = (cr.actT || 0) + dt;
           if (cr.mode === "hop") {
-            cr.hopPh += dt*7; cr.x += cr.dir*0.05*dt*D.speed;
+            cr.hopPh += dt*11; cr.x += cr.dir*0.05*dt*D.speed;
             if (cr.timer <= 0) {
               // it settles to crop the grass, wash its face, or just sit up
               const roll = Math.random();
@@ -4269,7 +4277,7 @@ class Scene {
           cr.timer -= dt;
           let dig = 0, pat = 0, bury = 0;
           if (cr.mode === "bound") {
-            cr.ph += dt*9; cr.x += cr.dir*0.045*dt*D.speed;
+            cr.ph += dt*14; cr.x += cr.dir*0.045*dt*D.speed;
             if (cr.timer <= 0) {
               if (Math.random() < 0.45) { cr.mode = "dig"; cr.timer = 0; cr.phase = 0; }
               else { cr.mode = "sit"; cr.timer = 1.2 + Math.random()*2.6; }
@@ -4414,14 +4422,15 @@ class Scene {
         }
         case "deer": {
           const walking = cr.state === "enter" || cr.state === "leave" || cr.state === "walkbit";
-          const bound = cr.bounding && cr.state === "leave"
-            ? Math.max(0, Math.sin(cr.bp)) : 0;
+          const leap = cr.bounding && cr.state === "leave"
+            ? gaitPose("bound", cr.bp*TURN) : null;
+          const rise = leap ? Math.max(0, leap.rise) : 0;
           const dS = H*0.075*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - bound));
-          this.paintDeer(c, { x: cr.x*W, y: (D.y - bound*0.035)*H,
+          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - rise));
+          this.paintDeer(c, { x: cr.x*W, y: (D.y - rise*0.045)*H,
             s: dS, dir: cr.dir,
-            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: D.col, t: cr.t,
-            grazing: cr.state === "graze", alert: cr.state === "alert", bound });
+            head: cr.head, walking, lp: cr.lp, color: D.col, t: cr.t,
+            grazing: cr.state === "graze", alert: cr.state === "alert", leap });
           break;
         }
         case "runner": {
@@ -4436,18 +4445,19 @@ class Scene {
           const b = this.frontBlocks && this.frontBlocks[cr.b];
           this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
             sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
-            groom: cr.act === "groom" ? 1 : 0,
+            groom: cr.act === "groom" ? gaitPose("groom", cr.actT*0.6) : null,
             stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
           break;
         }
         case "rabbit": {
-          const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
+          const leap = cr.mode === "hop" ? gaitPose("hop", cr.hopPh*TURN) : null;
+          const hop = leap ? Math.max(0, leap.rise) : 0;
           const rS = H*0.032*(cr.sz || 1)*D.scale;
           this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
           this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
-            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
+            dir: cr.dir, leap, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
             t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
-            wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
+            wash: cr.act === "wash" ? gaitPose("groom", cr.actT*0.7) : null });
           break;
         }
         case "fox": {
@@ -4470,12 +4480,13 @@ class Scene {
           break;
         }
         case "porpoise": {
-          const arc = Math.sin(cr.phase);
+          const rl = gaitPose("roll", cr.phase*TURN);
+          const arc = rl.arc;
           const px = cr.x*W, wy = cr.base*H;
           if (arc > 0.02) {
             // pitch follows the arc: nose up on the rise, down on the fall
             this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
-              pitch: Math.cos(cr.phase)*0.34,
+              pitch: rl.pitch*0.34,
               s: H*0.05, color: colDark, rim: colFar });
           } else {
             // between rolls: a dark shape just under, and the flat "footprint"
@@ -4501,11 +4512,12 @@ class Scene {
           break;
         }
         case "squirrel": {
-          const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
+          const leap = cr.mode === "bound" ? gaitPose("scamper", cr.ph*TURN) : null;
+          const hopY = leap ? Math.max(0, leap.rise)*0.018 : 0;
           const qS = H*0.03*(cr.sz || 1)*D.scale;
           this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
           this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
-            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t,
+            dir: cr.dir, sit: cr.mode === "sit", leap, t: cr.t,
             dig: cr.dig, bury: cr.bury, pat: cr.pat, color: D.col });
           break;
         }
@@ -4520,12 +4532,12 @@ class Scene {
           break;
         }
         case "hare": {
-          const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
-          const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
+          const leap = cr.mode === "lope" ? gaitPose("lope", cr.ph*TURN) : null;
+          const lift = leap ? Math.max(0, leap.rise)*0.024 : 0;
           const hS = H*0.042*(cr.sz || 1)*D.scale;
           this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
           this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
-            dir: cr.dir, hop: st, alert: cr.mode === "alert",
+            dir: cr.dir, leap, alert: cr.mode === "alert",
             graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: D.col });
           break;
         }
@@ -4542,7 +4554,7 @@ class Scene {
           this.contactShadow(c, cr.x*W, D.y*H, bS*0.95, 0.2*(1 - cr.z*0.6));
           this.paintBadger(c, { x: cr.x*W, y: D.y*H, s: bS,
             dir: cr.dir, lp: cr.lp, color: D.col,
-            dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
+            dig: cr.mode === "dig" ? gaitPose("dig", cr.actT*1.9) : null });
           break;
         }
         case "otter": {
@@ -4616,43 +4628,75 @@ class Scene {
     c.closePath(); c.fill();
   }
 
+  /* A roe deer.
+
+     walking  its legs run the four-beat `walk`, phase `lp`
+     leap     the `bound` pose, when something has moved it on
+     grazing  the `graze` cycle, bite and chew, head already down
+     head     0 up, 1 down in the sward — the slow lowering between the two */
   paintDeer(c, o) {
     const s = o.s, t = o.t || 0;
+    const leap = o.leap || null;
+    const walking = o.walking && !leap;
+    const wb = walking ? gaitPose("walk", (o.lp || 0)*TURN) : null;
+    const gz = o.grazing ? gaitPose("graze", t*0.5) : null;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
-    const by = -s*0.78;                       // body centre
+    // body centre — riding up and down over the planted legs at the walk
+    const by = -s*0.78 - (wb ? (wb.rise - 0.5)*s*0.045 : 0);
+    // In the bound the whole animal pitches about its middle: nose up off the
+    // ground, level at the top, nose down into the landing.
+    if (leap) { c.translate(0, by); c.rotate(-leap.tilt*0.85); c.translate(0, -by); }
     // legs — jointed and stepping: knees forward on the fore pair, hocks
-    // back on the hind, each foot lifting clear of the ground mid-stride
+    // back on the hind, each foot planted through its stance and snatched
+    // forward through its swing. Airborne the hind stream out behind and the
+    // fore fold up and reach.
     const hips = [[-0.52, 0.09], [-0.32, 0.09], [0.30, -0.08], [0.50, -0.08]];
-    const phs = [0, Math.PI, Math.PI*1.5, Math.PI*0.5];
+    const air = leap ? Math.min(1, Math.max(0, leap.rise)*2.4) : 0;
     for (let i = 0; i < 4; i++) {
       const lx = hips[i][0]*s;
-      const sw = o.walking ? Math.sin(o.lp + phs[i])*0.17*s : 0;
-      const lift = o.walking ? Math.max(0, Math.sin(o.lp + phs[i] + 0.9))*0.10*s : 0;
+      let sw = 0, lift = 0;
+      if (walking) {
+        gaitFoot(GAIT.walk, (o.lp || 0)*TURN + GAIT.walk.feet[i], FOOT);
+        sw = FOOT[0]*0.17*s; lift = FOOT[1]*0.11*s;
+      } else if (leap) {
+        // the hind stream out behind, the fore reach ahead — and gathered,
+        // both fold up under the belly without ever crossing each other
+        const k = i < 2 ? leap.hind : leap.fore;
+        sw = (i < 2 ? -k*0.30 : k*0.42)*s;
+        lift = Math.max(0, -k)*0.30*s*air;
+      }
       this.leg(c, lx, by + s*0.16, lx + sw, -lift, hips[i][1], s*0.15, s*0.05);
     }
-    // body — chest, a soft back line, round haunch, the belly tucked up
+    // body — chest, a soft back line, round haunch, the belly tucked up. The
+    // back rounds over the hips as it gathers and hollows at full stretch.
+    const ah = leap ? leap.arch*s*0.14 : 0;
     c.beginPath();
     c.moveTo(s*0.62, by - s*0.30);
-    c.quadraticCurveTo(s*0.05, by - s*0.42, -s*0.45, by - s*0.32);
-    c.quadraticCurveTo(-s*0.85, by - s*0.25, -s*0.88, by + s*0.10);
+    c.quadraticCurveTo(s*0.05, by - s*0.42 - ah, -s*0.45, by - s*0.32 - ah*0.7);
+    c.quadraticCurveTo(-s*0.85, by - s*0.25 - ah*0.4, -s*0.88, by + s*0.10);
     c.quadraticCurveTo(-s*0.82, by + s*0.35, -s*0.45, by + s*0.38);
     c.quadraticCurveTo(0, by + s*0.42, s*0.5, by + s*0.32);
     c.quadraticCurveTo(s*0.78, by + s*0.2, s*0.62, by - s*0.30);
     c.closePath(); c.fill();
-    // the short tail, flicking now and then
-    const tf = Math.pow(Math.max(0, Math.sin(t*0.9 + 2)), 16);
+    // the short tail, flicking now and then — and held up over the rump for
+    // the whole of a bound, which is the flash you see going away
+    const tf = Math.max(leap ? 0.8 : 0, Math.pow(Math.max(0, Math.sin(t*0.9 + 2)), 16));
     c.save();
     c.translate(-s*0.84, by - s*0.12); c.rotate(-0.5 - tf*0.7);
     c.beginPath(); c.ellipse(-s*0.1, 0, s*0.14, s*0.06, 0, 0, Math.PI*2); c.fill();
     c.restore();
-    // neck and head, lowering to graze; a nibble once it's down. Standing
-    // alert the head comes up higher still; in a bound it reaches forward.
-    const nib = o.grazing ? Math.sin(t*7)*0.025*s : 0;
-    const hx = s*0.95 + (o.bound || 0)*s*0.12;
-    const hy = -s*1.46 + o.head*s*1.34 + nib - (o.alert ? s*0.1 : 0);
+    // Neck and head, lowering to graze — and once it is down, a bite taken and
+    // chewed, the muzzle drifting along the sward between mouthfuls. Standing
+    // alert the head comes up higher still; at the walk it nods with the
+    // stride; in a bound it reaches out ahead of the animal.
+    const nib = gz ? (gz.chew*0.045 - (1 - gz.dip)*0.10)*s : 0;
+    const hx = s*0.95 + (leap ? leap.stretch*s*0.18 : 0)
+             + (gz ? gz.sway*s*0.12 : 0) + (wb ? wb.nod*s*0.02 : 0);
+    const hy = -s*1.46 + o.head*s*1.34 + nib - (o.alert ? s*0.1 : 0)
+             + (wb ? wb.nod*s*0.035 : 0);
     this.limb(c, s*0.52, by - s*0.10, hx, hy, s*0.34, s*0.16);
     // head — brow, tapering muzzle, jaw
     c.save(); c.translate(hx, hy); c.rotate(o.head*0.95);
@@ -4719,11 +4763,17 @@ class Scene {
       c.beginPath(); c.ellipse(0, -3.4, 3.7, 4.3, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(-1.2, -1.5, 3.5, 1.9, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(1.2, -5.8, 2.1, 3.4, 0.1, 0, Math.PI*2); c.fill();
-      c.beginPath(); c.ellipse(2.2, -0.4, 1.5, 0.8, 0, 0, Math.PI*2); c.fill();
-      // head — the slow look-around, or bent right down to wash a shoulder
-      const gr = o.groom ? (0.5 + 0.5*Math.sin(o.t*5)) : 0;
-      const lk = gr ? -1.6*gr : Math.sin(o.t*0.7)*0.8;
-      const hyC = -9.4 + gr*4.6;
+      // The wash, in the order a cat does it: the paw comes up to the mouth,
+      // is licked twice, and is then swept back over the ear — with the head
+      // stooping to meet it and turning away as it goes over.
+      const wa = o.groom || null;
+      const gr = wa ? wa.reach : 0;
+      const lk = wa ? -1.5*gr + wa.turn*1.4 : Math.sin(o.t*0.7)*0.8;
+      const hyC = -9.4 + gr*3.6 + (wa ? wa.lick*0.5 : 0);
+      // the near forepaw: set down in front, or up at the muzzle
+      const px = 2.2 + gr*(lk - 1.4), py = -0.4 - gr*7.2 - (wa ? wa.turn*1.6 : 0);
+      if (gr > 0.05) this.limb(c, 1.6, -2.6, px, py, 1.5, 1.0);
+      c.beginPath(); c.ellipse(px, py, 1.5, 0.8, gr*0.9, 0, Math.PI*2); c.fill();
       c.beginPath(); c.arc(1.2 + lk, hyC, 2.4, 0, Math.PI*2); c.fill();
       c.beginPath();
       c.moveTo(-0.6 + lk, hyC - 1.5); c.lineTo(-1.2 + lk, hyC - 3.7); c.lineTo(0.9 + lk, hyC - 2.1);
@@ -4738,22 +4788,25 @@ class Scene {
       c.quadraticCurveTo(-8 + sway, -9.6, -7.6 + sway, -8.6);
       c.quadraticCurveTo(-7.6, -5.2, -4.6, -2.6);
       c.closePath(); c.fill();
-      // legs — tapered, lifting on little paws
+      // Legs — the four-beat `pad`, each paw carried high and folded through
+      // its swing and planted for two thirds of the stride, which is what
+      // makes a cat's walk look considered rather than hurried.
+      const u = o.t*8*TURN;
       for (let i = 0; i < 4; i++) {
         const lx = -3.6 + i*2.5;
-        const ph2 = o.t*8 + (i % 2)*Math.PI + Math.floor(i/2)*Math.PI*0.5;
-        const sw2 = Math.sin(ph2)*1.0;
-        const lift = Math.max(0, Math.sin(ph2 + 0.8))*0.7;
+        gaitFoot(GAIT.pad, u + GAIT.pad.feet[i], FOOT);
+        const sw2 = FOOT[0]*1.1, lift = FOOT[1]*0.85;
         this.limb(c, lx, -2, lx + sw2, -lift, 1.6, 0.8);
         c.beginPath(); c.ellipse(lx + sw2 + 0.3, -lift, 0.7, 0.4, 0, 0, Math.PI*2); c.fill();
       }
-      // long low body, shoulder and haunch, breathing with the walk
-      const bob = Math.sin(o.t*8)*0.25;
-      c.beginPath(); c.ellipse(0, -3.5 + bob, 6, 2.6, 0, 0, Math.PI*2); c.fill();
-      c.beginPath(); c.arc(4.7, -4 + bob, 2.4, 0, Math.PI*2); c.fill();
-      c.beginPath(); c.arc(-4.4, -4 + bob, 2.2, 0, Math.PI*2); c.fill();
+      // long low body, shoulder and haunch, riding over the planted legs
+      const pb = gaitPose("pad", u);
+      const bob = (pb.rise - 0.5)*0.55;
+      c.beginPath(); c.ellipse(0, -3.5 + bob, 6, 2.6, pb.pitch*0.9, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.arc(4.7, -4 + bob - pb.rise*0.2, 2.4, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.arc(-4.4, -4 + bob + pb.rise*0.2, 2.2, 0, Math.PI*2); c.fill();
       // head nodding with the walk, muzzle forward
-      const hb = Math.sin(o.t*8 + 0.9)*0.35;
+      const hb = bob*0.7 + pb.nod*0.4;
       c.beginPath(); c.arc(6.5, -5.4 + hb, 2.3, 0, Math.PI*2); c.fill();
       c.beginPath();
       c.moveTo(4.9, -7 + hb); c.lineTo(4.5, -9 + hb); c.lineTo(6.3, -7.4 + hb);
@@ -4764,31 +4817,50 @@ class Scene {
     c.restore();
   }
 
+  /* A rabbit. `leap` is the `hop` cycle — gather, drive, stretch, reach, and
+     the hind swinging through under it to land; without one it is sitting,
+     and then `nibble` and `wash` have it. */
   paintRabbit(c, o) {
     const s = o.s;
+    const g = o.leap || null;
+    const st = g ? g.stretch : 0;          // 0 bunched on the ground, 1 stretched mid-leap
+    const hs = g ? (g.hind + 1)/2 : 0;     // the hind, tucked under to driven out behind
+    const fs = g ? (g.fore + 1)/2 : 0;     // the fore, folded up to reaching ahead
+    const arch = g ? g.arch : 0;
+    // Nothing folds while a foot is still on the ground: the legs only gather
+    // up under the animal once it is off it.
+    const air = g ? Math.min(1, Math.max(0, g.rise)*2.4) : 0;
+    const hFold = g ? Math.max(0, -g.hind)*air : 0;
+    const fFold = g ? Math.max(0, -g.fore)*air : 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
+    if (g) { c.translate(0, -s*0.5); c.rotate(-g.tilt*0.26); c.translate(0, s*0.5); }
     c.fillStyle = o.color; c.strokeStyle = o.color;
     c.lineCap = "round";
-    const st = o.hop || 0;                 // 0 bunched on the ground, 1 stretched mid-leap
     // cotton tail
-    c.beginPath(); c.arc(-s*(0.72 + st*0.2), -s*0.45, s*0.2, 0, Math.PI*2); c.fill();
-    // hind legs — folded haunch at rest, driving out behind mid-leap
-    this.limb(c, -s*0.45, -s*0.4, -s*0.45 - st*s*0.5, -s*0.06 - st*s*0.15, s*0.42, s*0.12);
+    c.beginPath(); c.arc(-s*(0.72 + st*0.2), -s*0.45 - arch*s*0.06, s*0.2, 0, Math.PI*2); c.fill();
+    // hind legs — folded haunch at rest, driving out behind at the launch,
+    // gathered up in flight, swinging through ahead of it to land
+    const hfx = -s*0.45 - hs*s*0.5;
+    const hfy = -s*0.06 - hs*s*0.15 - hFold*s*0.30;
+    this.limb(c, -s*0.45, -s*0.4, hfx, hfy, s*0.42, s*0.12);
     c.lineWidth = Math.max(1, s*0.1);
     c.beginPath();
-    c.moveTo(-s*0.45 - st*s*0.5, -s*0.06 - st*s*0.15);
-    c.lineTo(-s*0.2 - st*s*0.7, -st*s*0.02);
+    c.moveTo(hfx, hfy);
+    c.lineTo(hfx + s*0.25 - hs*s*0.2, hfy + s*0.04);
     c.stroke();
-    // body — bunched at rest, stretched long in the air
+    // body — bunched and round-backed at rest, long and hollow in the air
     c.beginPath();
-    c.ellipse(-st*s*0.08, -s*0.5, s*(0.8 + st*0.25), s*(0.56 - st*0.12), -st*0.15, 0, Math.PI*2);
+    c.ellipse(-st*s*0.08, -s*0.5 - arch*s*0.04, s*(0.8 + st*0.25), s*(0.56 - st*0.12),
+      -st*0.15, 0, Math.PI*2);
     c.fill();
     // head and muzzle — down in the grass when it is cropping
-    const nib = o.nibble ? 1 : 0;
-    const bob = nib ? Math.sin((o.t || 0)*9)*s*0.03 : 0;
-    const hx = s*(0.66 + st*0.18), hy = -s*(0.95 + st*0.05) - st*s*0.08 + nib*s*0.62 + bob;
+    const nb = o.nibble ? gaitPose("graze", (o.t || 0)*0.85) : null;
+    const nib = nb ? 1 : 0;
+    const bob = nb ? (nb.chew*0.05 - (1 - nb.dip)*0.09)*s : 0;
+    const hx = s*(0.66 + st*0.18) + (nb ? nb.sway*s*0.10 : 0);
+    const hy = -s*(0.95 + st*0.05) - st*s*0.08 + nib*s*0.62 + bob;
     c.beginPath(); c.arc(hx, hy, s*0.33, 0, Math.PI*2); c.fill();
     c.beginPath(); c.ellipse(hx + s*0.26, hy + s*0.06, s*0.13, s*0.10, 0.2, 0, Math.PI*2); c.fill();
     // long ears — laid back mid-leap, up and swivelling at rest
@@ -4796,16 +4868,19 @@ class Scene {
     const back = st*0.9 - ea*0.35;
     this.limb(c, hx - s*0.05, hy - s*0.14, hx - s*0.2 - back*s*0.5, hy - s*0.9 + back*s*0.35, s*0.16, s*0.08);
     this.limb(c, hx + s*0.13, hy - s*0.12, hx + s*0.1 - back*s*0.55, hy - s*0.95 + back*s*0.4, s*0.16, s*0.08);
-    // forelegs — reaching for the landing, tucked neatly under, or brought
-    // up to the face to wash it
-    if (st > 0.05) {
-      this.limb(c, s*0.5, -s*0.55, s*(0.75 + st*0.2), -s*0.12, s*0.14, s*0.06);
-    } else if (o.wash) {
-      const wv = o.wash;
-      this.limb(c, s*0.42, -s*0.5, hx + s*0.16, hy + s*0.16 + wv*s*0.1, s*0.13, s*0.07);
-      this.limb(c, s*0.5, -s*0.5, hx + s*0.26, hy + s*0.1 - wv*s*0.12, s*0.12, s*0.07);
+    // forelegs — reaching for the landing, folded up under the chest at the
+    // top of the leap, tucked neatly under at rest, or up at the face to wash
+    if (o.wash) {
+      // both forepaws up at the face — raised, licked twice, swept back over
+      // the ears and down, which is the order a rabbit washes in
+      const w = o.wash;
+      const wx = hx + s*0.14 - w.turn*s*0.34, wy = hy + s*0.20 - w.reach*s*0.26;
+      this.limb(c, s*0.42, -s*0.5, wx, wy + w.lick*s*0.05, s*0.13, s*0.07);
+      this.limb(c, s*0.5, -s*0.5, wx + s*0.13, wy - s*0.05 - w.lick*s*0.06, s*0.12, s*0.07);
     } else {
-      this.limb(c, s*0.42, -s*0.3, s*0.5, -s*0.02, s*0.14, s*0.07);
+      const ffx = s*(0.5 + fs*0.45);
+      const ffy = -s*0.02 - fFold*s*0.42;
+      this.limb(c, s*0.42, -s*0.3 - st*s*0.25, ffx, ffy, s*0.14, s*0.07);
     }
     // eye glint
     c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
@@ -4835,7 +4910,10 @@ class Scene {
     c.translate(0, -(o.lift || 0));
     if (rot) { c.translate(0, -s*0.5); c.rotate(rot); c.translate(0, s*0.5); }
     c.fillStyle = o.color;
-    const bounce = o.walking ? Math.abs(Math.sin(o.lp))*s*0.05 : 0;
+    // The trot: two beats, the diagonal pairs swinging together, and the body
+    // rising over each of them.
+    const tb = o.walking ? gaitPose("trot", (o.lp || 0)*TURN) : null;
+    const bounce = tb ? tb.rise*s*0.055 : 0;
     const drop = crouch*s*0.16;              // chest lowered over the forefeet
     // Legs. On the ground: diagonal pairs at the trot, jointed, feet lifting.
     // Airborne: the hind pair streams out behind and the forepaws come
@@ -4850,13 +4928,15 @@ class Scene {
       this.leg(c, s*0.50, -s*0.48 - drop, s*0.82, -s*0.22, 0.10, s*0.12, s*0.05);
     } else {
       const off = [-0.5, -0.26, 0.32, 0.56];
-      const phs = [0, Math.PI, Math.PI, 0];
       for (let i = 0; i < 4; i++) {
         const lx = off[i]*s;
-        const sw = o.walking ? Math.sin(o.lp + phs[i])*0.2*s : 0;
+        let sw = 0, lift = 0;
+        if (o.walking) {
+          gaitFoot(GAIT.trot, (o.lp || 0)*TURN + GAIT.trot.feet[i], FOOT);
+          sw = FOOT[0]*0.22*s; lift = FOOT[1]*0.15*s;
+        }
         // crouched, the hind legs fold up under the animal and the fore stay planted
         const fold = i < 2 ? crouch*s*0.16 : 0;
-        const lift = o.walking ? Math.max(0, Math.sin(o.lp + phs[i] + 0.7))*0.12*s : 0;
         this.leg(c, lx, -s*0.42 - bounce - drop + fold, lx + sw*(1 - crouch), -lift,
           i < 2 ? 0.10 + crouch*0.14 : -0.08, s*0.14, s*0.05);
       }
@@ -4892,8 +4972,9 @@ class Scene {
     // the animal arrives nose-first.
     const lk = o.look || 0, sniff = o.sniff || 0;
     const reach = air*s*0.12;
-    const hx = s*0.82 + lk*s*0.05 + reach + sniff*s*0.08;
-    const hy = -s*0.72 - lk*s*0.10 - bounce - drop*0.8 + sniff*s*0.5;
+    const hx = s*0.82 + lk*s*0.05 + reach + sniff*s*0.08 + (tb ? tb.nod*s*0.02 : 0);
+    const hy = -s*0.72 - lk*s*0.10 - bounce - drop*0.8 + sniff*s*0.5
+             + (tb ? tb.nod*s*0.03 : 0);
     this.limb(c, s*0.5, -s*0.6 - bounce - drop, hx, hy, s*0.3, s*0.2);
     c.beginPath(); c.arc(hx, hy, s*0.21, 0, Math.PI*2); c.fill();
     // tapered snout
@@ -5249,9 +5330,13 @@ class Scene {
     c.restore();
   }
 
-  /* A bat — scalloped membrane wings on splayed fingers, round ears up. */
+  /* A bat — scalloped membrane wings on splayed fingers, round ears up. The
+     downstroke takes a third of the beat and the recovery the rest of it, with
+     the wing half folded on the way up so it costs the animal nothing: that
+     asymmetry, and not the rate, is what reads as a bat rather than a bird. */
   paintBat(c, x, y, s, t, colDark) {
-    const flap = Math.sin(t*24);
+    const f = gaitPose("flit", t*24*TURN);
+    const flap = f.beat, span = 1 - f.fold*0.34;
     c.save();
     c.translate(x, y);
     c.fillStyle = colDark;
@@ -5259,9 +5344,9 @@ class Scene {
       const wr = flap*s*0.7;
       c.beginPath();
       c.moveTo(sd*s*0.08, -s*0.06);
-      c.quadraticCurveTo(sd*s*0.5, -s*0.55 - wr, sd*s*1.05, -s*0.35 - wr*1.3);
-      c.quadraticCurveTo(sd*s*0.7, -s*0.05 - wr*0.5, sd*s*0.5, s*0.02 - wr*0.3);
-      c.quadraticCurveTo(sd*s*0.3, s*0.1, sd*s*0.06, s*0.12);
+      c.quadraticCurveTo(sd*s*0.5*span, -s*0.55 - wr, sd*s*1.05*span, -s*0.35 - wr*1.3);
+      c.quadraticCurveTo(sd*s*0.7*span, -s*0.05 - wr*0.5, sd*s*0.5*span, s*0.02 - wr*0.3);
+      c.quadraticCurveTo(sd*s*0.3*span, s*0.1, sd*s*0.06, s*0.12);
       c.closePath(); c.fill();
     }
     c.beginPath(); c.ellipse(0, 0, s*0.16, s*0.24, 0, 0, Math.PI*2); c.fill();
@@ -5455,9 +5540,11 @@ class Scene {
     c.fillStyle = o.color;
     if (dig > 0.02) {
       const bury = o.bury || 0, pat = o.pat || 0;
-      // scrabble: the two forepaws alternate, fast, close under the chest
-      const scr = Math.sin(t*22), scr2 = Math.sin(t*22 + Math.PI);
-      const tamp = pat ? Math.abs(Math.sin(t*11)) : 0;
+      // Scrabble: the forepaws alternate, fast and close under the chest, each
+      // running the `dig` stroke — reach out, drag back through the earth,
+      // throw the spoil away behind — half a cycle apart from the other.
+      const st1 = gaitPose("dig", t*3.4), st2 = gaitPose("dig", t*3.4 + 0.5);
+      const tamp = pat ? Math.max(0, gaitPose("dig", t*5).pull) : 0;
       // The tail stays arched over the back even at work — a squirrel never
       // puts it down — and twitches with the effort.
       const tw = Math.sin(t*7)*s*0.10;
@@ -5494,10 +5581,10 @@ class Scene {
       c.lineTo(hx + s*0.06, hy + s*0.13);
       c.closePath(); c.fill();
       // forepaws: scrabbling, or flat and tamping the litter back
-      const p1 = pat ? -tamp*s*0.12 : scr*s*0.10;
-      const p2 = pat ? -tamp*s*0.12 : scr2*s*0.10;
-      this.limb(c, s*0.30, -s*0.34, s*0.52 + p1*0.5, -s*0.02 + p1, s*0.11, s*0.07);
-      this.limb(c, s*0.20, -s*0.30, s*0.42 + p2*0.5, -s*0.02 + p2, s*0.10, s*0.06);
+      const px1 = pat ? 0 : st1.reach*s*0.13, py1 = pat ? -tamp*s*0.12 : (st1.pull - 0.35)*s*0.15;
+      const px2 = pat ? 0 : st2.reach*s*0.13, py2 = pat ? -tamp*s*0.12 : (st2.pull - 0.35)*s*0.15;
+      this.limb(c, s*0.30, -s*0.34, s*0.52 + px1, -s*0.02 + py1, s*0.11, s*0.07);
+      this.limb(c, s*0.20, -s*0.30, s*0.42 + px2, -s*0.02 + py2, s*0.10, s*0.06);
       // the hole itself, dark in the leaf-litter
       c.globalAlpha = 0.35;
       c.beginPath(); c.ellipse(s*0.58, s*0.01, s*0.24, s*0.06, 0, 0, Math.PI*2); c.fill();
@@ -5514,11 +5601,13 @@ class Scene {
       // haunch and upright body
       c.beginPath(); c.ellipse(-s*0.05, -s*0.32, s*0.42, s*0.34, 0, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(s*0.12, -s*0.62, s*0.26, s*0.36, 0.15, 0, Math.PI*2); c.fill();
-      // head with ear tufts, bobbing as it nibbles — or right down at the
-      // litter, front paws scrabbling something under the leaves
+      // head with ear tufts, working at what it is holding — bites taken and
+      // chewed rather than one even bob — or right down at the litter, front
+      // paws scrabbling something under the leaves
       const dig = o.dig ? 1 : 0;
       const scrabble = dig ? Math.sin(t*14) : 0;
-      const nib = Math.sin(t*9)*s*0.03;
+      const gz = gaitPose("graze", t*1.15);
+      const nib = (gz.chew*0.05 - (1 - gz.dip)*0.05)*s;
       const hy = -s*1.02 + nib + dig*s*0.5;
       c.beginPath(); c.arc(s*0.22 + dig*s*0.14, hy, s*0.2, 0, Math.PI*2); c.fill();
       c.beginPath();
@@ -5534,22 +5623,37 @@ class Scene {
       c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
       c.beginPath(); c.arc(s*0.28, hy - s*0.04, Math.max(0.6, s*0.05), 0, Math.PI*2); c.fill();
     } else {
-      // bounding: body stretched, tail flowing in a wave behind
-      const wv = Math.sin((o.ph || 0))*s*0.12;
+      // Bounding. A squirrel crosses the ground in a series of arches: the
+      // back rounds right up as it gathers, hollows out at full stretch, the
+      // hind feet come down outside and ahead of the fore — and the tail runs
+      // its wave a beat behind the whole of it, which is the part you see.
+      const g = o.leap || null;
+      const stB = g ? g.stretch : 0.5, arch = g ? g.arch : 0;
+      const wv = (g ? g.tail : 0)*s*0.13;
+      const air = g ? Math.min(1, Math.max(0, g.rise)*2.4) : 0;
+      const hs = g ? (g.hind + 1)/2 : 0.5, fs = g ? (g.fore + 1)/2 : 0.5;
+      if (g) { c.translate(0, -s*0.3); c.rotate(-g.tilt*0.30); c.translate(0, s*0.3); }
       c.beginPath();
       c.moveTo(-s*0.45, -s*0.3);
       c.quadraticCurveTo(-s*1.0, -s*0.55 + wv, -s*1.45, -s*0.4 + wv*1.6);
       c.quadraticCurveTo(-s*1.6, -s*0.28 + wv*1.6, -s*1.45, -s*0.18 + wv*1.2);
       c.quadraticCurveTo(-s*0.95, -s*0.12 + wv*0.5, -s*0.4, -s*0.12);
       c.closePath(); c.fill();
-      c.beginPath(); c.ellipse(0, -s*0.3, s*0.55, s*0.26, -0.12, 0, Math.PI*2); c.fill();
-      // tucked legs
-      this.limb(c, -s*0.3, -s*0.15, -s*0.45, s*0.02, s*0.16, s*0.06);
-      this.limb(c, s*0.3, -s*0.18, s*0.45, s*0.0, s*0.12, s*0.05);
-      // head reaching forward
-      c.beginPath(); c.arc(s*0.55, -s*0.42, s*0.18, 0, Math.PI*2); c.fill();
       c.beginPath();
-      c.moveTo(s*0.44, -s*0.54); c.lineTo(s*0.42, -s*0.7); c.lineTo(s*0.54, -s*0.56);
+      c.ellipse(0, -s*0.3 - arch*s*0.06, s*(0.5 + stB*0.14), s*(0.28 - stB*0.05),
+        -0.12 - arch*0.16, 0, Math.PI*2);
+      c.fill();
+      // legs: gathered under it, then driving out and reaching
+      this.limb(c, -s*0.3, -s*0.15, -s*0.3 - hs*s*0.36,
+        s*0.02 - Math.max(0, -(g ? g.hind : 0))*air*s*0.26, s*0.16, s*0.06);
+      this.limb(c, s*0.3, -s*0.18, s*0.3 + fs*s*0.32,
+        -Math.max(0, -(g ? g.fore : 0))*air*s*0.24, s*0.12, s*0.05);
+      // head reaching forward
+      const hxB = s*(0.5 + stB*0.12), hyB = -s*0.42 - arch*s*0.05;
+      c.beginPath(); c.arc(hxB, hyB, s*0.18, 0, Math.PI*2); c.fill();
+      c.beginPath();
+      c.moveTo(hxB - s*0.11, hyB - s*0.12); c.lineTo(hxB - s*0.13, hyB - s*0.28);
+      c.lineTo(hxB - s*0.01, hyB - s*0.14);
       c.closePath(); c.fill();
     }
     c.restore();
@@ -5565,8 +5669,10 @@ class Scene {
     c.fillStyle = o.color;
     if (o.graze) {
       // head down in the grass on a stretched neck, haunches high behind,
-      // ears swept back but still clear of the line of the back
-      const bob = Math.sin((o.t || 0)*8)*s*0.03;
+      // ears swept back but still clear of the line of the back — biting and
+      // chewing, and working along the sward between mouthfuls
+      const gz = gaitPose("graze", (o.t || 0)*0.7);
+      const bob = (gz.chew*0.05 - (1 - gz.dip)*0.08)*s;
       c.beginPath();
       c.ellipse(-s*0.28, -s*0.52, s*0.72, s*0.4, -0.12, 0, Math.PI*2); c.fill();
       this.limb(c, -s*0.55, -s*0.5, -s*0.68, -s*0.04, s*0.3, s*0.09);
@@ -5595,21 +5701,33 @@ class Scene {
       c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
       c.beginPath(); c.arc(hx + s*0.08, hy - s*0.04, Math.max(0.6, s*0.05), 0, Math.PI*2); c.fill();
     } else {
-      const st = o.hop || 0;      // 0 gathered, 1 stretched mid-lope
+      // The lope, frame by frame: gathered with the hind right under it, the
+      // drive, the long hollow-backed stretch, and the forefeet reaching down
+      // to take the landing while the hind swing through outside them.
+      const g = o.leap || null;
+      const st = g ? g.stretch : 0;      // 0 gathered, 1 stretched mid-lope
+      const hs = g ? (g.hind + 1)/2 : 0, fs = g ? (g.fore + 1)/2 : 0;
+      const arch = g ? g.arch : 0;
+      const air = g ? Math.min(1, Math.max(0, g.rise)*2.4) : 0;
+      const hFold = g ? Math.max(0, -g.hind)*air : 0;
+      const fFold = g ? Math.max(0, -g.fore)*air : 0;
+      if (g) { c.translate(0, -s*0.5); c.rotate(-g.tilt*0.24); c.translate(0, s*0.5); }
       // long hind legs driving, forelegs reaching
-      this.limb(c, -s*0.5, -s*0.42, -s*0.6 - st*s*0.5, -s*0.05, s*0.34, s*0.09);
+      const hfx = -s*0.6 - hs*s*0.5, hfy = -s*0.05 - hFold*s*0.32;
+      this.limb(c, -s*0.5, -s*0.42, hfx, hfy, s*0.34, s*0.09);
       c.strokeStyle = o.color; c.lineWidth = Math.max(1, s*0.09); c.lineCap = "round";
       c.beginPath();
-      c.moveTo(-s*0.6 - st*s*0.5, -s*0.05);
-      c.lineTo(-s*0.35 - st*s*0.75, st*s*0.0 - s*0.02);
+      c.moveTo(hfx, hfy);
+      c.lineTo(hfx + s*0.25 - hs*s*0.25, hfy + s*0.03);
       c.stroke();
-      this.limb(c, s*0.42, -s*0.5, s*(0.62 + st*0.25), -s*0.05, s*0.13, s*0.05);
-      // long low body
+      this.limb(c, s*0.42, -s*0.5, s*(0.62 + fs*0.25), -s*0.05 - fFold*s*0.34, s*0.13, s*0.05);
+      // long low body — rounded over the hips gathering, hollow at full stretch
       c.beginPath();
-      c.ellipse(-st*s*0.05, -s*0.52, s*(0.85 + st*0.2), s*(0.4 - st*0.06), -st*0.1, 0, Math.PI*2);
+      c.ellipse(-st*s*0.05, -s*0.52 - arch*s*0.05, s*(0.85 + st*0.2), s*(0.4 - st*0.06),
+        -st*0.1 - arch*0.10, 0, Math.PI*2);
       c.fill();
       // head with the great ears laid along the back
-      const hx = s*(0.72 + st*0.15), hy = -s*(0.78 + st*0.1);
+      const hx = s*(0.72 + st*0.15), hy = -s*(0.78 + st*0.1) - arch*s*0.03;
       c.beginPath(); c.arc(hx, hy, s*0.2, 0, Math.PI*2); c.fill();
       c.beginPath(); c.ellipse(hx + s*0.17, hy + s*0.04, s*0.1, s*0.07, 0.2, 0, Math.PI*2); c.fill();
       this.limb(c, hx - s*0.05, hy - s*0.08, hx - s*0.6, hy - s*0.3, s*0.13, s*0.06);
@@ -5627,14 +5745,23 @@ class Scene {
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color; c.strokeStyle = o.color; c.lineCap = "round";
-    const bob = Math.sin(t*7)*s*0.02;
+    // Four very short legs going very fast under a dome that hardly moves —
+    // which is why a hedgehog looks to be on wheels. The body rocks forward
+    // over each pair as they come down.
+    const u = t*9*TURN;
+    const sb = gaitPose("scurry", u);
+    const bob = (sb.rise - 0.5)*s*0.045;
     const up = o.sniffUp || 0;         // front lifted, nose reading the air
     if (up > 0.01) { c.translate(0, 0); c.rotate(-up*0.22); }
     // feet, shuffling
     c.lineWidth = Math.max(1, s*0.08);
     c.beginPath();
-    c.moveTo(-s*0.35, -s*0.08); c.lineTo(-s*0.35 + Math.sin(t*9)*s*0.08, s*0.02);
-    c.moveTo(s*0.25, -s*0.08);  c.lineTo(s*0.25 - Math.sin(t*9)*s*0.08, s*0.02);
+    const paws = [-0.38, -0.24, 0.28, 0.14];
+    for (let i = 0; i < 4; i++) {
+      gaitFoot(GAIT.scurry, u + GAIT.scurry.feet[i], FOOT);
+      c.moveTo(paws[i]*s, -s*0.10);
+      c.lineTo(paws[i]*s + FOOT[0]*s*0.075, s*0.02 - FOOT[1]*s*0.055);
+    }
     c.stroke();
     // the dome
     c.beginPath();
@@ -5644,7 +5771,7 @@ class Scene {
     c.quadraticCurveTo(s*0.4, -s*0.02, -s*0.78, -s*0.04 + bob);
     c.closePath(); c.fill();
     // snout, down and questing — or raised, twitching, into the wind
-    const sniff = Math.sin(t*5)*s*0.03;
+    const sniff = Math.sin(t*5)*s*0.03 + sb.nod*s*0.02;
     const ny = sniff - up*s*0.34;
     c.beginPath();
     c.moveTo(s*0.6, -s*0.3 + bob);
@@ -5676,14 +5803,25 @@ class Scene {
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color;
-    const dig = o.dig || 0;            // head down, forepaws working the ground
-    // short legs, trundling
+    const dg = o.dig || null;          // the digging stroke, or null for the round
+    // Short legs under a great deal of animal: a long stance, a swing that
+    // barely clears the litter, and the whole body rolling shoulder to
+    // shoulder over each pair as it comes down.
+    const u = (o.lp || 0)*TURN;
+    const tb = dg ? null : gaitPose("trundle", u);
+    const roll = tb ? (tb.rise - 0.5)*s*0.035 : 0;
     const off2 = [-0.45, -0.2, 0.25, 0.45];
     for (let i = 0; i < 4; i++) {
-      const sw = Math.sin((o.lp || 0) + (i % 2)*Math.PI + Math.floor(i/2)*1.2)*s*0.1;
-      const dg = i > 1 ? dig*s*0.12 : 0;
-      this.limb(c, off2[i]*s, -s*0.3, off2[i]*s + sw + dg, 0, s*0.16, s*0.08);
+      let sw = 0, lift = 0;
+      if (tb) {
+        gaitFoot(GAIT.trundle, u + GAIT.trundle.feet[i], FOOT);
+        sw = FOOT[0]*s*0.11; lift = FOOT[1]*s*0.06;
+      } else if (i > 1) {                   // the forepaws work the ground
+        sw = dg.reach*s*0.14; lift = Math.max(0, -dg.pull)*s*0.04;
+      }
+      this.limb(c, off2[i]*s, -s*0.3 - roll, off2[i]*s + sw, -lift, s*0.16, s*0.08);
     }
+    c.translate(0, -roll);
     // broad low body
     c.beginPath();
     c.moveTo(s*0.55, -s*0.5);
@@ -5693,7 +5831,7 @@ class Scene {
     c.quadraticCurveTo(s*0.75, -s*0.3, s*0.55, -s*0.5);
     c.closePath(); c.fill();
     // wedge head, held low — lower still, and swinging, when it digs
-    const dy = dig*s*0.16;
+    const dy = dg ? (0.55 + dg.pull*0.45)*s*0.16 : (tb ? tb.nod*s*0.02 : 0);
     c.beginPath();
     c.moveTo(s*0.5, -s*0.44);
     c.quadraticCurveTo(s*0.95, -s*0.3 + dy, s*1.1, -s*0.08 + dy);
@@ -5740,18 +5878,23 @@ class Scene {
     c.moveTo(-s*0.3, s*0.05); c.quadraticCurveTo(-s*1.2, s*0.1, -s*2.0, s*0.28);
     c.moveTo(s*0.5, s*0.06); c.quadraticCurveTo(-s*0.3, s*0.16, -s*1.2, s*0.4);
     c.stroke();
+    /* An otter does not bob evenly: a wave travels the length of it. The head
+       lifts, the back breaks the surface behind it and highest, the tail
+       follows a beat later — and then, for a moment, almost nothing shows. */
+    const w = gaitPose("swim", ph*TURN);
+    const hd = w.head*s*0.06;
     // head and muzzle above the line
-    c.beginPath(); c.ellipse(s*0.55, -s*0.18, s*0.26, s*0.18, -0.1, 0, Math.PI*2); c.fill();
-    c.beginPath(); c.ellipse(s*0.82, -s*0.12, s*0.12, s*0.08, 0.1, 0, Math.PI*2); c.fill();
-    c.beginPath(); c.arc(s*0.42, -s*0.32, s*0.06, 0, Math.PI*2); c.fill();  // ear
+    c.beginPath(); c.ellipse(s*0.55, -s*0.18 - hd, s*0.26, s*0.18, -0.1, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.ellipse(s*0.82, -s*0.12 - hd*0.8, s*0.12, s*0.08, 0.1, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*0.42, -s*0.32 - hd, s*0.06, 0, Math.PI*2); c.fill();  // ear
     // the rolling back, rising and falling as it swims
-    const hump = 0.5 + 0.5*Math.sin(ph);
+    const hump = w.hump;
     c.beginPath();
     c.moveTo(s*0.25, s*0.02);
     c.quadraticCurveTo(-s*0.15, -s*0.4*hump - s*0.08, -s*0.6, s*0.0);
     c.closePath(); c.fill();
     // tail-tip breaking behind
-    const hump2 = 0.5 + 0.5*Math.sin(ph - 1.4);
+    const hump2 = w.tail;
     if (hump2 > 0.4) {
       c.beginPath();
       c.moveTo(-s*0.85, s*0.03);
@@ -5760,7 +5903,7 @@ class Scene {
     }
     // eye
     c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.5));
-    c.beginPath(); c.arc(s*0.6, -s*0.24, Math.max(0.6, s*0.045), 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(s*0.6, -s*0.24 - hd, Math.max(0.6, s*0.045), 0, Math.PI*2); c.fill();
     c.restore();
   }
 

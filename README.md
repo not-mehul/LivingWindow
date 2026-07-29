@@ -54,8 +54,9 @@ js/
                   single mutable `state` object.
   species.js      The voices and their marks: field-guide pictograms, the low-level synth
                   primitives, the species catalogue (habitat, hour weighting, synth), and
-                  and two tables the drawing reads — `PSTYLE`, each species' field
-                  marks, and `ANIM`, the idle motion every perched bird shares.
+                  and three tables the drawing reads — `PSTYLE`, each species' field
+                  marks, `ANIM`, the idle motion every perched bird shares, and `GAIT`,
+                  the mammals' strides written out frame by frame (see below).
   scene.js        The `Scene` class — canvas rendering of the five landscapes and their
                   drifting inhabitants.
   sky.js          The sky and what hangs in it — gradient, stars, sun, moon, clouds —
@@ -256,6 +257,44 @@ does.
   owl tips off the branch and rows away, the pheasant walks out of frame or goes
   up like a firework, the kingfisher drops into the water, the cockerel sinks
   back behind the hill it came over.
+- **The mammals are keyframed, not sined.** A limb driven by a sine has two
+  poses in it and slides evenly between them, which is why the deer used to
+  swim rather than walk. Every four-footed thing now runs a frame table from
+  `GAIT` in `species.js` — see below.
+
+### The gaits, frame by frame
+
+`GAIT` holds one table per way of moving: the deer's `walk`, the fox's `trot`,
+the cat's `pad`, the badger's `trundle`, the hedgehog's `scurry`, the leaps
+(`bound`, `hop`, `lope`, `scamper`), the otter's `swim`, the porpoise's `roll`,
+the bat's `flit`, and the standing cycles — `graze`, `groom`, `dig`. Each is
+written as frames around one stride:
+
+```
+[u, x, y]                 a foot: where in the stride (0..1), how far forward
+                          it is (−1..+1), how far it is clear of the ground
+[u, …channels]            the body: the rise of the chest, the nod of the head,
+                          the arch of the back — named in the table's `chan`
+```
+
+`gaitSample` runs a Hermite through them, tangents taken from the neighbouring
+frames, so the curve passes through every frame written and closes on itself at
+u = 0 without a seam; the frames need not be evenly spaced, because a stride's
+interesting moments are not. What this buys is the thing a sine cannot give: a
+**stance**, where the foot is planted and travels backwards at exactly the
+speed the ground goes past, and a much quicker **swing**. The plant is what
+makes an animal look to weigh something.
+
+The tables say only what the shape of a stride is. How many of them go by in a
+second stays with the animals, in `scene.js`, in radians as it always was —
+`TURN` is the one conversion between the two.
+
+Painters sample the table themselves where only they need it (the four feet of
+a walk); where the scene needs a channel too — a leaping animal's `rise` lifts
+its contact shadow as well as the animal — `gaitPose` builds the pose once in
+`drawCritters` and hands it to the painter, the way the fox's pounce already
+worked. The bestiary drives the same tables at the same rates, so a card and
+the window show the same stride.
 
 ## Design notes
 

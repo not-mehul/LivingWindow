@@ -6,9 +6,13 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=8";
-import { SPECIES, PSTYLE, ANIM, CRITTER_VOICES, speciesIcon } from "./species.js?v=8";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=8";
+import { Scene } from "./scene.js?v=9";
+import { SPECIES, PSTYLE, ANIM, gaitPose, CRITTER_VOICES, speciesIcon } from "./species.js?v=9";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=9";
+
+/* The gaits are written around a stride of 1 and the cards keep their phases in
+   radians, as the scene does; this is the one conversion between the two. */
+const TURN = 1/(Math.PI*2);
 
 /* One Scene on a hidden canvas lends us its painters and tokens. */
 const scene = new Scene(document.getElementById("bz-hidden"));
@@ -386,11 +390,12 @@ const CRITTERS = [
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.82;
       groundBand(c, W, H, P, gy);
-      const bound = mode === "bound" ? Math.max(0, Math.sin(tm*7)) : 0;
-      scene.paintDeer(c, { x: W*0.5, y: gy - bound*16, s: 34, dir: 1,
-        head: mode === "graze" ? 1 : 0, walking: mode === "walk" || bound > 0, lp: tm*6,
+      const leap = mode === "bound" ? gaitPose("bound", tm*10*TURN) : null;
+      const rise = leap ? Math.max(0, leap.rise) : 0;
+      scene.paintDeer(c, { x: W*0.5, y: gy - rise*20, s: 34, dir: 1,
+        head: mode === "graze" ? 1 : 0, walking: mode === "walk", lp: tm*6,
         color: P.col, t: tm, grazing: mode === "graze",
-        alert: mode === "alert", bound });
+        alert: mode === "alert", leap });
     } },
   { id: "fox", name: "Red Fox", latin: "Vulpes vulpes",
     desc: "trots the field edge between dusk and dawn", sky: "dusk",
@@ -433,12 +438,13 @@ const CRITTERS = [
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.8;
       groundBand(c, W, H, P, gy);
-      const hop = mode === "hop" ? Math.max(0, Math.sin(tm*7)) : 0;
-      scene.paintRabbit(c, { x: W*0.5, y: gy - hop*16, s: 26, dir: 1,
-        hop, sit: mode !== "hop", t: tm,
+      const leap = mode === "hop" ? gaitPose("hop", tm*11*TURN) : null;
+      const rise = leap ? Math.max(0, leap.rise) : 0;
+      scene.paintRabbit(c, { x: W*0.5, y: gy - rise*16, s: 26, dir: 1,
+        leap, sit: mode !== "hop", t: tm,
         ear: mode === "sit" ? Math.pow(Math.max(0, Math.sin(tm*0.9)), 8) : 0, color: P.col,
         nibble: mode === "nibble" ? 1 : 0,
-        wash: mode === "wash" ? 0.5 + 0.5*Math.sin(tm*9) : 0 });
+        wash: mode === "wash" ? gaitPose("groom", tm*0.7) : null });
     } },
   { id: "cat", name: "House Cat", latin: "Felis catus",
     desc: "keeps its own hours on the rooftops", sky: "night",
@@ -452,7 +458,7 @@ const CRITTERS = [
       c.save();
       c.translate(W*0.5, gy); c.scale(3.2, 3.2);
       scene.paintCat(c, { x: 0, y: 0, dir: 1, sit: mode !== "walk", t: tm, color: P.col,
-        groom: mode === "groom" ? 1 : 0,
+        groom: mode === "groom" ? gaitPose("groom", tm*0.6) : null,
         stretch: mode === "stretch" ? 0.5 + 0.5*Math.sin(tm*1.6) : 0 });
       c.restore();
     } },
@@ -495,10 +501,10 @@ const CRITTERS = [
       const wy = H*0.6;
       waterBand(c, W, H, P, wy);
       const x = ((tm*50) % (W + 130)) - 65;
-      const ph = tm*1.8;
-      const arc = Math.sin(ph);
+      const rl = gaitPose("roll", tm*1.8*TURN);
+      const arc = rl.arc;
       if (arc > 0.02) {
-        scene.paintPorpoise(c, { x, y: wy, dir: 1, arc, pitch: Math.cos(ph)*0.34,
+        scene.paintPorpoise(c, { x, y: wy, dir: 1, arc, pitch: rl.pitch*0.34,
           s: 26, color: P.col, rim: P.rim });
       } else {
         const fp = Math.max(0, 1 + arc*1.6);
@@ -590,7 +596,8 @@ const CRITTERS = [
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.82;
       groundBand(c, W, H, P, gy);
-      const hopY = mode === "bound" ? Math.abs(Math.sin(tm*9))*8 : 0;
+      const leap = mode === "bound" ? gaitPose("scamper", tm*14*TURN) : null;
+      const hopY = leap ? Math.max(0, leap.rise)*9 : 0;
       let dig = 0, bury = 0, pat = 0;
       if (mode === "cache") {
         const u = tm % 4.4;
@@ -600,7 +607,7 @@ const CRITTERS = [
         else if (u < 3.7) { dig = 1 - (u - 3.0)/0.7; pat = 1; }
       }
       scene.paintSquirrel(c, { x: W*0.5, y: gy - hopY, s: 26, dir: 1,
-        sit: mode === "sit", ph: tm*9, t: tm, dig, bury, pat, color: P.col });
+        sit: mode === "sit", leap, t: tm, dig, bury, pat, color: P.col });
     } },
   { id: "hare", name: "Brown Hare", latin: "Lepus europaeus",
     desc: "long legs and longer ears at the field edge", sky: "dawn",
@@ -610,10 +617,10 @@ const CRITTERS = [
     draw(c, W, H, tm, mode, P) {
       const gy = H*0.82;
       groundBand(c, W, H, P, gy);
-      const st = mode === "lope" ? 0.5 + 0.5*Math.sin(tm*8) : 0;
-      const lift = mode === "lope" ? Math.max(0, Math.sin(tm*8))*7 : 0;
+      const leap = mode === "lope" ? gaitPose("lope", tm*8*TURN) : null;
+      const lift = leap ? Math.max(0, leap.rise)*8 : 0;
       scene.paintHare(c, { x: W*0.5, y: gy - lift, s: 30, dir: 1, t: tm,
-        hop: st, alert: mode === "alert", graze: mode === "graze" ? 1 : 0, color: P.col });
+        leap, alert: mode === "alert", graze: mode === "graze" ? 1 : 0, color: P.col });
     } },
   { id: "hedgehog", name: "European Hedgehog", latin: "Erinaceus europaeus",
     desc: "a shuffling dome of spines, nose down", sky: "night",
@@ -636,7 +643,7 @@ const CRITTERS = [
       const gy = H*0.84;
       groundBand(c, W, H, P, gy);
       scene.paintBadger(c, { x: W*0.5, y: gy, s: 34, dir: 1, lp: tm*5, color: P.col,
-        dig: mode === "dig" ? 0.5 + 0.5*Math.sin(tm*11) : 0 });
+        dig: mode === "dig" ? gaitPose("dig", tm*1.9) : null });
     } },
   { id: "otter", name: "Eurasian Otter", latin: "Lutra lutra",
     desc: "threads the water, dives, surfaces further on", sky: "day",
