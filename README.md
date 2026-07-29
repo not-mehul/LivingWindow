@@ -56,7 +56,8 @@ js/
                   primitives, the species catalogue (habitat, hour weighting, synth), and
                   and three tables the drawing reads — `PSTYLE`, each species' field
                   marks, `ANIM`, the idle motion every perched bird shares, and `GAIT`,
-                  the mammals' strides written out frame by frame (see below).
+                  every animal's cycles — strides, wingbeats, pecks — written out
+                  frame by frame (see below).
   scene.js        The `Scene` class — canvas rendering of the five landscapes and their
                   drifting inhabitants.
   sky.js          The sky and what hangs in it — gradient, stars, sun, moon, clouds —
@@ -257,18 +258,16 @@ does.
   owl tips off the branch and rows away, the pheasant walks out of frame or goes
   up like a firework, the kingfisher drops into the water, the cockerel sinks
   back behind the hill it came over.
-- **The mammals are keyframed, not sined.** A limb driven by a sine has two
-  poses in it and slides evenly between them, which is why the deer used to
-  swim rather than walk. Every four-footed thing now runs a frame table from
-  `GAIT` in `species.js` — see below.
+- **Nothing here is driven by a sine.** A limb driven by a sine has two poses
+  in it and slides evenly between them, which is why the deer used to swim
+  rather than walk and the small birds used to row rather than fly. Every
+  animal in the window — four-footed, winged or otherwise — now runs a frame
+  table from `GAIT` in `species.js`. See below.
 
 ### The gaits, frame by frame
 
-`GAIT` holds one table per way of moving: the deer's `walk`, the fox's `trot`,
-the cat's `pad`, the badger's `trundle`, the hedgehog's `scurry`, the leaps
-(`bound`, `hop`, `lope`, `scamper`), the otter's `swim`, the porpoise's `roll`,
-the bat's `flit`, and the standing cycles — `graze`, `groom`, `dig`. Each is
-written as frames around one stride:
+`GAIT` holds one table per way of moving, and each is written out as frames
+around one cycle:
 
 ```
 [u, x, y]                 a foot: where in the stride (0..1), how far forward
@@ -279,13 +278,42 @@ written as frames around one stride:
 
 `gaitSample` runs a Hermite through them, tangents taken from the neighbouring
 frames, so the curve passes through every frame written and closes on itself at
-u = 0 without a seam; the frames need not be evenly spaced, because a stride's
-interesting moments are not. What this buys is the thing a sine cannot give: a
-**stance**, where the foot is planted and travels backwards at exactly the
-speed the ground goes past, and a much quicker **swing**. The plant is what
-makes an animal look to weigh something.
+u = 0 without a seam; the frames need not be evenly spaced, because a cycle's
+interesting moments are not.
 
-The tables say only what the shape of a stride is. How many of them go by in a
+**On the ground** — the deer's `walk`, the fox's `trot`, the cat's `pad`, the
+badger's `trundle`, the hedgehog's `scurry`, and for the birds the two-footed
+`birdHop` and the walker's `strut`. What a frame table buys here is the thing a
+sine cannot give: a **stance**, where the foot is planted and travels backwards
+at exactly the speed the ground goes past, and a much quicker **swing**. The
+plant is what makes an animal look to weigh something. `strut` also carries the
+head-bob, which is not a bob at all — the head is thrown forward and then held
+*still in the air* while the bird walks on under it, and darts forward only at
+the last moment. That hold is a straight slide in the data and a jump between
+two frames set close together; there is no sine that has it in it.
+
+**Leaping** — `bound`, `hop`, `lope`, `scamper`: gather, drive, a hollow-backed
+stretch, and a landing taken on the forefeet with the hind swinging through.
+
+**In the air** — `beatSlow` (gull, tern, heron, goose, owl), `beatQuick` (small
+birds, cuckoo, pigeon, duck, pheasant), `beatWhir` (lark, kestrel, swift) and
+the bat's `flit`. Each carries `beat`, `span` and `sweep`: the downstroke is
+quicker than the recovery, the wing is at full span through it and shortens as
+the wrist flexes on the way back up, and the tip is carried forward on the way
+down and swept back on the way up — so it describes a flattened figure of eight
+rather than sliding up and down a line.
+
+**In the water** — the otter's `swim` and the porpoise's `roll`, which is not a
+sine either: the snout breaks, the back wheels over in a fifth of the cycle,
+and then the animal is gone for a long while.
+
+**And the standing cycles** — `graze`, `groom`, `dig`, `peck`, `probe`, `song`,
+`drum`, `paddle`, `flutter`, `swish`. `song` is the bill through one note and
+every singer in the window reads it, so the note is thrown open and *held*
+rather than swung evenly shut and open again. `peck` has the beat on the ground
+where the thing is actually seized, and the head thrown back to swallow.
+
+The tables say only what the shape of a cycle is. How many of them go by in a
 second stays with the animals, in `scene.js`, in radians as it always was —
 `TURN` is the one conversion between the two.
 
@@ -293,8 +321,10 @@ Painters sample the table themselves where only they need it (the four feet of
 a walk); where the scene needs a channel too — a leaping animal's `rise` lifts
 its contact shadow as well as the animal — `gaitPose` builds the pose once in
 `drawCritters` and hands it to the painter, the way the fox's pounce already
-worked. The bestiary drives the same tables at the same rates, so a card and
-the window show the same stride.
+worked. Where only one channel is wanted in a loop that runs dozens of times a
+frame — a skein of geese, a sky full of distant birds — `gaitAt` returns it
+without building the object. The bestiary drives the same tables at the same
+rates, so a card and the window show the same stride.
 
 ## Design notes
 

@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=9";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose } from "./species.js?v=9";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=9";
+} from "./util.js?v=10";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=10";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=10";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -1199,7 +1199,7 @@ class Scene {
       const a = 0.5 * (1 - night*0.7);
       if (a < 0.04) continue;
       const px = b.x*W, py = (b.y + Math.sin(b.ph*0.3)*0.004)*H, s = b.size;
-      const flap = 0.5 + 0.5*Math.sin(b.ph);
+      const flap = 0.5 + 0.5*gaitAt("beatQuick", b.ph*TURN, "beat");
       c.globalAlpha = a;
       c.beginPath();
       c.moveTo(px - s, py + flap*s*0.5);
@@ -1324,8 +1324,9 @@ class Scene {
      through the body as it is long in the leg — the back runs level from a
      high hip to the withers, and the head hangs off a thick neck no longer
      than the head itself. Get the neck wrong and you have drawn a horse.
-     `hd` is 0 for head up, 1 for head down in the grass. */
-  cowShape(c, bx, by, s, dir, hd, col, patch, tailSwing) {
+     `hd` is 0 for head up, 1 for head down in the grass, and `chew` is where
+     it stands in a mouthful — the bite and the working of it. */
+  cowShape(c, bx, by, s, dir, hd, col, patch, tailSwing, chew) {
     c.save();
     c.translate(bx, by);
     c.scale(dir, 1);
@@ -1354,11 +1355,15 @@ class Scene {
     c.closePath(); c.fill();
     // Neck and head. Short and thick, carried level with the back when it is
     // up and swung straight down into the grass when it is not.
-    const nx = s*(0.72 + hd*0.10), ny = -s*(0.86 - hd*0.62);
+    // Head down, it is not still: a bite is taken and worked, and the muzzle
+    // drifts along the sward between mouthfuls.
+    const cw = chew || null;
+    const nx = s*(0.72 + hd*0.10) + (cw ? cw.sway*hd*s*0.10 : 0);
+    const ny = -s*(0.86 - hd*0.62) - (cw ? cw.chew*hd*s*0.05 : 0);
     this.limb(c, s*0.46, -s*0.96, nx, ny, s*0.38, s*0.26);
     c.save();
     c.translate(nx, ny);
-    c.rotate(hd*1.05);
+    c.rotate(hd*1.05 - (cw ? cw.chew*hd*0.10 : 0));
     c.beginPath();
     c.moveTo(-s*0.10, -s*0.17);
     c.quadraticCurveTo(s*0.20, -s*0.16, s*0.34, -s*0.02);
@@ -1396,6 +1401,8 @@ class Scene {
         cw.next = cw.head ? 8 + Math.random()*16 : 4 + Math.random()*9;
       }
       cw.hd = (cw.hd === undefined) ? cw.head : cw.hd + (cw.head - cw.hd)*Math.min(1, dt*1.4);
+      // its own tempo through a mouthful, so a field of them is not one animal
+      cw.chewPh = (cw.chewPh || cw.ph) + dt*(0.34 + cw.ph*0.03);
     }
   }
 
@@ -1405,12 +1412,17 @@ class Scene {
     const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
     for (const cw of this.cattle) {
       const s = Math.min(W, H)*0.026*cw.sz;
+      // The tail hangs, and then it does not: one hard slap at a fly and a
+      // lazy swing back, with half the cycle spent doing nothing at all.
       this.cowShape(c, cw.x*W, baseFn(cw.x)*H, s, cw.dir, cw.hd, col,
-        cw.ph > 2.4 ? pale : null, Math.sin(this.t*1.7 + cw.ph));
+        cw.ph > 2.4 ? pale : null,
+        gaitAt("swish", (this.t*1.7 + cw.ph)*TURN, "swing"),
+        cw.hd > 0.4 ? gaitPose("graze", cw.chewPh || 0) : null);
       // a calf keeping close in, head up, all legs and no barrel yet
       if (cw.calf) {
         this.cowShape(c, (cw.x*W) - cw.dir*s*1.9, baseFn(cw.x - cw.dir*0.012)*H,
-          s*0.58, cw.dir, 0.15, col, null, Math.sin(this.t*2.6 + cw.ph));
+          s*0.58, cw.dir, 0.15, col, null,
+          gaitAt("swish", (this.t*2.6 + cw.ph)*TURN, "swing"), null);
       }
     }
   }
@@ -2399,7 +2411,6 @@ class Scene {
 
       const st = a.t - a.singAt;                       // time since the call began
       const singing = st >= 0 && st < a.dur;
-      const sing = singing ? 0.3 + 0.7*Math.abs(Math.sin(st*11)) : 0;
       const sungEnd = a.singAt + a.dur;
 
       if (!a.leave && a.t > sungEnd + a.linger) {
@@ -2567,7 +2578,7 @@ class Scene {
       // carried over from the pass that moved it.
       const st = a.t - a.singAt;
       const sing = (st >= 0 && st < a.dur)
-        ? ANIM.singBase + ANIM.singAmt*Math.abs(Math.sin(st*ANIM.singRate)) : 0;
+        ? ANIM.singBase + ANIM.singAmt*gaitPose("song", st*ANIM.singRate*TURN).gape : 0;
       const sungEnd = a.singAt + a.dur;
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
@@ -2586,16 +2597,17 @@ class Scene {
       const tailFlick = Math.pow(Math.max(0, Math.sin(a.t*ANIM.tailRate + (iv.tailPh || 0))), ANIM.tailSharp);
       const wingSettle = Math.max(0, 1 - settled/ANIM.settle);
       const hopBob = (a.enter > 0 && a.t < a.enter && a.beh === "perch")
-        ? Math.abs(Math.sin(a.t*13)) * a.s * 0.12 : 0;
+        ? gaitPose("birdHop", a.t*13*TURN).rise * a.s * 0.12 : 0;
       // Departure: 0 while perched, ramping to 1 once the bird springs into flight.
       const flyProg = a.leave === "fly" ? Math.max(0, Math.min(1, (a.leaveT - 0.16)/0.14)) : 0;
-      const flyFlap = flyProg > 0 ? Math.sin(a.leaveT*21) : 0;
+      const flyBeat = flyProg > 0 ? gaitPose("beatQuick", a.leaveT*21*TURN) : null;
       // Arrival: wings out and beating all the way in, then held high and
       // forward for the flare that kills the last of the speed.
       const inK = (a.flightIn && a.enter > 0 && a.t < a.enter) ? a.t/a.enter : -1;
       const flare = inK >= 0 ? Math.pow(Math.max(0, inK - 0.7)/0.3, 1.4) : 0;
       const flyIn = inK >= 0 ? Math.max(0, 1 - Math.pow(Math.max(0, inK - 0.86)/0.14, 2)) : 0;
-      const flapIn = inK >= 0 ? (flare > 0.15 ? 0.55 + flare*0.45 : Math.sin(a.t*23)) : 0;
+      const inBeat = inK >= 0 && flare <= 0.15 ? gaitPose("beatQuick", a.t*23*TURN) : null;
+      const flapIn = inK >= 0 ? (inBeat ? inBeat.beat : 0.55 + flare*0.45) : 0;
       // The body follows its own path: nose down on the descent, up in the
       // flare, up again on the climb out.
       let bodyRot = 0;
@@ -2609,17 +2621,20 @@ class Scene {
       const landed = a.enter > 0 ? Math.max(0, Math.min(1, (a.t - a.enter)/0.2)) : 1;
 
       // On the ground: a hopper leaves the turf between steps, a walker keeps
-      // its feet down and swings its legs instead.
-      const hopStep = (a.ground && !a.walks && a.act === "step")
-        ? Math.max(0, Math.sin(a.hopPh || 0)) : 0;
-      const stride = (a.ground && a.walks && a.act === "step") ? a.stridePh : 0;
+      // its feet down and swings its legs instead — and bobs its head, which
+      // `strut` carries and paintBird reads.
+      const stepping = a.ground && a.act === "step";
+      const bhop = stepping && !a.walks ? gaitPose("birdHop", (a.hopPh || 0)*TURN) : null;
+      const hopStep = bhop ? Math.max(0, bhop.rise) : 0;
+      const stride = stepping && a.walks ? a.stridePh : 0;
 
       switch (a.beh) {
         case "perch": {
           const ps = PSTYLE[a.id] || {};
           this.drawPerchFooting(c, (a.ground ? a.x : a.restX)*W, a.restY*H, a.s,
             a.perchType, bot, a.alpha * landed * (1 - flyProg));
-          const hopG = a.gest === "hop" ? Math.abs(Math.sin(Math.PI*(a.gestT/a.gestDur)))*a.s*0.22 : 0;
+          const hopG = a.gest === "hop"
+            ? gaitPose("birdHop", a.gestT/a.gestDur).rise*a.s*0.22 : 0;
           const gk = a.gest ? Math.sin(Math.PI*Math.min(1, a.gestT/a.gestDur)) : 0;
           const fluffG = a.gest === "fluff" ? gk : 0;
           const peerG = a.gest === "peer" ? gk : 0;
@@ -2636,10 +2651,13 @@ class Scene {
             crest: ps.crest || (iv.crest && !ps.tailUp && !ps.cap), rimLight: iv.rim,
             gest: (a.gest === "preen" || a.gest === "stretch") ? a.gest : null,
             gestK: a.gest ? a.gestT/a.gestDur : 0,
-            peck: a.peck || 0, legTuck: hopStep, stride,
+            peck: a.peck || 0, gulp: a.gulp || 0,
+            legTuck: bhop ? bhop.tuck : 0, hopReach: bhop ? bhop.reach : 0,
+            hopTilt: bhop ? bhop.tilt : 0, stride,
             sing, breath, headTurn: headTurn + peerG*0.85, tailFlick, wingSettle,
             fly: diveRot ? 1 : Math.max(flyProg, flyIn),
-            flap: diveRot ? -0.4 : (flyIn > 0 ? flapIn : flyFlap),
+            flap: diveRot ? -0.4 : (flyIn > 0 ? flapIn : (flyBeat ? flyBeat.beat : 0)),
+            wing: diveRot ? null : (flyIn > 0 ? inBeat : flyBeat),
             flare, t: a.t
           });
           if (rot) c.restore();
@@ -2648,7 +2666,8 @@ class Scene {
         case "egret": {
           const off = a.leave === "heronoff" ? a.leaveT : 0;
           this.paintHeron(c, { x, y, s: a.s*2.3, dir: a.flip ? -1 : 1,
-            flying: off > 0.5, flap: off > 0.5 ? Math.sin((off - 0.5)*7) : 0,
+            flying: off > 0.5,
+            flap: off > 0.5 ? gaitAt("beatSlow", (off - 0.5)*7*TURN, "beat") : 0,
             crouch: off > 0 ? Math.min(1, off/0.5) : 0,
             color: colStr, pale: true, t: a.t, sing, alpha: a.alpha });
           break;
@@ -2660,20 +2679,22 @@ class Scene {
             walking: (a.t > sungEnd && !a.leave) || a.leave === "walkoff",
             lp: a.t*(a.leave === "walkoff" ? 9 : 5),
             fly: flushT ? Math.min(1, Math.max(0, (flushT - 0.16)/0.12)) : 0,
-            flap: flushT ? Math.sin(flushT*30) : 0, t: a.t });
+            flap: flushT ? gaitAt("beatQuick", flushT*30*TURN, "beat") : 0, t: a.t });
           break;
         }
         case "owl": {
           const gl = a.leave === "glide" ? Math.min(1, a.leaveT/0.35) : 0;
           this.paintOwl(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, rim: rimStr,
             deep: deepStr, night, t: a.t, headTurn, blinkPh: iv.tailPh || 0,
-            breath, fly: gl, flap: gl ? Math.sin(a.leaveT*8.5) : 0,
+            breath, fly: gl,
+            flap: gl ? gaitAt("beatSlow", a.leaveT*8.5*TURN, "beat") : 0,
             flip: a.flyDir < 0, settle: wingSettle, sing });
           break;
         }
         case "cuckoo": this.paintCuckoo(c, { x, y, s: a.s, flip: a.flip, alpha: a.alpha,
           color: colStr, rim: rimStr, deep: deepStr, sing, breath, t: a.t,
-          fly: flyProg, flap: flyFlap }); break;
+          fly: flyProg, wing: flyBeat,
+          flap: flyBeat ? flyBeat.beat : 0 }); break;
         case "cockerel": {
           // It stands on the skyline, so the hill itself hides it as it goes.
           c.save();
@@ -2686,7 +2707,8 @@ class Scene {
           c.restore();
           break;
         }
-        case "duck": this.paintDuck(c, { x, y: y + Math.sin(a.t*1.3)*1.5, s: a.s,
+        case "duck": this.paintDuck(c, {
+          x, y: y - gaitAt("paddle", a.t*1.3*TURN, "rock")*1.5, s: a.s,
           flip: a.data.dir < 0, alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr,
           moorhen: a.data.moorhen, sing, breath, t: a.t }); break;
         case "pecker": this.paintWoodpecker(c, { x, y, s: a.s, alpha: a.alpha, color: colStr,
@@ -2706,9 +2728,9 @@ class Scene {
      it has had enough of the ground it springs off as any perched bird does,
      which is the departure the fly branch above already knows how to make. */
   forage(a, dt, singing) {
-    if (!a.ground || a.leave) { a.peck = 0; return; }
-    if (singing || a.t < a.enter + 0.5) { a.peck = 0; a.act = null; return; }
-    if (a.hopPh === undefined) { a.hopPh = 0; a.stridePh = 0; a.peck = 0; }
+    if (!a.ground || a.leave) { a.peck = 0; a.gulp = 0; return; }
+    if (singing || a.t < a.enter + 0.5) { a.peck = 0; a.gulp = 0; a.act = null; return; }
+    if (a.hopPh === undefined) { a.hopPh = 0; a.stridePh = 0; a.peck = 0; a.gulp = 0; }
     if (!a.act || (a.actT += dt) > a.actDur) {
       const roll = Math.random();
       a.act = roll < 0.42 ? "step" : roll < 0.78 ? "peck" : "look";
@@ -2732,12 +2754,15 @@ class Scene {
         a.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
         if (a.walks) a.stridePh += dt*9; else a.hopPh += dt*11;
       }
-      a.peck = 0;
+      a.peck = 0; a.gulp = 0;
     } else if (a.act === "peck" && a.actT < a.pecks*0.42) {
-      const u = (a.actT / 0.42) % 1;                // down fast, up a shade slower
-      a.peck = Math.pow(Math.sin(Math.PI*u), 0.6);
+      // Down fast, a beat on the ground while the thing is actually taken, up,
+      // and the head thrown back to send it down — the `peck` frames.
+      const pk = gaitPose("peck", (a.actT / 0.42) % 1);
+      a.peck = pk.dip;
+      a.gulp = pk.gulp;
     } else {
-      a.peck = 0;
+      a.peck = 0; a.gulp = 0;
     }
     a.restX = a.x;                                  // it stands where it has walked to
   }
@@ -2785,7 +2810,9 @@ class Scene {
     // Pecking: the whole bird tips forward over its feet and the head reaches
     // down past them, which is what makes it read as working the turf rather
     // than nodding on the spot.
-    if (peck > 0.002) c.rotate(-peck*0.42);
+    // Pitching: forward over its feet at a peck, back on the spring of a hop.
+    const pitch = -peck*0.42 - (o.hopTilt || 0)*0.30;
+    if (Math.abs(pitch) > 0.002) c.rotate(pitch);
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
     c.lineCap = "round"; c.lineJoin = "round";
@@ -2799,9 +2826,15 @@ class Scene {
     const gk = Math.sin(Math.PI*Math.min(1, o.gestK || 0));
     const preen = o.gest === "preen" ? gk : 0;
     const stretch = o.gest === "stretch" ? gk : 0;
-    const hx = s*0.58 + ht*s*0.10 - preen*hr*1.1 + peck*s*0.26;
+    // The walker's head-bob: thrown forward and then held still in the air
+    // while the body walks on under it. `wb.head` is the head's place relative
+    // to the body, so the hold reads as a slide back and the dart as a jump.
+    const wb = o.stride ? gaitPose("strut", o.stride*TURN) : null;
+    const gulp = o.gulp || 0;                 // the head thrown back to swallow
+    const hx = s*0.58 + ht*s*0.10 - preen*hr*1.1 + peck*s*0.26
+             + (wb ? wb.head*s*0.20 : 0) - gulp*s*0.10;
     const hy = cy - bry*0.55 - hr*0.85 - sing*s*0.16 + preen*hr*0.6
-             + peck*(bry*0.85 + legLen*0.55);
+             + peck*(bry*0.85 + legLen*0.55) - gulp*s*0.20;
 
     // Tail — a fan of tapered feathers off the rump; it flicks at rest, fans
     // wide on take-off, and drops hard as an air-brake in the landing flare.
@@ -2823,14 +2856,20 @@ class Scene {
     // fold again at the top of a hop. A walker swings them instead.
     const tuck = Math.min(1, Math.max(fly*1.5, o.legTuck || 0)) * (1 - flare*0.95);
     const stride = o.stride || 0;
+    // A hopper's feet do not merely tuck: they gather under it and then swing
+    // out in front again, which is how it lands ahead of where it left.
+    const hopReach = o.hopReach || 0;
     if (tuck < 0.95) {
       const hipY = cy + bry*0.62;
       let li = 0;
       for (const [hpx, fx0] of [[-s*0.02, -s*0.12], [s*0.14, s*0.18]]) {
-        const swing = stride ? Math.sin(stride + li*Math.PI)*s*0.22 : 0;
-        const step = stride ? Math.max(0, Math.sin(stride + li*Math.PI + 0.8))*s*0.16 : 0;
+        let swing = 0, step = 0;
+        if (stride) {
+          gaitFoot(GAIT.strut, stride*TURN + GAIT.strut.feet[li], FOOT);
+          swing = FOOT[0]*s*0.22; step = FOOT[1]*s*0.16;
+        }
         li++;
-        const fx = fx0 + swing + flare*s*0.5;
+        const fx = fx0 + swing + flare*s*0.5 + hopReach*s*0.16;
         const fy = -tuck*legLen*0.8 - step - flare*s*0.1;
         c.lineWidth = Math.max(1, s*0.085);
         c.beginPath();
@@ -2846,13 +2885,19 @@ class Scene {
       }
     }
 
-    // Wings in flight — the far wing first, behind the body.
-    const flap = o.flap || 0;
-    const span = s*(1.7 + 0.5*fly);
+    // Wings in flight — the far wing first, behind the body. The wing shortens
+    // on the recovery and the tip is carried forward through the downstroke,
+    // so the tip describes a figure of eight instead of sliding up a line.
+    const wg = o.wing || null;
+    const flap = wg ? wg.beat : (o.flap || 0);
+    const wspan = wg ? wg.span : 1;
+    const wswp = wg ? wg.sweep : 0;
+    const span = s*(1.7 + 0.5*fly)*(0.72 + 0.28*wspan);
     const wrx = s*0.05, wry = cy - bry*0.35;
     if (fly > 0.03) {
       c.fillStyle = o.rim;
-      this.wingBlade(c, wrx - s*0.06, wry, wrx - span*0.48, wry - span*(0.5*flap) - s*0.30, s*0.5);
+      this.wingBlade(c, wrx - s*0.06, wry, wrx - span*0.48 + wswp*s*0.24,
+        wry - span*(0.5*flap) - s*0.30, s*0.5);
       c.fillStyle = o.color;
     }
 
@@ -2901,7 +2946,8 @@ class Scene {
       }
     } else {
       c.fillStyle = deep;
-      this.wingBlade(c, wrx, wry, wrx - span*0.58, wry - span*(0.68*flap) + s*0.12, s*0.62);
+      this.wingBlade(c, wrx, wry, wrx - span*0.58 + wswp*s*0.30,
+        wry - span*(0.68*flap) + s*0.12, s*0.62);
       c.fillStyle = o.color;
     }
 
@@ -3305,11 +3351,13 @@ class Scene {
 
     if (fly > 0.02) {
       // Low, direct and quick, on shallow beats that never rise above the body.
-      const k = o.flap || 0;
+      const wg = o.wing || null;
+      const k = wg ? wg.beat : (o.flap || 0);
+      const sp = wg ? 0.76 + 0.24*wg.span : 1, sw = wg ? wg.sweep : 0;
       c.translate(0, -s*0.7);
       const A = c.globalAlpha;
       c.globalAlpha = A*0.6;
-      this.wingBlade(c, -s*0.05, -s*0.04, -s*1.05, -s*0.62*k - s*0.20, s*0.30);
+      this.wingBlade(c, -s*0.05, -s*0.04, -s*1.05*sp + s*sw*0.16, -s*0.62*k - s*0.20, s*0.30);
       c.globalAlpha = A;
       c.beginPath(); c.ellipse(0, 0, s*0.60, s*0.20, 0, 0, Math.PI*2); c.fill();
       // that long tail streaming out behind, still the giveaway in flight
@@ -3321,7 +3369,7 @@ class Scene {
       c.beginPath();
       c.moveTo(s*0.72, -s*0.10); c.lineTo(s*1.02, -s*0.02); c.lineTo(s*0.72, s*0.02);
       c.closePath(); c.fill();
-      this.wingBlade(c, s*0.05, -s*0.03, s*1.0, -s*0.78*k - s*0.24, s*0.34);
+      this.wingBlade(c, s*0.05, -s*0.03, s*1.0*sp + s*sw*0.18, -s*0.78*k - s*0.24, s*0.34);
       c.restore();
       return;
     }
@@ -3418,11 +3466,15 @@ class Scene {
     const legLen = s*0.30;
     const brx = s*0.74, bry = s*0.66;
     const cy = -(legLen + bry*0.9);
-    // legs, stepping along the brow of the hill
+    // legs, stepping the `strut` along the brow of the hill
+    const wk = o.walking ? gaitPose("strut", (o.lp || 0)*TURN) : null;
     c.lineWidth = Math.max(1, s*0.09);
     for (let i = 0; i < 2; i++) {
-      const sw = o.walking ? Math.sin((o.lp || 0) + i*Math.PI)*s*0.14 : (i ? s*0.08 : -s*0.06);
-      const lift = o.walking ? Math.max(0, Math.sin((o.lp || 0) + i*Math.PI + 0.8))*s*0.10 : 0;
+      let sw = i ? s*0.08 : -s*0.06, lift = 0;
+      if (o.walking) {
+        gaitFoot(GAIT.strut, (o.lp || 0)*TURN + GAIT.strut.feet[i], FOOT);
+        sw = FOOT[0]*s*0.14; lift = FOOT[1]*s*0.10;
+      }
       c.beginPath();
       c.moveTo((i ? s*0.10 : -s*0.06), cy + bry*0.72);
       c.lineTo((i ? s*0.10 : -s*0.06) + sw, -lift);
@@ -3449,8 +3501,8 @@ class Scene {
     // Neck and head, thrown up and back to crow.
     const stretch = sing;
     const nx = s*0.46 + stretch*s*0.10;
-    const hx = nx + s*0.06 - stretch*s*0.16;
-    const hy = cy - bry*(1.35 + stretch*0.75);
+    const hx = nx + s*0.06 - stretch*s*0.16 + (wk ? wk.head*s*0.08 : 0);
+    const hy = cy - bry*(1.35 + stretch*0.75) - (wk ? wk.rise*s*0.03 : 0);
     this.limb(c, s*0.34, cy - bry*0.3, hx, hy, s*0.30, s*0.17);
     c.beginPath(); c.arc(hx, hy, s*0.19, 0, Math.PI*2); c.fill();
     // Comb, wattles and bill — the red of them carried by the amber accent.
@@ -3494,8 +3546,11 @@ class Scene {
     const s = o.s, sing = o.sing || 0, t = o.t || 0, mh = o.moorhen;
     // between calls the head tips down now and then to dabble at the water
     const dip = (sing > 0.01 || mh) ? 0 : Math.pow(Math.max(0, Math.sin(t*0.7 + 2.1)), 12);
-    // a moorhen's head jerks with every push of its feet
-    const jerk = mh ? Math.max(0, Math.sin(t*5.5))*s*0.09 : 0;
+    // Under way it does not glide evenly: a stroke of the feet surges it
+    // forward and lifts the chest, and then it coasts and settles back. A
+    // moorhen's head jerks right through with every push, a duck's less so.
+    const pd = gaitPose("paddle", t*(mh ? 5.5 : 1.3)*TURN);
+    const jerk = mh ? Math.max(0, pd.head)*s*0.09 : 0;
     c.save();
     c.translate(o.x, o.y);
     if (o.flip) c.scale(-1, 1);
@@ -3543,7 +3598,8 @@ class Scene {
     c.stroke();
     c.globalAlpha = o.alpha;
     // neck and head — rising to quack, tipping forward to dabble
-    const hx = s*0.58 + dip*s*0.24 + jerk, hy = -s*1.02 - sing*s*0.28 + dip*s*0.66;
+    const hx = s*0.58 + dip*s*0.24 + jerk + pd.surge*s*0.03;
+    const hy = -s*1.02 - sing*s*0.28 + dip*s*0.66 - pd.rock*s*0.03;
     c.fillStyle = o.color;
     this.limb(c, s*0.52, -s*0.4, hx, hy, s*(mh ? 0.34 : 0.42), s*(mh ? 0.24 : 0.3));
     c.save();
@@ -3605,8 +3661,9 @@ class Scene {
 
   paintWoodpecker(c, o) {
     const s = o.s, t = o.t || 0, sing = o.sing || 0;
-    // the strike snaps toward the wood and recovers a shade more slowly
-    const strike = sing * Math.pow(Math.abs(Math.sin(t*26)), 0.55);
+    // One blow at a time: the head snaps at the wood and comes back off it
+    // more slowly, so a roll reads as separate blows and not as a buzz.
+    const strike = sing * gaitAt("drum", t*26*TURN, "hit");
     c.save();
     c.translate(o.x, o.y);
     c.globalAlpha = o.alpha;
@@ -3667,16 +3724,22 @@ class Scene {
     c.globalAlpha = o.alpha;
     c.fillStyle = o.color; c.strokeStyle = o.color;
     c.lineCap = "round"; c.lineJoin = "round";
-    const step = o.walking ? Math.sin(t*8) : 0;
-    // walking, the bill goes down to probe the sand now and then
-    const probe = o.walking ? Math.pow(Math.max(0, Math.sin(t*1.1 + 0.7)), 10) : 0;
+    // Walking, it runs the `strut` — the head bobbing with the stride — and
+    // now and then the bill goes down into the sand and is worked about there.
+    const wk = o.walking ? gaitPose("strut", t*8*TURN) : null;
+    const pb = o.walking ? gaitPose("probe", t*1.1*TURN + 0.11) : null;
+    const probe = pb ? pb.dip : 0;
     const legLen = s*1.1;
     const brx = s*0.92, bry = s*0.5;
     const cy = -(legLen + bry*0.5);
     // legs — jointed and stepping, the moving foot lifting clear
-    const lift1 = o.walking ? Math.max(0, Math.sin(t*8))*s*0.16 : 0;
-    const lift2 = o.walking ? Math.max(0, -Math.sin(t*8))*s*0.16 : 0;
-    const bax = -s*0.08 + step*s*0.22, fax = s*0.3 - step*s*0.22;
+    let bax = -s*0.08, fax = s*0.3, lift1 = 0, lift2 = 0;
+    if (o.walking) {
+      gaitFoot(GAIT.strut, t*8*TURN, FOOT);
+      bax += FOOT[0]*s*0.22; lift1 = FOOT[1]*s*0.16;
+      gaitFoot(GAIT.strut, t*8*TURN + 0.5, FOOT);
+      fax += FOOT[0]*s*0.22; lift2 = FOOT[1]*s*0.16;
+    }
     this.leg(c, -s*0.06, cy + bry*0.4, bax, -lift1, 0.08, s*0.13, s*0.06);
     this.leg(c, s*0.22, cy + bry*0.4, fax, -lift2, 0.08, s*0.13, s*0.06);
     c.lineWidth = Math.max(0.8, s*0.06);
@@ -3698,12 +3761,15 @@ class Scene {
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.55)`;
     c.beginPath(); c.ellipse(-s*0.1, cy + bry*0.55, brx*0.6, bry*0.42, 0.08, 0, Math.PI*2); c.fill();
     c.fillStyle = o.color;
-    // neck and head — thrown up to pipe, dropped to probe
-    const hx = s*0.6 + probe*s*0.12, hy = cy - bry*1.5 - sing*s*0.26 + probe*s*1.0;
+    // neck and head — thrown up to pipe, dropped to probe, and carried
+    // forward-and-held with the stride the rest of the time
+    const hx = s*0.6 + probe*s*0.12 + (wk ? wk.head*s*0.10 : 0);
+    const hy = cy - bry*1.5 - sing*s*0.26 + probe*s*1.0 - (wk ? wk.rise*s*0.05 : 0);
     this.limb(c, s*0.28, cy - bry*0.4, hx, hy, s*0.4, s*0.26);
     c.beginPath(); c.arc(hx, hy, s*0.28, 0, Math.PI*2); c.fill();
-    // the oystercatcher's long orange bill, parting to pipe
-    const tiltB = probe*1.05;
+    // the oystercatcher's long orange bill, parting to pipe — and turned in
+    // the sand as it works whatever it has found
+    const tiltB = probe*1.05 + (pb ? pb.work*0.16 : 0);
     c.save();
     c.translate(hx + s*0.2, hy + s*0.02);
     c.rotate(tiltB);
@@ -4434,7 +4500,8 @@ class Scene {
           break;
         }
         case "runner": {
-          const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
+          // stopped, it works the wet sand: the bill in, turned about, and out
+          const probe = cr.mode === "dash" ? 0 : gaitAt("probe", cr.t*1.1, "dip");
           c.save(); c.translate(cr.x*W, D.y*H); c.scale(D.scale, D.scale);
           this.contactShadow(c, 0, 1, 5, 0.16*(1 - cr.z*0.6));
           this.paintSanderling(c, 0, 0, cr.dir, cr.mode === "dash", cr.ph, D.col, probe);
@@ -4475,7 +4542,8 @@ class Scene {
           const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
           if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
           this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
-            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
+            flying: cr.mode === "fly",
+            flap: gaitAt("beatSlow", (cr.flap || 0)*TURN, "beat"),
             color: cr.mode === "fly" ? colDark : D.col, deep: colFar, t: cr.t }, cr.pose));
           break;
         }
@@ -4582,7 +4650,8 @@ class Scene {
             const rank = Math.ceil(k/2);
             const bx = (cr.x + trail*rank*0.016)*W;
             const by2 = (cr.y + side*rank*0.011)*H;
-            this.paintGoose(c, bx, by2, gdir, Math.sin(cr.t*7 + k));
+            this.paintGoose(c, bx, by2, gdir,
+              gaitAt("beatSlow", (cr.t*7 + k)*TURN, "beat"));
           }
           break;
         }
@@ -5275,10 +5344,13 @@ class Scene {
   /* A butterfly — fore- and hindwing lobes foreshortening as they beat,
      a slender body and curled antennae. */
   paintButterfly(c, x, y, t, ph, al, colDark) {
-    const f = Math.abs(Math.sin(t*15 + ph));
-    const wsp = 0.25 + 0.75*f;
+    // The wings are clapped together over the back and swept down and open
+    // slowly, so the insect climbs in little steps rather than flying level:
+    // it rises on the downstroke and drops back on the clap.
+    const f = gaitPose("flutter", (t*15 + ph)*TURN);
+    const wsp = 0.25 + 0.75*f.spread;
     c.save();
-    c.translate(x, y);
+    c.translate(x, y - f.lift*1.4);
     c.globalAlpha = al;
     c.fillStyle = `rgba(${this.tok.amberRGB}, 0.5)`;
     c.strokeStyle = colDark; c.lineWidth = 0.8; c.lineCap = "round";
@@ -5435,10 +5507,17 @@ class Scene {
     // before you ever see the bird.
     if (fly > 0.02) { this.pheasantFlush(c, o, fly); c.restore(); return; }
     const by = -s*0.6;
-    // legs — stout, stepping
-    for (const [lx0, ph2] of [[-s*0.16, 0], [s*0.14, Math.PI]]) {
-      const sw = o.walking ? Math.sin((o.lp || 0) + ph2)*s*0.14 : 0;
-      const lift = o.walking ? Math.max(0, Math.sin((o.lp || 0) + ph2 + 0.8))*s*0.07 : 0;
+    // legs — stout, and stepping the deliberate `strut`: a long planted
+    // stance and a quick swing, not an even swing back and forth
+    const wk = o.walking ? gaitPose("strut", (o.lp || 0)*TURN) : null;
+    let li = 0;
+    for (const lx0 of [-s*0.16, s*0.14]) {
+      let sw = 0, lift = 0;
+      if (o.walking) {
+        gaitFoot(GAIT.strut, (o.lp || 0)*TURN + GAIT.strut.feet[li], FOOT);
+        sw = FOOT[0]*s*0.14; lift = FOOT[1]*s*0.07;
+      }
+      li++;
       this.leg(c, lx0, by + s*0.28, lx0 + sw, -lift, 0.07, s*0.12, s*0.05);
     }
     // the long barred tail, carried just off the ground
@@ -5471,8 +5550,10 @@ class Scene {
     // the coppery wash over the body
     c.fillStyle = `rgba(${this.tok.amberRGB}, 0.35)`;
     c.beginPath(); c.ellipse(-s*0.05, by, s*0.6, s*0.36, -0.1, 0, Math.PI*2); c.fill();
-    // neck and small head, thrown up for the crow
-    const hx = s*0.6, hy = by - s*0.78 - sing*s*0.16;
+    // neck and small head, thrown up for the crow — and, walking, thrust
+    // forward and then held while the bird catches up with it
+    const hx = s*0.6 + (wk ? wk.head*s*0.09 : 0);
+    const hy = by - s*0.78 - sing*s*0.16 - (wk ? wk.rise*s*0.035 : 0);
     c.fillStyle = o.color;
     this.limb(c, s*0.42, by - s*0.2, hx, hy, s*0.26, s*0.14);
     c.beginPath(); c.arc(hx, hy, s*0.16, 0, Math.PI*2); c.fill();
@@ -5929,14 +6010,15 @@ class Scene {
   /* A tern — lighter and sharper than any gull, deep buoyant wingbeats
      and tail streamers trailing. */
   paintTernFlight(c, x, y, s, dir, ph, col) {
-    const k = Math.sin(ph)*0.85;
+    const g = gaitPose("beatSlow", ph*TURN);
+    const k = g.beat*0.85, sp = 0.8 + 0.2*g.span, sw = g.sweep;
     c.save();
     c.translate(x, y);
     if (dir < 0) c.scale(-1, 1);
     c.fillStyle = col;
     const A = c.globalAlpha;
     c.globalAlpha = A*0.6;
-    this.wingBlade(c, -s*0.08, -s*0.06, -s*0.9, -s*0.85*k - s*0.35, s*0.24);
+    this.wingBlade(c, -s*0.08, -s*0.06, -s*0.9*sp + s*sw*0.16, -s*0.85*k - s*0.35, s*0.24);
     c.globalAlpha = A;
     // slim body and the forked tail streamers
     c.beginPath(); c.ellipse(0, 0, s*0.6, s*0.17, 0, 0, Math.PI*2); c.fill();
@@ -5949,14 +6031,18 @@ class Scene {
     c.beginPath();
     c.moveTo(s*0.7, -s*0.08); c.lineTo(s*0.95, -s*0.02); c.lineTo(s*0.7, s*0.03);
     c.closePath(); c.fill();
-    this.wingBlade(c, s*0.04, -s*0.04, -s*0.55, -s*1.05*k - s*0.42, s*0.3);
+    this.wingBlade(c, s*0.04, -s*0.04, -s*0.55*sp + s*sw*0.2, -s*1.05*k - s*0.42, s*0.3);
     c.restore();
   }
 
   /* A kestrel holding its cross in the wind — tail fanned hard down,
      wings winnowing; when it slips away it goes on flat wings. */
   paintKestrelFlight(c, x, y, s, ph, col, hovering, dir) {
-    const k = hovering ? Math.sin(ph)*0.32 : 0.12;
+    // Winnowing, the wing has no time to fold — the beat is shallow and quick
+    // and it is the sweep, forward and back, that holds the bird still.
+    const g = hovering ? gaitPose("beatWhir", ph*TURN) : null;
+    const k = g ? g.beat*0.32 : 0.12;
+    const sw = g ? g.sweep : 0;
     c.save();
     c.translate(x, y);
     if (dir < 0) c.scale(-1, 1);
@@ -5972,7 +6058,7 @@ class Scene {
       this.limb(c, -s*0.35, 0, -s*1.0, s*0.1, s*0.2, s*0.1);
     }
     c.globalAlpha = A*0.6;
-    this.wingBlade(c, -s*0.05, -s*0.08, -s*0.8, -s*0.7*k - s*0.4, s*0.34);
+    this.wingBlade(c, -s*0.05, -s*0.08, -s*0.8 + s*sw*0.14, -s*0.7*k - s*0.4, s*0.34);
     c.globalAlpha = A;
     // body head-down into the wind
     c.beginPath(); c.ellipse(0, 0, s*0.52, s*0.2, 0.08, 0, Math.PI*2); c.fill();
@@ -5980,7 +6066,7 @@ class Scene {
     c.beginPath();
     c.moveTo(s*0.62, 0); c.lineTo(s*0.78, s*0.08); c.lineTo(s*0.58, s*0.1);
     c.closePath(); c.fill();
-    this.wingBlade(c, s*0.02, -s*0.06, -s*0.5, -s*0.9*k - s*0.5, s*0.4);
+    this.wingBlade(c, s*0.02, -s*0.06, -s*0.5 + s*sw*0.18, -s*0.9*k - s*0.5, s*0.4);
     c.restore();
   }
 
@@ -6089,16 +6175,19 @@ class Scene {
      at the wrist, so the span keeps its characteristic kink. */
   paintGullFlight(c, x, y, s, dir, ph, col) {
     const glide = 0.3 + 0.7*Math.max(0, Math.sin(ph*0.11));
-    const k = Math.sin(ph)*glide;
+    const g = gaitPose("beatSlow", ph*TURN);
+    const k = g.beat*glide;
+    const sp = 0.82 + 0.18*g.span, sw = g.sweep*glide;
     c.save();
     c.translate(x, y);
     if (dir < 0) c.scale(-1, 1);
     c.fillStyle = col;
     const A = c.globalAlpha;
     const wing = (rootX, rootY, sc) => {
-      const wrX = rootX + s*0.12*sc, wrY = rootY - s*0.55*sc - s*0.62*k*sc;
+      const wrX = rootX + s*(0.12 + sw*0.12)*sc, wrY = rootY - s*0.55*sc - s*0.62*k*sc;
       this.wingBlade(c, rootX, rootY, wrX, wrY, s*0.34*sc);
-      this.wingBlade(c, wrX, wrY, wrX - s*0.95*sc, wrY - s*0.28*k*sc + s*0.1*sc, s*0.26*sc);
+      this.wingBlade(c, wrX, wrY, wrX - s*0.95*sp*sc + s*sw*0.16*sc,
+        wrY - s*0.28*k*sc + s*0.1*sc, s*0.26*sc);
     };
     c.globalAlpha = A*0.6;
     wing(-s*0.1, -s*0.06, 0.85);
@@ -6117,14 +6206,15 @@ class Scene {
 
   /* A swift — all scythe: slender body, forked tail, wings swept hard back. */
   paintSwiftFlight(c, x, y, s, dir, ph, col) {
-    const k = Math.sin(ph)*0.5 + 0.2;
+    const g = gaitPose("beatWhir", ph*TURN);
+    const k = g.beat*0.5 + 0.2, sw = g.sweep;
     c.save();
     c.translate(x, y);
     if (dir < 0) c.scale(-1, 1);
     c.fillStyle = col;
     const A = c.globalAlpha;
     c.globalAlpha = A*0.6;
-    this.wingBlade(c, 0, -s*0.04, -s*1.05, -s*0.5*k - s*0.55, s*0.22);
+    this.wingBlade(c, 0, -s*0.04, -s*1.05 + s*sw*0.14, -s*0.5*k - s*0.55, s*0.22);
     c.globalAlpha = A;
     c.beginPath(); c.ellipse(s*0.05, 0, s*0.5, s*0.14, 0, 0, Math.PI*2); c.fill();
     c.beginPath();
@@ -6132,14 +6222,15 @@ class Scene {
     c.lineTo(-s*0.75, s*0.14); c.lineTo(-s*0.35, s*0.04);
     c.closePath(); c.fill();
     c.beginPath(); c.arc(s*0.5, -s*0.03, s*0.14, 0, Math.PI*2); c.fill();
-    this.wingBlade(c, s*0.1, -s*0.02, -s*0.85, -s*0.72*k - s*0.62, s*0.26);
+    this.wingBlade(c, s*0.1, -s*0.02, -s*0.85 + s*sw*0.16, -s*0.72*k - s*0.62, s*0.26);
     c.restore();
   }
 
   /* The skylark's song-flight — fluttering almost in place, wings a blur of
      ghosted beats, tail spread beneath. */
   paintLarkFlight(c, x, y, s, ph, col, hovering) {
-    const k = Math.sin(ph);
+    const g = gaitPose("beatWhir", ph*TURN);
+    const k = g.beat;
     c.save();
     c.translate(x, y);
     c.fillStyle = col;
@@ -6164,21 +6255,22 @@ class Scene {
 
   /* A small bird crossing the sky — filled body, beating wing blades. */
   paintSmallBirdFlight(c, x, y, s, dir, ph, col) {
-    const k = Math.sin(ph);
+    const g = gaitPose("beatQuick", ph*TURN);
+    const k = g.beat, sp = 0.7 + 0.3*g.span, sw = g.sweep;
     c.save();
     c.translate(x, y);
     if (dir < 0) c.scale(-1, 1);
     c.fillStyle = col;
     const A = c.globalAlpha;
     c.globalAlpha = A*0.65;
-    this.wingBlade(c, -s*0.05, -s*0.1, -s*0.75, -s*0.8*k - s*0.35, s*0.4);
+    this.wingBlade(c, -s*0.05, -s*0.1, -s*0.75*sp + s*sw*0.16, -s*0.8*k - s*0.35, s*0.4);
     c.globalAlpha = A;
     c.beginPath(); c.ellipse(0, 0, s*0.55, s*0.26, 0, 0, Math.PI*2); c.fill();
     c.beginPath();
     c.moveTo(-s*0.4, -s*0.04); c.lineTo(-s*0.85, s*0.02); c.lineTo(-s*0.4, s*0.12);
     c.closePath(); c.fill();
     c.beginPath(); c.arc(s*0.52, -s*0.08, s*0.2, 0, Math.PI*2); c.fill();
-    this.wingBlade(c, s*0.05, -s*0.08, -s*0.45, -s*0.95*k - s*0.4, s*0.45);
+    this.wingBlade(c, s*0.05, -s*0.08, -s*0.45*sp + s*sw*0.2, -s*0.95*k - s*0.4, s*0.45);
     c.restore();
   }
 

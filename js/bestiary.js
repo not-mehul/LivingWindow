@@ -6,9 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=9";
-import { SPECIES, PSTYLE, ANIM, gaitPose, CRITTER_VOICES, speciesIcon } from "./species.js?v=9";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=9";
+import { Scene } from "./scene.js?v=10";
+import { SPECIES, PSTYLE, ANIM, gaitPose, CRITTER_VOICES, speciesIcon } from "./species.js?v=10";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=10";
 
 /* The gaits are written around a stride of 1 and the cards keep their phases in
    radians, as the scene does; this is the one conversion between the two. */
@@ -94,8 +94,10 @@ function trunk(c, W, H, P, x) {
   c.beginPath(); c.moveTo(x, H + 6); c.lineTo(x + 3, -6); c.stroke();
 }
 
-/* The sing pulse the scene itself uses while a call plays. */
-const pulse = (t) => ANIM.singBase + ANIM.singAmt*Math.abs(Math.sin(t*ANIM.singRate));
+/* The sing pulse the scene itself uses while a call plays: the bill thrown
+   open on the note and held there, from the shared `song` frames. */
+const pulse = (t) =>
+  ANIM.singBase + ANIM.singAmt*gaitPose("song", t*ANIM.singRate*TURN).gape;
 
 /* ---- the card catalogue ---- */
 /* Perched songbirds share one draw, differing only in PSTYLE marks. */
@@ -104,18 +106,19 @@ function perchDraw(id) {
     const ps = PSTYLE[id] || {};
     const s = 30*(ps.sc || 1);
     const cx = W*0.46, gy = H*0.74;
-    let sing = 0, fly = 0, flap = 0, x = cx, y = gy, alpha = 1;
-    let peck = 0, legTuck = 0, stride = 0;
+    let sing = 0, fly = 0, x = cx, y = gy, alpha = 1;
+    let peck = 0, gulp = 0, stride = 0, wing = null, bhop = null;
     if (mode === "sing") sing = pulse(tm);
     if (mode === "forage") {
       // a few steps, then head down to work the turf — the ground routine
       const cyc = tm % 4.2;
       if (cyc < 1.6) {
         if (ps.walks) stride = tm*9;
-        else { legTuck = Math.max(0, Math.sin(tm*11)); y = gy - legTuck*s*0.45; }
+        else { bhop = gaitPose("birdHop", tm*11*TURN); y = gy - Math.max(0, bhop.rise)*s*0.45; }
         x = cx + Math.sin(cyc*1.9)*10;
       } else if (cyc < 3.2) {
-        peck = Math.pow(Math.sin(Math.PI*(((cyc - 1.6)/0.42) % 1)), 0.6);
+        const pk = gaitPose("peck", ((cyc - 1.6)/0.42) % 1);
+        peck = pk.dip; gulp = pk.gulp;
       }
     }
     if (mode === "take off") {
@@ -125,7 +128,7 @@ function perchDraw(id) {
       else {
         const ft = cyc - 1.16;
         fly = Math.min(1, ft/0.14);
-        flap = Math.sin(ft*20);
+        wing = gaitPose("beatQuick", ft*20*TURN);
         y = gy - s*0.16 - (ft*90 + ft*ft*140);
         x = cx + ft*70;
         alpha = Math.max(0, 1 - ft*0.9);
@@ -136,12 +139,14 @@ function perchDraw(id) {
     scene.paintBird(c, {
       x, y, s, flip: false, alpha, color: P.col, rim: P.rim, deep: P.deep, marks: ps,
       plump: ps.plump || 1, tailLen: ps.tail || 1.1, tailUp: !!ps.tailUp,
-      billLen: ps.bill || 0.45, crest: false, sing, peck, legTuck, stride,
+      billLen: ps.bill || 0.45, crest: false, sing, peck, gulp, stride,
+      legTuck: bhop ? bhop.tuck : 0, hopReach: bhop ? bhop.reach : 0,
+      hopTilt: bhop ? bhop.tilt : 0,
       breath: Math.sin(tm*ANIM.breathRate),
       headTurn: Math.sin(tm*ANIM.headRate)*ANIM.headAmt
               + Math.pow(Math.max(0, Math.sin(tm*ANIM.lookRate)), ANIM.lookSharp)*ANIM.lookAmt,
       tailFlick: Math.pow(Math.max(0, Math.sin(tm*ANIM.tailRate)), ANIM.tailSharp),
-      wingSettle: 0, fly, flap, t: tm
+      wingSettle: 0, fly, wing, flap: wing ? wing.beat : 0, t: tm
     });
   };
 }
@@ -162,7 +167,7 @@ const SPECIAL = {
         scene.paintOwl(c, { x, y, s: 26, alpha: Math.max(0, 1 - Math.max(0, ft - 1.1)*0.85),
           color: P.col, rim: P.rim, deep: P.deep, night: 0, t: tm,
           fly: cyc > 0.7 ? Math.min(1, (cyc - 0.7)/0.35) : 0,
-          flap: Math.sin(cyc*8.5), headTurn: 0, blinkPh: 0 });
+          flap: gaitPose("beatSlow", cyc*8.5*TURN).beat, headTurn: 0, blinkPh: 0 });
         return;
       }
       scene.drawPerchFooting(c, W*0.5, gy, 26, "branch", P.bot, 1);
@@ -179,7 +184,8 @@ const SPECIAL = {
         const x = ((tm*90) % (W + 160)) - 80;
         scene.paintCuckoo(c, { x, y: H*0.5, s: 22, flip: false, alpha: 1,
           color: P.col, rim: P.rim, deep: P.deep, t: tm,
-          fly: 1, flap: Math.sin(tm*13) });
+          fly: 1, wing: gaitPose("beatQuick", tm*13*TURN),
+          flap: gaitPose("beatQuick", tm*13*TURN).beat });
         return;
       }
       scene.drawPerchFooting(c, W*0.5, gy, 22, "branch", P.bot, 1);
@@ -201,7 +207,8 @@ const SPECIAL = {
     draw(c, W, H, tm, mode, P) {
       const wy = H*0.58;
       waterBand(c, W, H, P, wy);
-      scene.paintDuck(c, { x: W*0.5, y: wy + 26 + Math.sin(tm*1.3)*1.5, s: 26,
+      scene.paintDuck(c, { x: W*0.5,
+        y: wy + 26 - gaitPose("paddle", tm*1.3*TURN).rock*1.5, s: 26,
         flip: false, alpha: 1, color: P.col, rim: P.rim, deep: P.deep,
         sing: mode === "quack" ? pulse(tm) : 0, breath: 0, t: tm });
     } },
@@ -299,7 +306,7 @@ const SPECIAL = {
         if (cyc < 0.18) y = gy + cyc*30;
         else {
           const u = cyc - 0.18;
-          fly = Math.min(1, u/0.12); flap = Math.sin(cyc*30);
+          fly = Math.min(1, u/0.12); flap = gaitPose("beatQuick", cyc*30*TURN).beat;
           y = gy - (0.24*u + 0.10*u*u)*420;
           x = W*0.52 + (0.05*u + 0.16*u*u)*420;
         }
@@ -313,7 +320,8 @@ const SPECIAL = {
     draw(c, W, H, tm, mode, P) {
       const wy = H*0.6;
       waterBand(c, W, H, P, wy);
-      scene.paintDuck(c, { x: W*0.5, y: wy + 24 + Math.sin(tm*1.3)*1.5, s: 22,
+      scene.paintDuck(c, { x: W*0.5,
+        y: wy + 24 - gaitPose("paddle", tm*1.3*TURN).rock*1.5, s: 22,
         flip: false, alpha: 1, color: P.col, rim: P.rim, deep: P.deep, moorhen: true,
         sing: mode === "call" ? pulse(tm) : 0, breath: 0, t: tm });
     } },
@@ -474,7 +482,7 @@ const CRITTERS = [
       if (mode === "fly") {
         const x = ((tm*45) % (W + 170)) - 85;
         scene.paintHeron(c, { x, y: H*0.42, s: 34, dir: 1, flying: true,
-          flap: Math.sin(tm*3.4), color: P.col, deep: P.deep, t: tm });
+          flap: gaitPose("beatSlow", tm*3.4*TURN).beat, color: P.col, deep: P.deep, t: tm });
         return;
       }
       const pose = { neck: 0.25, strike: 0, gulp: 0, step: 0, preen: 0 };
@@ -567,7 +575,7 @@ const CRITTERS = [
       c.save();
       c.translate(W*0.5, gy); c.scale(3, 3);
       scene.paintSanderling(c, 0, 0, 1, mode === "dash", tm*30, P.col,
-        mode === "probe" ? Math.max(0, Math.sin(tm*7)) : 0);
+        mode === "probe" ? gaitPose("probe", tm*1.1).dip : 0);
       c.restore();
     } },
   { id: "skein", name: "Greylag Skein", latin: "Anser anser",
@@ -584,7 +592,8 @@ const CRITTERS = [
       for (let k = 0; k < 7; k++) {
         const side = k % 2 === 0 ? 1 : -1;
         const rank = Math.ceil(k/2);
-        scene.paintGoose(c, x0/2 - rank*11, H*0.22 + side*rank*7.4, 1, Math.sin(tm*7 + k));
+        scene.paintGoose(c, x0/2 - rank*11, H*0.22 + side*rank*7.4, 1,
+          gaitPose("beatSlow", (tm*7 + k)*TURN).beat);
       }
       c.restore();
     } },
