@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Living Window</title>
-<link rel="icon" href="favicon.svg?v=3" type="image/svg+xml">
-<link rel="stylesheet" href="css/styles.css?v=3">
+<link rel="icon" href="favicon.svg?v=8" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css?v=8">
 </head>
 <body>
 
@@ -30,7 +30,14 @@
 
   <div class="window-frame closed" id="windowFrame">
     <div class="window-inner">
-      <canvas id="scene"></canvas>
+      <!-- Two canvases, one picture. The sky and what hangs in it are painted
+           on #sky by the GPU; the land and everything living on it are drawn
+           over the top on #scene, which is glass. #scene keeps the sizing
+           rules, so the stack takes its height and #sky fills that exactly. -->
+      <div class="scene-stack">
+        <canvas id="sky" aria-hidden="true"></canvas>
+        <canvas id="scene"></canvas>
+      </div>
 
       <!-- The casement itself: two leaves that swing open and shut. -->
       <div class="casement" id="casement" aria-hidden="true">
@@ -83,9 +90,12 @@
   <div class="settings-card" role="dialog" aria-modal="true" aria-label="Settings">
     <div class="settings-head">
       <div class="section-label">The Casement — Conditions</div>
-      <button class="icon-btn" id="settingsClose" aria-label="Close settings">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
-      </button>
+      <div class="settings-head-tools">
+        <a class="btn-link" href="bestiary.html" title="Every creature in the window at close range, with its animations and its voice">The Bestiary<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M9 7h8v8"/></svg></a>
+        <button class="icon-btn" id="settingsClose" aria-label="Close settings">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
     </div>
 
     <div class="switch-row">
@@ -192,6 +202,6 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=3"></script>
+<script type="module" src="js/main.js?v=8"></script>
 </body>
 </html>

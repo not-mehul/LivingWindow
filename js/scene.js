@@ -5,15 +5,32 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=3";
-import { PSTYLE } from "./species.js?v=3";
+} from "./util.js?v=8";
+import { PSTYLE, ANIM } from "./species.js?v=8";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=8";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
+/* A bench, not part of the piece: open the page with ?perf=1 and the window
+   keeps a readout of what each frame costs. What it counts is rasterization
+   submissions — every stroke, fill and blit — because that, and not arithmetic,
+   is what a frame here is made of. Absent the flag nothing below runs at all
+   and the context is left exactly as the browser handed it over. */
+const PERF = typeof location !== "undefined" &&
+  new URLSearchParams(location.search).has("perf");
+
 class Scene {
-  constructor(canvas) {
+  constructor(canvas, skyCanvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext("2d");
+    /* The sky and everything hanging in it is painted by one of two backends —
+       the GPU where there is one, the 2D context where there is not. `onGL`
+       decides whether this canvas must clear itself first or whether it is
+       still the thing painting the sky. See js/sky.js. */
+    this.skyCanvas = skyCanvas || null;
+    this.skyPainter = makeSkyPainter(skyCanvas, this);
+    this.onGL = !(this.skyPainter instanceof Canvas2DSky);
+    if (skyCanvas && !this.onGL) skyCanvas.style.display = "none";
     this.t = 0;
     this.ripples = [];
     this.flyers = [];
@@ -27,6 +44,11 @@ class Scene {
     this.lastHedgehog = -999; this.lastBadger = -999; this.lastOtter = -999;
     this.lastPounce = -999;
     this.timeMix = { dawn: 1, day: 0, dusk: 0, night: 0 };
+    // Outlines of land that never move between reseeds, kept as Path2D and
+    // refilled each frame. Keyed on the shape function that generated them;
+    // emptied by reseed (new land) and by resize (same land, new pixels).
+    this._paths = new Map();
+    if (PERF) this.countOps();
     this.refreshTokens();
     this.reseed(state.seed);
     const ro = new ResizeObserver(() => this.resize());
@@ -89,6 +111,44 @@ class Scene {
     this.tok.fireflyRGB = (fc[0]|0) + "," + (fc[1]|0) + "," + (fc[2]|0);
   }
 
+  /* Shadow the context's drawing calls with counting versions of themselves.
+     Only ever called under ?perf=1 — the allocation each wrapper makes would
+     be its own kind of lie in a frame we are trying to measure, so it is kept
+     off the road entirely rather than switched off inside. */
+  countOps() {
+    this.ops = 0;
+    for (const m of ["stroke", "fill", "fillRect", "strokeRect", "drawImage", "fillText"]) {
+      const orig = this.ctx[m].bind(this.ctx);
+      this.ctx[m] = (...a) => { this.ops++; return orig(...a); };
+    }
+  }
+
+  /* The readout itself, painted last so it sits over the land. Held still for
+     a quarter-second at a time: a number that changes sixty times a second
+     cannot be read, and this one exists to be read. */
+  drawPerf(c, dt) {
+    const ops = this.ops;
+    this._perfT = (this._perfT || 0) + dt;
+    if (this._perfT > 0.25) { this._perfOps = ops; this._perfT = 0; }
+    const lines = [
+      `${(this.frameMs || 0).toFixed(1)} ms · ${(1000/Math.max(0.01, this.frameMs || 16.7)).toFixed(0)} fps`,
+      `${this._perfOps || 0} raster ops/frame`,
+      `dpr ${(this.dpr || 1).toFixed(2)} · quality ${(this.quality || 1).toFixed(2)}`,
+      `${this.canvas.width}×${this.canvas.height} · ${this.loc}`
+    ];
+    c.save();
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    c.globalAlpha = 1;
+    c.font = "11px ui-monospace, SFMono-Regular, Menlo, monospace";
+    c.textBaseline = "top";
+    c.fillStyle = "rgba(0,0,0,0.62)";
+    c.fillRect(8, 8, 190, 12 + lines.length*14);
+    c.fillStyle = "#9fe89f";
+    for (let i = 0; i < lines.length; i++) c.fillText(lines[i], 14, 14 + i*14);
+    c.restore();
+    this.ops = 0;                 // the readout's own ops are not the frame's
+  }
+
   /* A cached radial-glow sprite (colour → transparent), so glows blit with one
      drawImage instead of building a new gradient every frame. */
   glowSprite(rgb) {
@@ -117,6 +177,7 @@ class Scene {
   reseed(seedBase) {
     const loc = state.location;
     const rng = mulberry32((seedBase ^ LOC_HASH[loc]) >>> 0);
+    this._paths.clear();         // fresh ground: every kept outline is stale
     this.loc = loc;
     this.flyers = []; this.ripples = [];
     this.actors = []; this.critters = [];
@@ -549,6 +610,7 @@ class Scene {
     this.W = w; this.H = h;
     this._skyKey = null;         // the sky gradient is keyed on height
     this._fogKey = null;
+    this._paths.clear();         // land outlines are in pixels, and these have changed
   }
 
   /* Watch the frame time and give ground if the browser cannot keep up. Some
@@ -865,7 +927,14 @@ class Scene {
     for (const ph of PHASES) {
       this.timeMix[ph] += ((state.time === ph ? 1 : 0) - this.timeMix[ph]) * k;
     }
+    this.update(dt);
     this.draw(dt);
+    /* New arrivals come after the frame is drawn, which is where they always
+       came, and it is load-bearing rather than incidental: a creature's painter
+       reads values its update pass leaves behind — the fox's crouch, the
+       dragonfly's jitter — so anything spawned before the painting would be
+       drawn a frame before it had ever been stepped, and asked for a pose it
+       does not yet have. */
     this.spawnCritters(dt);
     this.adaptQuality(dt);
     requestAnimationFrame(this._frame);
@@ -893,25 +962,28 @@ class Scene {
   draw(dt) {
     const c = this.ctx, W = this.W, H = this.H;
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    // No clearRect: the sky gradient is opaque and covers the whole canvas.
 
     const [top, bot] = this.skyColors();
     const night = this.nightness();
 
-    // Rebuild the sky gradient only when the colours (or size) actually change —
-    // constant in steady state, so no gradient is allocated most frames.
-    const key = (top[0]|0)+","+(top[1]|0)+","+(top[2]|0)+"|"+(bot[0]|0)+","+(bot[1]|0)+","+(bot[2]|0)+"|"+(H|0);
-    if (key !== this._skyKey) {
-      const g = c.createLinearGradient(0, 0, 0, H);
-      g.addColorStop(0, css(top));
-      g.addColorStop(1, css(bot));
-      this._skyGrad = g; this._skyKey = key;
+    /* A lost GL context drops us back to painting the sky here, mid-session.
+       Do it before anything is drawn, so the swap costs at worst one frame. */
+    if (this.onGL && !this.skyPainter.ok) {
+      this.skyPainter = new Canvas2DSky(this);
+      this.onGL = false;
+      if (this.skyCanvas) this.skyCanvas.style.display = "none";
+      this._skyKey = null;
     }
-    c.fillStyle = this._skyGrad;
-    c.fillRect(0, 0, W, H);
+    // With the sky on the layer beneath, this canvas is glass: it has to be
+    // wiped each frame. Painting its own sky, the opaque gradient is the wipe.
+    if (this.onGL) c.clearRect(0, 0, W, H);
 
-    this.drawCelestial(c, W, H, top, night, dt);
-    this.drawClouds(c, W, H, dt, night);
+    const p = this.skyPainter;
+    p.begin(W, H, this.dpr);
+    p.sky(top, bot);
+    this.drawCelestial(p, W, H, top, night);
+    this.drawClouds(p, W, H, night);
+    p.end();
 
     switch (this.loc) {
       case "meadow": this.drawMeadow(c, W, H, dt, bot); break;
@@ -921,33 +993,102 @@ class Scene {
       case "city": this.drawCity(c, W, H, dt, bot, night); break;
     }
 
-    this.drawActors(c, W, H, dt, bot, night);
-    this.drawCritters(c, W, H, dt, bot, night);
-    this.drawFlyers(c, W, H, dt, bot);
+    this.drawActors(c, W, H, bot, night);
+    this.drawCritters(c, W, H, bot, night);
+    this.drawFlyers(c, W, H, bot);
     this.drawForeground(c, W, H, dt, bot);   // the near edge, over everything living
-    this.drawFireflies(c, W, H, dt, night);
-    this.drawWeather(c, W, H, dt, night);
-    this.drawRipples(c, W, H, dt);
+    this.drawFireflies(c, W, H, night);
+    this.drawWeather(c, W, H, night);
+    this.drawRipples(c, W, H);
+    if (PERF) this.drawPerf(c, dt);
   }
 
-  drawCelestial(c, W, H, top, night, dt) {
+  /* Everything that moves, moved — and nothing drawn.
+
+     The order here is not a matter of taste. Eight of these consume the shared
+     Math.random stream, and the critters spawn from it too, so the sequence has
+     to be the one the painting used to reach them in. Shuffle two of these lines
+     and the same seed grows a different set of animals.
+
+     Spawning is not here: it runs from frame(), after the painting, for the
+     reason given there. So this is everything that *moves*, not everything that
+     happens — worth knowing before hanging a fixed timestep off it. */
+  update(dt) {
+    const night = this.nightness();
+    this.updateCelestial(dt);
+    this.updateClouds(dt);
+    this.updateLocation(dt, night);
+    this.updateActors(dt);
+    this.updateCritters(dt);
+    this.updateFlyers(dt);
+    this.updateFireflies(dt, night);
+    this.updateWeather(dt);
+    this.updateRipples(dt);
+  }
+
+  /* Each place keeps its own weather of moving parts, and each is stepped in the
+     order its painter used to reach them — the cattle before the motes in the
+     meadow, the foam before the sand it wets on the shore. */
+  updateLocation(dt, night) {
+    switch (this.loc) {
+      case "meadow":
+        this.updateSkyBirds(dt); this.updateCattle(dt); this.updateMotes(dt);
+        break;
+      case "forest":
+        this.updateDapples(dt); this.updateMotes(dt); this.updateFallingLeaves(dt);
+        break;
+      case "beach":
+        this.updateSkyBirds(dt); this.updateFoam(dt); this.updateWetSand(dt);
+        break;
+      case "wetland":
+        this.updateSkyBirds(dt); this.updateFishRings(dt);
+        this.updateWaterMist(dt); this.updateMotes(dt);
+        break;
+      case "city":
+        this.updateSkyBirds(dt); this.updateCityWindows(dt, night);
+        break;
+    }
+  }
+
+  /* Shooting stars only ever ran while the moon was up — the loop sat inside the
+     test for whether to draw the moon at all — so the same gate stands here. */
+  updateCelestial(dt) {
+    const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
+    if (m.night / total <= 0.03) return;
+    for (let i = this.meteors.length - 1; i >= 0; i--) {
+      const mt = this.meteors[i];
+      mt.age += dt; mt.x += mt.vx*dt; mt.y += mt.vy*dt;
+      if (mt.age > mt.life) { this.meteors.splice(i, 1); continue; }
+    }
+  }
+
+  updateClouds(dt) {
+    const wf = state.weather === "breeze" ? 3 : 1;
+    for (const cl of this.clouds) {
+      const near = Math.max(0, Math.min(1, (cl.w - 0.16)/0.22));
+      cl.x += cl.s * dt * wf * (0.5 + near);
+      if (cl.x > 1.3) cl.x = -0.3;
+    }
+  }
+
+  /* `p` is a sky painter, not the 2D context: the same calls go to the GPU or
+     back onto the canvas depending on what the machine can offer. The shapes
+     and their order are written once, here, so both roads lead to one picture. */
+  drawCelestial(p, W, H, top, night) {
     // Stars, brightening as the light fails.
     if (night > 0.05 && this.stars) {
-      c.fillStyle = `rgb(${this.tok.cloudRGB})`;   // one colour; vary alpha per star
+      const rgb = this.tok.cloudRGB;              // one colour; vary alpha per star
       for (const st of this.stars) {
         const tw = 0.55 + 0.45*Math.sin(this.t*st.tw + st.ph);
         const a = (st.bright ? 0.6 : 0.34) * night * tw;
         if (a < 0.03) continue;
         const sx = st.x*W, sy = st.y*H, r = st.r*(st.bright ? 1.5 : 1);
-        c.globalAlpha = a;
-        c.fillRect(sx, sy, r, r);
+        p.rect(rgb, sx, sy, r, r, a);
         if (st.bright) {
-          c.globalAlpha = a*0.45;
-          c.fillRect(sx - r, sy + r*0.3, r*3, r*0.5);
-          c.fillRect(sx + r*0.3, sy - r, r*0.5, r*3);
+          p.rect(rgb, sx - r, sy + r*0.3, r*3, r*0.5, a*0.45);
+          p.rect(rgb, sx + r*0.3, sy - r, r*0.5, r*3, a*0.45);
         }
       }
-      c.globalAlpha = 1;
     }
     const breathe = 0.86 + 0.14*Math.sin(this.t*0.28);   // a slow living glow
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
@@ -957,50 +1098,36 @@ class Scene {
       const sx = W * (0.22*m.dawn + 0.5*m.day + 0.8*m.dusk) / denom;
       const sy = H * (0.42*m.dawn + 0.16*m.day + 0.46*m.dusk) / denom;
       const rr = Math.min(W,H)*0.05;
-      this.drawGlow(c, this.tok.amberRGB, sx, sy, rr*5, rr*5, 0.30*sunA*breathe);
-      const sc = this.tok.sun.slice(); sc[3] = sunA;
-      c.fillStyle = css(sc);
-      c.beginPath(); c.arc(sx, sy, rr, 0, Math.PI*2); c.fill();
+      p.glow(this.tok.amberRGB, sx, sy, rr*5, rr*5, 0.30*sunA*breathe);
+      p.disc(this.tok.sun, sx, sy, rr, sunA);
       this.celX = sx / W;
     }
     const moonA = m.night / total;
     if (moonA > 0.03) {
       const mx = W*0.72, my = H*0.2, rr = Math.min(W,H)*0.04;
-      this.drawGlow(c, this.tok.cloudRGB, mx, my, rr*6, rr*6, 0.12*moonA*breathe);
-      const mc = this.tok.moon.slice(); mc[3] = moonA;
-      c.fillStyle = css(mc);
-      c.beginPath(); c.arc(mx, my, rr, 0, Math.PI*2); c.fill();
-      c.fillStyle = css(mix(top, this.tok.moon, 0.08).slice(0,3).concat([moonA]));
-      c.beginPath(); c.arc(mx - rr*0.42, my - rr*0.18, rr*0.85, 0, Math.PI*2); c.fill();
+      p.glow(this.tok.cloudRGB, mx, my, rr*6, rr*6, 0.12*moonA*breathe);
+      p.disc(this.tok.moon, mx, my, rr, moonA);
+      p.disc(mix(top, this.tok.moon, 0.08), mx - rr*0.42, my - rr*0.18, rr*0.85, moonA);
       // shooting stars
       for (let i = this.meteors.length - 1; i >= 0; i--) {
         const mt = this.meteors[i];
-        mt.age += dt; mt.x += mt.vx*dt; mt.y += mt.vy*dt;
-        if (mt.age > mt.life) { this.meteors.splice(i, 1); continue; }
         const al = (1 - mt.age/mt.life) * 0.7 * moonA;
-        c.strokeStyle = `rgba(${this.tok.cloudRGB}, ${al})`;
-        c.lineWidth = 1.2;
-        c.beginPath();
-        c.moveTo(mt.x*W, mt.y*H);
-        c.lineTo((mt.x - mt.vx*0.10)*W, (mt.y - mt.vy*0.10)*H);
-        c.stroke();
+        p.seg(this.tok.cloudRGB, mt.x*W, mt.y*H,
+          (mt.x - mt.vx*0.10)*W, (mt.y - mt.vy*0.10)*H, 1.2, al);
       }
       this.celX = mx / W;
     }
   }
 
-  drawClouds(c, W, H, dt, night) {
+  drawClouds(p, W, H, night) {
     const rgb = this.tok.cloudRGB;
-    const wf = state.weather === "breeze" ? 3 : 1;
     const af = (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
     for (const cl of this.clouds) {
       // Big clouds are near ones: they cross faster and hold their colour,
       // while the small far ones hang almost still and pale away.
       const near = Math.max(0, Math.min(1, (cl.w - 0.16)/0.22));
-      cl.x += cl.s * dt * wf * (0.5 + near);
-      if (cl.x > 1.3) cl.x = -0.3;
       const cw = cl.w * W;
-      this.drawGlow(c, rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af * (0.62 + near*0.5));
+      p.glow(rgb, cl.x*W, cl.y*H, cw, cw*0.35, cl.a * af * (0.62 + near*0.5));
     }
   }
 
@@ -1008,40 +1135,59 @@ class Scene {
     return state.weather === "breeze" ? 1 : (state.weather === "rain" ? 0.5 : 0.25);
   }
 
+  /* A hundred and ten blades of grass in one colour and one width. Stroked
+     one at a time that is a hundred and ten separate rasterizations; gathered
+     into a single path it is one, for the same picture. The rain has always
+     been drawn this way (see drawWeather) — everything that shares a pen
+     should be. */
   drawGrassTufts(c, W, H, grass, baseYfn, color) {
     c.strokeStyle = color;
     c.lineWidth = 1;
     const wa = this.windAmt();
+    c.beginPath();
     for (const gr of grass) {
       const gx = gr.x * W;
       const gy = baseYfn(gr.x) * H;
       const sway = Math.sin(this.t*1.8 + gr.ph) * 6 * wa * this.windWave(gr.x) + gr.lean*4;
-      c.beginPath();
       c.moveTo(gx, gy + 4);
       c.quadraticCurveTo(gx + sway*0.4, gy - gr.h*H*0.6, gx + sway, gy - gr.h*H);
-      c.stroke();
     }
+    c.stroke();
   }
 
+  /* A ridge is sixty-one points of summed sine, and not one of them moves from
+     one frame to the next — only the light on it does, as the hour turns. So
+     the outline is built once and kept, and each frame only asks for it to be
+     filled again in whatever colour the hour has reached. */
   drawRidge(c, fn, color, W, H) {
+    let p = this._paths.get(fn);
+    if (!p) {
+      p = new Path2D();
+      p.moveTo(0, H);
+      const n = 60;
+      for (let i = 0; i <= n; i++) p.lineTo((i/n)*W, fn(i/n)*H);
+      p.lineTo(W, H);
+      p.closePath();
+      this._paths.set(fn, p);
+    }
     c.fillStyle = css(color);
-    c.beginPath();
-    c.moveTo(0, H);
-    const n = 60;
-    for (let i = 0; i <= n; i++) c.lineTo((i/n)*W, fn(i/n)*H);
-    c.lineTo(W, H);
-    c.closePath();
-    c.fill();
+    c.fill(p);
   }
 
   /* Far-off birds adrift in the upper sky — a couple of quiet wingbeats. */
-  drawSkyBirds(c, W, H, dt, bot, night) {
+  updateSkyBirds(dt) {
+    if (!this.skyBirds) return;
+    for (const b of this.skyBirds) {
+      b.x += b.sp*dt; b.ph += dt*4;
+      if (b.x > 1.15) b.x -= 1.3; else if (b.x < -0.15) b.x += 1.3;
+    }
+  }
+
+  drawSkyBirds(c, W, H, bot, night) {
     if (!this.skyBirds) return;
     const col = css(mix(this.tok.ink, bot, 0.45));
     c.strokeStyle = col; c.lineCap = "round"; c.lineWidth = 1.1;
     for (const b of this.skyBirds) {
-      b.x += b.sp*dt; b.ph += dt*4;
-      if (b.x > 1.15) b.x -= 1.3; else if (b.x < -0.15) b.x += 1.3;
       const a = 0.5 * (1 - night*0.7);
       if (a < 0.04) continue;
       const px = b.x*W, py = (b.y + Math.sin(b.ph*0.3)*0.004)*H, s = b.size;
@@ -1233,10 +1379,8 @@ class Scene {
      more than any detail: deep straight back, square rump, brisket low and
      forward, head down in the grass most of the time. They stand in ones and
      twos, swing a tail at flies, and lift their heads now and then. */
-  drawCattle(c, W, H, dt, baseFn, bot) {
+  updateCattle(dt) {
     if (!this.cattle || !this.cattle.length) return;
-    const col = css(mix(this.tok.ink, bot, 0.30));
-    const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
     for (const cw of this.cattle) {
       cw.next -= dt;
       if (cw.next <= 0) {                       // up for a look, or back down to it
@@ -1244,6 +1388,14 @@ class Scene {
         cw.next = cw.head ? 8 + Math.random()*16 : 4 + Math.random()*9;
       }
       cw.hd = (cw.hd === undefined) ? cw.head : cw.hd + (cw.head - cw.hd)*Math.min(1, dt*1.4);
+    }
+  }
+
+  drawCattle(c, W, H, baseFn, bot) {
+    if (!this.cattle || !this.cattle.length) return;
+    const col = css(mix(this.tok.ink, bot, 0.30));
+    const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
+    for (const cw of this.cattle) {
       const s = Math.min(W, H)*0.026*cw.sz;
       this.cowShape(c, cw.x*W, baseFn(cw.x)*H, s, cw.dir, cw.hd, col,
         cw.ph > 2.4 ? pale : null, Math.sin(this.t*1.7 + cw.ph));
@@ -1311,16 +1463,25 @@ class Scene {
   }
 
   /* Slow motes of pollen or dust adrift in the daytime air. */
-  drawMotes(c, W, H, dt, dayish) {
+  /* Motes hang still in the dark. The old code reached its return before it
+     reached the drift, which made that behaviour rather than an optimization. */
+  updateMotes(dt) {
     if (!this.motes) return;
-    const a0 = dayish*0.55;
-    if (a0 < 0.03) return;
-    c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+    if (this.dayness()*0.55 < 0.03) return;
     for (const m of this.motes) {
       m.y -= m.sp*dt;
       m.x += (m.drift + Math.sin(this.t*0.3 + m.ph)*0.006)*dt;
       if (m.y < 0.24) { m.y = 0.96; m.x = Math.random(); }
       else if (m.x < -0.02) m.x = 1.02; else if (m.x > 1.02) m.x = -0.02;
+    }
+  }
+
+  drawMotes(c, W, H, dayish) {
+    if (!this.motes) return;
+    const a0 = dayish*0.55;
+    if (a0 < 0.03) return;
+    c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+    for (const m of this.motes) {
       const tw = 0.5 + 0.5*Math.sin(this.t*0.8 + m.ph);
       const a = a0*tw*0.5;
       if (a < 0.02) continue;
@@ -1390,30 +1551,45 @@ class Scene {
 
     c.strokeStyle = near; c.fillStyle = near;
     c.lineCap = "round";
+    // Three pens, so three passes: the stalks, the fronds, the seed heads.
+    // Drawn plant by plant this alternated pen every few strokes and paid for
+    // a rasterization each time; drawn pen by pen it is three.
+    const fgSway = (g) => Math.sin(this.t*1.5 + g.ph)*11*wa*this.windWave(g.x) + g.lean*7;
+
+    c.lineWidth = Math.max(2, mn*0.009);
+    c.beginPath();
     for (const g of this.fg) {
-      const gx = g.x*W, gy = H + 4, len = g.h*H;
-      const sway = Math.sin(this.t*1.5 + g.ph)*11*wa*this.windWave(g.x) + g.lean*7;
-      c.lineWidth = Math.max(2, mn*0.009);
-      c.beginPath();
+      const gx = g.x*W, gy = H + 4, len = g.h*H, sway = fgSway(g);
       c.moveTo(gx, gy);
       c.quadraticCurveTo(gx + sway*0.4, gy - len*0.6, gx + sway, gy - len);
-      c.stroke();
-      if (g.blades) {                       // a near fern, fronds and all
-        c.lineWidth = Math.max(1, mn*0.004);
-        for (let k = 1; k <= g.blades; k++) {
-          const t2 = k/(g.blades + 1);
-          const bx = gx + sway*t2, by = gy - len*t2, bl = len*0.3*(1 - t2*0.5);
-          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5); c.stroke();
-          c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5); c.stroke();
-        }
-      } else if (g.head) {                  // a seed head, heavy at the tip
-        c.save();
-        c.translate(gx + sway, gy - len);
-        c.rotate(sway*0.012);
-        c.beginPath(); c.ellipse(0, mn*0.008, mn*0.006, mn*0.022, 0, 0, Math.PI*2); c.fill();
-        c.restore();
+    }
+    c.stroke();
+
+    c.lineWidth = Math.max(1, mn*0.004);
+    c.beginPath();
+    for (const g of this.fg) {
+      if (!g.blades) continue;              // a near fern, fronds and all
+      const gx = g.x*W, gy = H + 4, len = g.h*H, sway = fgSway(g);
+      for (let k = 1; k <= g.blades; k++) {
+        const t2 = k/(g.blades + 1);
+        const bx = gx + sway*t2, by = gy - len*t2, bl = len*0.3*(1 - t2*0.5);
+        c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5);
+        c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5);
       }
     }
+    c.stroke();
+
+    c.beginPath();
+    for (const g of this.fg) {
+      if (g.blades || !g.head) continue;    // a seed head, heavy at the tip
+      const gx = g.x*W, gy = H + 4, len = g.h*H, sway = fgSway(g);
+      const th = sway*0.012, sn = Math.sin(th), cs = Math.cos(th);
+      const ox = mn*0.008, rx = mn*0.006, ry = mn*0.022;
+      const cx = gx + sway - ox*sn, cy = gy - len + ox*cs;
+      c.moveTo(cx + rx*cs, cy + rx*sn);
+      c.ellipse(cx, cy, rx, ry, th, 0, Math.PI*2);
+    }
+    c.fill();
   }
 
   /* The air itself, thickening with distance: a soft band of haze lying
@@ -1445,11 +1621,11 @@ class Scene {
   }
 
   drawMeadow(c, W, H, dt, bot) {
-    this.drawSkyBirds(c, W, H, dt, bot, this.nightness());
+    this.drawSkyBirds(c, W, H, bot, this.nightness());
     this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.45), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.38));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
-    this.drawCattle(c, W, H, dt, this.hillA, bot);
+    this.drawCattle(c, W, H, this.hillA, bot);
     this.distanceHaze(c, W, H, 0.52, 0.82, 0.075*(1 - this.nightness()*0.55));
     this.drawHedgerow(c, W, H, this.hedgeLine, bot);
     this.drawRidge(c, this.hillB, mix(this.tok.ink, bot, 0.18), W, H);
@@ -1496,22 +1672,33 @@ class Scene {
     }
     this.drawFlowers(c, W, H, groundYn, bot);
     this.drawGrassTufts(c, W, H, this.grass, groundYn, css(mix(this.tok.inkDeep, bot, 0.10)));
-    this.drawMotes(c, W, H, dt, this.dayness());
+    this.drawMotes(c, W, H, this.dayness());
   }
 
+  /* Stems first, all of them in one path: they share a colour and a width, and
+     the colour is opaque, so gathering them changes nothing but the number of
+     times the rasterizer is asked. The heads cannot join them — they are drawn
+     at 0.82, and two translucent petals that overlap must darken each other,
+     which only happens if each is laid down in its own turn. */
   drawFlowers(c, W, H, baseYfn, bot) {
     if (!this.flowers) return;
     const wa = this.windAmt();
     c.lineWidth = 1;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.16));   // stems share one colour
+    c.beginPath();
     for (const f of this.flowers) {
       const gx = f.x*W, gy = baseYfn(f.x)*H;
       const sway = Math.sin(this.t*1.6 + f.ph)*5*wa*this.windWave(f.x);
-      const tx = gx + sway, ty = gy - f.h*H;
-      c.beginPath(); c.moveTo(gx, gy + 3); c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, tx, ty); c.stroke();
+      c.moveTo(gx, gy + 3);
+      c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, gx + sway, gy - f.h*H);
+    }
+    c.stroke();
+    for (const f of this.flowers) {
+      const gx = f.x*W, gy = baseYfn(f.x)*H;
+      const sway = Math.sin(this.t*1.6 + f.ph)*5*wa*this.windWave(f.x);
       const rgb = f.tone < 0.4 ? this.tok.amberRGB : f.tone < 0.72 ? this.tok.sageRGB : this.tok.cloudRGB;
       c.fillStyle = `rgba(${rgb}, 0.82)`;
-      c.beginPath(); c.arc(tx, ty, Math.max(1.3, f.h*H*0.11), 0, Math.PI*2); c.fill();
+      c.beginPath(); c.arc(gx + sway, gy - f.h*H, Math.max(1.3, f.h*H*0.11), 0, Math.PI*2); c.fill();
     }
   }
 
@@ -1564,26 +1751,36 @@ class Scene {
     for (const tr of this.trunksNear) drawTrunk(tr, nearCol);
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
     c.fillRect(0, H*0.93, W, H*0.07);
-    this.drawDapples(c, W, H, dt, gust);
+    this.drawDapples(c, W, H, gust);
     this.drawFerns(c, W, H, bot);
     this.drawMushrooms(c, W, H, bot);
     this.drawGrassTufts(c, W, H, this.grass, () => 0.93,
       css(mix(this.tok.inkDeep, bot, 0.12)));
-    this.drawMotes(c, W, H, dt, this.dayness());
-    this.drawFallingLeaves(c, W, H, dt, bot);
+    this.drawMotes(c, W, H, this.dayness());
+    this.drawFallingLeaves(c, W, H, bot);
   }
 
   /* Light through the canopy, pooled on the floor. It slides with the gust
      the crowns are answering, so the light and the trees move together. */
-  drawDapples(c, W, H, dt, gust) {
+  /* The dapples stand still in a dull wood. That is the old behaviour — the
+     drift sat behind the same test that decided whether to paint at all — and
+     it has to be kept now the two are apart. */
+  updateDapples(dt) {
+    if (!this.dapples) return;
+    if (this.dayness() < 0.12) return;
+    for (const d of this.dapples) {
+      d.x += d.sp*dt;
+      if (d.x > 1.08) d.x -= 1.16;
+    }
+  }
+
+  drawDapples(c, W, H, gust) {
     if (!this.dapples) return;
     const day = this.dayness();
     if (day < 0.12) return;
     const mn = Math.min(W, H);
     c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
     for (const d of this.dapples) {
-      d.x += d.sp*dt;
-      if (d.x > 1.08) d.x -= 1.16;
       const tw = 0.55 + 0.45*Math.sin(this.t*d.tw + d.ph);
       const a = day*0.085*tw;
       if (a < 0.01) continue;
@@ -1596,23 +1793,36 @@ class Scene {
     c.globalAlpha = 1;
   }
 
+  /* Sixteen ferns, each a midrib and a fan of fronds, came to something like
+     a hundred and seventy strokes a frame. There are only two pens in the
+     whole thicket — a thick one for the ribs and a thin one for the fronds —
+     so it is two passes and two strokes, in the order the pens change. */
   drawFerns(c, W, H, bot) {
     if (!this.ferns) return;
     const wa = this.windAmt();
+    const sway = (f) => Math.sin(this.t*1.4 + f.x*10)*4*wa*this.windWave(f.x) + f.lean*6;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.13)); c.lineCap = "round";
+
+    c.lineWidth = 1.5;
+    c.beginPath();
     for (const f of this.ferns) {
-      const gx = f.x*W, gy = 0.93*H, len = f.size*H;
-      const sway = Math.sin(this.t*1.4 + f.x*10)*4*wa*this.windWave(f.x) + f.lean*6;
-      c.lineWidth = 1.5;
-      c.beginPath(); c.moveTo(gx, gy + 3);
-      c.quadraticCurveTo(gx + sway*0.5, gy - len*0.5, gx + sway, gy - len); c.stroke();
-      c.lineWidth = 1;
+      const gx = f.x*W, gy = 0.93*H, len = f.size*H, sw = sway(f);
+      c.moveTo(gx, gy + 3);
+      c.quadraticCurveTo(gx + sw*0.5, gy - len*0.5, gx + sw, gy - len);
+    }
+    c.stroke();
+
+    c.lineWidth = 1;
+    c.beginPath();
+    for (const f of this.ferns) {
+      const gx = f.x*W, gy = 0.93*H, len = f.size*H, sw = sway(f);
       for (let i = 1; i <= f.blades; i++) {
-        const t = i/(f.blades + 1), bx = gx + sway*t, by = gy - len*t, bl = len*0.28*(1 - t*0.5);
-        c.beginPath(); c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5); c.stroke();
-        c.beginPath(); c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5); c.stroke();
+        const t = i/(f.blades + 1), bx = gx + sw*t, by = gy - len*t, bl = len*0.28*(1 - t*0.5);
+        c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5);
+        c.moveTo(bx, by); c.lineTo(bx + bl, by - bl*0.5);
       }
     }
+    c.stroke();
   }
 
   drawMushrooms(c, W, H, bot) {
@@ -1630,14 +1840,20 @@ class Scene {
     }
   }
 
-  drawFallingLeaves(c, W, H, dt, bot) {
+  updateFallingLeaves(dt) {
     if (!this.leaves) return;
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.18));
     for (const l of this.leaves) {
       l.y += l.sp*dt;
       l.x += (l.drift + Math.sin(this.t*1.2 + l.ph)*0.02)*dt;
       l.rot += dt*1.6;
       if (l.y > 0.96) { l.y = 0.28 + Math.random()*0.12; l.x = Math.random(); }
+    }
+  }
+
+  drawFallingLeaves(c, W, H, bot) {
+    if (!this.leaves) return;
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.18));
+    for (const l of this.leaves) {
       c.save(); c.translate(l.x*W, l.y*H); c.rotate(l.rot);
       c.beginPath(); c.ellipse(0, 0, 3.2, 1.4, 0, 0, Math.PI*2); c.fill();
       c.restore();
@@ -1645,7 +1861,7 @@ class Scene {
   }
 
   drawBeach(c, W, H, dt, top, bot, night) {
-    this.drawSkyBirds(c, W, H, dt, bot, night);
+    this.drawSkyBirds(c, W, H, bot, night);
     const hy = this.horizonY * H, sy = this.shoreY * H;
     const sg = c.createLinearGradient(0, hy, 0, sy);
     sg.addColorStop(0, css(mix(this.tok.sea, top, 0.40)));
@@ -1676,8 +1892,6 @@ class Scene {
       c.fillRect(lx - W*0.03, hy, W*0.06, sy - hy);
     }
     for (const f of this.foam) {
-      f.p += dt / 10;
-      if (f.p > 1) f.p -= 1;
       const ease = f.p * f.p;
       const fy = hy + (sy - hy) * (0.12 + 0.88 * ease);
       const alpha = Math.sin(Math.PI * Math.min(1, f.p*1.1)) * 0.4;
@@ -1700,7 +1914,7 @@ class Scene {
     c.fillRect(0, sy, W, H - sy);
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.10)`;
     c.fillRect(0, sy, W, 3);
-    this.drawWetSand(c, W, H, dt, top, bot, night);
+    this.drawWetSand(c, W, H, top, bot, night);
     // pebbles and the odd shell strewn along the tide line
     for (const pb of (this.pebbles || [])) {
       const r = pb.r*Math.min(W, H);
@@ -1732,12 +1946,21 @@ class Scene {
       css(mix(this.tok.inkDeep, bot, 0.18)));
   }
 
-  /* The sand the sea has just been over. It runs up the beach behind each
-     wave and drains slowly back, and while it is wet it holds the light —
-     the sky, the sun, and a smear of whatever is standing on it. */
-  drawWetSand(c, W, H, dt, top, bot, night) {
-    const sy = this.shoreY;
-    // the wave's reach, chasing up quickly and draining away slowly
+  updateFoam(dt) {
+    if (!this.foam) return;
+    for (const f of this.foam) {
+      f.p += dt / 10;
+      if (f.p > 1) f.p -= 1;
+    }
+  }
+
+  /* How far up the sand the last wave reached, chasing up quickly and draining
+     away slowly. This reads the foam, so it must run after updateFoam — and
+     unlike the mist and the motes it is *not* gated: the old code reached its
+     `this.wet < 0.004` return only after the accumulation, so the sand goes on
+     drying whether or not there is anything left to draw. */
+  updateWetSand(dt) {
+    if (!this.foam) return;
     let reach = 0;
     for (const f of this.foam) {
       const ease = f.p*f.p;
@@ -1745,6 +1968,38 @@ class Scene {
     }
     const target = reach*0.14;
     this.wet += (target - this.wet) * Math.min(1, dt*(target > this.wet ? 3.2 : 0.5));
+  }
+
+  updateFishRings(dt) {
+    for (let i = this.fishRings.length - 1; i >= 0; i--) {
+      const fr = this.fishRings[i];
+      fr.age += dt;
+      if (fr.age > 1.6) { this.fishRings.splice(i, 1); continue; }
+    }
+  }
+
+  /* Lights only come on and go off after dark, which is where the old loop sat:
+     inside the test for whether to draw any lit windows at all. */
+  updateCityWindows(dt, night) {
+    if (night <= 0.12 || !this.frontBlocks) return;
+    for (const b of this.frontBlocks) {
+      for (const wnd of b.lit) {
+        wnd.next -= dt;
+        if (wnd.next <= 0) {
+          wnd.on = !wnd.on;
+          wnd.next = (wnd.on ? 45 : 25) + Math.random()*150;
+          wnd.fade = 0;
+        }
+        wnd.fade = Math.min(1, (wnd.fade === undefined ? 1 : wnd.fade) + dt*0.7);
+      }
+    }
+  }
+
+  /* The sand the sea has just been over. It runs up the beach behind each
+     wave and drains slowly back, and while it is wet it holds the light —
+     the sky, the sun, and a smear of whatever is standing on it. */
+  drawWetSand(c, W, H, top, bot, night) {
+    const sy = this.shoreY;
     if (this.wet < 0.004) return;
     const y0 = sy*H, y1 = (sy + this.wet)*H;
 
@@ -1795,7 +2050,7 @@ class Scene {
   }
 
   drawWetland(c, W, H, dt, top, bot, night) {
-    this.drawSkyBirds(c, W, H, dt, bot, night);
+    this.drawSkyBirds(c, W, H, bot, night);
     this.drawRidge(c, this.treeline, mix(this.tok.ink, bot, 0.42), W, H);
     const farTree = css(mix(this.tok.ink, bot, 0.36));
     for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
@@ -1853,8 +2108,6 @@ class Scene {
     // fish rises
     for (let i = this.fishRings.length - 1; i >= 0; i--) {
       const fr = this.fishRings[i];
-      fr.age += dt;
-      if (fr.age > 1.6) { this.fishRings.splice(i, 1); continue; }
       const p = fr.age / 1.6;
       c.strokeStyle = `rgba(${this.tok.foamRGB}, ${(1-p)*0.35})`;
       c.lineWidth = 1;
@@ -1866,7 +2119,7 @@ class Scene {
         c.beginPath(); c.arc(fr.x*W, fr.y*H, 2, 0, Math.PI*2); c.fill();
       }
     }
-    this.drawWaterMist(c, W, H, dt, night);
+    this.drawWaterMist(c, W, H, night);
     c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.15));
     c.beginPath();
     c.moveTo(0, H); c.lineTo(0, by);
@@ -1875,23 +2128,31 @@ class Scene {
     const wa = this.windAmt();
     const reedCol = css(mix(this.tok.inkDeep, bot, 0.10));
     c.strokeStyle = reedCol; c.fillStyle = reedCol; c.lineWidth = 1.3;
+    const reedSway = (r) => Math.sin(this.t*1.3 + r.ph) * 7 * wa * this.windWave(r.x) + r.lean*5;
+    // Forty-two stems in one pen: one path, one stroke.
+    c.beginPath();
     for (const r of this.reeds) {
-      const rx = r.x * W;
-      const sway = Math.sin(this.t*1.3 + r.ph) * 7 * wa * this.windWave(r.x) + r.lean*5;
-      const topX = rx + sway, topY = by - r.h*H;
-      c.beginPath();
+      const rx = r.x * W, sway = reedSway(r);
       c.moveTo(rx, by + 3);
-      c.quadraticCurveTo(rx + sway*0.35, by - r.h*H*0.55, topX, topY);
-      c.stroke();
-      if (r.head) {
-        c.save();
-        c.translate(topX, topY);
-        c.rotate(sway * 0.01);
-        c.beginPath(); c.ellipse(0, 2, 2, 7, 0, 0, Math.PI*2); c.fill();
-        c.restore();
-      }
+      c.quadraticCurveTo(rx + sway*0.35, by - r.h*H*0.55, rx + sway, by - r.h*H);
     }
-    this.drawMotes(c, W, H, dt, this.dayness());
+    c.stroke();
+    // The seed heads used to each take a save/translate/rotate. An ellipse can
+    // carry its own rotation, so the tilt goes into the arc itself and the
+    // offset that the rotation used to carry is applied by hand: (0, 2) turned
+    // through the same angle. Same heads, one fill.
+    c.beginPath();
+    for (const r of this.reeds) {
+      if (!r.head) continue;
+      const sway = reedSway(r), th = sway * 0.01;
+      const sn = Math.sin(th), cs = Math.cos(th);
+      // where translate(topX, topY) → rotate(th) → ellipse(0, 2, …) puts the centre
+      const cx = r.x*W + sway - 2*sn, cy = by - r.h*H + 2*cs;
+      c.moveTo(cx + 2*cs, cy + 2*sn);   // the arc's own start, or it joins the last head
+      c.ellipse(cx, cy, 2, 7, th, 0, Math.PI*2);
+    }
+    c.fill();
+    this.drawMotes(c, W, H, this.dayness());
   }
 
   /* The far bank, upside down in the water below it: the treeline and its
@@ -1936,13 +2197,23 @@ class Scene {
   }
 
   /* Mist lying on the water before the sun has any strength in it. */
-  drawWaterMist(c, W, H, dt, night) {
+  /* How much mist there is at all, which is also the test for whether it
+     drifts: the advance of mistX used to sit behind this same return. */
+  mistAmt() {
     const dawnish = this.timeMix.dawn /
       (this.timeMix.dawn + this.timeMix.day + this.timeMix.dusk + this.timeMix.night || 1);
-    const a = dawnish*0.95 + (state.weather === "fog" ? 0.45 : 0);
+    return dawnish*0.95 + (state.weather === "fog" ? 0.45 : 0);
+  }
+
+  updateWaterMist(dt) {
+    if (this.mistAmt() < 0.02) return;
+    this.mistX = (this.mistX || 0) + dt*0.004;
+  }
+
+  drawWaterMist(c, W, H, night) {
+    const a = this.mistAmt();
     if (a < 0.02) return;
     const wy = this.waterY*H, by = this.bankY*H;
-    this.mistX = (this.mistX || 0) + dt*0.004;
     for (let k = 0; k < 3; k++) {
       const band = wy + (by - wy)*(0.04 + k*0.19);
       const h = (by - wy)*(0.2 + k*0.06);
@@ -1957,7 +2228,7 @@ class Scene {
   }
 
   drawCity(c, W, H, dt, bot, night) {
-    this.drawSkyBirds(c, W, H, dt, bot, night);
+    this.drawSkyBirds(c, W, H, bot, night);
     const groundY = H * 0.95;
     c.fillStyle = css(mix(this.tok.ink, bot, 0.42));
     for (const b of this.backBlocks) {
@@ -1999,14 +2270,7 @@ class Scene {
       for (const b of this.frontBlocks) {
         const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = groundY - bh;
         for (const wnd of b.lit) {
-          // somebody comes home, somebody goes to bed
-          wnd.next -= dt;
-          if (wnd.next <= 0) {
-            wnd.on = !wnd.on;
-            wnd.next = (wnd.on ? 45 : 25) + Math.random()*150;
-            wnd.fade = 0;
-          }
-          wnd.fade = Math.min(1, (wnd.fade === undefined ? 1 : wnd.fade) + dt*0.7);
+          // somebody comes home, somebody goes to bed — see updateCityWindows
           const lvl = (wnd.on ? wnd.fade : 1 - wnd.fade);
           if (lvl < 0.02) continue;
           const flick = wnd.flicker ? 0.75 + 0.25*Math.sin(this.t*3.1 + wnd.ph) : 1;
@@ -2092,7 +2356,14 @@ class Scene {
   }
 
   /* ---- the singers, drawn where they sing ---- */
-  drawActors(c, W, H, dt, bot, night) {
+  /* What each singer on stage decides to do: come in, settle, fidget, sing,
+     forage, and leave by whatever means its kind leaves by. Paired with
+     drawActors below, which paints whatever survives this. */
+  updateActors(dt) {
+    /* A departure is measured against the bird's drawn size — how far it crouches
+       and how steeply it climbs are both a fraction of a.s in pixels — so this
+       pass needs the height of the frame. Same number draw() is handed. */
+    const H = this.H;
     for (let i = this.actors.length - 1; i >= 0; i--) {
       const a = this.actors[i];
       a.t += dt;
@@ -2259,6 +2530,37 @@ class Scene {
         }
       }
 
+      /* The pitch a bird settles into on the way in or out is smoothed, so it
+         is state and belongs here. It is the one thing in the old body that sat
+         among the derived values and still had to move: px0/py0 are captured at
+         the top of this loop and read only here, so with this they never cross
+         into the painting at all. W and H come off the scene because the angle
+         is measured in pixels, and so depends on the shape of the frame. */
+      const inK0 = (a.flightIn && a.enter > 0 && a.t < a.enter) ? a.t/a.enter : -1;
+      const flyProg0 = a.leave === "fly" ? Math.max(0, Math.min(1, (a.leaveT - 0.16)/0.14)) : 0;
+      if (inK0 >= 0 || flyProg0 > 0) {
+        const vx = (a.x - px0), vy = (a.y - py0);
+        if (Math.abs(vx) > 1e-6 || Math.abs(vy) > 1e-6) {
+          const ang = Math.atan2(vy*this.H, Math.max(1e-4, Math.abs(vx*this.W)));
+          a.pitch = (a.pitch === undefined ? ang : a.pitch + (ang - a.pitch)*Math.min(1, dt*8));
+        }
+      }
+    }
+  }
+
+  /* …and how it looks doing it. Paired with updateActors above; every value
+     below is derived afresh from the state that pass left behind. */
+  drawActors(c, W, H, bot, night) {
+    for (let i = this.actors.length - 1; i >= 0; i--) {
+      const a = this.actors[i];
+      // Where the bird is in its call: how wide the bill is open, and whether it
+      // has finished and can get on with something else. Both fall out of the
+      // song's start and length, so they are worked out again here rather than
+      // carried over from the pass that moved it.
+      const st = a.t - a.singAt;
+      const sing = (st >= 0 && st < a.dur)
+        ? ANIM.singBase + ANIM.singAmt*Math.abs(Math.sin(st*ANIM.singRate)) : 0;
+      const sungEnd = a.singAt + a.dur;
       const col = mix(this.tok.inkDeep, bot, a.depthMix);
       const colStr = css([col[0], col[1], col[2], 1]);
       const rimStr = css(mix(col, bot, 0.6));            // a touch lighter, for rim/eye
@@ -2268,11 +2570,13 @@ class Scene {
       // Idle life: breathing, the odd glance and tail-flick, a wing-settle on arrival.
       const iv = a.ivar || {};
       const settled = a.enter > 0 ? Math.max(0, a.t - a.enter) : a.t;
-      const breath = Math.sin(a.t*2.0 + (iv.breathPh || 0));
-      const headTurn = Math.sin(a.t*0.8 + (iv.headPh || 0)) * 0.20
-                     + Math.pow(Math.max(0, Math.sin(a.t*0.5 + (iv.headPh || 0)*1.7)), 6) * 0.5;
-      const tailFlick = Math.pow(Math.max(0, Math.sin(a.t*1.15 + (iv.tailPh || 0))), 8);
-      const wingSettle = Math.max(0, 1 - settled/0.55);
+      // Rates and depths live in ANIM (species.js), which the bestiary reads too,
+      // so the window and the cards cannot drift apart.
+      const breath = Math.sin(a.t*ANIM.breathRate + (iv.breathPh || 0));
+      const headTurn = Math.sin(a.t*ANIM.headRate + (iv.headPh || 0)) * ANIM.headAmt
+                     + Math.pow(Math.max(0, Math.sin(a.t*ANIM.lookRate + (iv.headPh || 0)*1.7)), ANIM.lookSharp) * ANIM.lookAmt;
+      const tailFlick = Math.pow(Math.max(0, Math.sin(a.t*ANIM.tailRate + (iv.tailPh || 0))), ANIM.tailSharp);
+      const wingSettle = Math.max(0, 1 - settled/ANIM.settle);
       const hopBob = (a.enter > 0 && a.t < a.enter && a.beh === "perch")
         ? Math.abs(Math.sin(a.t*13)) * a.s * 0.12 : 0;
       // Departure: 0 while perched, ramping to 1 once the bird springs into flight.
@@ -2288,11 +2592,7 @@ class Scene {
       // flare, up again on the climb out.
       let bodyRot = 0;
       if (inK >= 0 || flyProg > 0) {
-        const vx = (a.x - px0), vy = (a.y - py0);
-        if (Math.abs(vx) > 1e-6 || Math.abs(vy) > 1e-6) {
-          const ang = Math.atan2(vy*H, Math.max(1e-4, Math.abs(vx*W)));
-          a.pitch = (a.pitch === undefined ? ang : a.pitch + (ang - a.pitch)*Math.min(1, dt*8));
-        }
+        // a.pitch is smoothed in updateActors; here it is only read.
         bodyRot = Math.max(-0.55, Math.min(0.55, (a.pitch || 0)*0.75)) - flare*0.42;
         if (a.flip) bodyRot = -bodyRot;
       }
@@ -3663,9 +3963,19 @@ class Scene {
     }
   }
 
-  drawCritters(c, W, H, dt, bot, night) {
-    const colDark = css(mix(this.tok.inkDeep, bot, 0.12));
-    const colFar = css(mix(this.tok.ink, bot, 0.5));
+  /* What every wild thing in the frame is doing. Paired case for case with
+     drawCritters below, in the same order, so the two read side by side: this
+     one decides, that one draws. Anything a painter needs that is worked out
+     along the way is either recomputed there from the state left here, or —
+     where it is accumulated across the branches rather than derived — written
+     onto the critter at the end of its case. */
+  updateCritters(dt) {
+    const bot = this.skyColors()[1];
+    /* The fox measures its own crouch and reach against its drawn size, so this
+       one pass needs the height of the frame. It is the same number draw() is
+       handed — resize() sets both — and the same colours, because frame() has
+       already settled timeMix before either pass runs. */
+    const H = this.H;
     for (let i = this.critters.length - 1; i >= 0; i--) {
       const cr = this.critters[i];
       cr.t += dt;
@@ -3678,8 +3988,6 @@ class Scene {
           cr.x += (cr.drift + Math.sin(cr.t*0.8 + cr.ph)*0.015)*dt;
           cr.y += (Math.sin(cr.t*1.9 + cr.ph)*0.05 + Math.cos(cr.t*0.6)*0.02)*dt;
           if (cr.t > cr.life || cr.x < -0.05 || cr.x > 1.05) { dead = true; break; }
-          const al = Math.max(0, Math.min(1, cr.life - cr.t)) * 0.85;
-          this.paintButterfly(c, cr.x*W, cr.y*H, cr.t, cr.ph, al, colDark);
           break;
         }
         case "dragonfly": {
@@ -3698,7 +4006,8 @@ class Scene {
             if (Math.abs(cr.tx - cr.x) < 0.008) { cr.mode = "hover"; cr.timer = 0.8 + Math.random()*1.6; }
           }
           if (cr.t > cr.life) { dead = true; break; }
-          this.paintDragonfly(c, cr.x*W + jx, cr.y*H + jy, cr.t, colDark);
+          cr.jx = jx;
+          cr.jy = jy;
           break;
         }
         case "bat": {
@@ -3707,7 +4016,6 @@ class Scene {
           cr.x += cr.vx*dt; cr.y += cr.vy*dt;
           cr.y = Math.max(0.05, Math.min(0.6, cr.y));
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          this.paintBat(c, cr.x*W, cr.y*H, cr.size, cr.t, colDark);
           break;
         }
         case "deer": {
@@ -3749,14 +4057,6 @@ class Scene {
             if (cr.bounding) { cr.x += cr.dir*0.055*dt*D.speed; cr.bp += dt*7; }
             if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
           }
-          const bound = cr.bounding && cr.state === "leave"
-            ? Math.max(0, Math.sin(cr.bp)) : 0;
-          const dS = H*0.075*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - bound));
-          this.paintDeer(c, { x: cr.x*W, y: (D.y - bound*0.035)*H,
-            s: dS, dir: cr.dir,
-            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: D.col, t: cr.t,
-            grazing: cr.state === "graze", alert: cr.state === "alert", bound });
           break;
         }
         case "runner": {
@@ -3770,11 +4070,6 @@ class Scene {
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
           // standing still, it works the wet sand with quick jabs of the bill
-          const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
-          c.save(); c.translate(cr.x*W, D.y*H); c.scale(D.scale, D.scale);
-          this.contactShadow(c, 0, 1, 5, 0.16*(1 - cr.z*0.6));
-          this.paintSanderling(c, 0, 0, cr.dir, cr.mode === "dash", cr.ph, D.col, probe);
-          c.restore();
           break;
         }
         case "cat": {
@@ -3803,10 +4098,6 @@ class Scene {
             }
           }
           cr.x = b.x + cr.u*b.w;      // kept current, so its voice comes from the right roof
-          this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
-            sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
-            groom: cr.act === "groom" ? 1 : 0,
-            stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
           break;
         }
         case "rabbit": {
@@ -3831,13 +4122,6 @@ class Scene {
             }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
-          const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
-          const rS = H*0.032*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
-          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
-            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
-            t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
-            wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
           break;
         }
         case "fox": {
@@ -3895,13 +4179,7 @@ class Scene {
             }
           }
           if (cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
-          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9,
-            0.2*(1 - cr.z*0.6)*(1 - Math.min(1, pose.lift/(fS*0.8))));
-          this.paintFox(c, Object.assign({ x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir,
-            walking: cr.mode === "trot", lp: cr.lp,
-            look: cr.mode === "pause" ? Math.sin(cr.t*1.8) : 0,
-            ears: cr.mode === "listen" || cr.mode === "pounce" ? 1 : 0,
-            color: D.col }, pose));
+          cr.pose = pose;
           break;
         }
         case "heron": {
@@ -3972,11 +4250,7 @@ class Scene {
             if (cr.x < -0.16 || cr.x > 1.16) { dead = true; break; }
           }
           pose.neck = cr.neck;
-          const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
-          if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
-          this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
-            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
-            color: cr.mode === "fly" ? colDark : D.col, deep: colFar, t: cr.t }, pose));
+          cr.pose = pose;
           break;
         }
         case "porpoise": {
@@ -3986,34 +4260,6 @@ class Scene {
           cr.x += cr.dir*0.05*dt;
           cr.phase += dt*2.1;
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
-          const arc = Math.sin(cr.phase);
-          const px = cr.x*W, wy = cr.base*H;
-          if (arc > 0.02) {
-            // pitch follows the arc: nose up on the rise, down on the fall
-            this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
-              pitch: Math.cos(cr.phase)*0.34,
-              s: H*0.05, color: colDark, rim: colFar });
-          } else {
-            // between rolls: a dark shape just under, and the flat "footprint"
-            // left on the surface by the last downstroke
-            const sub = Math.max(0, 1 + arc*3);
-            if (sub > 0.02) {
-              c.globalAlpha = 0.18*sub;
-              c.fillStyle = colDark;
-              c.beginPath();
-              c.ellipse(px, wy + H*0.012, H*0.055, H*0.011, 0, 0, Math.PI*2);
-              c.fill();
-              c.globalAlpha = 1;
-            }
-            const fp = Math.max(0, 1 + arc*1.6);
-            if (fp > 0.02) {
-              c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.26*fp})`;
-              c.lineWidth = 1;
-              c.beginPath();
-              c.ellipse(px - cr.dir*H*0.03, wy, H*0.028*(2 - fp), H*0.008, 0, 0, Math.PI*2);
-              c.stroke();
-            }
-          }
           break;
         }
         case "squirrel": {
@@ -4048,25 +4294,15 @@ class Scene {
             if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
-          const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
-          const qS = H*0.03*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
-          this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
-            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t,
-            dig, bury, pat, color: D.col });
+          cr.dig = dig;
+          cr.bury = bury;
+          cr.pat = pat;
           break;
         }
         case "litter": {
           // a scrap of leaf-mould thrown back out of a squirrel's hole
           cr.x += cr.vx*dt; cr.y += cr.vy*dt; cr.vy += 0.3*dt;
           if (cr.t > cr.life || cr.y > D.y + 0.015) { dead = true; break; }
-          c.globalAlpha = Math.max(0, 1 - cr.t/cr.life)*0.7;
-          c.fillStyle = D.col;
-          c.beginPath();
-          c.ellipse(cr.x*W, cr.y*H, H*0.004*cr.sz*D.scale, H*0.002*cr.sz*D.scale,
-            cr.t*6, 0, Math.PI*2);
-          c.fill();
-          c.globalAlpha = 1;
           break;
         }
         case "hare": {
@@ -4084,13 +4320,6 @@ class Scene {
             if (Math.random() < 0.25) cr.dir *= -1;
           }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
-          const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
-          const hS = H*0.042*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
-          this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
-            dir: cr.dir, hop: st, alert: cr.mode === "alert",
-            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: D.col });
           break;
         }
         case "hedgehog": {
@@ -4108,11 +4337,6 @@ class Scene {
             if (Math.random() < 0.2) cr.dir *= -1;
           }
           if (cr.x < -0.06 || cr.x > 1.06) { dead = true; break; }
-          const gS = H*0.026*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, gS*0.85, 0.18*(1 - cr.z*0.6));
-          this.paintHedgehog(c, { x: cr.x*W, y: D.y*H, s: gS,
-            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: D.col, rim: colFar,
-            sniffUp: cr.mode === "sniffup" ? Math.min(1, cr.actT*2) : 0 });
           break;
         }
         case "badger": {
@@ -4126,11 +4350,6 @@ class Scene {
             if (cr.timer <= 0) { cr.mode = "dig"; cr.timer = 2 + Math.random()*3; cr.actT = 0; }
           }
           if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
-          const bS = H*0.045*(cr.sz || 1)*D.scale;
-          this.contactShadow(c, cr.x*W, D.y*H, bS*0.95, 0.2*(1 - cr.z*0.6));
-          this.paintBadger(c, { x: cr.x*W, y: D.y*H, s: bS,
-            dir: cr.dir, lp: cr.lp, color: D.col,
-            dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
           break;
         }
         case "otter": {
@@ -4154,6 +4373,179 @@ class Scene {
             if (cr.timer <= 0) { cr.mode = "swim"; cr.timer = 2.5 + Math.random()*3; }
           }
           if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
+          break;
+        }
+        case "bee": {
+          cr.x += (cr.drift + Math.sin(cr.t*1.3 + cr.ph)*0.02)*dt;
+          cr.y += Math.sin(cr.t*2.2 + cr.ph)*0.02*dt;
+          if (cr.t > cr.life || cr.x < -0.04 || cr.x > 1.04) { dead = true; break; }
+          break;
+        }
+        case "skein": {
+          cr.x += cr.vx*dt;
+          if (cr.x < -0.25 || cr.x > 1.25) { dead = true; break; }
+          break;
+        }
+      }
+      if (dead) this.critters.splice(i, 1);
+    }
+  }
+
+  /* …and how all of it looks. Paired case for case with updateCritters above. */
+  drawCritters(c, W, H, bot, night) {
+    const colDark = css(mix(this.tok.inkDeep, bot, 0.12));
+    const colFar = css(mix(this.tok.ink, bot, 0.5));
+    for (let i = this.critters.length - 1; i >= 0; i--) {
+      const cr = this.critters[i];
+      const D = this.groundDepth(cr.z, bot);
+      switch (cr.kind) {
+        case "butterfly": {
+          const al = Math.max(0, Math.min(1, cr.life - cr.t)) * 0.85;
+          this.paintButterfly(c, cr.x*W, cr.y*H, cr.t, cr.ph, al, colDark);
+          break;
+        }
+        case "dragonfly": {
+          this.paintDragonfly(c, cr.x*W + cr.jx, cr.y*H + cr.jy, cr.t, colDark);
+          break;
+        }
+        case "bat": {
+          this.paintBat(c, cr.x*W, cr.y*H, cr.size, cr.t, colDark);
+          break;
+        }
+        case "deer": {
+          const walking = cr.state === "enter" || cr.state === "leave" || cr.state === "walkbit";
+          const bound = cr.bounding && cr.state === "leave"
+            ? Math.max(0, Math.sin(cr.bp)) : 0;
+          const dS = H*0.075*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, dS*0.75, 0.2*(1 - cr.z*0.6)*(1 - bound));
+          this.paintDeer(c, { x: cr.x*W, y: (D.y - bound*0.035)*H,
+            s: dS, dir: cr.dir,
+            head: cr.head, walking: walking || bound > 0, lp: cr.lp, color: D.col, t: cr.t,
+            grazing: cr.state === "graze", alert: cr.state === "alert", bound });
+          break;
+        }
+        case "runner": {
+          const probe = cr.mode === "dash" ? 0 : Math.max(0, Math.sin(cr.t*7));
+          c.save(); c.translate(cr.x*W, D.y*H); c.scale(D.scale, D.scale);
+          this.contactShadow(c, 0, 1, 5, 0.16*(1 - cr.z*0.6));
+          this.paintSanderling(c, 0, 0, cr.dir, cr.mode === "dash", cr.ph, D.col, probe);
+          c.restore();
+          break;
+        }
+        case "cat": {
+          const b = this.frontBlocks && this.frontBlocks[cr.b];
+          this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
+            sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
+            groom: cr.act === "groom" ? 1 : 0,
+            stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
+          break;
+        }
+        case "rabbit": {
+          const hop = cr.mode === "hop" ? Math.max(0, Math.sin(cr.hopPh)) : 0;
+          const rS = H*0.032*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
+          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
+            dir: cr.dir, hop, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
+            t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
+            wash: cr.act === "wash" ? 0.5 + 0.5*Math.sin(cr.actT*9) : 0 });
+          break;
+        }
+        case "fox": {
+          const fS = H*0.05*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, fS*0.9,
+            0.2*(1 - cr.z*0.6)*(1 - Math.min(1, cr.pose.lift/(fS*0.8))));
+          this.paintFox(c, Object.assign({ x: cr.x*W, y: D.y*H, s: fS, dir: cr.dir,
+            walking: cr.mode === "trot", lp: cr.lp,
+            look: cr.mode === "pause" ? Math.sin(cr.t*1.8) : 0,
+            ears: cr.mode === "listen" || cr.mode === "pounce" ? 1 : 0,
+            color: D.col }, cr.pose));
+          break;
+        }
+        case "heron": {
+          const nS = H*0.085*(cr.sz || 1)*(cr.mode === "fly" ? 1 : D.scale*0.95);
+          if (cr.mode !== "fly") this.contactShadow(c, cr.x*W, cr.y*H, nS*0.4, 0.15*(1 - cr.z*0.6));
+          this.paintHeron(c, Object.assign({ x: cr.x*W, y: cr.y*H, s: nS, dir: cr.dir,
+            flying: cr.mode === "fly", flap: Math.sin(cr.flap || 0),
+            color: cr.mode === "fly" ? colDark : D.col, deep: colFar, t: cr.t }, cr.pose));
+          break;
+        }
+        case "porpoise": {
+          const arc = Math.sin(cr.phase);
+          const px = cr.x*W, wy = cr.base*H;
+          if (arc > 0.02) {
+            // pitch follows the arc: nose up on the rise, down on the fall
+            this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
+              pitch: Math.cos(cr.phase)*0.34,
+              s: H*0.05, color: colDark, rim: colFar });
+          } else {
+            // between rolls: a dark shape just under, and the flat "footprint"
+            // left on the surface by the last downstroke
+            const sub = Math.max(0, 1 + arc*3);
+            if (sub > 0.02) {
+              c.globalAlpha = 0.18*sub;
+              c.fillStyle = colDark;
+              c.beginPath();
+              c.ellipse(px, wy + H*0.012, H*0.055, H*0.011, 0, 0, Math.PI*2);
+              c.fill();
+              c.globalAlpha = 1;
+            }
+            const fp = Math.max(0, 1 + arc*1.6);
+            if (fp > 0.02) {
+              c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.26*fp})`;
+              c.lineWidth = 1;
+              c.beginPath();
+              c.ellipse(px - cr.dir*H*0.03, wy, H*0.028*(2 - fp), H*0.008, 0, 0, Math.PI*2);
+              c.stroke();
+            }
+          }
+          break;
+        }
+        case "squirrel": {
+          const hopY = cr.mode === "bound" ? Math.abs(Math.sin(cr.ph))*0.016 : 0;
+          const qS = H*0.03*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
+          this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
+            dir: cr.dir, sit: cr.mode === "sit", ph: cr.ph, t: cr.t,
+            dig: cr.dig, bury: cr.bury, pat: cr.pat, color: D.col });
+          break;
+        }
+        case "litter": {
+          c.globalAlpha = Math.max(0, 1 - cr.t/cr.life)*0.7;
+          c.fillStyle = D.col;
+          c.beginPath();
+          c.ellipse(cr.x*W, cr.y*H, H*0.004*cr.sz*D.scale, H*0.002*cr.sz*D.scale,
+            cr.t*6, 0, Math.PI*2);
+          c.fill();
+          c.globalAlpha = 1;
+          break;
+        }
+        case "hare": {
+          const st = cr.mode === "lope" ? 0.5 + 0.5*Math.sin(cr.ph) : 0;
+          const lift = cr.mode === "lope" ? Math.max(0, Math.sin(cr.ph))*0.02 : 0;
+          const hS = H*0.042*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
+          this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
+            dir: cr.dir, hop: st, alert: cr.mode === "alert",
+            graze: cr.mode === "graze" ? 1 : 0, t: cr.t, color: D.col });
+          break;
+        }
+        case "hedgehog": {
+          const gS = H*0.026*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, gS*0.85, 0.18*(1 - cr.z*0.6));
+          this.paintHedgehog(c, { x: cr.x*W, y: D.y*H, s: gS,
+            dir: cr.dir, t: cr.mode === "shuffle" ? cr.t : 0.1, color: D.col, rim: colFar,
+            sniffUp: cr.mode === "sniffup" ? Math.min(1, cr.actT*2) : 0 });
+          break;
+        }
+        case "badger": {
+          const bS = H*0.045*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, bS*0.95, 0.2*(1 - cr.z*0.6));
+          this.paintBadger(c, { x: cr.x*W, y: D.y*H, s: bS,
+            dir: cr.dir, lp: cr.lp, color: D.col,
+            dig: cr.mode === "dig" ? 0.5 + 0.5*Math.sin(cr.actT*11) : 0 });
+          break;
+        }
+        case "otter": {
           if (cr.mode !== "under") {
             this.paintOtter(c, { x: cr.x*W, y: cr.y*H, s: H*0.03*(cr.sz || 1),
               dir: cr.dir, ph: cr.ph, color: colDark,
@@ -4162,9 +4554,6 @@ class Scene {
           break;
         }
         case "bee": {
-          cr.x += (cr.drift + Math.sin(cr.t*1.3 + cr.ph)*0.02)*dt;
-          cr.y += Math.sin(cr.t*2.2 + cr.ph)*0.02*dt;
-          if (cr.t > cr.life || cr.x < -0.04 || cr.x > 1.04) { dead = true; break; }
           const alB = Math.max(0, Math.min(1, (cr.life - cr.t)))*0.9;
           c.globalAlpha = alB;
           this.paintBee(c, cr.x*W, (cr.y + Math.sin(cr.t*14)*0.004)*H,
@@ -4173,8 +4562,6 @@ class Scene {
           break;
         }
         case "skein": {
-          cr.x += cr.vx*dt;
-          if (cr.x < -0.25 || cr.x > 1.25) { dead = true; break; }
           const trail = -Math.sign(cr.vx);
           const gdir = Math.sign(cr.vx);
           c.strokeStyle = colFar; c.fillStyle = colFar; c.lineCap = "round";
@@ -4188,7 +4575,6 @@ class Scene {
           break;
         }
       }
-      if (dead) this.critters.splice(i, 1);
     }
   }
 
@@ -5486,8 +5872,9 @@ class Scene {
     c.restore();
   }
 
-  drawFlyers(c, W, H, dt, bot) {
-    const colNear = mix(this.tok.ink, bot, 0.2);
+  /* Birds on the wing. Paired with drawFlyers below — the flight is decided
+     here, the wings are drawn there. */
+  updateFlyers(dt) {
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];
       f.age = (f.age || 0) + dt;
@@ -5524,6 +5911,14 @@ class Scene {
                       f.kind === "lark" ? 22 : f.kind === "tern" ? 7 : 11);
       }
       if (f.x < -0.12 || f.x > 1.12 || f.y < -0.05) { this.flyers.splice(i, 1); continue; }
+    }
+  }
+
+  /* …and the wings. Paired with updateFlyers above. */
+  drawFlyers(c, W, H, bot) {
+    const colNear = mix(this.tok.ink, bot, 0.2);
+    for (let i = this.flyers.length - 1; i >= 0; i--) {
+      const f = this.flyers[i];
       const fx = f.x*W;
       const bob = f.kind === "swift" ? Math.sin(f.ph*0.5)*9 :
                   f.kind === "buzzard" || f.kind === "kestrel" ? 0 : Math.sin(f.ph*0.3)*4;
@@ -5644,13 +6039,22 @@ class Scene {
     c.restore();
   }
 
-  drawFireflies(c, W, H, dt, night) {
+  /* Fireflies hold still in the daylight and in the rain, which is the same
+     test that decides whether any of them are drawn. */
+  updateFireflies(dt, night) {
+    const ffA = night * (state.weather === "rain" ? 0.15 : 1);
+    if (ffA < 0.05 || !this.fireflies.length) return;
+    for (const ff of this.fireflies) {
+      ff.x += (ff.dx + Math.sin(this.t*0.3 + ff.ph)*0.006) * dt;
+      if (ff.x < 0) ff.x = 1; if (ff.x > 1) ff.x = 0;
+    }
+  }
+
+  drawFireflies(c, W, H, night) {
     const ffA = night * (state.weather === "rain" ? 0.15 : 1);
     if (ffA < 0.05 || !this.fireflies.length) return;
     const rgb = this.tok.fireflyRGB;
     for (const ff of this.fireflies) {
-      ff.x += (ff.dx + Math.sin(this.t*0.3 + ff.ph)*0.006) * dt;
-      if (ff.x < 0) ff.x = 1; if (ff.x > 1) ff.x = 0;
       const blink = Math.max(0, Math.sin(this.t*ff.sp*2 + ff.ph));
       const a = blink*blink * 0.8 * ffA;
       if (a < 0.03) continue;
@@ -5659,15 +6063,34 @@ class Scene {
     }
   }
 
-  drawWeather(c, W, H, dt, night) {
+  /* Only the weather that is actually falling moves: rain drops and blown seeds
+     each advance under their own test for the weather, exactly as before. */
+  updateWeather(dt) {
+    if (state.weather === "rain") {
+      for (const d of this.rain) {
+        d.y += d.sp * dt * 1.6;
+        d.x += dt * 0.02;
+        if (d.y > 1) { d.y = -0.05; d.x = Math.random(); }
+      }
+    }
+    if (state.weather === "breeze") {
+      for (const s of this.seeds) {
+        s.x += s.sp * dt * 2;
+        s.ph += dt;
+        if (s.x > 1.05) { s.x = -0.05; s.y = 0.3 + Math.random()*0.5; }
+      }
+    }
+    if (state.weather === "fog") {
+      for (const f of this.fog) f.x += f.sp * dt;
+    }
+  }
+
+  drawWeather(c, W, H, night) {
     if (state.weather === "rain") {
       c.strokeStyle = `rgba(${this.tok.rainRGB}, 0.35)`;
       c.lineWidth = 1;
       c.beginPath();
       for (const d of this.rain) {
-        d.y += d.sp * dt * 1.6;
-        d.x += dt * 0.02;
-        if (d.y > 1) { d.y = -0.05; d.x = Math.random(); }
         const rx = d.x*W, ry = d.y*H;
         c.moveTo(rx, ry);
         c.lineTo(rx - W*0.004, ry + d.len*H);
@@ -5677,9 +6100,6 @@ class Scene {
     if (state.weather === "breeze") {
       c.fillStyle = `rgba(${this.tok.cloudRGB}, 0.5)`;
       for (const s of this.seeds) {
-        s.x += s.sp * dt * 2;
-        s.ph += dt;
-        if (s.x > 1.05) { s.x = -0.05; s.y = 0.3 + Math.random()*0.5; }
         const sx = s.x*W, sy = s.y*H + Math.sin(s.ph*1.3)*10;
         c.beginPath(); c.arc(sx, sy, 1.3, 0, Math.PI*2); c.fill();
       }
@@ -5702,7 +6122,6 @@ class Scene {
       }
       for (let fi = 0; fi < this.fog.length; fi++) {
         const f = this.fog[fi];
-        f.x += f.sp * dt;
         const fy = f.y * H;
         c.fillStyle = this._fogGrads[fi];
         const drift = Math.sin(this.t*0.1 + f.x*10) * W * 0.05;
@@ -5711,11 +6130,17 @@ class Scene {
     }
   }
 
-  drawRipples(c, W, H, dt) {
+  updateRipples(dt) {
     for (let i = this.ripples.length - 1; i >= 0; i--) {
       const r = this.ripples[i];
       r.age += dt;
       if (r.age > r.life) { this.ripples.splice(i, 1); continue; }
+    }
+  }
+
+  drawRipples(c, W, H) {
+    for (let i = this.ripples.length - 1; i >= 0; i--) {
+      const r = this.ripples[i];
       const p = r.age / r.life;
       const rx = r.x*W, ry = r.y*H;
       for (let k = 0; k < 3; k++) {

@@ -53,9 +53,14 @@ js/
   util.js         Shared primitives: seeded PRNG, colour math, world constants, and the
                   single mutable `state` object.
   species.js      The voices and their marks: field-guide pictograms, the low-level synth
-                  primitives, and the species catalogue (habitat, hour weighting, synth).
+                  primitives, the species catalogue (habitat, hour weighting, synth), and
+                  and two tables the drawing reads — `PSTYLE`, each species' field
+                  marks, and `ANIM`, the idle motion every perched bird shares.
   scene.js        The `Scene` class — canvas rendering of the five landscapes and their
                   drifting inhabitants.
+  sky.js          The sky and what hangs in it — gradient, stars, sun, moon, clouds —
+                  painted on a second canvas underneath by the GPU, with a Canvas 2D
+                  backend that takes over verbatim where there is no WebGL2.
   audio.js        The `AudioEngine` class — wind, aeolian drift, per-place ambience,
                   turn-taking voices, and the odd church bell.
   main.js         Entry point: theme toggle, the casement (opening and shutting the
@@ -64,6 +69,104 @@ js/
   bestiary.js     Logic for the bestiary page. Borrows the Scene's painters and the
                   species' synths; adds nothing to the piece itself.
 ```
+
+### Watching what a frame costs
+
+Open the piece with `?perf=1` — <http://localhost:8000/?perf=1> — and a small
+readout sits in the corner of the window: the smoothed frame time and the frame
+rate that implies, the number of rasterization submissions the frame made
+(every `stroke`, `fill` and blit), the render scale the adaptive quality has
+settled on, and the size of the backing store. It is a bench, not part of the
+piece: without the flag the counting wrappers are never installed and the
+canvas context is left exactly as the browser handed it over.
+
+What it is for is knowing which of the two costs you are looking at. A frame
+here is either *submissions* — many small strokes, each rasterized separately —
+or *fill-rate*, a few very large translucent blits. They are fixed by opposite
+means, and the ops number is what tells them apart: if it is high and the frame
+is slow, batch; if it is low and the frame is still slow, the cost is overdraw
+and no amount of batching will touch it.
+
+### The bench, and the trajectory recorder
+
+`tools/` holds five harnesses. None is part of the piece; all need a static
+server running and drive a headless Chromium through Playwright.
+
+```bash
+node tools/bench.mjs        label    # frame cost per place
+node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
+node tools/critters.mjs              # every creature through update and paint
+node tools/actors.mjs [outfile]      # every singer, and every way of leaving
+node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
+```
+
+`bench.mjs` reports the time a frame really takes — it hands the page a
+synthetic 60 fps clock, because `adaptQuality` otherwise settles on a different
+render scale for every scene and no two measurements can then be compared, and
+it forces both canvases to finish before stopping the clock.
+
+`trajectory.mjs` is the one to reach for before touching how anything moves. It
+seeds `Math.random`, silences the audio schedulers (they run on real timers and
+draw from the same random stream, so left alive no two runs agree), rewinds the
+scene to a fixed start, and records two things every frame for 900 frames: the
+state of every critter, actor, flyer, ripple and meteor, **and the arguments
+handed to every painter**. Both matter, and for different reasons — a state
+dump proves a deer still decides to stop grazing on the same tick, and the
+paint log proves it is still drawn with the same crouch and the same wing
+flare.
+
+How much to trust it: across two runs of the same build, all ten scenes give
+byte-identical **state**, and seven of the ten give byte-identical **paint**.
+The three that do not are the night scenes, and they differ only in firefly
+positions in the third decimal of a pixel — the fireflies are seeded during
+`reseed`, which runs when the place changes and therefore before the recorder
+puts the random stream back to a known point. So: treat any state difference as
+real, and any paint difference larger than a firefly's third decimal as real
+too.
+
+What it cannot see is **actors**. Singers arrive only when the audio schedulers
+call for them, and the recorder has to silence those schedulers to be
+deterministic at all — they run on real timers and draw from the same
+`Math.random` stream the critters spawn from. So no recording contains a single
+bird on a perch, and one can come out byte-identical while `drawActors` is
+thoroughly broken. That is not hypothetical: it is how a missing `sing`
+shipped.
+
+`tools/critters.mjs` and `tools/actors.mjs` close that hole by driving the cast
+directly rather than waiting for it. Time is the enemy of coverage here — a fox
+keeps a ninety-second cooldown, a cat walks a city roofline only after dark,
+litter is kicked up by a badger that has decided to dig, and a bird's exit
+depends on its species — so each is hunted for deliberately: the place is
+reseeded, the hour forced, the cooldowns cleared, and every creature and every
+manner of leaving is stepped through both halves. Run all four before trusting
+a change to how anything moves.
+
+Give `actors.mjs` a filename and it writes down every argument handed to every
+painter, so two builds can be compared value for value and not merely for
+whether they threw. That is how the shared `ANIM` table was proved to have
+changed nothing: 1.43 million recorded values, byte-identical before and after.
+It quiets the audio, stops the scene's own frame loop and reseeds the random
+stream before recording, because an actor's build — its scale, its plumpness,
+which way it looks and when — is drawn from `Math.random` the moment it is
+spawned.
+
+`tools/gradient.mjs` watches for banding, which is the one thing that cannot be
+caught by comparing pictures. An eight-bit buffer has to step a smooth ramp
+somewhere, and Skia hides those steps by dithering its gradients — so the 2D
+path got it free and the GPU had to be told. When it was not, the sun and moon
+wore rings and the dusk halo stepped in bands two hundred pixels wide, while a
+whole-image comparison reported better than 99% agreement: a dither is a
+difference of one level, and that comparison was counting differences greater
+than two.
+
+So this measures the thing itself. Along a line across a smooth ramp, how far do
+you travel before the colour changes at all? Short runs read as smooth; a long
+run *is* a band. It pins the scene (seeded randomness, a synthetic clock, a
+reseed before each shot) so both backends photograph the same sky, takes the
+median over forty columns and thirty rows so one line passing behind a cloud
+cannot skew it, and then requires the GPU to come within 1.6× of the canvas at
+every place and hour. Undithered, thirty-nine of the forty bands fail, some by
+forty-fold; dithered, none do.
 
 ### A note on caching
 
@@ -90,10 +193,15 @@ species.js ◄──┐        │
    ▲          │        │
    │          │        │
 scene.js   audio.js    │
-   ▲          ▲        │
+   ▲  │       ▲        │
+   │  └► sky.js        │
    └────┬─────┘        │
       main.js ─────────┘
 ```
+
+`sky.js` knows nothing of the scene beyond a handful of shapes it is asked to
+paint, which is what lets the same calls go either to the GPU or back onto the
+2D canvas.
 
 `main.js` owns the concrete instances. Rather than reaching for globals, the
 audio engine is **given** what it needs: `new AudioEngine({ scene, emit })`,
@@ -117,7 +225,19 @@ laid out as field-guide cards. Each card shows
 The bestiary imports the live `Scene` painters and `SPECIES` catalogue, so it
 can never drift out of date: what you inspect there is exactly what the window
 draws and sings. It honours the same Dawn/Dusk themes and
-`prefers-reduced-motion`.
+`prefers-reduced-motion`, and it wears the window's own stylesheet, so the two
+pages read as one piece of work.
+
+Showing you the creatures is the whole of what it does. It edits nothing and
+saves nothing — no panels, no sliders over the drawing code, nothing kept in
+`localStorage`. Changing how an animal looks or moves means editing the painter
+in `scene.js` or its row in `PSTYLE`, and the bestiary is where you go to see
+what that did. It is reached from **The Bestiary** in the window's settings card,
+and there is a link back in its footer.
+
+Only cards whose creature is in view are painted (an `IntersectionObserver`
+watches each canvas), so a page of sixty animated canvases costs about what one
+does.
 
 ## Behaviour worth knowing about
 
@@ -152,7 +272,10 @@ draws and sings. It honours the same Dawn/Dusk themes and
   (`noteTrain` / `pulseTrain` in `species.js`), every voice's signal chain is
   unwired from the graph once it has decayed, and the canvas holds to a pixel
   budget with an adaptive render scale, so full screen on a dense display stays
-  smooth.
+  smooth. Anything drawn many times in one colour — grass, reeds, ferns, the
+  rain — goes down as a single path and is stroked once rather than once
+  apiece; the land's fixed outlines are kept as `Path2D` and refilled, not
+  rebuilt, each frame.
 - **Accessible.** Honours `prefers-reduced-motion` and `prefers-color-scheme`, and
   ships light ("Dawn") and dark ("Dusk") themes.
 - **Private.** No dependencies, no build step, no network calls. Just static files.

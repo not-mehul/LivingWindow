@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS } from "./util.js?v=3";
-import { speciesIcon } from "./species.js?v=3";
-import { Scene } from "./scene.js?v=3";
-import { AudioEngine } from "./audio.js?v=3";
+import { state, sessionSerial, LOCATIONS } from "./util.js?v=8";
+import { speciesIcon } from "./species.js?v=8";
+import { Scene } from "./scene.js?v=8";
+import { AudioEngine } from "./audio.js?v=8";
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
@@ -59,8 +59,16 @@ function emitSubtitle(sp, az, depth, dur) {
 }
 
 /* ---- Wiring ---- */
-const scene = new Scene(document.getElementById("scene"));
+const scene = new Scene(document.getElementById("scene"), document.getElementById("sky"));
 const audio = new AudioEngine({ scene, emit: emitSubtitle });
+
+/* Under ?perf=1 only, put the scene and the engine where a bench can reach
+   them. Comparing pictures can tell you the land still looks like the land;
+   it cannot tell you a deer still decides to graze at the same moment. For
+   that you need to read the animals themselves. */
+if (new URLSearchParams(location.search).has("perf")) {
+  window.__lw = { scene, audio, state };
+}
 
 /* Bind a handler by id, tolerating an element that isn't there. A stale
    cached script against fresh markup used to throw here and take every

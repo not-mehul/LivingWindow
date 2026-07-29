@@ -6,9 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=3";
-import { SPECIES, PSTYLE, CRITTER_VOICES, speciesIcon } from "./species.js?v=3";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=3";
+import { Scene } from "./scene.js?v=8";
+import { SPECIES, PSTYLE, ANIM, CRITTER_VOICES, speciesIcon } from "./species.js?v=8";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=8";
 
 /* One Scene on a hidden canvas lends us its painters and tokens. */
 const scene = new Scene(document.getElementById("bz-hidden"));
@@ -91,7 +91,7 @@ function trunk(c, W, H, P, x) {
 }
 
 /* The sing pulse the scene itself uses while a call plays. */
-const pulse = (t) => 0.3 + 0.7*Math.abs(Math.sin(t*11));
+const pulse = (t) => ANIM.singBase + ANIM.singAmt*Math.abs(Math.sin(t*ANIM.singRate));
 
 /* ---- the card catalogue ---- */
 /* Perched songbirds share one draw, differing only in PSTYLE marks. */
@@ -133,9 +133,10 @@ function perchDraw(id) {
       x, y, s, flip: false, alpha, color: P.col, rim: P.rim, deep: P.deep, marks: ps,
       plump: ps.plump || 1, tailLen: ps.tail || 1.1, tailUp: !!ps.tailUp,
       billLen: ps.bill || 0.45, crest: false, sing, peck, legTuck, stride,
-      breath: Math.sin(tm*2),
-      headTurn: Math.sin(tm*0.8)*0.2 + Math.pow(Math.max(0, Math.sin(tm*0.5)), 6)*0.5,
-      tailFlick: Math.pow(Math.max(0, Math.sin(tm*1.15)), 8),
+      breath: Math.sin(tm*ANIM.breathRate),
+      headTurn: Math.sin(tm*ANIM.headRate)*ANIM.headAmt
+              + Math.pow(Math.max(0, Math.sin(tm*ANIM.lookRate)), ANIM.lookSharp)*ANIM.lookAmt,
+      tailFlick: Math.pow(Math.max(0, Math.sin(tm*ANIM.tailRate)), ANIM.tailSharp),
       wingSettle: 0, fly, flap, t: tm
     });
   };
@@ -686,10 +687,14 @@ function buildCard(card) {
     el.appendChild(v);
   }
 
+  /* Name over Latin, as a field guide sets it. Side by side they fight for a
+     narrow card: a two-word name wraps and the Latin is left stranded up beside
+     the first half of it. */
   const title = document.createElement("div");
   title.className = "bz-title";
   title.innerHTML = `<span class="bz-icon">${speciesIcon(card.sp || { id: card.id }, 20)}</span>`
-    + `<span>${card.name}</span><span class="latin">${card.latin}</span>`;
+    + `<span class="bz-names"><span class="bz-name">${card.name}</span>`
+    + `<span class="latin">${card.latin}</span></span>`;
   el.appendChild(title);
 
   const desc = document.createElement("p");
@@ -809,11 +814,24 @@ if (REDUCED) {
   requestAnimationFrame(frame);
 }
 
-/* ---- theme toggle, mirroring main.js ---- */
-document.getElementById("bz-theme").addEventListener("click", () => {
-  const isLight = document.documentElement.getAttribute("data-theme") === "light";
-  if (isLight) document.documentElement.removeAttribute("data-theme");
-  else document.documentElement.setAttribute("data-theme", "light");
+/* ---- theme toggle, mirroring main.js ----
+   The same switch the window uses, driven the same way, and starting from the
+   same place: whatever the system asks for. The palettes are rebuilt after,
+   because every card's sky and every creature's colour is read from the tokens
+   the theme just changed. */
+const themeSwitch = document.getElementById("bz-theme");
+function applyTheme(mode) {
+  if (mode === "light") document.documentElement.setAttribute("data-theme", "light");
+  else document.documentElement.removeAttribute("data-theme");
+  const isLight = mode === "light";
+  themeSwitch.setAttribute("aria-checked", String(isLight));
+  themeSwitch.setAttribute("aria-label", isLight ? "Switch to dark theme" : "Switch to light theme");
+  document.getElementById("bz-moon").classList.toggle("active", !isLight);
+  document.getElementById("bz-sun").classList.toggle("active", isLight);
   buildPalettes();
   if (REDUCED) registry.forEach(r => renderEntry(r, performance.now()));
+}
+themeSwitch.addEventListener("click", () => {
+  applyTheme(document.documentElement.getAttribute("data-theme") === "light" ? "dark" : "light");
 });
+applyTheme(matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
