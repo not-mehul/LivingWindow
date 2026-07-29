@@ -6,9 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=10";
-import { SPECIES, PSTYLE, ANIM, gaitPose, CRITTER_VOICES, speciesIcon } from "./species.js?v=10";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=10";
+import { Scene } from "./scene.js?v=11";
+import { SPECIES, PSTYLE, ANIM, gaitPose, gaitAt, CRITTER_VOICES, speciesIcon } from "./species.js?v=11";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=11";
 
 /* The gaits are written around a stride of 1 and the cards keep their phases in
    radians, as the scene does; this is the one conversion between the two. */
@@ -143,7 +143,7 @@ function perchDraw(id) {
       legTuck: bhop ? bhop.tuck : 0, hopReach: bhop ? bhop.reach : 0,
       hopTilt: bhop ? bhop.tilt : 0,
       breath: Math.sin(tm*ANIM.breathRate),
-      headTurn: Math.sin(tm*ANIM.headRate)*ANIM.headAmt
+      headTurn: gaitAt("glance", tm*ANIM.headRate*TURN, "turn")*ANIM.headAmt
               + Math.pow(Math.max(0, Math.sin(tm*ANIM.lookRate)), ANIM.lookSharp)*ANIM.lookAmt,
       tailFlick: Math.pow(Math.max(0, Math.sin(tm*ANIM.tailRate)), ANIM.tailSharp),
       wingSettle: 0, fly, wing, flap: wing ? wing.beat : 0, t: tm
@@ -175,7 +175,7 @@ const SPECIAL = {
         deep: P.deep, night: mode === "night" ? 1 : 0, t: tm,
         sing: mode === "hoot" ? pulse(tm*0.4) : 0,
         breath: Math.sin(tm*2),
-        headTurn: Math.sin(tm*0.5)*0.9, blinkPh: 0 });
+        headTurn: gaitAt("glance", tm*0.5*TURN, "turn")*0.9, blinkPh: 0 });
     } },
   cuckoo: { sky: "day", modes: ["perch", "call", "fly"],
     draw(c, W, H, tm, mode, P) {
@@ -279,7 +279,7 @@ const SPECIAL = {
           color: P.col, rim: P.rim, deep: P.deep, marks: ps,
           plump: ps.plump, tailLen: ps.tail, tailUp: false, billLen: ps.bill,
           sing: mode === "call" ? pulse(tm) : 0, breath: Math.sin(tm*2),
-          headTurn: mode === "watch" ? Math.sin(tm*1.2)*0.3 : 0,
+          headTurn: mode === "watch" ? gaitAt("glance", tm*1.2*TURN, "turn")*0.3 : 0,
           tailFlick: 0, wingSettle: 0, fly: rot ? 1 : 0, flap: rot ? -0.4 : 0, t: tm });
         c.restore();
       }
@@ -294,7 +294,7 @@ const SPECIAL = {
         color: P.col, rim: P.rim, deep: P.deep, marks: ps,
         plump: ps.plump, tailLen: 1.1, tailUp: false, billLen: ps.bill, crest: true,
         sing: mode === "call" ? pulse(tm) : 0, breath: Math.sin(tm*2),
-        headTurn: Math.sin(tm*0.8)*0.2, tailFlick: 0, wingSettle: 0, fly: 0, flap: 0, t: tm });
+        headTurn: gaitAt("glance", tm*0.8*TURN, "turn")*0.2, tailFlick: 0, wingSettle: 0, fly: 0, flap: 0, t: tm });
     } },
   pheasant: { sky: "dawn", modes: ["strut", "crow", "flush"],
     draw(c, W, H, tm, mode, P) {

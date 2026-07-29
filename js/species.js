@@ -622,6 +622,154 @@ const GAIT = {
       [0.76,  0.22],
       [0.88,  0.04]
     ]
+  },
+
+  /* ---- and the world the animals are in ----
+
+     The same argument holds for weather and water. A gust of wind summed out
+     of two sines arrives on a metronome — you can count them — and everything
+     growing answers it at exactly the same instant, with no weight and no
+     spring. What a gust actually does is: nothing, for a long while; then it
+     comes on fast, holds raggedly at the top, and dies away slowly. */
+  gust: {
+    chan: ["force"],
+    body: [
+      [0.00, 0.10],              // the lull, and most of the cycle is lull
+      [0.12, 0.05],
+      [0.24, 0.07],
+      [0.34, 0.14],
+      [0.42, 0.58],              // it arrives quickly
+      [0.48, 0.94],
+      [0.54, 0.76],              // and is never steady at the top
+      [0.60, 1.00],
+      [0.67, 0.72],
+      [0.76, 0.86],
+      [0.795, 0.62],
+      [0.815, 0.15],             // and then it simply drops, which is the whole
+      [0.86, 0.11],              // point: the grass is left to spring back on
+      [0.94, 0.07]               // its own, and goes past upright doing it
+    ]
+  },
+  /* A bird's glance. Birds do not sweep their heads: they snap to a new place,
+     hold it dead still while they look, and snap again — and the held part is
+     most of it. The frames are the stations; the jumps between them are pairs
+     set close together, which is the only way to write a movement that has no
+     middle. Every perched bird in the window reads this. */
+  glance: {
+    chan: ["turn"],
+    body: [
+      [0.00,  0.00],
+      [0.20,  0.02],             // held
+      [0.24,  0.55],             // and away
+      [0.27,  0.95],
+      [0.30,  1.00],
+      [0.52,  0.98],             // held again, a good while
+      [0.56,  0.30],
+      [0.59, -0.55],             // back past centre, the other way
+      [0.62, -0.85],
+      [0.80, -0.88],             // and held there
+      [0.84, -0.40],
+      [0.88, -0.02]
+    ]
+  },
+  /* A blink. Down like a shutter, shut for an instant, and opened again more
+     slowly — never the even triangle it was. */
+  blink: {
+    chan: ["lid"],
+    body: [
+      [0.00, 0.00],
+      [0.14, 0.75],              // down fast
+      [0.22, 1.00],
+      [0.34, 1.00],              // and shut for a moment
+      [0.52, 0.72],              // opening, slower
+      [0.74, 0.30],
+      [0.90, 0.06]
+    ]
+  },
+  /* The swash: one wave running up the sand. It chases up fast and drains away
+     slowly, and the foam thins as it goes — a sine has it going up and coming
+     back at the same speed, which is the one thing water never does. */
+  swash: {
+    chan: ["reach", "foam"],
+    body: [
+      [0.00, 0.00, 0.00],
+      [0.06, 0.42, 0.85],        // the wave breaks and runs
+      [0.12, 0.78, 1.00],
+      [0.20, 0.97, 0.90],
+      [0.26, 1.00, 0.72],        // the top of the run, and it hangs there
+      [0.34, 0.96, 0.55],
+      [0.48, 0.78, 0.38],        // draining back
+      [0.64, 0.52, 0.24],
+      [0.80, 0.26, 0.12],
+      [0.92, 0.08, 0.04]
+    ]
+  },
+  /* A glint off moving water, and a star seen through a mile of it. Neither
+     flashes on a metronome: the facet catches, loses it, catches again a
+     moment later, and is then dark for a good while. Two unequal flashes to
+     the cycle, which is enough to stop the eye finding the beat. */
+  glint: {
+    chan: ["lit"],
+    body: [
+      [0.00, 0.06],
+      [0.08, 0.02],
+      [0.16, 0.88],              // caught
+      [0.21, 1.00],
+      [0.27, 0.35],
+      [0.33, 0.05],
+      [0.44, 0.62],              // and again, smaller and sooner
+      [0.49, 0.70],
+      [0.56, 0.10],
+      [0.68, 0.02],
+      [0.84, 0.04]               // then dark
+    ]
+  },
+  /* A firefly's flash: it comes up fast and dies away slowly, which is what
+     makes it read as a light going out rather than a lamp on a dimmer. */
+  flash: {
+    chan: ["lit"],
+    body: [
+      [0.00, 0.00],
+      [0.06, 0.55],              // up, almost at once
+      [0.11, 1.00],
+      [0.18, 0.86],
+      [0.30, 0.48],              // and out, slowly
+      [0.44, 0.20],
+      [0.60, 0.06],
+      [0.80, 0.00]
+    ]
+  },
+  /* A cloud does not cross the sky unchanged. It builds, is drawn out and
+     flattened by the wind it is riding, and thins away again — slowly enough
+     that you only notice having looked away and looked back. Never to nothing:
+     a cloud that vanished mid-sky would be a worse lie than one that never
+     moved. */
+  cloud: {
+    chan: ["swell", "depth"],
+    body: [
+      [0.00, 0.55, 0.62],
+      [0.14, 0.72, 0.84],
+      [0.30, 0.95, 1.00],        // built up
+      [0.44, 1.00, 0.90],
+      [0.58, 0.92, 0.72],        // drawn out, and flattening as it goes
+      [0.72, 0.78, 0.52],
+      [0.86, 0.62, 0.56]
+    ]
+  },
+  /* A puff of smoke or vent steam leaving its chimney: it goes up quickly
+     while it is still hot, slows as it cools and mixes, spreads as it slows,
+     and thins away. Age runs 0 to 1 over the puff's whole life. */
+  plume: {
+    chan: ["rise", "spread", "fade"],
+    body: [
+      [0.00, 0.00, 0.10, 1.00],
+      [0.10, 0.22, 0.20, 0.98],  // fast off the stack while it is hot
+      [0.24, 0.46, 0.36, 0.88],
+      [0.40, 0.66, 0.55, 0.70],
+      [0.58, 0.81, 0.74, 0.48],  // slowing, spreading
+      [0.76, 0.92, 0.89, 0.26],
+      [0.90, 0.98, 0.97, 0.10]
+    ]
   }
 };
 
