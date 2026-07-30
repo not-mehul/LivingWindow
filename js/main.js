@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS } from "./util.js?v=11";
-import { speciesIcon } from "./species.js?v=11";
-import { Scene } from "./scene.js?v=11";
-import { AudioEngine } from "./audio.js?v=11";
+import { state, sessionSerial, LOCATIONS } from "./util.js?v=12";
+import { speciesIcon } from "./species.js?v=12";
+import { Scene } from "./scene.js?v=12";
+import { AudioEngine } from "./audio.js?v=12";
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
@@ -36,7 +36,7 @@ const capName = document.getElementById("capName");
 const capLatin = document.getElementById("capLatin");
 const capDesc = document.getElementById("capDesc");
 const capDir = document.getElementById("capDir");
-let capTimer = null;
+let capTimer = null, capFrame = 0, capShown = null;
 
 function direction(az, depth) {
   const side = az < -0.28 ? "off to the left" : az > 0.28 ? "off to the right" : "straight ahead";
@@ -44,18 +44,49 @@ function direction(az, depth) {
   return side + " \u00b7 " + d;
 }
 
+/* Each pictogram is parsed once and kept. Setting innerHTML to a string of SVG
+   builds a document fragment from scratch every time, and this ran at the exact
+   instant a call began sounding. */
+const capIcons = new Map();
+function iconFor(sp) {
+  let n = capIcons.get(sp.id);
+  if (!n) {
+    const holder = document.createElement("span");
+    holder.innerHTML = speciesIcon(sp, 18);
+    n = holder.firstElementChild;
+    capIcons.set(sp.id, n);
+  }
+  return n;
+}
+
+/* The caption is the one piece of DOM that moves while the piece is running,
+   and it used to be written on the same tick the sound started: an SVG parse
+   and a style recalculation, landing inside the window in which the audio
+   graph is also being built. That is enough to make the render thread miss a
+   buffer, which is heard as the beds stuttering just before a bird sings.
+   Nothing here needs to be exact to the millisecond, so it waits for the
+   browser's own next frame \u2014 and does no work at all if the same species is
+   already up, which happens whenever a bird sings twice. */
 function emitSubtitle(sp, az, depth, dur) {
   if (!state.subtitles) return;
-  capIcon.innerHTML = speciesIcon(sp, 18);
-  capIcon.classList.toggle("sage", sp.tone === "sage");
-  capName.textContent = sp.name;
-  capLatin.textContent = sp.latin;
-  capDesc.textContent = sp.desc;
-  capDir.textContent = direction(az, depth);
-  captionCard.classList.add("visible");
   clearTimeout(capTimer);
-  capTimer = setTimeout(() => captionCard.classList.remove("visible"),
-    Math.max(2600, (dur || 1)*1000 + 1600));
+  capTimer = setTimeout(() => {
+    captionCard.classList.remove("visible"); capShown = null;
+  }, Math.max(2600, (dur || 1)*1000 + 1600));
+  if (capFrame) cancelAnimationFrame(capFrame);
+  capFrame = requestAnimationFrame(() => {
+    capFrame = 0;
+    if (capShown !== sp.id) {
+      capIcon.replaceChildren(iconFor(sp));
+      capIcon.classList.toggle("sage", sp.tone === "sage");
+      capName.textContent = sp.name;
+      capLatin.textContent = sp.latin;
+      capDesc.textContent = sp.desc;
+      capShown = sp.id;
+    }
+    capDir.textContent = direction(az, depth);
+    captionCard.classList.add("visible");
+  });
 }
 
 /* ---- Wiring ---- */
