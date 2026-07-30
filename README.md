@@ -254,10 +254,13 @@ does.
 - **Ground birds have somewhere to be.** A bird that comes down to a stone or a
   tussock takes a few steps — hopping or walking according to its species — has
   a look round, and works the turf for food before flying off.
-- **Nothing dissolves in place.** Every visitor leaves by doing something: the
-  owl tips off the branch and rows away, the pheasant walks out of frame or goes
-  up like a firework, the kingfisher drops into the water, the cockerel sinks
-  back behind the hill it came over.
+- **Nothing dissolves in place, and nothing appears out of nothing.** Every
+  visitor leaves by doing something: the owl tips off the branch and rows away,
+  the pheasant walks out of frame or goes up like a firework, the kingfisher
+  drops into the water, the cockerel sinks back behind the hill it came over.
+  And every visitor arrives the same way — on its own feet or its own wings,
+  from beyond the edge of the frame, at full weight. The alpha ramp in
+  `updateActors` is opt-in (`a.fadeIn`) and nothing sets it.
 - **Nothing here is driven by a sine.** A limb driven by a sine has two poses
   in it and slides evenly between them, which is why the deer used to swim
   rather than walk and the small birds used to row rather than fly. Every
@@ -330,6 +333,20 @@ middle cannot be written any other way.
 back rather than going up and down at one speed; a blink shuts fast and opens
 slowly; a firefly's flash rises at once and dies away; a glint off water
 catches, loses it, catches again and is then dark for a good while.
+
+### Keeping the audio out of the way
+
+A voice's graph is built on the main thread and takes the graph lock while it
+does it — two milliseconds on a good day and sixteen on a bad one, most of that
+being the shared noise buffer the first burst has to fill. Built twenty
+milliseconds ahead of its own first sample, as a reply or a passing flier was,
+that could still be in progress when the render thread wanted the sound, and
+the beds would stutter just before the bird was heard. So: `VOICE_LEAD` puts a
+tenth of a second between the build and the sound, the noise buffer and the
+HRTF impulse set are both warmed at startup while nothing is listening, and the
+subtitle — an SVG parse and a style recalculation that used to land on exactly
+that tick — caches its pictograms, skips the write when the species has not
+changed, and waits for the browser's own next frame.
 
 ### The wind
 

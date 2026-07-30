@@ -364,30 +364,33 @@ const GAIT = {
   swim: {
     chan: ["hump", "tail", "head"],
     body: [
-      [0.00, 0.10, 0.05, 0.35],
-      [0.12, 0.55, 0.00, 0.70],
-      [0.26, 1.00, 0.20, 1.00],    // the back at its highest
-      [0.40, 0.72, 0.72, 0.72],
-      [0.54, 0.20, 1.00, 0.30],    // the tail breaks as the back goes under
-      [0.68, 0.00, 0.62, 0.05],
-      [0.82, 0.00, 0.18, 0.10],    // and for a moment there is nothing
-      [0.92, 0.02, 0.02, 0.18]
+      [0.00, 0.34, 0.26, 0.44],
+      [0.12, 0.66, 0.20, 0.74],
+      [0.26, 1.00, 0.32, 1.00],    // the back at its highest
+      [0.40, 0.80, 0.76, 0.76],
+      [0.54, 0.48, 1.00, 0.40],    // the tail breaks as the back goes down
+      [0.68, 0.32, 0.72, 0.22],
+      [0.82, 0.28, 0.38, 0.26],    // low in the water, but never gone: an otter
+      [0.92, 0.30, 0.28, 0.34]     // that vanished would be a dive, not a swim
     ]
   },
   /* A porpoise's roll. Not a leap and not a sine: the snout breaks, the back
      wheels over in about a fifth of the cycle, the fin comes up last and goes
      down last, and then the animal is gone for a long while. */
   roll: {
-    chan: ["arc", "pitch"],
+    chan: ["arc", "pitch", "fluke"],
     body: [
-      [0.00, -0.85, -0.10],        // deep, and running level
-      [0.18, -0.35,  0.32],        // rising, nose up
-      [0.30,  0.35,  0.30],        // the snout breaks
-      [0.40,  0.92,  0.10],        // the back at the top of the roll
-      [0.50,  1.00, -0.14],        // wheeling over it
-      [0.62,  0.55, -0.34],        // the fin last, and going down
-      [0.72, -0.20, -0.30],
-      [0.86, -0.80, -0.12]
+      [0.00, -0.85, -0.10, 0.00],  // deep, and running level
+      [0.16, -0.40,  0.30, 0.00],  // rising, nose up
+      [0.26,  0.20,  0.34, 0.00],  // the snout breaks
+      [0.36,  0.86,  0.16, 0.00],  // the back at the top of the roll
+      [0.46,  1.00, -0.10, 0.05],
+      [0.56,  0.80, -0.30, 0.00],  // wheeling over: the fin goes down
+      [0.66,  0.34, -0.38, 0.26],  // and only once the back has gone under do
+      [0.74, -0.15, -0.30, 0.90],  // the flukes come up out of the hole it
+      [0.80, -0.45, -0.24, 1.00],  // made — the last of the animal you see
+      [0.86, -0.62, -0.20, 0.52],
+      [0.92, -0.80, -0.14, 0.09]
     ]
   },
   /* A pipistrelle's wingbeat: the downstroke is a third of the cycle and the
@@ -762,13 +765,17 @@ const GAIT = {
   plume: {
     chan: ["rise", "spread", "fade"],
     body: [
-      [0.00, 0.00, 0.10, 1.00],
-      [0.10, 0.22, 0.20, 0.98],  // fast off the stack while it is hot
-      [0.24, 0.46, 0.36, 0.88],
-      [0.40, 0.66, 0.55, 0.70],
-      [0.58, 0.81, 0.74, 0.48],  // slowing, spreading
-      [0.76, 0.92, 0.89, 0.26],
-      [0.90, 0.98, 0.97, 0.10]
+      [0.00, 0.00, 0.05, 0.00],  // out of the stack, and not yet anything
+      [0.06, 0.14, 0.13, 0.60],
+      [0.13, 0.28, 0.23, 0.94],  // full while it is still hot and tight
+      [0.22, 0.44, 0.35, 1.00],
+      [0.33, 0.59, 0.48, 0.90],
+      [0.45, 0.71, 0.61, 0.74],  // slowing, spreading, going over downwind
+      [0.57, 0.81, 0.73, 0.56],
+      [0.69, 0.89, 0.83, 0.38],
+      [0.80, 0.94, 0.91, 0.21],
+      [0.90, 0.98, 0.97, 0.07],
+      [0.96, 1.00, 1.00, 0.00]   // and gone before it comes round again
     ]
   }
 };

@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=11";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=11";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=11";
+} from "./util.js?v=12";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=12";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=12";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -323,17 +323,24 @@ class Scene {
       this.tree = this.makeTree(rng);
       // Foliage gathered at the ends of the branches. A tree standing bare in
       // a summer field is the one thing in this view that never looked right.
+      // Many small clumps gathered along the outer branches rather than a few
+      // big ones at the tips, so the crown is a mass with a broken edge.
       this.treeLeaves = [];
       for (const sg of this.tree) {
-        if (sg.w > 1 || rng() < 0.25) continue;
-        this.treeLeaves.push({ x: sg.x2, y: sg.y2, r: 0.026 + rng()*0.03,
-          dx: (rng()-0.5)*0.02, dy: (rng()-0.5)*0.02 });
+        if (sg.w > 1 || rng() < 0.42) continue;
+        this.treeLeaves.push({ x: sg.x2, y: sg.y2, r: 0.017 + rng()*0.021,
+          dx: (rng()-0.5)*0.026, dy: (rng()-0.5)*0.026 });
       }
       this.grass = this.makeGrass(rng, 110, 0.03, 0.05);
       // A hedgerow running across the middle distance — the field boundary
       // that stops the middle of the picture from being an empty band of
       // colour — then a couple of far trees, wildflowers and stones.
-      this.hedgeLine = (x) => (this.hillA(x) + this.hillB(x))*0.5 + 0.012;
+      /* A hedge follows the ground it grows out of. Hung on the average of
+         two independent ridges it matched neither, and read as a dark tube
+         winding across the hillside with nothing to do with the land under
+         it. Set just below the far ridge it belongs to that ridge, which is
+         where a field boundary is actually seen from here. */
+      this.hedgeLine = (x) => this.hillA(x) + 0.052;
       this.hedge = this.makeHedgerow(rng, this.hedgeLine);
       // a couple of shrubs standing out on their own, away from the hedge line
       this.shrubs = [];
@@ -576,17 +583,31 @@ class Scene {
     for (let i = 0; i < n; i++) g.push({ x: rng(), h: hMin + rng()*hVar, ph: rng()*Math.PI*2, lean: (rng()-0.5)*0.6 });
     return g;
   }
+  /* The field tree. It used to fork the moment it left the ground and divide
+     at the same wide angle all the way up, which gave a short bare stalk
+     carrying two heavy lobes — a catapult, not a tree. A tree has a bole
+     before the first division; it divides narrowly low down and more widely
+     the further out it gets; and the divisions keep going long enough that the
+     ends are fine. */
   makeTree(rng) {
     const segs = [];
     const grow = (x, y, ang, len, depth) => {
-      const nx = x + Math.cos(ang) * len;
-      const ny = y + Math.sin(ang) * len;
+      const nx = x + Math.cos(ang)*len, ny = y + Math.sin(ang)*len;
       segs.push({ x1: x, y1: y, x2: nx, y2: ny, w: depth });
       if (depth <= 0) return;
-      const n = rng() < 0.7 ? 2 : 3;
-      for (let i = 0; i < n; i++) grow(nx, ny, ang + (rng() - 0.5) * 1.1, len * (0.62 + rng()*0.16), depth - 1);
+      const n = depth > 3 ? 2 : (rng() < 0.5 ? 2 : 3);
+      const spread = 0.34 + (5 - depth)*0.19;       // narrow low, wide out at the ends
+      for (let i = 0; i < n; i++) {
+        const k = n === 1 ? 0 : (i/(n - 1) - 0.5)*2;
+        grow(nx, ny, ang + k*spread + (rng() - 0.5)*0.26,
+          len*(0.68 + rng()*0.12), depth - 1);
+      }
     };
-    grow(0, 0, -Math.PI/2 + (rng()-0.5)*0.2, 0.13, 4);
+    const a0 = -Math.PI/2 + (rng() - 0.5)*0.16;
+    const bole = 0.075;
+    const bx = Math.cos(a0)*bole, by = Math.sin(a0)*bole;
+    segs.push({ x1: 0, y1: 0, x2: bx, y2: by, w: 6 });   // the trunk, undivided
+    grow(bx, by, a0, bole, 5);
     return segs;
   }
   makeTrunk(rng, top, w, crown) {
@@ -882,14 +903,18 @@ class Scene {
       const ground = a.beh === "frog" || a.beh === "wader" || a.beh === "duck";
       if (a.beh === "cockerel") {
         // Comes up over the brow of the hill from the farm on the far side.
-        a.alpha = 0;
+        // The ridge itself hides it on the way, so it needs no fade to do it.
+        a.alpha = 1;
         a.enterFromX = a.restX + (a.flip ? -1 : 1)*0.012;
-        a.enterFromY = a.restY + 0.035;
+        a.enterFromY = a.restY + 0.055;
       } else if (a.beh === "cuckoo") {
         // In along the skyline on quick shallow beats, to the treetop.
-        a.alpha = 0;
-        a.enterFromX = a.restX + (a.flip ? 1 : -1)*(0.10 + Math.random()*0.06);
-        a.enterFromY = a.restY - 0.01;
+        a.flightIn = true;
+        a.alpha = 1;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        a.enterFromX = side < 0 ? -0.14 : 1.14;
+        a.enterFromY = Math.max(0.04, a.restY - (0.04 + Math.random()*0.10));
+        a.flip = side > 0;
       } else if (a.beh === "perch") {
         // A bird arrives on the wing: in over the edge of the frame, down
         // across the open air, a flare at the last moment, and only then is
@@ -900,16 +925,37 @@ class Scene {
         a.enterFromX = side < 0 ? -0.14 : 1.14;
         a.enterFromY = Math.max(0.04, a.restY - (0.16 + Math.random()*0.26));
         a.flip = side > 0;                     // it faces the way it is going
-      } else if (ground) {
-        a.alpha = 0;
-        const side = a.flip ? 1 : -1;
-        a.enterFromX = a.restX + side * (0.06 + Math.random()*0.05);
+      } else if (ground || a.beh === "pheasant") {
+        /* A duck, a wader, a frog, a pheasant: things that walk or swim into
+           view. They used to slide a little way and fade up out of nothing,
+           which is the one thing this piece is not supposed to do. Now they
+           come in over the edge of the frame at full weight — and because an
+           entrance only lasts a second or two, the resting spot is pulled back
+           toward whichever edge they are coming from, so the walk is a walk
+           and not a sprint. */
+        a.alpha = 1;
+        const side = a.restX < 0.5 ? -1 : 1;
+        const reach = 0.17 * enter;             // as far as it will plausibly come
+        a.restX = side < 0 ? Math.min(a.restX, -0.06 + reach)
+                           : Math.max(a.restX, 1.06 - reach);
+        a.enterFromX = side < 0 ? -0.06 : 1.06;
         a.enterFromY = a.restY;
+        a.flip = side > 0;                      // facing the way it is going
+      } else if (a.beh === "egret" || a.beh === "owl") {
+        // Both of these leave on the wing, and both now arrive on it: in over
+        // the edge, down across the open air, and only then standing.
+        a.flightIn = true;
+        a.alpha = 1;
+        const side = Math.random() < 0.5 ? -1 : 1;
+        a.enterFromX = side < 0 ? -0.16 : 1.16;
+        a.enterFromY = Math.max(0.05, a.restY - (0.14 + Math.random()*0.20));
+        a.flip = side > 0;
       } else {
-        a.alpha = 0;
-        const side = a.flip ? 1 : -1;
-        a.enterFromX = a.restX + side * (0.04 + Math.random()*0.04);
-        a.enterFromY = a.restY - (0.06 + Math.random()*0.06);
+        // a woodpecker: down onto the trunk from over the top of the frame,
+        // which is where one arrives from — never out of the middle of the air
+        a.alpha = 1;
+        a.enterFromX = a.restX + (a.flip ? 1 : -1)*0.02;
+        a.enterFromY = -0.08;
       }
       a.x = a.enterFromX; a.y = a.enterFromY;
     }
@@ -1273,9 +1319,11 @@ class Scene {
   makeHedgerow(rng, baseFn) {
     const from = rng() < 0.5 ? -0.04 : 0.22 + rng()*0.2;
     const to = from < 0 ? 0.45 + rng()*0.5 : 1.04;
+    // A cut hedge is not a ribbon: the top wanders, and it wanders faster
+    // than the ground under it does, or the two lines stay parallel.
     const waves = [];
-    for (let i = 0; i < 3; i++) {
-      waves.push({ f: 9 + rng()*18 + i*17, ph: rng()*Math.PI*2, a: (0.62 - i*0.16) });
+    for (let i = 0; i < 4; i++) {
+      waves.push({ f: 14 + rng()*26 + i*23, ph: rng()*Math.PI*2, a: (0.78 - i*0.15) });
     }
     const standards = [];
     const ns = 1 + Math.floor(rng()*3);
@@ -1317,9 +1365,13 @@ class Scene {
       const ty = (baseFn(x) - hg.height(x))*H + sway*0.3;
       if (i === 0) c.moveTo(x*W + sway, ty); else c.lineTo(x*W + sway, ty);
     }
+    /* Down past its own foot and into the mass of the next ridge, which is
+       painted over the top of it a moment later. Filling five pixels below the
+       base left the hedge standing on nothing — a ribbon of constant thickness
+       following a wavy line, which is what made it read as a tube. */
     for (let i = n; i >= 0; i--) {
       const x = hg.from + (hg.to - hg.from)*(i/n);
-      c.lineTo(x*W, baseFn(x)*H + 5);
+      c.lineTo(x*W, Math.max(baseFn(x), this.hillB(x))*H + 6);
     }
     c.closePath(); c.fill();
     // Loose growth standing proud of the cut line — the year's new shoots that
@@ -2395,8 +2447,11 @@ class Scene {
         const cols = b.cols, rows = Math.max(2, Math.floor(bh/24));
         const mx = bw*0.18, my = 10;
         const gapx = (bw - mx*2)/cols, gapy = (bh - my*1.6)/rows;
+        // taller than wide, as a window is, and sized to the building
+        const wW = Math.max(2, Math.min(gapx*0.52, bw*0.11, 7));
+        const wH = Math.max(3, Math.min(gapy*0.55, bh*0.045, 10));
         for (let r = 0; r < rows; r++) for (let k = 0; k < cols; k++) {
-          c.fillRect(bx + mx + k*gapx, byTop + my + r*gapy, Math.min(gapx*0.5, 5), 5);
+          c.fillRect(bx + mx + k*gapx, byTop + my + r*gapy, wW, wH);
         }
       }
       c.globalAlpha = 1;
@@ -2405,13 +2460,20 @@ class Scene {
       const fc = this.tok.firefly;
       for (const b of this.frontBlocks) {
         const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = groundY - bh;
+        /* A lit window is a window, so it is the size of one: scaled to the
+           block it is in and to the same grid the dark ones are drawn on.
+           Fixed at two and a half pixels by three and a half it was a speck on
+           a tower and a slab on a low roof, and it never lined up with
+           anything. */
+        const wW = Math.max(2, Math.min(bw*0.11, 7));
+        const wH = Math.max(3, Math.min(bh*0.045, 10));
         for (const wnd of b.lit) {
           // somebody comes home, somebody goes to bed — see updateCityWindows
           const lvl = (wnd.on ? wnd.fade : 1 - wnd.fade);
           if (lvl < 0.02) continue;
           const flick = wnd.flicker ? 0.75 + 0.25*Math.sin(this.t*3.1 + wnd.ph) : 1;
           c.fillStyle = `rgba(${fc[0]|0},${fc[1]|0},${fc[2]|0},${0.55 * night * lvl * flick})`;
-          c.fillRect(bx + wnd.u*bw, byTop + wnd.v*bh, 2.5, 3.5);
+          c.fillRect(bx + wnd.u*bw, byTop + wnd.v*bh, wW, wH);
         }
       }
     }
@@ -2424,17 +2486,19 @@ class Scene {
       const bx = b.x*W, bw = b.w*W, byTop = groundY - b.h*H;
       const vx = bx + b.vent.u*bw;
       c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
-      for (let k = 0; k < 5; k++) {
+      // Eight of them, close enough together that the column reads as steam
+      // rather than as a string of beads.
+      for (let k = 0; k < 8; k++) {
         // A puff leaves the vent quickly while it is hot, slows as it cools
         // and mixes, spreads as it slows, and shears off downwind as it goes.
-        const age = ((this.t*0.16 + b.vent.ph + k*0.2) % 1);
+        const age = ((this.t*0.16 + b.vent.ph + k/8) % 1);
         const pl = gaitPose("plume", age);
-        const a = pl.fade*0.13*(0.5 + wv);
+        const a = Math.max(0, pl.fade)*0.15*(0.5 + wv);
         if (a < 0.01) continue;
         c.globalAlpha = a;
         c.beginPath();
-        c.arc(vx + Math.sin(age*3 + b.vent.ph)*8 + pl.rise*30*wv + shear*pl.spread*26,
-          byTop - 3 - pl.rise*H*0.13, 3 + pl.spread*14, 0, Math.PI*2);
+        c.arc(vx + Math.sin(age*2.2 + b.vent.ph)*3 + shear*pl.spread*30,
+          byTop - 3 - pl.rise*H*0.13, 3 + pl.spread*11, 0, Math.PI*2);
         c.fill();
       }
       c.globalAlpha = 1;
@@ -2478,16 +2542,19 @@ class Scene {
       const cw = Math.max(3, bw*0.09), ch = Math.min(bh*0.3, 17);
       c.fillRect(rx, byTop - ch, cw, ch);
       c.save(); c.fillStyle = `rgba(${this.tok.cloudRGB}, 1)`;
+      /* Six puffs a sixth of a life apart, so one is always leaving the stack
+         while another is thinning out at the top: the column is continuous,
+         and no puff ever snaps back to the chimney still visible. */
       const shear = 0.3 + this.windBend(b.x)*1.7;
-      for (let i = 0; i < 4; i++) {
-        // each puff its own age, so the column thins and leans as it climbs
-        const age = ((this.t*0.30 + b.smoke + i*0.25) % 1);
+      for (let i = 0; i < 6; i++) {
+        const age = ((this.t*0.26 + b.smoke + i/6) % 1);
         const pl = gaitPose("plume", age);
-        c.globalAlpha = 0.16*pl.fade;
-        const sy = byTop - ch - 4 - pl.rise*34;
-        const sx = rx + cw*0.5 + Math.sin(this.t*0.8 + b.smoke + i)*3
-                 + shear*pl.spread*22;
-        c.beginPath(); c.arc(sx, sy, 2.6 + pl.spread*7, 0, Math.PI*2); c.fill();
+        const a = Math.max(0, pl.fade)*0.17;
+        if (a < 0.008) continue;
+        c.globalAlpha = a;
+        const sy = byTop - ch - 3 - pl.rise*38;
+        const sx = rx + cw*0.5 + Math.sin(age*2.4 + b.smoke)*2.4 + shear*pl.spread*24;
+        c.beginPath(); c.arc(sx, sy, 2.2 + pl.spread*8, 0, Math.PI*2); c.fill();
       }
       c.restore();
     } else if (b.roof === "box") {
@@ -2528,7 +2595,11 @@ class Scene {
           const e = k*k*(3 - 2*k);                     // smoothstep
           a.x = a.enterFromX + (a.restX - a.enterFromX) * e;
           a.y = a.enterFromY + (a.restY - a.enterFromY) * e;
-          a.alpha = Math.min(1, e * 1.3);
+          // Only the things that are genuinely coming out of somewhere fade up
+          // — and there are none left. Everything else arrives at full weight
+          // from beyond the edge of the frame, on its own feet or its own
+          // wings, because nothing in this piece appears out of nothing.
+          if (a.fadeIn) a.alpha = Math.min(1, e * 1.3);
         }
       } else if (a.enter > 0 && !a.leave && (a.alpha < 1 || a.flightIn)) {
         a.x = a.restX; a.y = a.restY; a.alpha = 1;
@@ -2793,10 +2864,15 @@ class Scene {
         }
         case "egret": {
           const off = a.leave === "heronoff" ? a.leaveT : 0;
+          // in on slow wings, legs down at the last moment, and only then
+          // standing — the reverse of the heave it leaves on
+          const inAir = inK >= 0 && inK < 0.84;
           this.paintHeron(c, { x, y, s: a.s*2.3, dir: a.flip ? -1 : 1,
-            flying: off > 0.5,
-            flap: off > 0.5 ? gaitAt("beatSlow", (off - 0.5)*7*TURN, "beat") : 0,
-            crouch: off > 0 ? Math.min(1, off/0.5) : 0,
+            flying: off > 0.5 || inAir,
+            flap: (off > 0.5 || inAir)
+              ? gaitAt("beatSlow", (inAir ? a.t*4.2 : (off - 0.5)*7)*TURN, "beat") : 0,
+            crouch: off > 0 ? Math.min(1, off/0.5)
+                            : (inK >= 0.84 ? 1 - (inK - 0.84)/0.16 : 0),
             color: colStr, pale: true, t: a.t, sing, alpha: a.alpha });
           break;
         }
@@ -2804,7 +2880,8 @@ class Scene {
           const flushT = a.leave === "flush" ? a.leaveT : 0;
           this.paintPheasant(c, { x, y, s: a.s*1.5, flip: a.flip,
             alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr, sing,
-            walking: (a.t > sungEnd && !a.leave) || a.leave === "walkoff",
+            walking: (a.t > sungEnd && !a.leave) || a.leave === "walkoff"
+              || a.t < a.enter,
             lp: a.t*(a.leave === "walkoff" ? 9 : 5),
             fly: flushT ? Math.min(1, Math.max(0, (flushT - 0.16)/0.12)) : 0,
             flap: flushT ? gaitAt("beatQuick", flushT*30*TURN, "beat") : 0, t: a.t });
@@ -2812,11 +2889,14 @@ class Scene {
         }
         case "owl": {
           const gl = a.leave === "glide" ? Math.min(1, a.leaveT/0.35) : 0;
+          // rows in low and level, and is on the branch before it stops
+          const glIn = inK >= 0 ? Math.max(0, 1 - Math.max(0, inK - 0.70)/0.30) : 0;
+          const owlFly = Math.max(gl, glIn);
           this.paintOwl(c, { x, y, s: a.s, alpha: a.alpha, color: colStr, rim: rimStr,
             deep: deepStr, night, t: a.t, headTurn, blinkPh: iv.tailPh || 0,
-            breath, fly: gl,
-            flap: gl ? gaitAt("beatSlow", a.leaveT*8.5*TURN, "beat") : 0,
-            flip: a.flyDir < 0, settle: wingSettle, sing });
+            breath, fly: owlFly,
+            flap: owlFly ? gaitAt("beatSlow", (gl ? a.leaveT*8.5 : a.t*5.5)*TURN, "beat") : 0,
+            flip: a.leave ? a.flyDir < 0 : a.flip, settle: wingSettle, sing });
           break;
         }
         case "cuckoo": this.paintCuckoo(c, { x, y, s: a.s, flip: a.flip, alpha: a.alpha,
@@ -2843,8 +2923,14 @@ class Scene {
           rim: rimStr, deep: deepStr, sing, t: a.t }); break;
         case "wader": this.paintWader(c, { x, y, s: a.s, flip: a.data.dir < 0,
           alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr, sing,
-          walking: a.t > sungEnd, t: a.t }); break;
-        case "frog": this.paintFrog(c, { x, y, s: a.s, alpha: a.alpha, color: col, bot, sing, breath, t: a.t }); break;
+          walking: a.t > sungEnd || a.t < a.enter, t: a.t }); break;
+        case "frog": {
+          // it hops in rather than sliding, which is the only way a frog moves
+          const fh = inK >= 0 ? Math.max(0, gaitPose("birdHop", a.t*5.5*TURN).rise) : 0;
+          this.paintFrog(c, { x, y: y - fh*a.s*0.9, s: a.s, alpha: a.alpha,
+            color: col, bot, sing, breath, t: a.t });
+          break;
+        }
       }
     }
   }
@@ -2877,10 +2963,31 @@ class Scene {
     }
     if (a.act === "step") {
       const dx = a.walkTo - a.x;
-      if (Math.abs(dx) > 0.004) {
+      const arrived = Math.abs(dx) <= 0.004;
+      if (!arrived) {
         const step = (a.walks ? 0.035 : 0.05) * dt;
         a.x += Math.sign(dx) * Math.min(Math.abs(dx), step);
-        if (a.walks) a.stridePh += dt*9; else a.hopPh += dt*11;
+      }
+      /* A hop is one whole thing. Arriving used to stop the phase dead, which
+         stranded the bird wherever the last frame had left it — often in
+         mid-air with its feet tucked up — and held it there, twitching, for
+         the rest of the act. So having arrived it finishes the hop it is in,
+         crosses the top of the cycle, and only then stands. */
+      const TAU = Math.PI*2;
+      if (a.walks) {
+        const r = dt*9;
+        if (!arrived) a.stridePh += r;
+        else if (a.stridePh > 0) {
+          a.stridePh += r;
+          if (a.stridePh % TAU < r) a.stridePh = 0;
+        }
+      } else {
+        const r = dt*11;
+        if (!arrived) a.hopPh += r;
+        else if (a.hopPh > 0) {
+          a.hopPh += r;
+          if (a.hopPh % TAU < r) a.hopPh = 0;
+        }
       }
       a.peck = 0; a.gulp = 0;
     } else if (a.act === "peck" && a.actT < a.pecks*0.42) {
@@ -4711,12 +4818,14 @@ class Scene {
           const rl = gaitPose("roll", cr.phase*TURN);
           const arc = rl.arc;
           const px = cr.x*W, wy = cr.base*H;
-          if (arc > 0.02) {
-            // pitch follows the arc: nose up on the rise, down on the fall
+          if (arc > 0.02 || rl.fluke > 0.02) {
+            // pitch follows the arc: nose up on the rise, down on the fall,
+            // and the flukes come up last, after the back has gone
             this.paintPorpoise(c, { x: px, y: wy, dir: cr.dir, arc,
-              pitch: rl.pitch*0.34,
+              pitch: rl.pitch*0.34, fluke: rl.fluke,
               s: H*0.05, color: colDark, rim: colFar });
-          } else {
+          }
+          if (arc <= 0.02) {
             // between rolls: a dark shape just under, and the flat "footprint"
             // left on the surface by the last downstroke
             const sub = Math.max(0, 1 + arc*3);
@@ -5283,9 +5392,14 @@ class Scene {
     c.beginPath();
     c.moveTo(-s*0.06, 0); c.lineTo(s*0.10, s*0.01);
     c.moveTo(-s*0.06, 0); c.lineTo(-s*0.20, s*0.01);
-    if (lift + cock < 0.02) {
-      c.moveTo(s*0.14, 0); c.lineTo(s*0.30, s*0.01);
-      c.moveTo(s*0.14, 0); c.lineTo(s*0.02, s*0.01);
+    // The lifted foot loses its toes; the planted one keeps them. `lift` is in
+    // pixels and `cock` is a fraction, and the old test added them together —
+    // so the bird stood about with one foot missing whenever `cock` was
+    // anything at all above a hundredth, which is most of the time.
+    const off2 = lift + cock*s*0.22;
+    if (off2 < s*0.02) {
+      c.moveTo(s*0.14 + swing, 0); c.lineTo(s*0.30 + swing, s*0.01);
+      c.moveTo(s*0.14 + swing, 0); c.lineTo(s*0.02 + swing, s*0.01);
     }
     c.stroke();
     c.fillStyle = body; c.strokeStyle = body;
@@ -5463,6 +5577,11 @@ class Scene {
     c.quadraticCurveTo(s*1.10, s*0.20, s*0.98, s*0.36);
     c.quadraticCurveTo(s*0.2, s*0.30, -s*1.15, s*0.60);
     c.closePath(); c.fill();
+    // The blunt melon and the short beakless snout, which is the other half of
+    // why a porpoise is not a dolphin: no bottle, just a rounded face.
+    c.beginPath();
+    c.ellipse(s*0.86, s*0.06, s*0.24, s*0.20, -0.18, 0, Math.PI*2);
+    c.fill();
     // The dorsal fin: low, broad-based, its trailing edge nearly straight —
     // the field mark that separates a porpoise from anything else inshore.
     c.beginPath();
@@ -5470,7 +5589,24 @@ class Scene {
     c.quadraticCurveTo(-s*0.30, -s*0.46, -s*0.06, -s*0.52);
     c.quadraticCurveTo(-s*0.06, -s*0.30, s*0.04, -s*0.14);
     c.closePath(); c.fill();
-    // A wet sheen along the crest of the back.
+    // The flipper, small and set low and forward, breaking the line of the
+    // flank as the animal rolls over.
+    c.globalAlpha = 0.85;
+    c.beginPath();
+    c.moveTo(s*0.34, s*0.22);
+    c.quadraticCurveTo(s*0.18, s*0.46, -s*0.06, s*0.52);
+    c.quadraticCurveTo(s*0.06, s*0.28, s*0.20, s*0.20);
+    c.closePath(); c.fill();
+    c.globalAlpha = 1;
+    // The pale flank: a porpoise is dark over and light under, and the line
+    // between the two is the thing you actually see going over.
+    c.fillStyle = `rgba(${this.tok.foamRGB}, 0.18)`;
+    c.beginPath();
+    c.moveTo(-s*0.90, s*0.46);
+    c.quadraticCurveTo(-s*0.10, s*0.16, s*0.86, s*0.20);
+    c.quadraticCurveTo(s*0.20, s*0.34, -s*0.86, s*0.56);
+    c.closePath(); c.fill();
+    // A wet sheen along the crest of the back, and the eye behind the mouth.
     c.strokeStyle = o.rim || `rgba(${this.tok.foamRGB}, 0.35)`;
     c.globalAlpha = 0.4*a;
     c.lineWidth = Math.max(1, s*0.05);
@@ -5478,6 +5614,9 @@ class Scene {
     c.moveTo(-s*0.62, s*0.02);
     c.quadraticCurveTo(-s*0.05, -s*0.20, s*0.62, -s*0.02);
     c.stroke();
+    c.globalAlpha = Math.min(1, a*1.6);
+    c.fillStyle = css(mix(this.tok.ink, this.tok.moon, 0.35));
+    c.beginPath(); c.arc(s*0.80, s*0.04, Math.max(0.6, s*0.045), 0, Math.PI*2); c.fill();
     c.globalAlpha = 1;
     c.restore();
     // Where it cuts the surface: a small bow wave running off the shoulder,
@@ -5497,6 +5636,31 @@ class Scene {
       c.ellipse(s*0.62, -rise - s*0.55 - b*s*0.35, s*0.13*(0.5 + b), s*0.18*(0.5 + b*1.4),
         0, 0, Math.PI*2);
       c.fill();
+    }
+    /* The flukes, last of it to go. A porpoise going down lifts its tail clear
+       of the hole its back has just left, and that is the shape you remember
+       long after the animal itself is gone. Drawn outside the clip that keeps
+       the body under the surface, because the flukes are what is above it. */
+    const fl = o.fluke || 0;
+    if (fl > 0.02) {
+      c.save();
+      c.globalAlpha = Math.min(1, fl*1.3);
+      c.fillStyle = o.color;
+      c.translate(-s*1.05, -s*0.02 - fl*s*0.30);
+      c.rotate(-0.30 + fl*0.34);
+      c.beginPath();
+      c.moveTo(0, s*0.24);
+      c.quadraticCurveTo(-s*0.06, -s*0.06, -s*0.34, -s*0.20);
+      c.quadraticCurveTo(-s*0.10, -s*0.16, s*0.02, -s*0.22);
+      c.quadraticCurveTo(s*0.20, -s*0.10, s*0.14, s*0.22);
+      c.closePath(); c.fill();
+      c.restore();
+      // and the smooth patch of water it leaves as it goes under
+      c.strokeStyle = `rgba(${this.tok.foamRGB}, ${0.24*fl})`;
+      c.lineWidth = 1;
+      c.beginPath();
+      c.ellipse(-s*0.5, s*0.06, s*0.5*(0.6 + fl), s*0.12, 0, 0, Math.PI*2);
+      c.stroke();
     }
     c.restore();
   }
@@ -5796,20 +5960,28 @@ class Scene {
       c.quadraticCurveTo(-s*1.02, -s*1.18 + tw*0.7, -s*0.90, -s*0.80);
       c.quadraticCurveTo(-s*0.74, -s*0.42, -s*0.34, -s*0.26);
       c.closePath(); c.fill();
-      // Rump high, shoulders down: the whole back slopes into the hole.
+      /* Rump high, shoulders down: the whole back slopes into the hole.
+         `dig` used to multiply the height of the back itself, so the animal
+         swelled up out of the ground as the dig began and collapsed flat again
+         as it ended — it changed size rather than posture. The body is one
+         size now; what `dig` does is drop the shoulders and lift the rump,
+         which is the only thing that was ever supposed to happen. */
+      const front = dig*s*0.34;                 // how far the shoulders have gone down
+      const rump = dig*s*0.10;                  // and the hindquarters come up
       c.beginPath();
-      c.moveTo(-s*0.62, -s*0.30);
-      c.quadraticCurveTo(-s*0.66, -s*0.86*dig - s*0.16, -s*0.16, -s*0.80*dig - s*0.14);
-      c.quadraticCurveTo(s*0.24, -s*0.72*dig - s*0.14, s*0.44, -s*0.34*dig - s*0.16);
-      c.quadraticCurveTo(s*0.30, -s*0.06, -s*0.10, -s*0.06);
-      c.quadraticCurveTo(-s*0.48, -s*0.06, -s*0.62, -s*0.30);
+      c.moveTo(-s*0.62, -s*0.30 - rump);
+      c.quadraticCurveTo(-s*0.68, -s*0.96 - rump, -s*0.16, -s*0.88 + front*0.45);
+      c.quadraticCurveTo(s*0.24, -s*0.82 + front*0.85, s*0.46, -s*0.48 + front);
+      c.quadraticCurveTo(s*0.32, -s*0.06, -s*0.10, -s*0.06);
+      c.quadraticCurveTo(-s*0.48, -s*0.06, -s*0.62, -s*0.30 - rump);
       c.closePath(); c.fill();
       // hind legs braced under the raised rump
-      this.limb(c, -s*0.40, -s*0.48*dig - s*0.14, -s*0.48, -s*0.02, s*0.19, s*0.07);
-      this.limb(c, -s*0.18, -s*0.46*dig - s*0.12, -s*0.22, -s*0.02, s*0.17, s*0.06);
+      this.limb(c, -s*0.40, -s*0.52 - rump, -s*0.48, -s*0.02, s*0.19, s*0.07);
+      this.limb(c, -s*0.18, -s*0.50 - rump, -s*0.22, -s*0.02, s*0.17, s*0.06);
       // Head down into the hole; on the bury it pushes the nut further in.
-      const hx = s*0.56 + bury*s*0.09, hy = -s*0.20 + bury*s*0.12;
-      this.limb(c, s*0.18, -s*0.44*dig - s*0.14, hx, hy, s*0.24, s*0.15);
+      const hx = s*0.56 + bury*s*0.09;
+      const hy = -s*0.62 + dig*s*0.42 + bury*s*0.12;
+      this.limb(c, s*0.18, -s*0.62 + front*0.7, hx, hy, s*0.24, s*0.15);
       c.beginPath(); c.arc(hx, hy, s*0.17, 0, Math.PI*2); c.fill();
       c.beginPath();
       c.moveTo(hx - s*0.08, hy - s*0.13); c.lineTo(hx - s*0.14, hy - s*0.34);
@@ -5824,8 +5996,10 @@ class Scene {
       // forepaws: scrabbling, or flat and tamping the litter back
       const px1 = pat ? 0 : st1.reach*s*0.13, py1 = pat ? -tamp*s*0.12 : (st1.pull - 0.35)*s*0.15;
       const px2 = pat ? 0 : st2.reach*s*0.13, py2 = pat ? -tamp*s*0.12 : (st2.pull - 0.35)*s*0.15;
-      this.limb(c, s*0.30, -s*0.34, s*0.52 + px1, -s*0.02 + py1, s*0.11, s*0.07);
-      this.limb(c, s*0.20, -s*0.30, s*0.42 + px2, -s*0.02 + py2, s*0.10, s*0.06);
+      // the shoulders they hang from come down with the rest of the front
+      const sh = -s*0.58 + front*0.72;
+      this.limb(c, s*0.30, sh, s*0.52 + px1, -s*0.02 + py1, s*0.11, s*0.07);
+      this.limb(c, s*0.20, sh + s*0.04, s*0.42 + px2, -s*0.02 + py2, s*0.10, s*0.06);
       // the hole itself, dark in the leaf-litter
       c.globalAlpha = 0.35;
       c.beginPath(); c.ellipse(s*0.58, s*0.01, s*0.24, s*0.06, 0, 0, Math.PI*2); c.fill();
@@ -6136,7 +6310,7 @@ class Scene {
     c.closePath(); c.fill();
     // tail-tip breaking behind
     const hump2 = w.tail;
-    if (hump2 > 0.4) {
+    if (hump2 > 0.22) {
       c.beginPath();
       c.moveTo(-s*0.85, s*0.03);
       c.quadraticCurveTo(-s*1.05, -s*0.22*hump2, -s*1.3, s*0.02);

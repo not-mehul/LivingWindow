@@ -6,10 +6,13 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=11";
-import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst } from "./species.js?v=11";
+import { mulberry32, REDUCED, state } from "./util.js?v=12";
+import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst } from "./species.js?v=12";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
+/* How far ahead of its first sample a voice's graph is built. See performCall. */
+const VOICE_LEAD = 0.12;
+
 function disconnect(...nodes) {
   for (const n of nodes) { try { n.disconnect(); } catch (e) { /* already gone */ } }
 }
@@ -209,6 +212,14 @@ class AudioEngine {
     this.surfFoamGain.connect(this.master);
 
     this.surfFloor = 0;
+    /* Warm the two things that cost their whole price the first time they are
+       asked for: the HRTF impulse set, which the first spatial panner loads,
+       and the shared noise buffer, which the first burst fills. Both used to be
+       paid for by whichever bird happened to sing first, and both are paid for
+       here instead, while nothing is listening. */
+    const warm = this.makePanner(0, 0.3, 4);
+    burst(ac, warm.node, ac.currentTime + 0.01, 1000, 4, 0.02, 0.0001);
+    this.once(() => warm.dispose(), 400);
     this.applyConditions();
     this.running = true;
     this.resumeSchedulers();
@@ -371,11 +382,18 @@ class AudioEngine {
                     sp.id === "cricket" || sp.id === "curlew";
     const settled = opts.reply && this.scene.hasSingerNear(sp.id, x01);
     const enter = (noActor || settled) ? 0 : 0.9 + r()*0.9;
-    const dur = sp.synth(ac, pan.node, ac.currentTime + 0.02 + enter, r) || 1;
+    /* Lead time. Building a voice is 2 ms of node construction on a good day
+       and sixteen on a bad one, and it takes the graph lock while it does it.
+       Scheduled twenty milliseconds out — which is what a reply or a flier got,
+       since neither waits to arrive — the render thread could still be waiting
+       on that lock when the first sample of the call was due, and the beds
+       would stutter just before the bird was heard. A tenth of a second is
+       inaudible as a delay and puts the whole build several buffers clear. */
+    const dur = sp.synth(ac, pan.node, ac.currentTime + VOICE_LEAD + enter, r) || 1;
     this.activeVoices++;
     this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
       (enter + dur + 0.3) * 1000);
-    this.retire(pan, enter + dur + 2.5);
+    this.retire(pan, VOICE_LEAD + enter + dur + 2.5);
     this.scene.spawnForCall(sp, x01, y01, depth, dur, enter, perchType);
     this.lastCallX = x01;
     const announce = () => {
@@ -383,8 +401,7 @@ class AudioEngine {
       this.scene.addRipple(x01, y01, sp.tone);
       this.emit(sp, az, depth, dur);
     };
-    if (enter > 0) this.once(announce, enter * 1000);
-    else announce();
+    this.once(announce, (VOICE_LEAD + enter) * 1000);
     if (!opts.reply) this.maybeCounterSing(sp, enter + dur, x01);
     return dur + enter;
   }
