@@ -54,8 +54,10 @@ js/
                   single mutable `state` object.
   species.js      The voices and their marks: field-guide pictograms, the low-level synth
                   primitives, the species catalogue (habitat, hour weighting, synth), and
-                  and two tables the drawing reads — `PSTYLE`, each species' field
-                  marks, and `ANIM`, the idle motion every perched bird shares.
+                  and three tables the drawing reads — `PSTYLE`, each species' field
+                  marks, `ANIM`, the idle motion every perched bird shares, and `GAIT`,
+                  every animal's cycles — strides, wingbeats, pecks — written out
+                  frame by frame (see below).
   scene.js        The `Scene` class — canvas rendering of the five landscapes and their
                   drifting inhabitants.
   sky.js          The sky and what hangs in it — gradient, stars, sun, moon, clouds —
@@ -256,6 +258,110 @@ does.
   owl tips off the branch and rows away, the pheasant walks out of frame or goes
   up like a firework, the kingfisher drops into the water, the cockerel sinks
   back behind the hill it came over.
+- **Nothing here is driven by a sine.** A limb driven by a sine has two poses
+  in it and slides evenly between them, which is why the deer used to swim
+  rather than walk and the small birds used to row rather than fly. Every
+  animal in the window — four-footed, winged or otherwise — now runs a frame
+  table from `GAIT` in `species.js`, and so does the weather. See below.
+- **The wind has weight.** A gust comes on fast, holds raggedly, and then
+  simply drops; it crosses the frame rather than arriving everywhere at once;
+  and what it pushes lags into it and springs back past upright when it lets
+  go. The grass answers in half a second, the wood in two.
+- **The rain has depth.** Three bands of it: near drops long, fast, dark and
+  leaning hard; far ones short, slow and almost not there. It squalls, it leans
+  with whatever the wind is doing, and every drop lands on something — a ring
+  where it meets water, a flick of pale spray where it meets ground.
+
+### The gaits, frame by frame
+
+`GAIT` holds one table per way of moving, and each is written out as frames
+around one cycle:
+
+```
+[u, x, y]                 a foot: where in the stride (0..1), how far forward
+                          it is (−1..+1), how far it is clear of the ground
+[u, …channels]            the body: the rise of the chest, the nod of the head,
+                          the arch of the back — named in the table's `chan`
+```
+
+`gaitSample` runs a Hermite through them, tangents taken from the neighbouring
+frames, so the curve passes through every frame written and closes on itself at
+u = 0 without a seam; the frames need not be evenly spaced, because a cycle's
+interesting moments are not.
+
+**On the ground** — the deer's `walk`, the fox's `trot`, the cat's `pad`, the
+badger's `trundle`, the hedgehog's `scurry`, and for the birds the two-footed
+`birdHop` and the walker's `strut`. What a frame table buys here is the thing a
+sine cannot give: a **stance**, where the foot is planted and travels backwards
+at exactly the speed the ground goes past, and a much quicker **swing**. The
+plant is what makes an animal look to weigh something. `strut` also carries the
+head-bob, which is not a bob at all — the head is thrown forward and then held
+*still in the air* while the bird walks on under it, and darts forward only at
+the last moment. That hold is a straight slide in the data and a jump between
+two frames set close together; there is no sine that has it in it.
+
+**Leaping** — `bound`, `hop`, `lope`, `scamper`: gather, drive, a hollow-backed
+stretch, and a landing taken on the forefeet with the hind swinging through.
+
+**In the air** — `beatSlow` (gull, tern, heron, goose, owl), `beatQuick` (small
+birds, cuckoo, pigeon, duck, pheasant), `beatWhir` (lark, kestrel, swift) and
+the bat's `flit`. Each carries `beat`, `span` and `sweep`: the downstroke is
+quicker than the recovery, the wing is at full span through it and shortens as
+the wrist flexes on the way back up, and the tip is carried forward on the way
+down and swept back on the way up — so it describes a flattened figure of eight
+rather than sliding up and down a line.
+
+**In the water** — the otter's `swim` and the porpoise's `roll`, which is not a
+sine either: the snout breaks, the back wheels over in a fifth of the cycle,
+and then the animal is gone for a long while.
+
+**And the standing cycles** — `graze`, `groom`, `dig`, `peck`, `probe`, `song`,
+`drum`, `paddle`, `flutter`, `swish`. `song` is the bill through one note and
+every singer in the window reads it, so the note is thrown open and *held*
+rather than swung evenly shut and open again. `peck` has the beat on the ground
+where the thing is actually seized, and the head thrown back to swallow.
+`glance` is the one to look at: a bird does not sweep its head, it snaps to a
+station, holds it dead still, and snaps again — the frames are the stations and
+the jumps between them are pairs set close together, because a movement with no
+middle cannot be written any other way.
+
+**The weather, too** — `gust`, `blink`, `swash`, `glint`, `flash`, `plume`,
+`cloud`. Same argument, same tables: a wave chases up the sand and *drains*
+back rather than going up and down at one speed; a blink shuts fast and opens
+slowly; a firefly's flash rises at once and dies away; a glint off water
+catches, loses it, catches again and is then dark for a good while.
+
+### The wind
+
+`windBend(x, stiff)` replaced `windWave(x)`, and it is not a function of `t` at
+all — it reads a field that `updateWind` steps. Two rows of springs across the
+frame: a light one that grass, reeds, fern and flowers answer, and a heavy slow
+one for timber and cloud.
+
+Each spring is driven toward `GAIT.gust` sampled at `t·rate − x·travel`, so the
+gust arrives at the far side of the frame first and you watch it cross. What
+the spring adds is the part no envelope has: the plant lags into the gust, and
+when the gust drops — and `gust` ends by simply dropping, which is the whole
+point of the shape — the plant springs back **past upright** and rings down.
+Measured over a minute the light row runs −0.16 to 1.08: sixteen per cent of a
+full lay-over, back the other way, every time the wind lets go.
+
+Everything in the frame reads the same field, so the frame agrees with itself:
+rain leans on it, chimney smoke shears on it, clouds hurry in a gust and are
+drawn out flat by it.
+
+The tables say only what the shape of a cycle is. How many of them go by in a
+second stays with the animals, in `scene.js`, in radians as it always was —
+`TURN` is the one conversion between the two.
+
+Painters sample the table themselves where only they need it (the four feet of
+a walk); where the scene needs a channel too — a leaping animal's `rise` lifts
+its contact shadow as well as the animal — `gaitPose` builds the pose once in
+`drawCritters` and hands it to the painter, the way the fox's pounce already
+worked. Where only one channel is wanted in a loop that runs dozens of times a
+frame — a skein of geese, a sky full of distant birds — `gaitAt` returns it
+without building the object. The bestiary drives the same tables at the same
+rates, so a card and the window show the same stride.
 
 ## Design notes
 

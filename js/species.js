@@ -79,6 +79,759 @@ const ANIM = {
   singBase: 0.3, singAmt: 0.7, singRate: 11    // the bill through a phrase
 };
 
+/* How the four-footed things carry themselves.
+
+   A limb driven by a single sine has two poses in it — hard forward and hard
+   back — and everything between is an even slide from the one to the other.
+   Nothing walks like that. A real foot spends most of its stride planted,
+   travelling backwards at exactly the speed the ground goes past, and is then
+   snatched forward through the air in whatever time is left. That difference
+   is the whole of why an animal looks to weigh something: the plant is the
+   part that carries it.
+
+   So each gait below is written out as frames around one stride, and the
+   sampler runs a curve through them. A foot frame is
+
+     [u, x, y]   u  where in the stride it falls, 0 to 1
+                 x  how far forward the foot is, −1 hard back to +1 hard forward
+                 y  how far it is clear of the ground, 0 planted to 1 at the
+                    top of the swing
+
+   and a body frame is [u, …channels], the channels named in `chan` — the
+   parts of a gait that are not in the feet at all: the rise and fall of the
+   chest, the nod of the head, the arch of the back over a leap. `feet` is
+   where each leg starts in the stride, in the painters' own leg order, and it
+   is what makes a walk a walk and a trot a trot.
+
+   Rates stay with the animals, in scene.js: a frame table says what the shape
+   of a stride is, not how many of them go by in a second. */
+const GAIT = {
+  /* A deer's walk. Four beats — a hoof set down every quarter — and never
+     fewer than two of them on the ground at once. The stance runs three fifths
+     of the cycle; the swing is over in the rest. The back rises twice a
+     stride and the head nods once, which is the ungulate tell. */
+  walk: {
+    feet: [0, 0.5, 0.75, 0.25],
+    chan: ["rise", "nod", "pitch"],
+    path: [
+      [0.00,  1.00, 0.00],      // set down, out in front of the shoulder
+      [0.16,  0.55, 0.00],      // and the ground goes past under it
+      [0.34,  0.02, 0.00],
+      [0.50, -0.55, 0.00],
+      [0.62, -1.00, 0.00],      // the toe leaves last, well behind the hip
+      [0.70, -0.74, 0.55],      // snatched up, the joint folding
+      [0.79, -0.10, 1.00],      // through the top of the swing
+      [0.88,  0.66, 0.72],
+      [0.95,  1.04, 0.22]       // over-reaches, then hangs before it lands
+    ],
+    body: [
+      [0.00, 1.00,  0.85,  0.06],
+      [0.12, 0.55,  1.00,  0.02],
+      [0.25, 0.00,  0.55, -0.05],
+      [0.37, 0.42, -0.10, -0.02],
+      [0.50, 1.00, -0.75,  0.06],
+      [0.62, 0.52, -1.00,  0.02],
+      [0.75, 0.00, -0.50, -0.05],
+      [0.87, 0.45,  0.15, -0.02]
+    ]
+  },
+  /* A fox at the trot: two beats, the diagonal pairs swinging together, and a
+     moment in the middle where none of the four is down. The stance is short
+     because the animal is travelling. */
+  trot: {
+    feet: [0, 0.5, 0.5, 0],
+    chan: ["rise", "nod", "pitch"],
+    path: [
+      [0.00,  1.00, 0.06],      // reaching down onto it
+      [0.07,  0.76, 0.00],
+      [0.26,  0.02, 0.00],
+      [0.45, -1.00, 0.00],      // and away, late and low
+      [0.54, -0.70, 0.78],      // the hock snaps up
+      [0.66,  0.12, 1.00],
+      [0.80,  0.82, 0.68],
+      [0.92,  1.10, 0.24]
+    ],
+    body: [
+      [0.00, 0.15,  0.30,  0.05],
+      [0.14, 1.00,  0.00, -0.03],
+      [0.30, 0.55, -0.35,  0.02],
+      [0.50, 0.15, -0.30,  0.05],
+      [0.64, 1.00,  0.00, -0.03],
+      [0.80, 0.55,  0.35,  0.02]
+    ]
+  },
+  /* A cat's walk — the same four beats as the deer's, but slower off the
+     ground and higher over it, and with the shoulder blade riding up through
+     the back at every step. */
+  pad: {
+    feet: [0, 0.5, 0.25, 0.75],
+    chan: ["rise", "nod", "pitch"],
+    path: [
+      [0.00,  1.00, 0.00],
+      [0.18,  0.46, 0.00],
+      [0.42, -0.28, 0.00],
+      [0.68, -1.00, 0.00],      // a long stance: it is in no hurry
+      [0.75, -0.62, 0.72],
+      [0.83,  0.06, 1.00],      // the paw carried high and folded
+      [0.92,  0.78, 0.60],
+      [0.97,  1.06, 0.18]
+    ],
+    body: [
+      [0.00, 1.00,  0.60,  0.04],
+      [0.14, 0.40,  1.00,  0.00],
+      [0.28, 0.05,  0.40, -0.04],
+      [0.40, 0.60, -0.20,  0.00],
+      [0.54, 1.00, -0.65,  0.04],
+      [0.68, 0.38, -1.00,  0.00],
+      [0.82, 0.05, -0.35, -0.04],
+      [0.92, 0.55,  0.10,  0.00]
+    ]
+  },
+  /* A badger: short legs under a great deal of animal, so the stance is long,
+     the swing barely clears the leaf-litter, and the whole body rolls from
+     shoulder to shoulder as it goes. */
+  trundle: {
+    feet: [0, 0.5, 0.28, 0.78],
+    chan: ["rise", "nod", "pitch"],
+    path: [
+      [0.00,  1.00, 0.00],
+      [0.24,  0.28, 0.00],
+      [0.48, -0.44, 0.00],
+      [0.70, -1.00, 0.00],
+      [0.78, -0.56, 0.52],
+      [0.86,  0.18, 0.85],
+      [0.93,  0.86, 0.48],
+      [0.98,  1.02, 0.10]
+    ],
+    body: [
+      [0.00, 1.00,  0.70,  0.05],
+      [0.13, 0.35,  1.00,  0.00],
+      [0.26, 0.00,  0.50, -0.04],
+      [0.38, 0.50,  0.00,  0.00],
+      [0.50, 1.00, -0.70,  0.05],
+      [0.63, 0.35, -1.00,  0.00],
+      [0.76, 0.00, -0.50, -0.04],
+      [0.88, 0.50,  0.00,  0.00]
+    ]
+  },
+  /* A hedgehog's scurry — very short, very quick steps, the body rocking
+     forward over each one. Almost all swing and almost no reach. */
+  scurry: {
+    feet: [0, 0.5, 0.72, 0.22],
+    chan: ["rise", "nod", "pitch"],
+    path: [
+      [0.00,  1.00, 0.00],
+      [0.20,  0.20, 0.00],
+      [0.40, -0.62, 0.00],
+      [0.55, -1.00, 0.00],
+      [0.64, -0.44, 0.68],
+      [0.74,  0.32, 1.00],
+      [0.86,  0.92, 0.52],
+      [0.94,  1.06, 0.14]
+    ],
+    body: [
+      [0.00, 1.00,  0.60,  0.05],
+      [0.14, 0.30,  1.00,  0.00],
+      [0.28, 0.00,  0.40, -0.04],
+      [0.40, 0.55,  0.00,  0.00],
+      [0.52, 1.00, -0.60,  0.05],
+      [0.66, 0.30, -1.00,  0.00],
+      [0.80, 0.00, -0.40, -0.04],
+      [0.90, 0.55,  0.00,  0.00]
+    ]
+  },
+
+  /* ---- the leaping gaits: no feet to phase, the whole animal is the cycle ----
+
+     rise    how far off the ground it is
+     stretch 0 gathered into itself, 1 at full length
+     fore    the forelegs, −1 folded under the chest to +1 reaching ahead
+     hind    the hind legs, −1 tucked right under to +1 driven out behind
+     arch    the back, +1 rounded up over the hips, −1 hollowed in flight
+     tilt    the pitch of the whole body, positive nose-up          */
+
+  /* A deer's bound: the rocking-horse leap, all the drive out of the hind. */
+  bound: {
+    chan: ["rise", "stretch", "fore", "hind", "arch", "tilt"],
+    body: [
+      [0.00, 0.00, 0.05, -0.55, -0.85,  0.80,  0.16],   // gathered, all four under it
+      [0.09, 0.10, 0.35, -0.15, -0.30,  0.55,  0.34],   // the hind drives
+      [0.22, 0.62, 0.85,  0.55,  0.60, -0.15,  0.26],   // clear of the ground
+      [0.36, 0.95, 1.00,  0.90,  1.00, -0.55,  0.05],   // the full stretch
+      [0.50, 1.00, 0.90,  1.00,  0.80, -0.45, -0.12],   // the top of the arc
+      [0.66, 0.66, 0.55,  0.95,  0.15,  0.10, -0.22],   // the forefeet reach down
+      [0.80, 0.20, 0.20,  0.55, -0.45,  0.55, -0.08],   // and take the landing
+      [0.91, 0.03, 0.02,  0.00, -0.80,  0.78,  0.08]    // the hind swing through
+    ]
+  },
+  /* A rabbit's hop: shorter, rounder and quicker to gather than a hare's, and
+     it lands on its forefeet with the hind coming through outside them. */
+  hop: {
+    chan: ["rise", "stretch", "fore", "hind", "arch", "tilt"],
+    body: [
+      [0.00, 0.00, 0.00, -0.40, -1.00,  1.00,  0.10],
+      [0.10, 0.16, 0.42, -0.05, -0.20,  0.60,  0.30],
+      [0.24, 0.72, 0.90,  0.60,  0.75, -0.30,  0.20],
+      [0.38, 1.00, 1.00,  0.95,  1.00, -0.55, -0.02],
+      [0.52, 0.86, 0.82,  1.00,  0.55, -0.30, -0.20],
+      [0.66, 0.40, 0.42,  0.90, -0.10,  0.30, -0.16],
+      [0.80, 0.08, 0.12,  0.50, -0.65,  0.80,  0.00],
+      [0.90, 0.00, 0.02,  0.00, -0.92,  0.95,  0.06]
+    ]
+  },
+  /* A hare's lope: flatter, longer and far faster over the ground — it eats
+     the field rather than crossing it. */
+  lope: {
+    chan: ["rise", "stretch", "fore", "hind", "arch", "tilt"],
+    body: [
+      [0.00, 0.00, 0.10, -0.30, -0.90,  0.85,  0.06],
+      [0.08, 0.14, 0.55,  0.10, -0.05,  0.40,  0.20],
+      [0.20, 0.62, 1.00,  0.70,  0.90, -0.45,  0.12],
+      [0.34, 0.80, 1.00,  1.00,  1.00, -0.60, -0.04],
+      [0.50, 0.72, 0.86,  1.00,  0.60, -0.40, -0.16],
+      [0.66, 0.34, 0.44,  0.85, -0.05,  0.25, -0.14],
+      [0.80, 0.06, 0.14,  0.42, -0.60,  0.72,  0.00],
+      [0.91, 0.00, 0.04, -0.05, -0.86,  0.88,  0.04]
+    ]
+  },
+  /* A squirrel's bound. It goes over the ground in a series of arches, the
+     hind feet landing outside and ahead of the fore, and the tail runs a wave
+     a beat behind the body — which is the thing you actually see. */
+  scamper: {
+    chan: ["rise", "stretch", "fore", "hind", "arch", "tilt", "tail"],
+    body: [
+      [0.00, 0.00, 0.05, -0.30, -1.00,  1.00,  0.12,  0.85],
+      [0.10, 0.24, 0.50,  0.15, -0.10,  0.50,  0.34,  1.00],
+      [0.24, 0.80, 0.95,  0.75,  0.85, -0.35,  0.24,  0.40],
+      [0.38, 1.00, 1.00,  1.00,  1.00, -0.60,  0.00, -0.40],
+      [0.52, 0.82, 0.80,  0.95,  0.50, -0.25, -0.22, -0.95],
+      [0.66, 0.36, 0.36,  0.80, -0.20,  0.40, -0.20, -0.70],
+      [0.80, 0.06, 0.10,  0.35, -0.70,  0.85, -0.02,  0.10],
+      [0.90, 0.00, 0.00, -0.05, -0.95,  0.98,  0.08,  0.60]
+    ]
+  },
+
+  /* ---- and the standing things, which are cycles too ---- */
+
+  /* Grazing: a bite taken, then chewed — twice, three times — with the head
+     drifting along the sward between mouthfuls and lifting a little now and
+     then without ever coming up. */
+  graze: {
+    chan: ["dip", "chew", "sway"],
+    body: [
+      [0.00, 1.00, 0.00,  0.00],   // the muzzle in the grass
+      [0.10, 1.00, 0.35,  0.10],   // a bite taken
+      [0.22, 0.86, 1.00,  0.16],   // and chewed, the head just clear
+      [0.36, 0.90, 0.20,  0.06],
+      [0.48, 0.98, 0.85, -0.08],   // and again
+      [0.62, 0.92, 0.15, -0.16],
+      [0.74, 0.70, 0.55, -0.10],   // the head lifts, still working
+      [0.88, 0.94, 0.05,  0.06]
+    ]
+  },
+  /* A wash: the paw brought up, licked twice, swept back over the ear, and
+     down. Cats and rabbits both do it, and both do it in that order. */
+  groom: {
+    chan: ["reach", "lick", "turn"],
+    body: [
+      [0.00, 0.00, 0.00,  0.00],
+      [0.12, 0.85, 0.10,  0.15],   // the paw comes up to the mouth
+      [0.24, 1.00, 1.00,  0.20],   // and is licked
+      [0.34, 0.96, 0.15,  0.22],
+      [0.44, 1.00, 0.95,  0.18],   // twice
+      [0.56, 0.90, 0.20, -0.10],   // then swept back over the ear
+      [0.70, 0.55, 0.60, -0.35],
+      [0.84, 0.20, 0.10, -0.15]
+    ]
+  },
+  /* One stroke of a digging animal: the forepaws reach out, drag back through
+     the earth, and throw the spoil out behind between the hind legs. */
+  dig: {
+    chan: ["reach", "pull", "throw"],
+    body: [
+      [0.00,  1.00, 0.00, 0.00],   // out at arm's length
+      [0.18,  0.55, 0.65, 0.10],   // dragged back through it
+      [0.34, -0.20, 1.00, 0.45],
+      [0.46, -0.65, 0.75, 1.00],   // and thrown out behind
+      [0.60, -0.40, 0.25, 0.55],
+      [0.74,  0.25, 0.05, 0.15],
+      [0.88,  0.85, 0.00, 0.02]    // reaching out again
+    ]
+  },
+  /* An otter swimming: a wave that travels the length of it. The back breaks
+     the surface first and highest, the tail follows a beat later, and between
+     the two there is a flat moment where almost nothing shows. */
+  swim: {
+    chan: ["hump", "tail", "head"],
+    body: [
+      [0.00, 0.10, 0.05, 0.35],
+      [0.12, 0.55, 0.00, 0.70],
+      [0.26, 1.00, 0.20, 1.00],    // the back at its highest
+      [0.40, 0.72, 0.72, 0.72],
+      [0.54, 0.20, 1.00, 0.30],    // the tail breaks as the back goes under
+      [0.68, 0.00, 0.62, 0.05],
+      [0.82, 0.00, 0.18, 0.10],    // and for a moment there is nothing
+      [0.92, 0.02, 0.02, 0.18]
+    ]
+  },
+  /* A porpoise's roll. Not a leap and not a sine: the snout breaks, the back
+     wheels over in about a fifth of the cycle, the fin comes up last and goes
+     down last, and then the animal is gone for a long while. */
+  roll: {
+    chan: ["arc", "pitch"],
+    body: [
+      [0.00, -0.85, -0.10],        // deep, and running level
+      [0.18, -0.35,  0.32],        // rising, nose up
+      [0.30,  0.35,  0.30],        // the snout breaks
+      [0.40,  0.92,  0.10],        // the back at the top of the roll
+      [0.50,  1.00, -0.14],        // wheeling over it
+      [0.62,  0.55, -0.34],        // the fin last, and going down
+      [0.72, -0.20, -0.30],
+      [0.86, -0.80, -0.12]
+    ]
+  },
+  /* A pipistrelle's wingbeat: the downstroke is a third of the cycle and the
+     recovery is the rest of it, with the wing half folded on the way up so it
+     costs the animal nothing. That asymmetry is the flutter you see. */
+  flit: {
+    chan: ["beat", "fold"],
+    body: [
+      [0.00,  1.00, 0.10],         // at the top
+      [0.14,  0.10, 0.00],         // driven down, the membrane taut
+      [0.26, -0.85, 0.05],
+      [0.36, -1.00, 0.35],         // the bottom of the stroke
+      [0.52, -0.30, 0.85],         // gathered in and lifted, half folded
+      [0.70,  0.55, 0.70],
+      [0.86,  0.95, 0.30]
+    ]
+  },
+
+  /* ---- wings ----
+
+     A wingbeat sampled from one sine is a wing sliding up and down a line,
+     which is not what any bird does. The downstroke is the working half: it is
+     quicker than the recovery, the wing is held at full span through it, and
+     the tip travels *forward* as well as down. Coming back up the wrist flexes
+     and the wing shortens, so it costs the bird less — and the tip sweeps
+     back. Between them the tip describes a flattened figure of eight, which is
+     the thing that reads as flight rather than as flapping.
+
+       beat   +1 at the top of the upstroke, −1 driven fully down
+       span   1 at full stretch, 0 folded right in — scales the wing's length
+       sweep  +1 the tip carried forward of the shoulder, −1 swept back  */
+
+  /* Gull, tern, heron, goose, owl: unhurried and deep, the wing barely
+     shortening because there is no hurry to get it back up. */
+  beatSlow: {
+    chan: ["beat", "span", "sweep"],
+    body: [
+      [0.00,  1.00, 0.96,  0.30],  // at the top, cocked and reaching forward
+      [0.10,  0.62, 1.00,  0.55],  // and away: the wing goes out to full span
+      [0.26, -0.35, 1.00,  0.40],  // through the middle of the drive, fastest
+      [0.42, -0.95, 0.96, -0.10],
+      [0.52, -1.00, 0.88, -0.45],  // the bottom, the tip swept back under
+      [0.66, -0.55, 0.70, -0.60],  // the wrist flexes and the wing comes up short
+      [0.80,  0.20, 0.72, -0.30],
+      [0.92,  0.82, 0.86,  0.05]
+    ]
+  },
+  /* Small birds, a cuckoo, a pigeon, a duck: a snapping downstroke over in a
+     third of the beat and a recovery with the wing half closed. */
+  beatQuick: {
+    chan: ["beat", "span", "sweep"],
+    body: [
+      [0.00,  1.00, 0.90,  0.40],
+      [0.08,  0.35, 1.00,  0.60],  // straight into the drive
+      [0.20, -0.62, 1.00,  0.35],
+      [0.32, -1.00, 0.94, -0.20],  // the bottom of it
+      [0.44, -0.70, 0.62, -0.60],  // snatched up half closed
+      [0.60, -0.05, 0.48, -0.70],
+      [0.76,  0.60, 0.58, -0.35],
+      [0.90,  0.95, 0.78,  0.10]
+    ]
+  },
+  /* A lark holding its song-flight, a kestrel winnowing, a swift: shallow and
+     far too fast to fold anything. Almost symmetrical, and almost a blur. */
+  beatWhir: {
+    chan: ["beat", "span", "sweep"],
+    body: [
+      [0.00,  1.00, 0.94,  0.25],
+      [0.14,  0.30, 1.00,  0.45],
+      [0.30, -0.60, 1.00,  0.20],
+      [0.44, -1.00, 0.96, -0.20],
+      [0.58, -0.50, 0.88, -0.42],
+      [0.72,  0.25, 0.86, -0.30],
+      [0.88,  0.80, 0.90,  0.00]
+    ]
+  },
+
+  /* ---- and what birds do when they are not flying ---- */
+
+  /* The bill through one note. It is thrown open at the start and held there
+     while the note runs, rather than swinging evenly shut and open again —
+     every singer in the window reads this, through ANIM.singRate. */
+  song: {
+    chan: ["gape"],
+    body: [
+      [0.00, 0.30],                // just parted
+      [0.10, 0.95],                // thrown open on the note
+      [0.22, 1.00],
+      [0.40, 0.78],                // and held there while it runs
+      [0.56, 0.90],
+      [0.70, 0.45],                // closing
+      [0.86, 0.32]
+    ]
+  },
+  /* A peck. Down fast, a beat on the ground while the thing is actually seized
+     — which is the part a sine leaves out and the part that makes it read as
+     eating — then up, and the head thrown back to swallow. */
+  peck: {
+    chan: ["dip", "seize", "gulp"],
+    body: [
+      [0.00, 0.00, 0.00, 0.00],    // head up, having seen it
+      [0.16, 0.72, 0.00, 0.00],    // straight down
+      [0.26, 1.00, 0.35, 0.00],
+      [0.36, 1.00, 1.00, 0.00],    // and taken
+      [0.50, 0.62, 0.55, 0.10],    // lifting
+      [0.62, 0.15, 0.10, 0.62],    // thrown back to send it down
+      [0.74, 0.05, 0.00, 0.30],
+      [0.88, 0.02, 0.00, 0.05]
+    ]
+  },
+  /* A small bird's hop: both feet at once. It gathers, springs, tucks the feet
+     right up under it, and swings them forward again to land. */
+  birdHop: {
+    chan: ["rise", "tuck", "tilt", "reach"],
+    body: [
+      [0.00, 0.00, 0.00,  0.10, 0.00],   // crouched over its feet
+      [0.10, 0.18, 0.35,  0.30, 0.20],   // the spring
+      [0.26, 0.72, 0.95,  0.22, 0.60],
+      [0.42, 1.00, 1.00,  0.00, 0.85],   // the top, feet right up under it
+      [0.58, 0.86, 0.90, -0.18, 1.00],   // and swung forward to land
+      [0.74, 0.40, 0.45, -0.22, 0.75],
+      [0.88, 0.06, 0.08, -0.05, 0.25]
+    ]
+  },
+  /* A walking bird — a pigeon, a starling, a lapwing. Two steps to the cycle,
+     and with them the head-bob, which is not a bob at all: the head is thrown
+     forward and then held *still in the air* while the body walks on under it,
+     and only darts forward again at the last moment. `head` is the head's
+     place relative to the body, so the hold is a steady slide backwards and
+     the dart is the jump between two frames set close together. No sine has
+     that in it, and it is the whole of what tells a walking bird from a
+     rocking toy. */
+  strut: {
+    feet: [0, 0.5],
+    chan: ["rise", "head", "pitch"],
+    path: [
+      [0.00,  1.00, 0.00],
+      [0.20,  0.40, 0.00],
+      [0.42, -0.35, 0.00],
+      [0.60, -1.00, 0.00],       // a long stance under a light bird
+      [0.68, -0.55, 0.62],
+      [0.78,  0.15, 1.00],
+      [0.88,  0.80, 0.62],
+      [0.95,  1.05, 0.18]
+    ],
+    body: [
+      [0.00, 0.32,  1.00,  0.03],   // the head has just arrived out in front
+      [0.10, 0.78,  0.52,  0.00],   // and now holds, while the body catches up
+      [0.22, 1.00, -0.12, -0.02],
+      [0.34, 0.74, -0.74,  0.00],
+      [0.44, 0.36, -1.00,  0.03],   // as far back on the shoulders as it goes
+      [0.47, 0.33, -0.60,  0.04],   // breaking forward
+      [0.50, 0.32,  1.00,  0.03],   // the dart, and stopped dead
+      [0.60, 0.78,  0.52,  0.00],
+      [0.72, 1.00, -0.12, -0.02],
+      [0.84, 0.74, -0.74,  0.00],
+      [0.94, 0.36, -1.00,  0.03],
+      [0.97, 0.33, -0.60,  0.04]
+    ]
+  },
+  /* A wader working the tideline. Most of the cycle it is simply walking with
+     the bill up; then the bill goes in, is worked about in the wet sand, and
+     comes out again. The waiting is as much of it as the probing. */
+  probe: {
+    chan: ["dip", "work"],
+    body: [
+      [0.00, 0.00,  0.00],
+      [0.30, 0.00,  0.00],       // bill up: most of the cycle is walking
+      [0.42, 0.30,  0.00],
+      [0.52, 0.95,  0.20],       // in
+      [0.60, 1.00,  1.00],       // and worked about in it
+      [0.68, 1.00, -0.80],
+      [0.76, 0.90,  0.40],
+      [0.86, 0.35,  0.00],       // out again
+      [0.94, 0.05,  0.00]
+    ]
+  },
+  /* One blow of a woodpecker's drum: the head snaps at the wood and comes back
+     off it more slowly, so a roll of them reads as blows and not as a buzz. */
+  drum: {
+    chan: ["hit"],
+    body: [
+      [0.00, 0.00],              // head back
+      [0.10, 0.55],
+      [0.18, 1.00],              // contact
+      [0.24, 0.95],
+      [0.40, 0.42],              // and off it again
+      [0.62, 0.12],
+      [0.82, 0.02]
+    ]
+  },
+  /* A butterfly. The wings are clapped together over the back and swept down
+     and open slowly, which is why it climbs in little steps rather than flying
+     level: the body rises with the downstroke and falls back on the clap. */
+  flutter: {
+    chan: ["spread", "lift"],
+    body: [
+      [0.00, 0.10,  0.85],       // wings together over the back
+      [0.14, 0.48,  0.35],       // opening as they start down
+      [0.32, 0.95, -0.45],
+      [0.46, 1.00, -1.00],       // full spread at the bottom of the stroke
+      [0.60, 0.86, -0.55],
+      [0.74, 0.44,  0.30],       // and clapped back up, quickly
+      [0.88, 0.16,  0.70]
+    ]
+  },
+  /* A duck under way: a stroke of the feet drives it forward and lifts the
+     chest, and then it glides and settles back while the head nods with it. */
+  paddle: {
+    chan: ["rock", "surge", "head"],
+    body: [
+      [0.00,  0.00,  0.10,  0.00],
+      [0.14,  0.62,  0.85,  0.40],   // the stroke
+      [0.30,  1.00,  1.00,  0.90],
+      [0.46,  0.72,  0.45,  1.00],
+      [0.60,  0.05, -0.05,  0.55],   // and the glide
+      [0.76, -0.60, -0.35,  0.00],
+      [0.90, -0.32, -0.12, -0.25]
+    ]
+  },
+  /* A cow's tail. It hangs, and then it does not: one hard slap at a fly and a
+     lazy swing back. Half the cycle is the tail doing nothing at all. */
+  swish: {
+    chan: ["swing"],
+    body: [
+      [0.00,  0.05],
+      [0.18,  0.00],
+      [0.30,  0.90],             // the slap
+      [0.40,  0.30],
+      [0.50, -0.72],             // and back the other way
+      [0.62, -0.12],
+      [0.76,  0.22],
+      [0.88,  0.04]
+    ]
+  },
+
+  /* ---- and the world the animals are in ----
+
+     The same argument holds for weather and water. A gust of wind summed out
+     of two sines arrives on a metronome — you can count them — and everything
+     growing answers it at exactly the same instant, with no weight and no
+     spring. What a gust actually does is: nothing, for a long while; then it
+     comes on fast, holds raggedly at the top, and dies away slowly. */
+  gust: {
+    chan: ["force"],
+    body: [
+      [0.00, 0.10],              // the lull, and most of the cycle is lull
+      [0.12, 0.05],
+      [0.24, 0.07],
+      [0.34, 0.14],
+      [0.42, 0.58],              // it arrives quickly
+      [0.48, 0.94],
+      [0.54, 0.76],              // and is never steady at the top
+      [0.60, 1.00],
+      [0.67, 0.72],
+      [0.76, 0.86],
+      [0.795, 0.62],
+      [0.815, 0.15],             // and then it simply drops, which is the whole
+      [0.86, 0.11],              // point: the grass is left to spring back on
+      [0.94, 0.07]               // its own, and goes past upright doing it
+    ]
+  },
+  /* A bird's glance. Birds do not sweep their heads: they snap to a new place,
+     hold it dead still while they look, and snap again — and the held part is
+     most of it. The frames are the stations; the jumps between them are pairs
+     set close together, which is the only way to write a movement that has no
+     middle. Every perched bird in the window reads this. */
+  glance: {
+    chan: ["turn"],
+    body: [
+      [0.00,  0.00],
+      [0.20,  0.02],             // held
+      [0.24,  0.55],             // and away
+      [0.27,  0.95],
+      [0.30,  1.00],
+      [0.52,  0.98],             // held again, a good while
+      [0.56,  0.30],
+      [0.59, -0.55],             // back past centre, the other way
+      [0.62, -0.85],
+      [0.80, -0.88],             // and held there
+      [0.84, -0.40],
+      [0.88, -0.02]
+    ]
+  },
+  /* A blink. Down like a shutter, shut for an instant, and opened again more
+     slowly — never the even triangle it was. */
+  blink: {
+    chan: ["lid"],
+    body: [
+      [0.00, 0.00],
+      [0.14, 0.75],              // down fast
+      [0.22, 1.00],
+      [0.34, 1.00],              // and shut for a moment
+      [0.52, 0.72],              // opening, slower
+      [0.74, 0.30],
+      [0.90, 0.06]
+    ]
+  },
+  /* The swash: one wave running up the sand. It chases up fast and drains away
+     slowly, and the foam thins as it goes — a sine has it going up and coming
+     back at the same speed, which is the one thing water never does. */
+  swash: {
+    chan: ["reach", "foam"],
+    body: [
+      [0.00, 0.00, 0.00],
+      [0.06, 0.42, 0.85],        // the wave breaks and runs
+      [0.12, 0.78, 1.00],
+      [0.20, 0.97, 0.90],
+      [0.26, 1.00, 0.72],        // the top of the run, and it hangs there
+      [0.34, 0.96, 0.55],
+      [0.48, 0.78, 0.38],        // draining back
+      [0.64, 0.52, 0.24],
+      [0.80, 0.26, 0.12],
+      [0.92, 0.08, 0.04]
+    ]
+  },
+  /* A glint off moving water, and a star seen through a mile of it. Neither
+     flashes on a metronome: the facet catches, loses it, catches again a
+     moment later, and is then dark for a good while. Two unequal flashes to
+     the cycle, which is enough to stop the eye finding the beat. */
+  glint: {
+    chan: ["lit"],
+    body: [
+      [0.00, 0.06],
+      [0.08, 0.02],
+      [0.16, 0.88],              // caught
+      [0.21, 1.00],
+      [0.27, 0.35],
+      [0.33, 0.05],
+      [0.44, 0.62],              // and again, smaller and sooner
+      [0.49, 0.70],
+      [0.56, 0.10],
+      [0.68, 0.02],
+      [0.84, 0.04]               // then dark
+    ]
+  },
+  /* A firefly's flash: it comes up fast and dies away slowly, which is what
+     makes it read as a light going out rather than a lamp on a dimmer. */
+  flash: {
+    chan: ["lit"],
+    body: [
+      [0.00, 0.00],
+      [0.06, 0.55],              // up, almost at once
+      [0.11, 1.00],
+      [0.18, 0.86],
+      [0.30, 0.48],              // and out, slowly
+      [0.44, 0.20],
+      [0.60, 0.06],
+      [0.80, 0.00]
+    ]
+  },
+  /* A cloud does not cross the sky unchanged. It builds, is drawn out and
+     flattened by the wind it is riding, and thins away again — slowly enough
+     that you only notice having looked away and looked back. Never to nothing:
+     a cloud that vanished mid-sky would be a worse lie than one that never
+     moved. */
+  cloud: {
+    chan: ["swell", "depth"],
+    body: [
+      [0.00, 0.55, 0.62],
+      [0.14, 0.72, 0.84],
+      [0.30, 0.95, 1.00],        // built up
+      [0.44, 1.00, 0.90],
+      [0.58, 0.92, 0.72],        // drawn out, and flattening as it goes
+      [0.72, 0.78, 0.52],
+      [0.86, 0.62, 0.56]
+    ]
+  },
+  /* A puff of smoke or vent steam leaving its chimney: it goes up quickly
+     while it is still hot, slows as it cools and mixes, spreads as it slows,
+     and thins away. Age runs 0 to 1 over the puff's whole life. */
+  plume: {
+    chan: ["rise", "spread", "fade"],
+    body: [
+      [0.00, 0.00, 0.10, 1.00],
+      [0.10, 0.22, 0.20, 0.98],  // fast off the stack while it is hot
+      [0.24, 0.46, 0.36, 0.88],
+      [0.40, 0.66, 0.55, 0.70],
+      [0.58, 0.81, 0.74, 0.48],  // slowing, spreading
+      [0.76, 0.92, 0.89, 0.26],
+      [0.90, 0.98, 0.97, 0.10]
+    ]
+  }
+};
+
+/* Sample a frame table at u — a Hermite through the frames, each one's tangent
+   taken from its neighbours either side, so the curve passes through every
+   frame written above and closes on itself without a seam at u = 0. The frames
+   need not be evenly spaced, because a stride's interesting moments are not.
+
+   `out` is filled with the frame's channels and returned. Callers hand in an
+   array and reuse it: this runs four times an animal a frame. */
+function gaitSample(keys, u, out) {
+  const n = keys.length;
+  u -= Math.floor(u);
+  let i = n - 1;
+  for (let k = 0; k < n; k++) { if (keys[k][0] <= u) i = k; else break; }
+  const j = (i + 1) % n, h = (i - 1 + n) % n, g = (j + 1) % n;
+  const span = (a, b) => { const d = keys[b][0] - keys[a][0]; return d >= 0 ? d : d + 1; };
+  const d0 = span(h, i) || 1, d1 = span(i, j) || 1, d2 = span(j, g) || 1;
+  let f = u - keys[i][0]; if (f < 0) f += 1;
+  const t = f/d1, t2 = t*t, t3 = t2*t;
+  const h00 = 2*t3 - 3*t2 + 1, h10 = t3 - 2*t2 + t;
+  const h01 = -2*t3 + 3*t2, h11 = t3 - t2;
+  for (let k = 1; k < keys[i].length; k++) {
+    const vi = keys[i][k], vj = keys[j][k];
+    const mi = (vj - keys[h][k])/(d0 + d1), mj = (keys[g][k] - vi)/(d1 + d2);
+    out[k - 1] = h00*vi + h10*d1*mi + h01*vj + h11*d1*mj;
+  }
+  return out;
+}
+
+/* Where one foot of a footfall gait is: out[0] how far forward, out[1] how far
+   clear of the ground. The lift is held at or above nothing, because a curve
+   drawn tight through a long flat stance overshoots a little either side of
+   it, and a hoof through the turf is worse than a hoof a shade too flat. */
+function gaitFoot(g, u, out) {
+  gaitSample(g.path, u, out);
+  if (out[1] < 0) out[1] = 0;
+  return out;
+}
+
+/* The whole-body frames of a gait, as an object keyed by the channel names —
+   what a painter asks for by name, and what the scene needs in order to lift a
+   contact shadow with the animal that casts it. */
+const GAIT_SCRATCH = [];
+function gaitPose(name, u) {
+  const g = GAIT[name];
+  gaitSample(g.body, u, GAIT_SCRATCH);
+  const o = {};
+  for (let k = 0; k < g.chan.length; k++) o[g.chan[k]] = GAIT_SCRATCH[k];
+  return o;
+}
+
+/* One channel of one, without building the object for it. Most callers want
+   the whole pose; the ones that want only a wingbeat's `beat` are the ones
+   that run dozens of times a frame — a skein, a sky full of distant birds —
+   and those are no place to be allocating. */
+function gaitAt(name, u, chan) {
+  const g = GAIT[name];
+  gaitSample(g.body, u, GAIT_SCRATCH);
+  return GAIT_SCRATCH[g.chan.indexOf(chan)];
+}
+
 const PSTYLE = {
   blackbird: { bill: 0.5, tail: 1.3, billTone: "amber", eyeRing: true },
   robin: { sc: 0.9, bill: 0.38, plump: 1.08, breast: true },
@@ -1049,6 +1802,7 @@ const CRITTER_VOICES = {
    used here alone. */
 export {
   speciesIcon, PSTYLE, ANIM, COUNTERSING,
+  GAIT, gaitFoot, gaitPose, gaitAt,
   note, burst,
   SPECIES, CRITTER_VOICES
 };
