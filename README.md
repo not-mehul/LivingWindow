@@ -348,6 +348,70 @@ subtitle — an SVG parse and a style recalculation that used to land on exactly
 that tick — caches its pictograms, skips the write when the species has not
 changed, and waits for the browser's own next frame.
 
+### The mix
+
+Everything used to run into one gain through one 4:1 compressor. A continuous
+bed feeding a compressor holds the whole mix down all the time, so a bird
+arrives into a room that has already been turned down for it. Measured with an
+analyser on each half:
+
+```
+                 before                          after
+                 bed rms   call peak   clear     bed rms   call peak   clear
+meadow  breeze    −26.8      −34.0     −7.2 dB    −41.5      −25.6    +15.9 dB
+meadow  rain      −24.2      −32.4     −8.2 dB    −38.5      −25.6    +12.9 dB
+wetland clear     −34.0      −35.6     −1.6 dB    −44.7      −27.2    +17.6 dB
+forest  clear     −36.9      −28.4     +8.5 dB    −47.9      −25.4    +22.5 dB
+```
+
+A call's *peak* below the bed's *steady level* is the definition of inaudible,
+and that is what half the settings were. What fixed it, in order of how much
+each was worth:
+
+- **Two buses.** The beds have their own path and the voices have their own;
+  the master carries nothing but a limiter, set high enough that it only ever
+  catches a peak and can never pump the beds or flatten a call.
+- **Ducking.** The beds step back five decibels while anything is calling and
+  come back slowly afterwards. There is no analyser and no sidechain — the
+  engine knows exactly when every call starts and how long it runs, so it is
+  two scheduled ramps on one gain.
+- **Stereo beds.** Every bed was one channel of pink noise, which puts the
+  whole of the weather in the exact middle of the head — the one place a bird
+  also has to be heard. A two-channel noise buffer costs nothing extra in the
+  graph (the same filters process both channels) and leaves the centre free.
+- **A dip where the birds live.** Three decibels out of a wide band at
+  3.2 kHz on the bed bus, and everything below 40 Hz thrown away. The weather
+  gives up the one part of the spectrum it does not need.
+- **Lower beds all round**, and a narrower spread between weathers: five times
+  the wind for a breeze was a different room, not a windier one.
+
+### Keeping the audio thread fed
+
+The stutter when the land got busy was head-related panners: twelve or thirteen
+of them convolving at once under load, which is the most expensive thing in the
+graph by a long way. It also buys least on a far-off voice, which is already
+dull and quiet. So it is spent where it is worth spending — near voices, up to
+four at a time — and everything else gets an ordinary stereo pan. Measured
+under maximum load the count is now four, and the output peaks at −10 to
+−16 dBFS with no clipped samples.
+
+### What else the land does
+
+Not everything that makes a sound is somebody's voice. Each of these is built
+from the same two primitives the birds are, torn down when it has finished, and
+sent to the bed bus so it steps back under a call like the rest of the weather:
+
+| | |
+|---|---|
+| **thunder** | rain only. The flash goes to the scene at once and the roll waits out the distance at a third of a kilometre a second — light first, then the sound, which is the only thing that has ever told anybody how far away a storm is. Far strokes are duller, later and longer. It is the one cue that bypasses the duck: a robin should not duck a storm. |
+| **drips** | rain, and for the best part of a minute after it stops, thinning as the ground dries. Leaf-litter knocks, stone rings, water answers with the rising note everybody knows and nobody can place. |
+| **cattle** | a low from whichever beast is actually standing on the hill. |
+| **timber** | two trunks leaning on each other, when there is enough wind in the wood to load them. |
+| **shingle** | stones dragging down the beach, started by the wave that is taking them. |
+| **reeds** | dry stems knocking in the same gust the grass is answering. |
+
+Measured against the room each is heard in, they stand 7.5 to 23 dB clear.
+
 ### The wind
 
 `windBend(x, stiff)` replaced `windWave(x)`, and it is not a function of `t` at

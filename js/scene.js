@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=12";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=12";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=12";
+} from "./util.js?v=13";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=13";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=13";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -978,6 +978,35 @@ class Scene {
     }
   }
 
+  /* A stroke of lightning somewhere out in the weather. The audio engine calls
+     this the moment it decides on one and only sounds the thunder afterwards,
+     by however long the distance takes — light first, then the roll, which is
+     the whole reason a distant storm feels distant. `far` is 0 overhead and 1
+     a long way off; a far strike lights the cloud without lighting the land. */
+  lightning(far) {
+    this.flashT = 0;
+    this.flashFar = Math.max(0, Math.min(1, far));
+  }
+
+  updateFlash(dt) {
+    if (this.flashT === undefined || this.flashT >= 1) return;
+    this.flashT = Math.min(1, this.flashT + dt/0.55);
+  }
+
+  drawFlash(c, W, H) {
+    if (this.flashT === undefined || this.flashT >= 1) return;
+    const lit = gaitAt("strike", this.flashT, "lit") * (1 - this.flashFar*0.72);
+    if (lit < 0.004) return;
+    // Most of it is up in the cloud: a wash across the sky that fades out
+    // before it reaches the ground, and barely touches the near foreground.
+    const g = c.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `rgba(${this.tok.foamRGB}, ${lit*0.42})`);
+    g.addColorStop(0.55, `rgba(${this.tok.foamRGB}, ${lit*0.16})`);
+    g.addColorStop(1, `rgba(${this.tok.foamRGB}, ${lit*0.04})`);
+    c.fillStyle = g;
+    c.fillRect(0, 0, W, H);
+  }
+
   fishRise(x01) {
     if (this.loc !== "wetland") return;
     const y = this.waterY + 0.06 + Math.random() * (this.bankY - this.waterY - 0.12);
@@ -1072,6 +1101,7 @@ class Scene {
     this.drawForeground(c, W, H, dt, bot);   // the near edge, over everything living
     this.drawFireflies(c, W, H, night);
     this.drawWeather(c, W, H, night);
+    this.drawFlash(c, W, H);
     this.drawRipples(c, W, H);
     if (PERF) this.drawPerf(c, dt);
   }
@@ -1089,6 +1119,7 @@ class Scene {
   update(dt) {
     const night = this.nightness();
     this.updateWind(dt);
+    this.updateFlash(dt);
     this.updateCelestial(dt);
     this.updateClouds(dt);
     this.updateLocation(dt, night);

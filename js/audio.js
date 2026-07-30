@@ -6,12 +6,22 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=12";
-import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst } from "./species.js?v=12";
+import { mulberry32, REDUCED, state } from "./util.js?v=13";
+import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst } from "./species.js?v=13";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
 const VOICE_LEAD = 0.12;
+
+/* The two numbers the whole balance hangs off. The beds were measured at
+   −24 to −40 dB RMS and a call's peak at −28 to −36, which put the birds under
+   the weather in half the settings; these put a call's peak fifteen to twenty
+   decibels clear of the bed it is heard over, which is about where a small
+   sound stops being something you strain for. */
+const VOICE_LEVEL = 2.4;
+const BED_DUCK = 0.55;        // how far the beds step back under a voice (−5 dB)
+/* How many head-related convolutions may run at once. See makePanner. */
+const HRTF_BUDGET = 4;
 
 function disconnect(...nodes) {
   for (const n of nodes) { try { n.disconnect(); } catch (e) { /* already gone */ } }
@@ -30,8 +40,10 @@ class AudioEngine {
     this.duelUntil = 0;      // an exchange of songs is running until this time
     this.lastCallX = 0.5;    // where the last voice sounded, for the reply
     this.live = new Set();   // signal chains still sounding, torn down when done
+    this.hrtfLive = 0;       // head-related panners in the graph right now
     this.rng = mulberry32((state.seed ^ 0xA0D10) >>> 0);
     this.breath = 1;
+    this.wetUntil = 0;        // how long the ground goes on dripping
     this.chorusPh = this.rng()*Math.PI*2;
     this.chorusPeriod = 240 + this.rng()*200;   // four to seven minutes
   }
@@ -52,7 +64,11 @@ class AudioEngine {
     if (this._soft) return this._soft;
     const ac = this.ac;
     const buf = ac.createBuffer(1, ac.sampleRate * 4, ac.sampleRate);
-    const d = buf.getChannelData(0);
+    this.fillPink(buf.getChannelData(0));
+    this._soft = buf;
+    return buf;
+  }
+  fillPink(d) {
     let b0 = 0, b1 = 0, b2 = 0;
     for (let i = 0; i < d.length; i++) {
       const w = Math.random()*2 - 1;
@@ -61,12 +77,36 @@ class AudioEngine {
       b2 = 0.57000*b2 + w*1.0526913;
       d[i] = (b0 + b1 + b2 + w*0.1848) * 0.12;
     }
-    this._soft = buf;
-    return buf;
   }
   loopNoise() {
     const src = this.ac.createBufferSource();
     src.buffer = this.softBuffer();
+    src.loop = true;
+    src.start();
+    return src;
+  }
+
+  /* The same noise, but two independent channels of it.
+
+     Every bed used to be one channel of pink noise, which puts the whole of
+     the weather in the exact middle of the head — the one place a bird also
+     has to be heard. Two uncorrelated channels put the wind and the rain
+     *around* the listener instead and leave the centre empty, which buys the
+     voices several dB of clarity without anything being made louder. It costs
+     nothing at all in the graph: a two-channel buffer goes through the same
+     filters a one-channel buffer did. */
+  wideBuffer() {
+    if (this._wide) return this._wide;
+    const ac = this.ac;
+    const buf = ac.createBuffer(2, ac.sampleRate * 4, ac.sampleRate);
+    this.fillPink(buf.getChannelData(0));
+    this.fillPink(buf.getChannelData(1));
+    this._wide = buf;
+    return buf;
+  }
+  wideNoise() {
+    const src = this.ac.createBufferSource();
+    src.buffer = this.wideBuffer();
     src.loop = true;
     src.start();
     return src;
@@ -112,17 +152,65 @@ class AudioEngine {
     const AC = window.AudioContext || window.webkitAudioContext;
     this.ac = new AC();
     const ac = this.ac;
+    /* ---- the mix ----
+
+       Everything used to go straight to one gain and through one compressor,
+       which is why the weather drowned the birds. A continuous bed feeding a
+       4:1 compressor holds the whole mix down all the time, so a bird arrives
+       into a room that has already been turned down for it; measured, a call's
+       *peak* sat seven or eight decibels *below* the bed's steady level in a
+       breeze or in rain. Inaudible is the right word for that.
+
+       So there are two buses now. The beds run through their own shaping and
+       are ducked out of the way when something is calling; the voices run
+       clean and loud into a master that carries nothing but a limiter, and the
+       limiter is set high enough that it only ever catches a peak. Nothing in
+       here makes the piece louder — the beds come down a long way and the
+       voices come up — because the goal is a quiet room in which a small sound
+       is perfectly clear, not a loud one. */
     this.master = ac.createGain();
     this.master.gain.value = state.volume;
+    // A limiter, not a compressor: it does nothing at all until something is
+    // about to clip, so it cannot pump the beds or flatten a call.
     this.comp = ac.createDynamicsCompressor();
-    this.comp.threshold.value = -22; this.comp.ratio.value = 4;
+    this.comp.threshold.value = -6; this.comp.ratio.value = 20;
+    this.comp.knee.value = 3; this.comp.attack.value = 0.003;
+    this.comp.release.value = 0.25;
     this.master.connect(this.comp);
     this.comp.connect(ac.destination);
+
+    // The voices: their own bus, well clear of the beds.
     this.voiceFilter = ac.createBiquadFilter();
     this.voiceFilter.type = "lowpass"; this.voiceFilter.frequency.value = 12000;
-    this.voiceGain = ac.createGain(); this.voiceGain.gain.value = 0.9;
-    this.voiceGain.connect(this.voiceFilter);
+    this.voiceBus = ac.createGain(); this.voiceBus.gain.value = VOICE_LEVEL;
+    this.voiceGain = this.voiceBus;          // what the callers wire themselves to
+    this.voiceBus.connect(this.voiceFilter);
     this.voiceFilter.connect(this.master);
+
+    /* The beds: one bus, and two filters on it that are worth more to clarity
+       than any amount of turning things down. The first throws away everything
+       below forty hertz — inaudible on most speakers, but it is real energy and
+       it eats the headroom a call needs. The second takes three decibels out of
+       a wide band around three kilohertz, which is where nearly every bird in
+       the catalogue lives: the weather gives up the one part of the spectrum it
+       does not need, and the birds have it to themselves. */
+    this.bedBus = ac.createGain(); this.bedBus.gain.value = 1;
+    this.bedDuck = ac.createGain(); this.bedDuck.gain.value = 1;
+    const bedHP = ac.createBiquadFilter();
+    bedHP.type = "highpass"; bedHP.frequency.value = 40; bedHP.Q.value = 0.6;
+    const bedDip = ac.createBiquadFilter();
+    bedDip.type = "peaking"; bedDip.frequency.value = 3200;
+    bedDip.Q.value = 0.85; bedDip.gain.value = -3.2;
+    this.bedBus.connect(bedHP); bedHP.connect(bedDip);
+    bedDip.connect(this.bedDuck); this.bedDuck.connect(this.master);
+
+    /* The land's discrete noises — a drip, a creak, stones in the backwash —
+       take the duck with the rest of the weather but not the shaping. They are
+       foreground detail rather than bed, and the three kilohertz the dip takes
+       out to make room for the birds is exactly where a drop landing on a
+       stone lives; run through it they were inaudible. */
+    this.bedDetail = ac.createGain(); this.bedDetail.gain.value = 1;
+    this.bedDetail.connect(this.bedDuck);
 
     // The air a distant call has to cross: a handful of early reflections off
     // the ground and whatever is standing about, rolled off at both ends and
@@ -142,22 +230,24 @@ class AudioEngine {
     const fb = ac.createGain(); fb.gain.value = 0.33;
     airHP.connect(airLP);
     airLP.connect(tail); tail.connect(fb); fb.connect(airHP);
-    this.airGain = ac.createGain(); this.airGain.gain.value = 0.5;
+    /* The send is taken before the voice bus, so the return has to make up the
+       bus's gain or a far bird would arrive with no air around it at all. */
+    this.airGain = ac.createGain(); this.airGain.gain.value = 0.5*VOICE_LEVEL;
     airLP.connect(this.airGain);
-    this.airGain.connect(this.master);
+    this.airGain.connect(this.voiceFilter);
 
     // wind bed
     this.windGain = ac.createGain(); this.windGain.gain.value = 0;
     const wlp = ac.createBiquadFilter(); wlp.type = "lowpass"; wlp.frequency.value = 380;
     const wlp2 = ac.createBiquadFilter(); wlp2.type = "lowpass"; wlp2.frequency.value = 900;
-    this.loopNoise().connect(wlp); wlp.connect(wlp2); wlp2.connect(this.windGain);
-    this.windGain.connect(this.master);
+    this.wideNoise().connect(wlp); wlp.connect(wlp2); wlp2.connect(this.windGain);
+    this.windGain.connect(this.bedBus);
 
     // aeolian strings
     this.aeoGain = ac.createGain(); this.aeoGain.gain.value = 0;
-    this.aeoGain.connect(this.master);
+    this.aeoGain.connect(this.bedBus);
     this.aeolianFilters = []; this.aeolianStrings = [];
-    const src = this.loopNoise();
+    const src = this.wideNoise();
     const roots = [174.6, 196, 220, 233.1, 261.6];
     const modes = [[1, 1.125, 1.333, 1.5, 1.875], [1, 1.2, 1.5, 1.6, 2], [1, 1.125, 1.25, 1.5, 1.667]];
     const root = roots[Math.floor(this.rng()*roots.length)];
@@ -180,36 +270,36 @@ class AudioEngine {
     rainSrc.buffer = this.makeRainLoop(11);
     rainSrc.loop = true;
     rainSrc.connect(this.rainGain);
-    this.rainGain.connect(this.master);
+    this.rainGain.connect(this.bedBus);
     rainSrc.start();
 
     // leaf-rustle bed
     this.leavesGain = ac.createGain(); this.leavesGain.gain.value = 0;
     const lhp = ac.createBiquadFilter(); lhp.type = "highpass"; lhp.frequency.value = 1600;
-    this.loopNoise().connect(lhp); lhp.connect(this.leavesGain);
-    this.leavesGain.connect(this.master);
+    this.wideNoise().connect(lhp); lhp.connect(this.leavesGain);
+    this.leavesGain.connect(this.bedBus);
 
     // traffic rumble bed
     this.trafficGain = ac.createGain(); this.trafficGain.gain.value = 0;
     const tlp = ac.createBiquadFilter(); tlp.type = "lowpass"; tlp.frequency.value = 120;
-    this.loopNoise().connect(tlp); tlp.connect(this.trafficGain);
-    this.trafficGain.connect(this.master);
+    this.wideNoise().connect(tlp); tlp.connect(this.trafficGain);
+    this.trafficGain.connect(this.bedBus);
 
     // surf bed — the low body of the sea (approach and drag-back)
     this.surfGain = ac.createGain(); this.surfGain.gain.value = 0;
     this.surfFilter = ac.createBiquadFilter();
     this.surfFilter.type = "lowpass"; this.surfFilter.frequency.value = 400;
-    this.loopNoise().connect(this.surfFilter);
+    this.wideNoise().connect(this.surfFilter);
     this.surfFilter.connect(this.surfGain);
-    this.surfGain.connect(this.master);
+    this.surfGain.connect(this.bedBus);
 
     // surf foam — the bright hiss of a wave breaking and washing back
     this.surfFoamGain = ac.createGain(); this.surfFoamGain.gain.value = 0;
     this.surfFoamFilter = ac.createBiquadFilter();
     this.surfFoamFilter.type = "highpass"; this.surfFoamFilter.frequency.value = 1200;
-    this.loopNoise().connect(this.surfFoamFilter);
+    this.wideNoise().connect(this.surfFoamFilter);
     this.surfFoamFilter.connect(this.surfFoamGain);
-    this.surfFoamGain.connect(this.master);
+    this.surfFoamGain.connect(this.bedBus);
 
     this.surfFloor = 0;
     /* Warm the two things that cost their whole price the first time they are
@@ -229,28 +319,55 @@ class AudioEngine {
     param.setTargetAtTime(v, this.ac.currentTime, tau || 1.2);
   }
 
+  /* Step the beds back while something is calling, and let them come back
+     afterwards. This is worth more than any amount of turning the weather
+     down, because it only costs anything in the moment a voice is actually
+     there: the room is as full as it ever was between calls, and the bird
+     still arrives into a gap. Five decibels is enough to be certain of and
+     little enough not to be noticed as an effect — and the recovery is slow,
+     so the weather comes back the way attention does.
+
+     There is no analyser and no sidechain: the engine knows exactly when every
+     call starts and how long it runs, so the whole thing is two scheduled
+     ramps on one gain. */
+  duck(at, dur) {
+    if (!this.bedDuck) return;
+    const g = this.bedDuck.gain, t = Math.max(this.ac.currentTime, at - 0.06);
+    const until = at + dur;
+    if (this._duckUntil && until <= this._duckUntil) return;   // already down
+    this._duckUntil = until;
+    g.cancelScheduledValues(t);
+    g.setValueAtTime(g.value, t);
+    g.linearRampToValueAtTime(BED_DUCK, at + 0.10);
+    g.setValueAtTime(BED_DUCK, until);
+    g.setTargetAtTime(1, until, 0.85);
+  }
+
   applyConditions() {
     if (!this.ac) return;
     const w = state.weather, L = state.location;
-    const windTable = { clear: 0.06, breeze: 0.30, rain: 0.15, fog: 0.12 };
+    /* Every bed level below came down between eight and fourteen decibels, and
+       the spread between a still day and a windy one came down with them: five
+       times the wind for a breeze was a different room, not a windier one. */
+    const windTable = { clear: 0.038, breeze: 0.070, rain: 0.036, fog: 0.042 };
     const locWind = { meadow: 1, forest: 0.75, beach: 1.25, wetland: 0.9, city: 0.5 };
     this.windBase = windTable[w] * locWind[L];
     this.set(this.windGain.gain, this.windBase);
     const aeoT = { clear: 0.35, breeze: 0.6, rain: 0.2, fog: 0.45 };
     const locAeo = { meadow: 1, forest: 0.55, beach: 0.7, wetland: 0.8, city: 0.3 };
-    this.aeoBase = aeoT[w] * locAeo[L] * 0.16;
+    this.aeoBase = aeoT[w] * locAeo[L] * 0.062;
     this.set(this.aeoGain.gain, this.aeoBase, 2);
-    this.rainTarget = w === "rain" ? 0.16 : 0;
+    this.rainTarget = w === "rain" ? 0.038 : 0;
     this.set(this.rainGain.gain, this.rainTarget * (this.breath || 1));
     // Leaf hiss follows the wind: a still, clear day in the wood is quiet.
-    const leafBase = L === "forest" ? 0.10 : L === "wetland" ? 0.05 : 0;
+    const leafBase = L === "forest" ? 0.034 : L === "wetland" ? 0.017 : 0;
     const leafWeather = { clear: 0.4, breeze: 1.7, rain: 1.1, fog: 0.7 }[w] || 1;
     this.leafTarget = leafBase * leafWeather;
     this.set(this.leavesGain.gain, this.leafTarget * (this.breath || 1));
-    this.set(this.trafficGain.gain, L === "city" ? 0.05 : 0);
+    this.set(this.trafficGain.gain, L === "city" ? 0.030 : 0);
     // The sea's resting hiss between waves — kept low so the waves themselves carry.
     const surfWeather = { clear: 1, breeze: 1.5, rain: 1.3, fog: 0.9 }[w] || 1;
-    this.surfFloor = L === "beach" ? 0.022 * surfWeather : 0;
+    this.surfFloor = L === "beach" ? 0.012 * surfWeather : 0;
     this.set(this.surfGain.gain, this.surfFloor);
     if (this.surfFoamGain && L !== "beach") this.set(this.surfFoamGain.gain, 0, 0.4);
     this.set(this.voiceFilter.frequency, w === "fog" ? 3000 : 12000, 0.8);
@@ -299,7 +416,16 @@ class AudioEngine {
       send.gain.value = Math.min(0.6, depth*0.042);
       dg.connect(send); send.connect(this.airIn);
     }
-    if (state.spatial && ac.createPanner) {
+    /* HRTF convolution is the most expensive thing in this graph and the whole
+       reason the beds stuttered when the land got busy. It also buys least on
+       a far-off voice, which is already dull and quiet and carries almost no
+       localisation cue. So it is spent where it is worth spending: on near
+       voices, and only up to a handful at a time. Everything else gets an
+       ordinary stereo pan, which sounds all but identical at that distance and
+       costs a rounding error. */
+    const wantHRTF = state.spatial && ac.createPanner
+      && depth < 11 && this.hrtfLive < HRTF_BUDGET;
+    if (wantHRTF) {
       const p = ac.createPanner();
       p.panningModel = "HRTF";
       p.distanceModel = "inverse";
@@ -310,12 +436,19 @@ class AudioEngine {
         p.positionX.value = x; p.positionY.value = y; p.positionZ.value = z;
       } else p.setPosition(x, y, z);
       out = p;
+      this.hrtfLive++;
     } else {
       out = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
       if (out.pan) out.pan.value = Math.max(-1, Math.min(1, az * 0.8));
     }
     dg.connect(out);
-    return { node: lp, out, dispose: () => disconnect(lp, dg, out, send) };
+    let done = false;
+    return { node: lp, out, dispose: () => {
+      if (done) return;
+      done = true;
+      if (wantHRTF) this.hrtfLive = Math.max(0, this.hrtfLive - 1);
+      disconnect(lp, dg, out, send);
+    } };
   }
 
   /* A lightweight panner (stereo only, no HRTF) for small percussive sounds
@@ -390,6 +523,7 @@ class AudioEngine {
        would stutter just before the bird was heard. A tenth of a second is
        inaudible as a delay and puts the whole build several buffers clear. */
     const dur = sp.synth(ac, pan.node, ac.currentTime + VOICE_LEAD + enter, r) || 1;
+    this.duck(ac.currentTime + VOICE_LEAD + enter, dur);
     this.activeVoices++;
     this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
       (enter + dur + 0.3) * 1000);
@@ -491,6 +625,11 @@ class AudioEngine {
         this.set(this.leavesGain.gain,
           this.leafTarget * (this.breath || 1) * (0.4 + f*0.85), 2.2);
       }
+      // dry reeds knock together in the same gust the grass is answering
+      if (state.location === "wetland" && f > 0.9 && this.rng() < 0.6) {
+        this.once(() => this.playReedRattle((this.rng()*2 - 1)*0.8,
+          Math.min(1, (f - 0.9)*2.2)), 400 + this.rng()*900);
+      }
       setTimeout(gust, 4000 + this.rng()*5500);
     };
     setTimeout(gust, 2500);
@@ -554,11 +693,12 @@ class AudioEngine {
           const depth = 4 + this.rng()*5;
           const pan = this.makePanner(az, 0.2, depth);
           pan.out.connect(this.voiceGain);
-          const dur = v.synth(this.ac, pan.node, this.ac.currentTime + 0.02, this.rng) || 1;
+          const dur = v.synth(this.ac, pan.node, this.ac.currentTime + VOICE_LEAD, this.rng) || 1;
+          this.duck(this.ac.currentTime + VOICE_LEAD, dur);
           this.activeVoices++;
           this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
             (dur + 0.3) * 1000);
-          this.retire(pan, dur + 2.5);
+          this.retire(pan, VOICE_LEAD + dur + 2.5);
           this.scene.addRipple(cr.x, cr.y !== undefined ? cr.y : 0.85, v.tone);
           this.emit(v, az, depth, dur);
         }
@@ -585,8 +725,8 @@ class AudioEngine {
         const big = 0.6 + this.rng()*0.9;                 // how large this wave is
         const dur = 6 + this.rng()*5;                     // whole approach-to-wash cycle
         const crest = t + dur * (0.42 + this.rng()*0.12); // the moment it breaks
-        const bodyPeak = this.surfFloor + (0.05 + this.rng()*0.04) * big;
-        const foamPeak = (0.045 + this.rng()*0.035) * big;
+        const bodyPeak = this.surfFloor + (0.020 + this.rng()*0.016) * big;
+        const foamPeak = (0.018 + this.rng()*0.014) * big;
 
         // Body: the swell rolls in, then drags back out (a low roar).
         const g = this.surfGain.gain;
@@ -612,6 +752,8 @@ class AudioEngine {
         fff.setValueAtTime(1700, t);
         fff.linearRampToValueAtTime(850, crest + 1.6);    // foam settles lower as it recedes
 
+        // and the stones going back down the beach with the water
+        this.playShingle(crest + 0.22, 1.4 + this.rng()*1.4, (0.006 + this.rng()*0.007)*big);
         this.once(() => this.scene.foamPulse(), (crest - t + 0.12)*1000);
         setTimeout(wave, dur * 1000 * (0.7 + this.rng()*0.4));
       } else {
@@ -628,16 +770,16 @@ class AudioEngine {
         const az = (this.rng()*2 - 1) * 0.8;
         if (this.rng() < 0.22) {
           const pan = this.makeCheapPan(az, 4 + this.rng()*6);
-          pan.out.connect(this.master);
+          pan.out.connect(this.bedDetail);
           note(this.ac, pan.node, this.ac.currentTime + 0.02,
-            290 + this.rng()*160, 90, 0.09, 0.045);
+            290 + this.rng()*160, 90, 0.09, 0.030);
           this.retire(pan, 1.2);
           this.scene.fishRise((az/0.8 + 1) / 2);
         } else {
           const pan = this.makeCheapPan(az, 3 + this.rng()*5);
-          pan.out.connect(this.master);
+          pan.out.connect(this.bedDetail);
           burst(this.ac, pan.node, this.ac.currentTime + 0.02,
-            480 + this.rng()*320, 1.2, 0.25, 0.013);
+            480 + this.rng()*320, 1.2, 0.25, 0.009);
           this.retire(pan, 1.2);
         }
       }
@@ -656,14 +798,14 @@ class AudioEngine {
         lp.type = "lowpass"; lp.frequency.value = 230;
         const g = ac.createGain(); g.gain.value = 0.0001;
         const sp = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
-        src.connect(lp); lp.connect(g); g.connect(sp); sp.connect(this.master);
+        src.connect(lp); lp.connect(g); g.connect(sp); sp.connect(this.bedBus);
         const t = ac.currentTime, dur = 4.5 + this.rng()*2;
         const dir = this.rng() < 0.5 ? 1 : -1;
         if (sp.pan) {
           sp.pan.setValueAtTime(-0.9*dir, t);
           sp.pan.linearRampToValueAtTime(0.9*dir, t + dur);
         }
-        g.gain.exponentialRampToValueAtTime(0.028, t + dur*0.45);
+        g.gain.exponentialRampToValueAtTime(0.013, t + dur*0.45);
         g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
         this.once(() => {
           try { src.stop(); } catch (e) { /* already stopped */ }
@@ -688,7 +830,7 @@ class AudioEngine {
     const ac = this.ac;
     const az = (this.rng()*2 - 1) * 0.8, depth = 18 + this.rng()*8;
     const pan = this.makePanner(az, 1, depth);
-    pan.out.connect(this.master);
+    pan.out.connect(this.voiceBus);
     const f0 = [196, 220, 246.9][Math.floor(this.rng()*3)];
     const strikes = 1 + Math.floor(this.rng()*3);
     for (let k = 0; k < strikes; k++) {
@@ -705,10 +847,261 @@ class AudioEngine {
         o.start(t); o.stop(t + 5.4);
       }
     }
+    this.duck(ac.currentTime + 0.05, strikes*2.6 + 2.5);
     this.retire(pan, strikes*2.6 + 7);
     this.emit({ id: "bell", name: "Church bell", latin: "",
       desc: "the hour, loosed over the rooftops", tone: "amber" },
       az, depth, strikes*2.6 + 2);
+  }
+
+  /* ============================================================
+     The land's own noises — the things that are not anybody's voice.
+
+     Each is built from the same two primitives the birds are, torn down as
+     soon as it has finished sounding, and sent to the bed bus so that it steps
+     back under a call like the rest of the weather. Thunder is the exception
+     and has its own way out, because a robin should not duck a storm.
+     ============================================================ */
+
+  /* One drop, off a leaf or an eave or into the water. It is a tiny sound and
+     it is the whole difference between rain as a texture and rain as something
+     falling on a particular place: leaf-litter knocks, stone rings, and water
+     answers with the rising note everybody knows and nobody can place. */
+  playDrip(az, into) {
+    const ac = this.ac, t = ac.currentTime + 0.02;
+    const pan = this.makeCheapPan(az, 2 + this.rng()*3);
+    pan.out.connect(this.bedDetail);
+    const r = this.rng;
+    if (into === "water") {
+      // a plop: the pitch *rises* as the cavity closes behind the drop
+      note(ac, pan.node, t, 360 + r()*260, 900 + r()*520, 0.075, 0.105);
+      burst(ac, pan.node, t, 1400 + r()*900, 1.4, 0.02, 0.030);
+    } else if (into === "stone") {
+      note(ac, pan.node, t, 2400 + r()*1400, 1500 + r()*700, 0.07, 0.055);
+      burst(ac, pan.node, t, 4800 + r()*2600, 2.6, 0.024, 0.048);
+    } else if (into === "leaves") {
+      burst(ac, pan.node, t, 1900 + r()*1300, 1.1, 0.042, 0.100);
+      note(ac, pan.node, t, 1200 + r()*500, 620 + r()*260, 0.045, 0.050);
+    } else {
+      burst(ac, pan.node, t, 1500 + r()*900, 1.0, 0.05, 0.048);
+    }
+    this.retire(pan, 0.5);
+  }
+
+  /* A stroke of lightning, and the roll it sends after itself. The flash goes
+     to the scene at once and the sound waits out the distance at a third of a
+     kilometre a second, which is the only thing that has ever told anybody how
+     far away a storm is. Far strokes are duller as well as later — the air
+     takes the top off a rumble over a few kilometres — and longer, because
+     what arrives has come off more of the sky. */
+  playThunder() {
+    const ac = this.ac, r = this.rng;
+    const far = 0.18 + r()*0.82;
+    this.scene.lightning(far);
+    const delaySec = 0.7 + far*13;
+    this.once(() => {
+      if (!this.running || state.weather !== "rain") return;
+      const t = ac.currentTime + 0.02;
+      const dur = 2.4 + far*6.5;
+      const src = this.wideNoise();
+      const lp = ac.createBiquadFilter();
+      lp.type = "lowpass";
+      const cut = 2500 - far*2050;
+      lp.frequency.setValueAtTime(cut*1.7, t);
+      lp.frequency.exponentialRampToValueAtTime(Math.max(80, cut*0.4), t + dur);
+      const hp = ac.createBiquadFilter();
+      hp.type = "highpass"; hp.frequency.value = 26;
+      const g = ac.createGain();
+      const peak = 0.085 - far*0.062;
+      g.gain.setValueAtTime(0.0001, t);
+      // the leading edge — a crack near, a swell far off — then the roll,
+      // which is two or three swells of it before the long fall away
+      g.gain.exponentialRampToValueAtTime(peak, t + 0.03 + far*0.9);
+      let u = 0.35 + far*0.9;
+      while (u < dur*0.8) {
+        g.gain.exponentialRampToValueAtTime(peak*(0.3 + r()*0.55), t + u);
+        u += 0.35 + r()*0.8;
+      }
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      const pan = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain();
+      if (pan.pan) pan.pan.value = (r()*2 - 1)*0.4;
+      src.connect(hp); hp.connect(lp); lp.connect(g); g.connect(pan);
+      // straight past the duck: a storm does not step back for a wren
+      pan.connect(this.master);
+      this.once(() => {
+        try { src.stop(); } catch (e) { /* already stopped */ }
+        disconnect(src, hp, lp, g, pan);
+      }, (dur + 0.4)*1000);
+    }, delaySec*1000);
+  }
+
+  /* Cattle on the far hill. A low is a long way down and a long way off: a
+     falling note with a pair of formants over it, and no hurry about it. */
+  playCattleLow(az) {
+    const ac = this.ac, r = this.rng;
+    const t = ac.currentTime + 0.02;
+    const dur = 1.1 + r()*0.9;
+    const pan = this.makeCheapPan(az, 14 + r()*8);
+    pan.out.connect(this.voiceBus);
+    const f0 = 108 + r()*26;
+    // One broad formant low down, not a narrow one up at the fourth harmonic:
+    // a cow is a big animal and almost all of a low is under 500 Hz.
+    const bp = ac.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 300 + r()*130; bp.Q.value = 0.9;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.26, t + 0.22);
+    g.gain.setValueAtTime(0.26, t + dur*0.55);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    bp.connect(g); g.connect(pan.node);
+    for (const [mult, amp] of [[1, 0.6], [2, 0.42], [3, 0.22], [4, 0.10]]) {
+      const o = ac.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.setValueAtTime(f0*mult, t);
+      o.frequency.linearRampToValueAtTime(f0*mult*0.86, t + dur);
+      const og = ac.createGain(); og.gain.value = amp;
+      o.connect(og); og.connect(bp);
+      o.start(t); o.stop(t + dur + 0.1);
+    }
+    this.duck(t, dur);
+    this.retire(pan, dur + 1.2);
+    this.emit({ id: "cattle", name: "Cattle", latin: "Bos taurus",
+      desc: "a low from the far hill", tone: "sage" }, az, 16, dur);
+  }
+
+  /* Two trunks leaning on each other in the wind. A creak is one narrow band
+     of noise being bent slowly about — the narrower and slower, the more it
+     sounds like something under load rather than something breaking. */
+  playCreak(az) {
+    const ac = this.ac, r = this.rng;
+    const t = ac.currentTime + 0.02;
+    const dur = 0.9 + r()*1.4;
+    const pan = this.makeCheapPan(az, 5 + r()*6);
+    pan.out.connect(this.bedDetail);
+    const src = this.loopNoise();
+    const bp = ac.createBiquadFilter();
+    bp.type = "bandpass"; bp.Q.value = 22 + r()*16;
+    const f0 = 190 + r()*260;
+    bp.frequency.setValueAtTime(f0, t);
+    bp.frequency.linearRampToValueAtTime(f0*(1.5 + r()*0.9), t + dur*0.62);
+    bp.frequency.linearRampToValueAtTime(f0*0.85, t + dur);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.50 + r()*0.30, t + dur*0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g); g.connect(pan.node);
+    this.once(() => {
+      try { src.stop(); } catch (e) { /* already stopped */ }
+      disconnect(src, bp, g);
+    }, (dur + 0.3)*1000);
+    this.retire(pan, dur + 0.6);
+  }
+
+  /* The backwash dragging shingle down the beach: a band of hiss with a rattle
+     shaken through it. It belongs to a particular wave, so the wave scheduler
+     starts it as the water turns and takes it back down with the water. */
+  playShingle(at, len, amp) {
+    const ac = this.ac, r = this.rng;
+    const pan = this.makeCheapPan((r()*2 - 1)*0.5, 5);
+    pan.out.connect(this.bedDetail);
+    const src = this.wideNoise();
+    const bp = ac.createBiquadFilter();
+    bp.type = "bandpass"; bp.frequency.value = 2100 + r()*1100; bp.Q.value = 0.9;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.linearRampToValueAtTime(amp, at + len*0.22);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + len);
+    // the rattle: the individual stones, as a fast wobble on the level
+    const lfo = ac.createOscillator();
+    lfo.type = "sawtooth"; lfo.frequency.value = 21 + r()*13;
+    const lg = ac.createGain(); lg.gain.value = amp*0.55;
+    lfo.connect(lg); lg.connect(g.gain);
+    lfo.start(at); lfo.stop(at + len + 0.05);
+    src.connect(bp); bp.connect(g); g.connect(pan.node);
+    this.once(() => {
+      try { src.stop(); } catch (e) { /* already stopped */ }
+      disconnect(src, bp, g, lg);
+    }, (at - ac.currentTime + len + 0.4)*1000);
+    this.retire(pan, at - ac.currentTime + len + 0.6);
+  }
+
+  /* Dry reeds knocking together when a gust goes through them: a scatter of
+     ticks rather than a hiss, which is what tells reed from leaf. */
+  playReedRattle(az, strength) {
+    const ac = this.ac, r = this.rng;
+    const pan = this.makeCheapPan(az, 3 + r()*4);
+    pan.out.connect(this.bedDetail);
+    const n = 4 + Math.floor(r()*7);
+    let t = ac.currentTime + 0.02;
+    for (let i = 0; i < n; i++) {
+      burst(ac, pan.node, t, 2600 + r()*2600, 3.5, 0.022, (0.060 + r()*0.065)*strength);
+      t += 0.03 + r()*0.10;
+    }
+    this.retire(pan, (t - ac.currentTime) + 0.6);
+  }
+
+  /* ---- when each of those happens ---- */
+
+  /* Thunder is rare and mostly distant, because a storm directly overhead is
+     not what this piece is for. It only ever comes with rain. */
+  startThunderScheduler(gen) {
+    const roll = () => {
+      if (!this.running || gen !== this.gen) return;
+      if (state.weather === "rain" && this.rng() < 0.55) this.playThunder();
+      setTimeout(roll, 45000 + this.rng()*90000);
+    };
+    setTimeout(roll, 20000 + this.rng()*40000);
+  }
+
+  /* Drips. Rain falling on a surface is not the same sound as rain falling,
+     and it goes on for a while after the rain itself has stopped — which is
+     the detail that makes a wood sound wet rather than merely rained on. */
+  startDripScheduler(gen) {
+    const into = { forest: "leaves", city: "stone", wetland: "water",
+                   beach: "ground", meadow: "leaves" };
+    const drip = () => {
+      if (!this.running || gen !== this.gen) return;
+      const now = performance.now();
+      if (state.weather === "rain") this.wetUntil = now + 50000;
+      if (this.wetUntil && now < this.wetUntil) {
+        // thinning out as the ground dries, so the last ones are far apart
+        const wet = Math.min(1, (this.wetUntil - now)/50000);
+        if (this.rng() < 0.35 + wet*0.5) {
+          this.playDrip((this.rng()*2 - 1)*0.85, into[state.location] || "ground");
+        }
+      }
+      setTimeout(drip, 260 + this.rng()*1500);
+    };
+    setTimeout(drip, 4000 + this.rng()*6000);
+  }
+
+  /* Cattle, but only the ones actually standing on the hill. */
+  startCattleScheduler(gen) {
+    const low = () => {
+      if (!this.running || gen !== this.gen) return;
+      const herd = (state.location === "meadow" && this.scene.cattle) || [];
+      if (herd.length && this.activeVoices < this.voiceCap() && this.rng() < 0.5
+          && performance.now() >= this.quietUntil) {
+        const cw = herd[Math.floor(this.rng()*herd.length)];
+        this.playCattleLow(Math.max(-1, Math.min(1, (cw.x*2 - 1)*0.85)));
+      }
+      setTimeout(low, 34000 + this.rng()*62000);
+    };
+    setTimeout(low, 15000 + this.rng()*30000);
+  }
+
+  /* Timber, when there is enough wind in the wood to load it. */
+  startTimberScheduler(gen) {
+    const creak = () => {
+      if (!this.running || gen !== this.gen) return;
+      const windy = state.weather === "breeze" ? 1
+        : state.weather === "rain" ? 0.5 : state.weather === "fog" ? 0.3 : 0.22;
+      if (state.location === "forest" && this.rng() < windy*0.7) {
+        this.playCreak((this.rng()*2 - 1)*0.8);
+      }
+      setTimeout(creak, 12000 + this.rng()*26000);
+    };
+    setTimeout(creak, 9000 + this.rng()*14000);
   }
 
   clearTimers() {
@@ -726,6 +1119,8 @@ class AudioEngine {
     this.startFlyerScheduler(gen);
     this.startWaveScheduler(gen); this.startLapScheduler(gen);
     this.startCarScheduler(gen); this.startBellScheduler(gen);
+    this.startThunderScheduler(gen); this.startDripScheduler(gen);
+    this.startCattleScheduler(gen); this.startTimberScheduler(gen);
   }
 
   /* Silence, and the schedulers stopped. The master gain is cut to nothing
@@ -733,6 +1128,12 @@ class AudioEngine {
      mid-phrase when the context does. */
   pause() {
     this.running = false;
+    this._duckUntil = 0;
+    if (this.bedDuck) {
+      const d = this.bedDuck.gain;
+      d.cancelScheduledValues(this.ac ? this.ac.currentTime : 0);
+      d.value = 1;
+    }
     this.gen++;              // halt every recurring scheduler loop
     this.clearTimers();
     for (const chain of this.live) chain.dispose();

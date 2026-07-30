@@ -742,6 +742,24 @@ const GAIT = {
       [0.80, 0.00]
     ]
   },
+  /* A stroke of lightning, seen. It is never one flash: the channel is struck
+     several times in a tenth of a second or so, which is why it flickers, and
+     what is left afterwards is a much fainter glow in the cloud. */
+  strike: {
+    chan: ["lit"],
+    body: [
+      [0.00, 0.00],
+      [0.03, 1.00],              // the first return stroke
+      [0.09, 0.22],
+      [0.14, 0.86],              // and the second
+      [0.20, 0.16],
+      [0.26, 0.52],              // a third, weaker
+      [0.34, 0.10],
+      [0.50, 0.05],              // the cloud goes on glowing for a moment
+      [0.72, 0.02],
+      [0.90, 0.00]
+    ]
+  },
   /* A cloud does not cross the sky unchanged. It builds, is drawn out and
      flattened by the wind it is riding, and thins away again — slowly enough
      that you only notice having looked away and looked back. Never to nothing:

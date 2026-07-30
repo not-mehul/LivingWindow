@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS } from "./util.js?v=12";
-import { speciesIcon } from "./species.js?v=12";
-import { Scene } from "./scene.js?v=12";
-import { AudioEngine } from "./audio.js?v=12";
+import { state, sessionSerial, LOCATIONS } from "./util.js?v=13";
+import { speciesIcon } from "./species.js?v=13";
+import { Scene } from "./scene.js?v=13";
+import { AudioEngine } from "./audio.js?v=13";
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
