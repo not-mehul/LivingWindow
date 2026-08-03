@@ -4,10 +4,10 @@
    has its own quiet traffic of butterflies, bats, deer and cats.
    ============================================================ */
 import {
-  mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state
-} from "./util.js?v=14";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=14";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=14";
+  mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
+} from "./util.js?v=15";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=15";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=15";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -1020,6 +1020,54 @@ class Scene {
     this.foam[idx].p = 0.001;
   }
 
+  /* Something has come through, and the engine is the one that decides what
+     is said about it — the scene only knows that it happened and where. Set
+     by main.js; absent in the bestiary, which has no engine behind it. */
+  raiseAlarm(x, cause) {
+    if (this.onAlarm) this.onAlarm(x, cause);
+  }
+
+  /* ---- Something has come through --------------------------------------
+     A fox crosses the meadow, a cat gets up on the city wall, and every bird
+     that was singing stops singing and goes. This is the visible half of it;
+     the silence that follows is `AudioEngine.alarm`.
+
+     `x` is where in the frame the thing appeared. Birds nearest it go first
+     and go furthest — a bird on the other side of the frame looks up, and a
+     bird ten feet away leaves — which is the difference between a flock
+     reacting to something and a flock all doing the same thing at once. */
+  flush(x) {
+    let went = 0;
+    for (const a of this.actors) {
+      if (a.leave) continue;                  // already on its way
+      const near = 1 - Math.min(1, Math.abs(a.x - x)*1.6);
+      if (Math.random() > 0.45 + near*0.5) continue;
+      a.leaveT = 0;
+      a.launchX = a.x; a.launchY = a.y;
+      // away from it, whichever way that is
+      a.flyDir = a.x < x ? -1 : 1;
+      a.flip = a.flyDir < 0;
+      // Everything goes up hard. A ground bird clatters, a perched one springs
+      // — but nothing walks away from a fox, and nothing dives to feed.
+      a.leave = (a.beh === "ground" || a.beh === "pheasant") ? "flush"
+        : a.beh === "owl" ? "glide"
+        : a.beh === "egret" ? "heronoff" : "fly";
+      a.dur = 0; a.singAt = -99;              // whatever it was saying, it stops
+      went++;
+    }
+    /* And the four-footed company scatters too, which is most of what makes
+       the frame feel like it has been walked through rather than merely
+       drawn on. Only the things that would actually run. */
+    for (const cr of this.critters) {
+      if (cr.kind === "rabbit" || cr.kind === "hare" || cr.kind === "squirrel"
+          || cr.kind === "deer" || cr.kind === "hedgehog") {
+        cr.bolt = (cr.x < x) ? -1 : 1;
+        cr.boltT = 0;
+      }
+    }
+    return went;
+  }
+
   frame(now) {
     if (!this.active) return;                // the window is shut; nothing stirs
     const dt = Math.min(0.05, (now - this.last) / 1000);
@@ -1118,6 +1166,10 @@ class Scene {
      happens — worth knowing before hanging a fixed timestep off it. */
   update(dt) {
     const night = this.nightness();
+    /* The weather moves first, because everything below reads where it got
+       to. This is the only clock in the piece that runs at the rate a
+       listener perceives, so it is the one that steps the sky. */
+    stepWeather(dt, state.time);
     this.updateWind(dt);
     this.updateFlash(dt);
     this.updateCelestial(dt);
@@ -1168,7 +1220,7 @@ class Scene {
   }
 
   updateClouds(dt) {
-    const wf = state.weather === "breeze" ? 3 : 1;
+    const wf = 1 + state.wx.gust*2;
     for (const cl of this.clouds) {
       const near = Math.max(0, Math.min(1, (cl.w - 0.16)/0.22));
       // it hurries in a gust like everything else in the frame
@@ -1228,7 +1280,7 @@ class Scene {
 
   drawClouds(p, W, H, night) {
     const rgb = this.tok.cloudRGB;
-    const af = (state.weather === "rain" ? 1.5 : 1) * (1 - night*0.5);
+    const af = (1 + state.wx.wet*0.5) * (1 - night*0.5);
     for (const cl of this.clouds) {
       // Big clouds are near ones: they cross faster and hold their colour,
       // while the small far ones hang almost still and pale away.
@@ -1243,7 +1295,7 @@ class Scene {
   }
 
   windAmt() {
-    return state.weather === "breeze" ? 1 : (state.weather === "rain" ? 0.5 : 0.25);
+    return state.wx.gust;
   }
 
   /* A hundred and ten blades of grass in one colour and one width. Stroked
@@ -1384,7 +1436,7 @@ class Scene {
     if (!hg) return;
     const body = css(mix(this.tok.inkDeep, bot, 0.15));
     const twig = css(mix(this.tok.inkDeep, bot, 0.24));
-    const wind = state.weather === "breeze" ? 1 : 0.35;
+    const wind = 0.35 + state.wx.gust*0.65;
     const n = 96;
     // The mass of the hedge: its crown ragged where the wind is working it,
     // its foot following the ground it grows out of.
@@ -1836,7 +1888,7 @@ class Scene {
     const treeBend = this.windBend(this.treeX, true);
     for (const s of this.tree) {
       c.lineWidth = 0.8 + s.w * 1.1;
-      const gw = (4 - s.w)*(state.weather === "breeze" ? 0.85 : 0.22);
+      const gw = (4 - s.w)*(0.22 + state.wx.gust*0.63);
       const sway = treeBend*gw*3.4 + Math.sin(this.t*1.1 + s.y1*8)*gw*0.7;
       c.beginPath();
       c.moveTo(this.treeX*W + s.x1*W*0.5 + sway*0.4, baseY + s.y1*H*0.9);
@@ -1848,7 +1900,7 @@ class Scene {
       const mnT = Math.min(W, H);
       c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
       for (const lf of this.treeLeaves) {
-        const lw = 3.6*(state.weather === "breeze" ? 0.85 : 0.22);
+        const lw = 3.6*(0.22 + state.wx.gust*0.63);
         const sway = treeBend*lw*3.4 + Math.sin(this.t*1.1 + lf.y*8)*lw*0.7;
         c.beginPath();
         c.arc(this.treeX*W + (lf.x + lf.dx)*W*0.5 + sway,
@@ -2421,7 +2473,7 @@ class Scene {
   mistAmt() {
     const dawnish = this.timeMix.dawn /
       (this.timeMix.dawn + this.timeMix.day + this.timeMix.dusk + this.timeMix.night || 1);
-    return dawnish*0.95 + (state.weather === "fog" ? 0.45 : 0);
+    return dawnish*0.95 + state.wx.haze*0.45;
   }
 
   updateWaterMist(dt) {
@@ -4152,7 +4204,8 @@ class Scene {
     const night = this.nightness();
     const P = (x) => Math.random() < x*dt;
     const n = (k) => { let c2 = 0; for (const cr of this.critters) if (cr.kind === k) c2++; return c2; };
-    const calmW = state.weather === "clear" || state.weather === "breeze";
+    // butterflies and bees want it dry and clear to see across
+    const calmW = state.wx.wet < 0.15 && state.wx.haze < 0.4;
 
     if ((this.loc === "meadow" || this.loc === "forest") && dayish > 0.5 && calmW
         && n("butterfly") < (REDUCED ? 1 : 4) && P(0.11)) {
@@ -4168,13 +4221,13 @@ class Scene {
         sz: 0.8 + Math.random()*0.5, mode: "hover", timer: 0.5 + Math.random(),
         tx: 0, ty: 0 });
     }
-    if (this.loc === "wetland" && dayish > 0.5 && state.weather !== "rain"
+    if (this.loc === "wetland" && dayish > 0.5 && state.wx.wet < 0.2
         && n("dragonfly") < 2 && P(0.05)) {
       this.critters.push({ kind: "dragonfly", x: 0.2 + Math.random()*0.6,
         y: this.waterY - 0.03 - Math.random()*0.1, t: 0, mode: "hover",
         timer: 1 + Math.random(), tx: 0, ty: 0, life: 16 + Math.random()*8 });
     }
-    if ((night > 0.35 || duskdawn > 0.6) && state.weather !== "rain" && this.loc !== "beach"
+    if ((night > 0.35 || duskdawn > 0.6) && state.wx.wet < 0.25 && this.loc !== "beach"
         && n("bat") < (REDUCED ? 1 : 4) && P(0.12)) {
       const sx = Math.random() < 0.5 ? -0.05 : 1.05;
       this.critters.push({ kind: "bat", x: sx, y: 0.12 + Math.random()*0.28, t: 0,
@@ -4235,6 +4288,7 @@ class Scene {
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "badger", x: dir > 0 ? -0.08 : 1.08, dir,
         t: 0, lp: 0, sz: 0.9 + Math.random()*0.25 });
+      this.raiseAlarm(dir > 0 ? 0 : 1, "badger");
     }
     // an otter threading the open water, diving and surfacing
     if (this.loc === "wetland" && night < 0.6 && n("otter") === 0
@@ -4245,6 +4299,7 @@ class Scene {
         y: this.waterY + 0.1 + Math.random()*(this.bankY - this.waterY - 0.2),
         mode: "swim", timer: 2.5 + Math.random()*3, t: 0, ph: 0,
         sz: 0.85 + Math.random()*0.3 });
+      this.raiseAlarm(dir > 0 ? 0 : 1, "otter");
     }
     if (this.loc === "city" && night > 0.5 && n("cat") === 0
         && this.t - this.lastCat > 70 && P(0.03)
@@ -4253,6 +4308,7 @@ class Scene {
       const bi = Math.floor(Math.random()*this.frontBlocks.length);
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "cat", b: bi, u: dir > 0 ? 0 : 1, dir, mode: "walk", timer: 0, t: 0 });
+      this.raiseAlarm(dir > 0 ? 0.1 : 0.9, "cat");
     }
     if (this.loc === "meadow" && (dayish > 0.3 || duskdawn > 0.4) && calmW && n("rabbit") === 0
         && this.t - this.lastRabbit > 30 && P(0.035)) {
@@ -4269,6 +4325,7 @@ class Scene {
       this.critters.push({ kind: "fox", x: dir > 0 ? -0.08 : 1.08, dir,
         mode: "trot", timer: 1.2 + Math.random()*1.5, t: 0, lp: 0, look: 0,
         sz: 0.85 + Math.random()*0.3 });
+      this.raiseAlarm(dir > 0 ? 0 : 1, "fox");
     }
     if ((this.loc === "wetland" || this.loc === "beach") && dayish > 0.3
         && n("heron") === 0 && this.t - this.lastHeron > 85 && P(0.012)) {
@@ -4281,7 +4338,7 @@ class Scene {
         sz: 0.85 + Math.random()*0.3 });
     }
     // a porpoise arcing through the surf — rare, unhurried
-    if (this.loc === "beach" && state.weather !== "rain" && n("porpoise") === 0
+    if (this.loc === "beach" && state.wx.wet < 0.3 && n("porpoise") === 0
         && this.t - this.lastPorpoise > 55 && P(0.02)) {
       this.lastPorpoise = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -4289,7 +4346,7 @@ class Scene {
         base: (this.horizonY + this.shoreY)/2 + 0.02, t: 0, phase: 0 });
     }
     // the water stirs on its own now and then — an insect, a breath of wind
-    if (this.loc === "wetland" && state.weather !== "rain" && Math.random() < 0.14*dt) {
+    if (this.loc === "wetland" && state.wx.wet < 0.2 && Math.random() < 0.14*dt) {
       const x = 0.08 + Math.random()*0.84;
       const y = this.waterY + 0.06 + Math.random()*(this.bankY - this.waterY - 0.12);
       this.fishRings.push({ x, y, age: 0, quiet: true });
@@ -4301,7 +4358,7 @@ class Scene {
         y: 0.10 + Math.random()*0.12, vx: dir*0.014,
         nb: 5 + Math.floor(Math.random()*5), t: 0 });
     }
-    if (night > 0.7 && state.weather === "clear" && !REDUCED
+    if (night > 0.7 && state.wx.haze < 0.15 && state.wx.wet < 0.05 && !REDUCED
         && this.meteors.length < 2 && P(0.05)) {
       this.meteors.push({ x: Math.random()*0.8 + 0.1, y: Math.random()*0.25 + 0.05,
         vx: 0.25 + Math.random()*0.2, vy: 0.12 + Math.random()*0.08, age: 0, life: 0.6 });
@@ -4758,6 +4815,18 @@ class Scene {
           if (cr.x < -0.25 || cr.x > 1.25) { dead = true; break; }
           break;
         }
+      }
+      /* Bolting is laid over whatever the animal was already doing rather than
+         replacing it: a rabbit that has been startled is still a rabbit
+         running its own gait, just going somewhere else and fast. It runs out
+         hard and eases off over about a second and a half, and if it makes the
+         edge of the frame it is gone — which is what a rabbit does. */
+      if (cr.bolt) {
+        cr.boltT += dt;
+        const u = Math.max(0, 1 - cr.boltT/1.6);
+        cr.x += cr.bolt * 0.55 * u*u * dt;
+        if (u <= 0) cr.bolt = 0;
+        if (cr.x < -0.08 || cr.x > 1.08) dead = true;
       }
       if (dead) this.critters.splice(i, 1);
     }
@@ -6642,7 +6711,7 @@ class Scene {
   /* Fireflies hold still in the daylight and in the rain, which is the same
      test that decides whether any of them are drawn. */
   updateFireflies(dt, night) {
-    const ffA = night * (state.weather === "rain" ? 0.15 : 1);
+    const ffA = night * (1 - state.wx.wet*0.85);
     if (ffA < 0.05 || !this.fireflies.length) return;
     for (const ff of this.fireflies) {
       ff.x += (ff.dx + Math.sin(this.t*0.3 + ff.ph)*0.006) * dt;
@@ -6651,7 +6720,7 @@ class Scene {
   }
 
   drawFireflies(c, W, H, night) {
-    const ffA = night * (state.weather === "rain" ? 0.15 : 1);
+    const ffA = night * (1 - state.wx.wet*0.85);
     if (ffA < 0.05 || !this.fireflies.length) return;
     const rgb = this.tok.fireflyRGB;
     for (const ff of this.fireflies) {
@@ -6667,14 +6736,23 @@ class Scene {
   /* Only the weather that is actually falling moves: rain drops and blown seeds
      each advance under their own test for the weather, exactly as before. */
   updateWeather(dt) {
-    if (state.weather === "rain") {
+    const wet = state.wx.wet, haze = state.wx.haze, gust = state.wx.gust;
+    if (wet > 0.01) {
       /* Rain is not a curtain lowered at a constant rate. It comes in squalls,
          it leans with whatever the wind is doing — the same gust the grass is
          answering — and the near drops lean and hurry more than the far ones,
-         because they are nearer. Where a drop lands it leaves something. */
+         because they are nearer. Where a drop lands it leaves something.
+
+         How *much* rain is `wet`, and it is spent on the number of drops
+         rather than only on how faint each one is: a shower coming on is
+         first a few drops and then many, not the same downpour behind gauze.
+         The drops beyond the count simply are not stepped, so the shower
+         costs what it looks like it costs. */
       const squall = 0.55 + 0.45*gaitAt("gust", this.t*0.045 + 1.7, "force");
       const lean = 0.06 + this.windBend(0.5)*0.55;
-      for (const d of this.rain) {
+      const live = Math.ceil(this.rain.length * wet);
+      for (let i = 0; i < live; i++) {
+        const d = this.rain[i];
         const near = 1 - d.z;
         d.y += d.sp * dt * 1.6 * squall;
         d.x += (0.012 + lean*(0.35 + near*0.5)) * dt * squall;
@@ -6691,41 +6769,51 @@ class Scene {
           d.len = (0.030 - d.z*0.020)*(0.8 + Math.random()*0.5);
         }
       }
-      for (let i = this.splashes.length - 1; i >= 0; i--) {
-        const sp = this.splashes[i];
-        sp.age += dt;
-        if (sp.age > 0.45) this.splashes.splice(i, 1);
-      }
-    } else if (this.splashes && this.splashes.length) {
-      this.splashes.length = 0;
     }
-    if (state.weather === "breeze") {
-      for (const s of this.seeds) {
-        s.x += s.sp * dt * 2;
+    // The last few go on landing and fading after the shower has passed.
+    for (let i = this.splashes.length - 1; i >= 0; i--) {
+      const sp = this.splashes[i];
+      sp.age += dt;
+      if (sp.age > 0.45) this.splashes.splice(i, 1);
+    }
+    // Seeds are what a wind carries, so they are the wind's own count.
+    if (gust > 0.35) {
+      const live = Math.ceil(this.seeds.length * (gust - 0.35)/0.65);
+      for (let i = 0; i < live; i++) {
+        const s = this.seeds[i];
+        s.x += s.sp * dt * 2 * gust;
         s.ph += dt;
         if (s.x > 1.05) { s.x = -0.05; s.y = 0.3 + Math.random()*0.5; }
       }
     }
-    if (state.weather === "fog") {
+    if (haze > 0.02) {
       for (const f of this.fog) f.x += f.sp * dt;
     }
   }
 
   drawWeather(c, W, H, night) {
-    if (state.weather === "rain") {
+    const wet = state.wx.wet, haze = state.wx.haze, gust = state.wx.gust;
+    if (wet > 0.01) {
       /* Three depths, three pens. Near drops are long, dark and nearly
          vertical; far ones are short, faint and hang in the air — the same
          haze that greys the hills greys the rain in front of them. All of them
          lean the way the wind is leaning, and the near ones lean most. */
       const lean = 0.06 + this.windBend(0.5)*0.55;
       const squall = 0.55 + 0.45*gaitAt("gust", this.t*0.045 + 1.7, "force");
+      /* The same count `updateWeather` is stepping — drawing a drop that is
+         not being moved leaves it hanging in the air. The pen fades with the
+         shower on top of that, so the first of it is a few faint drops and
+         the height of it is many dark ones. */
+      const live = Math.ceil(this.rain.length * wet);
+      const fade = Math.min(1, 0.35 + wet*0.85);
       for (let band = 2; band >= 0; band--) {
         const z0 = band/3, z1 = (band + 1)/3, mid = (z0 + z1)/2;
-        c.strokeStyle = `rgba(${this.tok.rainRGB}, ${(0.44 - mid*0.30)*squall})`;
+        c.strokeStyle = `rgba(${this.tok.rainRGB}, ${(0.44 - mid*0.30)*squall*fade})`;
         c.lineWidth = 1.5 - mid;
         c.lineCap = "round";
         c.beginPath();
-        for (const d of this.rain) {
+        for (let i = 0; i < live; i++) {
+          const d = this.rain[i];
           if (d.z < z0 || d.z >= z1) continue;
           const rx = d.x*W, ry = d.y*H, dl = d.len*H;
           c.moveTo(rx, ry);
@@ -6733,7 +6821,9 @@ class Scene {
         }
         c.stroke();
       }
-      // and where each one landed
+    }
+    // and where each one landed — which outlasts the shower by half a second
+    if (this.splashes.length) {
       for (const sp of this.splashes) {
         const u = sp.age/0.45, near = 1 - sp.z;
         const a = (1 - u)*(1 - u)*0.5*(0.35 + near*0.65);
@@ -6756,25 +6846,33 @@ class Scene {
         }
       }
     }
-    if (state.weather === "breeze") {
-      c.fillStyle = `rgba(${this.tok.cloudRGB}, 0.5)`;
-      for (const s of this.seeds) {
+    if (gust > 0.35) {
+      const live = Math.ceil(this.seeds.length * (gust - 0.35)/0.65);
+      c.fillStyle = `rgba(${this.tok.cloudRGB}, ${0.5*Math.min(1, (gust - 0.35)*3)})`;
+      for (let i = 0; i < live; i++) {
+        const s = this.seeds[i];
         const sx = s.x*W, sy = s.y*H + Math.sin(s.ph*1.3)*10;
         c.beginPath(); c.arc(sx, sy, 1.3, 0, Math.PI*2); c.fill();
       }
     }
-    if (state.weather === "fog") {
+    if (haze > 0.02) {
       // The three fog bands used to build a fresh gradient every frame, which
       // is pure allocation churn for something that barely changes. Cache them
       // against the height and a coarse step of the light instead.
-      const step = Math.round(night*8);
-      const key = (H|0) + "|" + step;
+      /* The bands are cached against the height and a coarse step of the
+         light — building three gradients a frame is pure allocation churn for
+         something that barely changes. How thick the fog is now steps the key
+         as well, coarsely, so it can come over without rebuilding every
+         frame on the way. */
+      const step = Math.round(night*8), hstep = Math.round(haze*10);
+      const key = (H|0) + "|" + step + "|" + hstep;
       if (key !== this._fogKey) {
         this._fogKey = key;
+        const peak = 0.28 * (1 - (step/8)*0.4) * (hstep/10);
         this._fogGrads = this.fog.map(f => {
           const g = c.createLinearGradient(0, f.y*H - f.h*H, 0, f.y*H + f.h*H);
           g.addColorStop(0, `rgba(${this.tok.fogRGB}, 0)`);
-          g.addColorStop(0.5, `rgba(${this.tok.fogRGB}, ${0.28 * (1 - (step/8)*0.4)})`);
+          g.addColorStop(0.5, `rgba(${this.tok.fogRGB}, ${peak})`);
           g.addColorStop(1, `rgba(${this.tok.fogRGB}, 0)`);
           return g;
         });

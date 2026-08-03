@@ -6,8 +6,8 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=14";
-import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain } from "./species.js?v=14";
+import { mulberry32, REDUCED, state } from "./util.js?v=15";
+import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain } from "./species.js?v=15";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
@@ -36,6 +36,31 @@ const OUTPUT = 1.9;
    city's own bed and in the same world as every other place — arriving in the
    city used to be a twenty-three decibel jump, which is a shock, not a scene. */
 const MUSIC_TRIM = 0.27;
+
+/* How long the land holds its breath after something has come through, and
+   how long it takes to come back afterwards, in seconds. The hold is the
+   striking part and it is deliberately long — a wood that goes quiet for four
+   seconds has not been frightened, it has paused. The recovery is longer
+   still, and shaped, so that what comes back is a place filling up rather
+   than a switch being thrown.
+
+   A fox comes through a meadow every minute or two. Silencing the land for
+   three quarters of a minute every time it does would leave a third of the
+   session in the aftermath of something, which is not an event any more —
+   it is the weather. So it is both shorter than it first was and only
+   sometimes raised at all: see ALARM_ODDS. */
+const ALARM_HOLD = 10;
+const ALARM_BACK = 22;
+/* Not every fox is noticed, and not every bird that notices says so. Half is
+   about right: often enough to be a thing the piece does, rare enough that it
+   is still startling the fifth time. */
+const ALARM_ODDS = 0.5;
+const ALARM_CAUSE = {
+  fox:    "a fox on the path",
+  cat:    "a cat up on the wall",
+  badger: "something heavy in the undergrowth",
+  otter:  "an otter up among the ducks"
+};
 
 /* The room each place is heard in. `send` scales how much of a voice goes to
    the air at all, `tail` is how long the reflections take to come round again,
@@ -81,6 +106,7 @@ class AudioEngine {
     this.rng = mulberry32((state.seed ^ 0xA0D10) >>> 0);
     this.breath = 1;
     this.wetUntil = 0;        // how long the ground goes on dripping
+    this.alarmAt = 0;         // when something last came through, ms
     this.chorusPh = this.rng()*Math.PI*2;
     this.chorusPeriod = 240 + this.rng()*200;   // four to seven minutes
   }
@@ -459,45 +485,72 @@ class AudioEngine {
     g.setTargetAtTime(1, until, 0.85);
   }
 
+  /* How far into the night it is, 0 to 1. Borrowed from the scene rather than
+     worked out again from `state.time`: the scene crossfades between the four
+     hours, so this is a curve rather than four steps, and the sound of the
+     place turns over at exactly the rate the light does. */
+  nightness() {
+    return this.scene && this.scene.nightness ? this.scene.nightness() : 0;
+  }
+
   applyConditions() {
     if (!this.ac) return;
-    const w = state.weather, L = state.location;
-    /* Every bed level below came down between eight and fourteen decibels, and
-       the spread between a still day and a windy one came down with them: five
+    const L = state.location;
+    /* The weather arrives as three dials rather than a name, so every table
+       below is a formula over them. It is not only for the sake of a
+       transition: the sky can now be halfway between two weathers and stay
+       there, and a bed worked out from `wx` is right in that state without
+       anybody having had to name it.
+
+       `night` is the hour, and it is here because a place does not sound the
+       same at three in the morning as at noon. The air is stiller, the ground
+       is cooler and carries less, and there is simply less of everything. */
+    const wx = state.wx;
+    const night = this.nightness();
+
+    /* Every bed level came down between eight and fourteen decibels, and the
+       spread between a still day and a windy one came down with it: five
        times the wind for a breeze was a different room, not a windier one. */
-    const windTable = { clear: 0.038, breeze: 0.070, rain: 0.036, fog: 0.042 };
     const locWind = { meadow: 1, forest: 0.75, beach: 1.25, wetland: 0.9, city: 0.5 };
-    this.windBase = windTable[w] * locWind[L];
+    const stillNight = 1 - night*0.32;         // the wind drops after dark
+    this.windBase = (0.030 + wx.gust*0.042 + wx.haze*0.006)
+                  * locWind[L] * stillNight;
     this.set(this.windGain.gain, this.windBase * this.g("weather"));
     if (this.windMoan) this.set(this.windMoan.gain, this.windBase * 0.16 * this.g("weather"), 2);
-    const aeoT = { clear: 0.35, breeze: 0.6, rain: 0.2, fog: 0.45 };
     const locAeo = { meadow: 1, forest: 0.55, beach: 0.7, wetland: 0.8, city: 0.3 };
-    this.aeoBase = aeoT[w] * locAeo[L] * 0.062;
+    this.aeoBase = (0.24 + wx.gust*0.40 + wx.haze*0.16 - wx.wet*0.14)
+                 * locAeo[L] * 0.062 * stillNight;
     this.set(this.aeoGain.gain, this.aeoBase * this.g("weather"), 2);
-    this.rainTarget = w === "rain" ? 0.038 : 0;
+    this.rainTarget = 0.038 * wx.wet;
     this.set(this.rainGain.gain, this.rainTarget * (this.breath || 1) * this.g("weather"));
-    // Leaf hiss follows the wind: a still, clear day in the wood is quiet.
+    // Leaf hiss follows the wind: a still, clear night in the wood is quiet.
     const leafBase = L === "forest" ? 0.034 : L === "wetland" ? 0.017 : 0;
-    const leafWeather = { clear: 0.4, breeze: 1.7, rain: 1.1, fog: 0.7 }[w] || 1;
-    this.leafTarget = leafBase * leafWeather;
+    this.leafTarget = leafBase * (0.32 + wx.gust*1.45 + wx.wet*0.7) * stillNight;
     this.set(this.leavesGain.gain, this.leafTarget * (this.breath || 1) * this.g("weather"));
-    this.set(this.trafficGain.gain, (L === "city" ? 0.030 : 0) * this.g("town"));
+    /* A city empties out overnight. It never goes silent — a town at four in
+       the morning still hums — but the difference between that and the middle
+       of the afternoon is most of what tells you which one you are in. */
+    this.set(this.trafficGain.gain,
+      (L === "city" ? 0.030 * (1 - night*0.55) : 0) * this.g("town"));
     // The sea's resting hiss between waves — kept low so the waves themselves carry.
-    const surfWeather = { clear: 1, breeze: 1.5, rain: 1.3, fog: 0.9 }[w] || 1;
-    this.surfFloor = L === "beach" ? 0.008 * surfWeather : 0;
+    this.surfFloor = L === "beach" ? 0.008 * (0.9 + wx.gust*0.55 + wx.wet*0.3) : 0;
     this.set(this.surfGain.gain, this.surfFloor * this.g("water"));
     if (this.surfFoamGain && L !== "beach") this.set(this.surfFoamGain.gain, 0, 0.4);
-    this.set(this.voiceFilter.frequency, w === "fog" ? 3000 : 12000, 0.8);
+    /* Haze takes the top off a voice, and so does the hour: night air is dense
+       and a call across it arrives duller as well as further away. */
+    this.set(this.voiceFilter.frequency,
+      12000 - wx.haze*9000 - night*2200, 0.8);
 
-    /* The room. Fog is the exception a listener will actually notice: it does
-       not reflect, it absorbs, so a foggy morning anywhere is a shorter, darker
+    /* The room. Haze is the one a listener will actually notice: fog does not
+       reflect, it absorbs, so a foggy morning anywhere is a shorter, darker
        room than the same place clear — which is the whole reason fog sounds
-       like fog rather than merely looking like it. */
+       like fog rather than merely looking like it. Rain damps it too, being
+       water on every surface that would otherwise have sent the sound back. */
     const air = AIR[L] || AIR.meadow;
-    const damp = w === "fog" ? 0.62 : w === "rain" ? 0.82 : 1;
+    const damp = 1 - wx.haze*0.38 - wx.wet*0.18;
     this.airRoom = air.send * damp;
     this.set(this.airFB.gain, air.fb * damp, 1.5);
-    this.set(this.airLP.frequency, air.tone * (w === "fog" ? 0.7 : 1), 1.5);
+    this.set(this.airLP.frequency, air.tone * (1 - wx.haze*0.30), 1.5);
     /* A delay line whose time is *ramped* is a delay line being pitch-shifted,
        and sliding the tail from a wood's fifty milliseconds to a shore's
        hundred and ninety is a swoop nobody asked for. So the return is taken
@@ -735,7 +788,8 @@ class AudioEngine {
         const w = sp.weights[state.time] || 0;
         const habOK = sp.habitats.includes(state.location);
         const hw = habOK ? ((sp.hw && sp.hw[state.location] !== undefined) ? sp.hw[state.location] : 1) : 0;
-        const wcut = state.weather === "rain" ? 0.35 : state.weather === "fog" ? 0.8 : 1;
+        // birds sit out heavy rain and sing less in thick air
+        const wcut = (1 - state.wx.wet*0.68) * (1 - state.wx.haze*0.22);
         const curve = this.chorusCurve();
         const eff = w * hw * wcut * (0.02 + state.activity * 1.25) * curve;
         let wait = sp.base * 1000 * (0.8 + this.rng()*1.6)
@@ -804,14 +858,117 @@ class AudioEngine {
     setTimeout(breathe, 3000);
   }
 
-  /* The shape of an hour. At dawn and dusk the land fills up and empties
-     again over some minutes; at noon and midnight it holds steadier. A
-     chorus should have a tide, not a rate. */
+  /* The shape of an hour, and of the day.
+
+     Two things multiplied. The *tide* is the slow one the piece always had:
+     over four to seven minutes the land fills up and empties again, and it
+     swings widest at dawn and dusk when a wood really does go from empty to
+     full and back within the hour.
+
+     Over that sits the day itself, and the dawn chorus is the whole point of
+     it. Which birds are awake is already the species' own `weights`; what
+     that could never say is that at first light *everything sings at once*,
+     far more than the sum of who happens to be up. So dawn is worth nearly
+     twice an afternoon, dusk something less than that, and the small hours
+     are left to the two or three voices that own them.
+
+     And the third term is the alarm: something has come through, and for a
+     while afterwards nothing says anything. It does not switch back on — the
+     land creeps back over half a minute, because that is what it does. */
   chorusCurve() {
     const t = (this.ac ? this.ac.currentTime : 0);
     const slow = 0.5 + 0.5*Math.sin(t*2*Math.PI/(this.chorusPeriod || 300) + (this.chorusPh || 0));
     const swing = (state.time === "dawn" || state.time === "dusk") ? 0.8 : 0.34;
-    return 1 - swing*0.5 + swing*slow;
+    const hour = { dawn: 1.85, day: 1, dusk: 1.35, night: 0.7 }[state.time] || 1;
+    return (1 - swing*0.5 + swing*slow) * hour * this.settle();
+  }
+
+  /* How far the land has come back since it was frightened. 0 while it is
+     still holding its breath, then up to 1 over the following half-minute. */
+  settle() {
+    if (!this.alarmAt) return 1;
+    const since = (performance.now() - this.alarmAt)/1000;
+    if (since > ALARM_HOLD + ALARM_BACK) { this.alarmAt = 0; return 1; }
+    if (since < ALARM_HOLD) return 0;
+    const u = (since - ALARM_HOLD)/ALARM_BACK;
+    return u*u;                      // slowest at first, which is how it goes
+  }
+
+  /* ============================================================
+     Something has come through.
+
+     A fox in the meadow, a cat up on the wall, an otter surfacing among the
+     ducks. One bird sees it and says so — and then the whole place shuts up,
+     which is the part that carries. A wood going silent is far louder than
+     anything in it, and nothing else in the piece does it.
+
+     Who says it is drawn from the birds actually present and weighted by
+     `alarm` in `species.js`: a blackbird or a magpie will scold anything that
+     moves, a chiffchaff will not. The call is the species' own voice — there
+     is no separate alarm synth — but it is placed near, said two or three
+     times over, and it does not wait its turn.
+     ============================================================ */
+  alarm(x, cause) {
+    if (!this.ac || !this.running) return;
+    const now = performance.now();
+    // Once is enough: a second fox two seconds later is the same fox.
+    if (this.alarmAt && now - this.alarmAt < (ALARM_HOLD + ALARM_BACK)*1000*0.6) return;
+    if (this.g("birds") < 0.02) return;
+    if (this.rng() > ALARM_ODDS) return;      // it went through unremarked
+
+    const here = SPECIES.filter(s => s.alarm && s.habitats.includes(state.location)
+      && (s.weights[state.time] || 0) > 0.02);
+    if (!here.length) return;
+    let total = 0;
+    for (const s of here) total += s.alarm * (s.weights[state.time] || 0);
+    let pick = this.rng() * total, sp = here[here.length - 1];
+    for (const s of here) {
+      pick -= s.alarm * (s.weights[state.time] || 0);
+      if (pick <= 0) { sp = s; break; }
+    }
+
+    /* Near, and on the side it came from. An alarm is not a song from across
+       the valley — it is a bird four feet above the thing it is shouting at. */
+    const at = Math.max(0.06, Math.min(0.94, x + (this.rng() - 0.5)*0.18));
+    this.alarmAt = now;
+    this.quietUntil = now + ALARM_HOLD*1000;
+    const scene = this.scene;
+    /* Said two or three times over, one after the other — *after*, not on top
+       of. Fixed spacing put three of a blackbird's calls inside the length of
+       one of them, three overlapping voices at arm's length, and the master
+       went from −16 to −5 dBFS and into the limiter. So each repeat is booked
+       from the length the last one actually turned out to be, which is also
+       what a bird scolding something does: it says it, then says it again. */
+    let says = 2 + Math.floor(this.rng()*2);
+    const say = () => {
+      if (!this.running || says-- <= 0) return;
+      /* Straight to the graph rather than through performCall: that would
+         raise an actor and wait for it to arrive, and the whole point is that
+         this bird is already there and already going. Near, but not on your
+         shoulder — close enough to be the loudest thing for a moment. */
+      const az = Math.max(-1, Math.min(1, (at*2 - 1)*0.9));
+      /* Near — a few feet above the thing it is shouting at — and at full
+         level, which makes it the loudest voice in the piece by a few
+         decibels. That is the whole point of it and it needs no help: a
+         ninety-second soak appears to show the alarm putting twelve decibels
+         on the master peak, but the same soak with no alarms at all ranges
+         from −14.8 to −5.8 dBFS between runs. That spread is thunder, which
+         is random and bypasses the duck by design. Measured properly — quiet
+         ground, twelve of each, medians — an alarm lands a few decibels over
+         an ordinary call, which is what it should do. */
+      const pan = this.makePanner(az, 0.6, 2.1 + this.rng()*1.7);
+      pan.out.connect(this.voiceBus);
+      const dur = sp.synth(this.ac, pan.node, this.ac.currentTime + VOICE_LEAD, this.rng) || 1;
+      this.duck(this.ac.currentTime + VOICE_LEAD, dur);
+      this.retire(pan, VOICE_LEAD + dur + 2);
+      this.once(say, (dur + 0.24 + this.rng()*0.4) * 1000);
+    };
+    say();
+    // and the frame empties, a beat after the first bird has said why
+    this.once(() => { if (scene && scene.flush) scene.flush(x); }, 240);
+    this.emit({ id: "alarm", name: sp.name, latin: sp.latin,
+      desc: "the alarm — " + (ALARM_CAUSE[cause] || "something in the grass"),
+      tone: "amber" }, (at*2 - 1)*0.9, 3, 2.4);
   }
 
   /* How many voices may sound at once — a quiet setting should mean a quiet
@@ -1071,7 +1228,7 @@ class AudioEngine {
       /* Sound travels: this fires up to fourteen seconds after the flash, and
          in that time the weather group may have gone to nothing. Ask again. */
       const gw = this.g("weather");
-      if (!this.running || state.weather !== "rain" || gw < 0.02) return;
+      if (!this.running || state.wx.wet < 0.25 || gw < 0.02) return;
       const t = ac.currentTime + 0.02;
       const dur = 2.4 + far*6.5;
       const src = this.wideNoise();
@@ -1516,7 +1673,8 @@ class AudioEngine {
   startThunderScheduler(gen) {
     const roll = () => {
       if (!this.running || gen !== this.gen) return;
-      if (state.weather === "rain" && this.rng() < 0.55) this.playThunder();
+      // a shower has to be more than a few drops before it has thunder in it
+      if (state.wx.wet > 0.55 && this.rng() < 0.55) this.playThunder();
       setTimeout(roll, 45000 + this.rng()*90000);
     };
     setTimeout(roll, 20000 + this.rng()*40000);
@@ -1531,7 +1689,8 @@ class AudioEngine {
     const drip = () => {
       if (!this.running || gen !== this.gen) return;
       const now = performance.now();
-      if (state.weather === "rain") this.wetUntil = now + 50000;
+      // the ground goes on being wet in proportion to how wet it got
+      if (state.wx.wet > 0.15) this.wetUntil = now + 50000*state.wx.wet;
       if (this.wetUntil && now < this.wetUntil) {
         // thinning out as the ground dries, so the last ones are far apart
         const wet = Math.min(1, (this.wetUntil - now)/50000);
@@ -1563,8 +1722,7 @@ class AudioEngine {
   startTimberScheduler(gen) {
     const creak = () => {
       if (!this.running || gen !== this.gen) return;
-      const windy = state.weather === "breeze" ? 1
-        : state.weather === "rain" ? 0.5 : state.weather === "fog" ? 0.3 : 0.22;
+      const windy = 0.18 + state.wx.gust*0.82;
       if (state.location === "forest" && this.rng() < windy*0.7) {
         this.playCreak((this.rng()*2 - 1)*0.8);
       }
@@ -1599,6 +1757,7 @@ class AudioEngine {
     this.running = false;
     this.stopMusic();
     this._duckUntil = 0;
+    this.alarmAt = 0;        // a shut window does not stay frightened
     if (this.bedDuck) {
       const d = this.bedDuck.gain;
       d.cancelScheduledValues(this.ac ? this.ac.currentTime : 0);

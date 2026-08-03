@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Living Window</title>
-<link rel="icon" href="favicon.svg?v=14" type="image/svg+xml">
-<link rel="stylesheet" href="css/styles.css?v=14">
+<link rel="icon" href="favicon.svg?v=15" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css?v=15">
 </head>
 <body>
 
@@ -161,6 +161,13 @@
           <input type="range" id="timeSpeedSlider" min="0" max="100" value="50" aria-label="How long each hour lasts">
           <span class="slider-val wide-val" id="timeSpeedVal">30 min</span>
         </div>
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Let the sky come over</div>
+            <div class="switch-hint">The weather changes on its own, in its own time. Fog keeps to the ends of the day.</div>
+          </div>
+          <button class="mini-switch" id="weatherFlowSwitch" role="switch" aria-checked="true" aria-label="Let the sky come over"><span class="knob"></span></button>
+        </div>
       </div>
 
       <hr class="settings-divider">
@@ -260,6 +267,6 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=14"></script>
+<script type="module" src="js/main.js?v=15"></script>
 </body>
 </html>

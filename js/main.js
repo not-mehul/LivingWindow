@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS } from "./util.js?v=14";
-import { speciesIcon } from "./species.js?v=14";
-import { Scene } from "./scene.js?v=14";
-import { AudioEngine } from "./audio.js?v=14";
+import { state, sessionSerial, LOCATIONS, holdWeather } from "./util.js?v=15";
+import { speciesIcon } from "./species.js?v=15";
+import { Scene } from "./scene.js?v=15";
+import { AudioEngine } from "./audio.js?v=15";
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
@@ -92,12 +92,23 @@ function emitSubtitle(sp, az, depth, dur) {
 /* ---- Wiring ---- */
 const scene = new Scene(document.getElementById("scene"), document.getElementById("sky"));
 const audio = new AudioEngine({ scene, emit: emitSubtitle });
+/* The scene knows a fox has walked in; the engine decides what is said about
+   it and how long the silence afterwards runs. Nothing else couples them. */
+scene.onAlarm = (x, cause) => audio.alarm(x, cause);
 
-/* Under ?perf=1 only, put the scene and the engine where a bench can reach
-   them. Comparing pictures can tell you the land still looks like the land;
-   it cannot tell you a deer still decides to graze at the same moment. For
-   that you need to read the animals themselves. */
-if (new URLSearchParams(location.search).has("perf")) {
+/* Put the scene and the engine where a harness can reach them. Comparing
+   pictures can tell you the land still looks like the land; it cannot tell
+   you a deer still decides to graze at the same moment. For that you need to
+   read the animals themselves.
+
+   Two flags, because they are two different needs. `?perf=1` also turns on
+   the on-screen readout, which is exactly what a bench must not have — it
+   wraps every drawing call a second time and paints a panel over the land.
+   `?hook=1` is the hook alone, so the frame bench can hold the hour and the
+   weather still without driving the settings panel: the card scrolls, and a
+   forced click at a stale coordinate lands on the casement. */
+const flags = new URLSearchParams(location.search);
+if (flags.has("perf") || flags.has("hook")) {
   window.__lw = { scene, audio, state };
 }
 
@@ -129,6 +140,7 @@ function syncSeg(el, val) {
 wireSegmented(document.getElementById("timeSeg"), (v) => { setTime(v); });
 wireSegmented(document.getElementById("weatherSeg"), (v) => {
   state.weather = v;
+  holdWeather();              // a weather asked for gets its full span
   audio.applyConditions();
 });
 function setLocation(v) {
@@ -227,11 +239,35 @@ function setTime(v) {
   syncSeg(document.getElementById("timeSeg"), v);
 }
 
+/* The scene steps the weather every frame, because that is what has to look
+   smooth. The engine only needs to hear about it now and then: every bed level
+   is a setTargetAtTime with a second or more of time constant, so re-applying
+   at one hertz is already finer-grained than anything it does. It is skipped
+   entirely while the sky is holding still, which is most of the time. */
+let lastWx = { wet: -1, haze: -1, gust: -1 }, lastNight = -1, lastWeather = null;
+function followWeather() {
+  const wx = state.wx;
+  const night = scene.nightness();
+  const moved = Math.abs(wx.wet - lastWx.wet) + Math.abs(wx.haze - lastWx.haze)
+              + Math.abs(wx.gust - lastWx.gust) + Math.abs(night - lastNight)*0.5;
+  if (moved < 0.004) return;
+  lastWx = { wet: wx.wet, haze: wx.haze, gust: wx.gust };
+  lastNight = night;
+  audio.applyConditions();
+  // and the buttons show where the sky actually went, not what was last asked
+  if (state.weather !== lastWeather) {
+    lastWeather = state.weather;
+    syncSeg(document.getElementById("weatherSeg"), state.weather);
+  }
+}
+
 setInterval(() => {
   const now = performance.now();
   const dt = now - lastTick;
   lastTick = now;
-  if (!state.timeFlow || !windowOpen || dt > 5000) return;   // no time passes while shut
+  if (!windowOpen || dt > 5000) return;          // no time passes while shut
+  followWeather();
+  if (!state.timeFlow) return;
   phaseElapsed += dt * state.timeSpeed;
   if (phaseElapsed >= PHASE_MS) {
     phaseElapsed = 0;
@@ -260,6 +296,7 @@ wireMiniSwitch("timeFlowSwitch", "timeFlow", (running) => {
   phaseElapsed = 0;
   if (timeSpeedRow) timeSpeedRow.classList.toggle("disabled", !running);
 });
+wireMiniSwitch("weatherFlowSwitch", "weatherFlow", () => holdWeather());
 
 /* ---- The casement ---- */
 const windowFrame = document.getElementById("windowFrame");

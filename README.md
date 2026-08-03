@@ -53,8 +53,9 @@ bestiary.html     A developer tool, separate from the piece: every creature at c
 css/styles.css    All styling. Every colour is a semantic CSS custom property — a raw
                   colour in a component rule is a bug.
 js/
-  util.js         Shared primitives: seeded PRNG, colour math, world constants, and the
-                  single mutable `state` object.
+  util.js         Shared primitives: seeded PRNG, colour math, world constants, the
+                  single mutable `state` object, and the weather — which lives here
+                  rather than in either canvas or engine because both read it.
   species.js      The voices and their marks: field-guide pictograms, the low-level synth
                   primitives, the species catalogue (habitat, hour weighting, synth), and
                   and three tables the drawing reads — `PSTYLE`, each species' field
@@ -67,8 +68,9 @@ js/
                   painted on a second canvas underneath by the GPU, with a Canvas 2D
                   backend that takes over verbatim where there is no WebGL2.
   audio.js        The `AudioEngine` class — wind, aeolian drift, per-place ambience and
-                  the room that goes with it, turn-taking voices, the odd church bell,
-                  and the record somebody has on in the city.
+                  the room that goes with it, turn-taking voices, the dawn chorus and
+                  the silence after an alarm, the odd church bell, and the record
+                  somebody has on in the city.
   main.js         Entry point: theme toggle, the casement (opening and shutting the
                   window), the turning of the hours, subtitles, and all DOM wiring.
                   Boots the scene and the audio engine.
@@ -93,9 +95,18 @@ means, and the ops number is what tells them apart: if it is high and the frame
 is slow, batch; if it is low and the frame is still slow, the cost is overdraw
 and no amount of batching will touch it.
 
+There is a second flag, `?hook=1`, which puts the scene, the engine and `state`
+on `window.__lw` and does nothing else. `?perf=1` does that too, but it also
+turns on the readout — which wraps every drawing call a second time and paints
+a panel over the very thing being measured, so the frame bench must not have
+it. The bench uses the hook to hold the hour and the weather still and pin them
+to a known point; driving the settings panel instead is not an option, because
+the card scrolls and a forced click at a stale coordinate lands on the casement
+and shuts the window.
+
 ### The bench, and the trajectory recorder
 
-`tools/` holds five harnesses. None is part of the piece; all need a static
+`tools/` holds six harnesses. None is part of the piece; all need a static
 server running and drive a headless Chromium through Playwright.
 
 ```bash
@@ -103,6 +114,7 @@ node tools/bench.mjs        label    # frame cost per place
 node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
 node tools/critters.mjs              # every creature through update and paint
 node tools/actors.mjs [outfile]      # every singer, and every way of leaving
+node tools/weather.mjs               # the sky drifting, the alarm, and the hour
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
 ```
 
@@ -155,6 +167,19 @@ It quiets the audio, stops the scene's own frame loop and reseeds the random
 stream before recording, because an actor's build — its scale, its plumpness,
 which way it looks and when — is drawn from `Math.random` the moment it is
 spawned.
+
+`weather.mjs` covers the three things a still picture cannot show: that the sky
+drifts on its own and every dial moves smoothly (it reports the largest
+single-frame step across every pairing of the four weathers), that something
+coming through empties the frame and shuts the land up and lets it back
+gradually, and that the hour is audible in the beds and in how full the place
+sounds. Two of its measurements had to be built carefully, and both lessons
+generalise: the alarm test clears any alarm that fired on its own first, or the
+repeat guard turns the test's own alarm away and it measures nothing; and the
+density test shortens the chorus tide's four-to-seven-minute period, because
+four hours measured back to back otherwise land on different phases of it —
+which moved dawn from 74% to 30% between runs and said nothing at all about
+dawn.
 
 `tools/gradient.mjs` watches for banding, which is the one thing that cannot be
 caught by comparing pictures. An eight-bit buffer has to step a smooth ramp
@@ -274,6 +299,14 @@ does.
   simply drops; it crosses the frame rather than arriving everywhere at once;
   and what it pushes lags into it and springs back past upright when it lets
   go. The grass answers in half a second, the wood in two.
+- **The sky comes over.** The weather is three continuous dials, not four
+  words, and it drifts on its own the way the hours do — a shower builds from
+  a few drops rather than arriving all at once, and fog keeps to the ends of
+  the day. See below.
+- **Something walks through and the land goes quiet.** A fox, a cat on the
+  wall, an otter among the ducks: one bird scolds it, the birds nearest go up
+  and away from it, the rabbits bolt, and then nothing says anything for ten
+  seconds and creeps back over the next twenty. See below.
 - **The rain has depth.** Three bands of it: near drops long, fast, dark and
   leaning hard; far ones short, slow and almost not there. It squalls, it leans
   with whatever the wind is doing, and every drop lands on something — a ring
@@ -561,6 +594,149 @@ coming back does not rebuild it, only the look-ahead loop stops and starts —
 and a new seed disposes of it so the next session gets a new tempo.
 
 It runs into the same duck as the weather, so a bird still comes through it.
+
+### The weather, as three dials rather than four words
+
+`state.weather` is still the name a listener picks, but nothing draws or sounds
+from the name any more. Everything reads `state.wx`:
+
+```
+wet    how much rain is falling, 0 to 1
+haze   how much of the air you cannot see through
+gust   how hard the wind is working
+```
+
+The four named weathers are corners of that space (`WEATHER` in `util.js`), and
+`stepWeather` — called once a frame from `Scene.update`, the only clock in the
+piece that runs at the rate a listener perceives — eases each dial toward
+whichever corner has been asked for. Everything between them is a real state
+the window can be in and does not have a name.
+
+That is the whole difference between weather that can *change* and weather that
+can only be switched. Rain used to arrive at full density in one frame while
+the audio glided under it, because the scene read `state.weather === "rain"` as
+a boolean in about forty places. Now a shower comes on as a few faint drops and
+builds: `wet` buys the *number* of drops as well as how faint each one is, so
+the beginning of a shower costs what it looks like it costs.
+
+Each dial has its own time constant, coming and going separately, because
+weather is not symmetrical:
+
+| | arriving | leaving |
+|---|---|---|
+| **wet** | 14 s | 34 s |
+| **haze** | 55 s | 75 s |
+| **gust** | 11 s | 18 s |
+
+A shower arrives much faster than it clears. Fog neither comes nor goes in a
+hurry and is the slowest thing in the piece. Wind changes its mind quickest.
+Measured across every pairing of the four weathers, the largest single-frame
+step in any dial is **0.0033** — a hard cut is exactly what this replaced.
+
+With **Let the sky come over** on, `stepWeather` also decides now and then that
+the weather has become something else. It is not a shuffle: `WX_NEXT` weights
+what plausibly follows what — a wet morning does not become a foggy one without
+clearing first — and fog is additionally rationed to the ends of the day,
+because fog at noon reads as a mistake. A weather holds for six to fourteen
+minutes of window time, on the same `timeSpeed` the hours run on, so speeding
+the day up brings the sky with it. A weather chosen by hand gets its full span
+before anything moves.
+
+One number is worth writing down. Clear and breeze sit at *exactly* zero haze
+rather than nearly zero. A resting 0.05 is invisible — two hundredths of an
+alpha — but the fog bands draw whenever there is any haze at all, so it cost
+three full-width gradient fills a frame in every weather, and put four
+milliseconds on every frame in the piece. A dial that means "none" has to be
+able to say so.
+
+### Something has come through
+
+A fox on the path, a cat up on the wall, an otter surfacing among the ducks.
+One bird sees it and says so — and then the whole place shuts up, which is the
+part that carries. A wood going silent is far louder than anything in it, and
+nothing else in the piece does it.
+
+The scene knows only that it happened and where (`Scene.raiseAlarm`); the
+engine decides what is said about it and how long the silence runs
+(`AudioEngine.alarm`). Who says it is drawn from the birds actually present and
+weighted by `alarm` in `species.js` — a blackbird or a magpie will scold
+anything that moves, a chiffchaff will not. The call is the species' own voice;
+there is no separate alarm synth. It is placed near, said two or three times
+over, and it does not wait its turn.
+
+Three things had to be measured rather than guessed:
+
+- **The repeats must not overlap.** Fixed spacing put three of a blackbird's
+  calls inside the length of one of them — three voices at arm's length. Each
+  repeat is now booked from the length the last one actually turned out to be,
+  which is also what a bird scolding something does: it says it, then says it
+  again.
+- **It should be a few decibels over an ordinary call, not ten.** Measured on
+  quiet ground, twelve of each, medians: an ordinary blackbird peaks at
+  −21.8 dB and the same bird alarmed at −17.6 dB, so **+4.3 dB** — startling,
+  not a burst. It gets there by being *near* rather than by being boosted.
+- **It must be rare.** A fox comes through every minute or two. Silencing the
+  land for three quarters of a minute each time leaves a third of the session
+  in the aftermath of something, which is not an event any more — it is the
+  weather. So the hold is 10 s, the recovery 22 s, and only half of them are
+  remarked on at all.
+
+A ninety-second soak appears to show the alarm putting twelve decibels on the
+master peak. It does not: the same soak *with no alarms at all* ranges from
+−14.8 to −5.8 dBFS between runs, and that spread is thunder, which is random
+and bypasses the duck by design. Nothing ever clips.
+
+The land does not switch back on. `AudioEngine.settle()` returns 0 through the
+hold and then `u²` over the recovery — slowest at first, which is how it goes:
+
+```
+17 s → 0.10      25 s → 0.46      35 s → 1.00
+```
+
+Visually, `Scene.flush(x)` sends the birds up. Ones nearest it go first and go
+furthest, and they go *away* from it; a bird on the other side of the frame
+looks up and stays. Rabbits, hares, squirrels, deer and hedgehogs bolt, laid
+over whatever gait they were already running rather than replacing it.
+
+### The hour, in the sound
+
+`state.time` used to reach the engine in three places, all of them scheduling —
+which birds are awake and how often they try. The *sound* of three in the
+morning was identical to noon.
+
+`nightness()` is borrowed from the scene rather than worked out again from
+`state.time`, so it is the same crossfade the light uses and the room turns
+over at exactly the rate the sky does. Settled readings, in the city:
+
+```
+        wind    traffic   voice LP    chorus
+dawn   0.0244   0.0289   10339 Hz     ×2.46
+day    0.0236   0.0300   10425 Hz     ×1.15
+dusk   0.0204   0.0244    9747 Hz     ×1.84
+night  0.0153   0.0139    8387 Hz     ×0.81
+```
+
+The wind drops after dark. A city empties out overnight — it never goes silent,
+a town at four in the morning still hums, but the difference between that and
+the middle of the afternoon is most of what tells you which one you are in.
+Night air is dense, so a call across it arrives duller as well as further off.
+
+And the dawn chorus, which is the whole point of the hour. Which birds are
+awake is already the species' own `weights`; what that could never say is that
+at first light *everything sings at once*, far more than the sum of who happens
+to be up. Counting voices actually sounding, over 75 s at full density, with
+the curve's own four-to-seven-minute tide shortened so every hour is measured
+against the same average:
+
+```
+dawn    0.93 voices    73% of the time something is calling
+dusk    0.94 voices    71%
+day     0.54 voices    50%
+night   0.38 voices    38%
+```
+
+Night is thinner by time than by voice count, because the things that own the
+small hours — an owl, a cricket — say long things rather than many.
 
 ### The wind
 

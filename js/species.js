@@ -1015,7 +1015,7 @@ function pulseTrain(ac, dest, ps, q) {
 const SPECIES = [
   { id: "blackbird", name: "Eurasian Blackbird", latin: "Turdus merula",
     desc: "fluted, unhurried phrases from a high perch", tone: "amber", layer: "perch",
-    habitats: ["meadow","forest","city"], hw: { city: 0.6 },
+    alarm: 1.0, habitats: ["meadow","forest","city"], hw: { city: 0.6 },
     weights: { dawn: 0.95, day: 0.3, dusk: 0.8, night: 0.02 }, base: 15,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1035,7 +1035,7 @@ const SPECIES = [
     } },
   { id: "greattit", name: "Great Tit", latin: "Parus major",
     desc: "the see-saw \u201cteacher, teacher\u201d song", tone: "sage", layer: "perch",
-    habitats: ["meadow","forest","city"],
+    alarm: 0.5, habitats: ["meadow","forest","city"],
     weights: { dawn: 0.7, day: 0.55, dusk: 0.25, night: 0 }, base: 18,
     synth(ac, dest, t0, r) {
       const reps = 3 + Math.floor(r()*3);
@@ -1052,7 +1052,7 @@ const SPECIES = [
     } },
   { id: "wren", name: "Eurasian Wren", latin: "Troglodytes troglodytes",
     desc: "an astonishing loud trill from a tiny body", tone: "amber", layer: "perch",
-    habitats: ["meadow","forest","wetland"],
+    alarm: 0.8, habitats: ["meadow","forest","wetland"],
     weights: { dawn: 0.65, day: 0.45, dusk: 0.3, night: 0 }, base: 20,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1115,7 +1115,7 @@ const SPECIES = [
     } },
   { id: "robin", name: "European Robin", latin: "Erithacus rubecula",
     desc: "a thin silver warble, wistful at the edges", tone: "sage", layer: "perch",
-    habitats: ["meadow","forest","city","wetland"],
+    alarm: 0.5, habitats: ["meadow","forest","city","wetland"],
     weights: { dawn: 0.7, day: 0.3, dusk: 0.75, night: 0.25 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1162,7 +1162,7 @@ const SPECIES = [
     } },
   { id: "crow", name: "Carrion Crow", latin: "Corvus corone",
     desc: "flat, unapologetic caws", tone: "amber", layer: "perch",
-    habitats: ["meadow","forest","beach","wetland","city"],
+    alarm: 0.7, habitats: ["meadow","forest","beach","wetland","city"],
     weights: { dawn: 0.35, day: 0.5, dusk: 0.3, night: 0 }, base: 25,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1224,7 +1224,7 @@ const SPECIES = [
     } },
   { id: "gull", name: "Herring Gull", latin: "Larus argentatus",
     desc: "long keening cries over the water", tone: "amber", layer: "air",
-    habitats: ["beach","city"], hw: { city: 0.25 },
+    alarm: 0.6, habitats: ["beach","city"], hw: { city: 0.25 },
     weights: { dawn: 0.45, day: 0.65, dusk: 0.35, night: 0.03 }, base: 18,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1240,7 +1240,7 @@ const SPECIES = [
     } },
   { id: "curlew", name: "Eurasian Curlew", latin: "Numenius arquata",
     desc: "a rising cry that dissolves into bubbling", tone: "sage", layer: "far",
-    habitats: ["beach","wetland"],
+    alarm: 0.5, habitats: ["beach","wetland"],
     weights: { dawn: 0.55, day: 0.3, dusk: 0.5, night: 0.05 }, base: 30,
     synth(ac, dest, t0, r) {
       const ns = [{ t: t0, f0: 880, f1: 1750, dur: 0.7, peak: 0.045 }];
@@ -1255,7 +1255,7 @@ const SPECIES = [
     } },
   { id: "oystercatcher", name: "Eurasian Oystercatcher", latin: "Haematopus ostralegus",
     desc: "shrill piping, hurried and bright", tone: "amber", layer: "ground",
-    habitats: ["beach"],
+    alarm: 0.9, habitats: ["beach"],
     weights: { dawn: 0.55, day: 0.55, dusk: 0.3, night: 0.05 }, base: 22,
     synth(ac, dest, t0, r) {
       let t = t0, gap = 0.1;
@@ -1270,7 +1270,7 @@ const SPECIES = [
     } },
   { id: "mallard", name: "Mallard", latin: "Anas platyrhynchos",
     desc: "a descending run of quacks, mostly laughter", tone: "amber", layer: "ground",
-    habitats: ["wetland"],
+    alarm: 0.5, habitats: ["wetland"],
     weights: { dawn: 0.5, day: 0.5, dusk: 0.45, night: 0.08 }, base: 20,
     synth(ac, dest, t0, r) {
       let t = t0, peak = 0.032;
@@ -1304,7 +1304,7 @@ const SPECIES = [
     } },
   { id: "sparrow", name: "House Sparrow", latin: "Passer domesticus",
     desc: "companionable cheeps from the gutters", tone: "amber", layer: "perch",
-    habitats: ["city","meadow"], hw: { meadow: 0.5 },
+    alarm: 0.4, habitats: ["city","meadow"], hw: { meadow: 0.5 },
     weights: { dawn: 0.55, day: 0.65, dusk: 0.35, night: 0 }, base: 14,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1348,7 +1348,7 @@ const SPECIES = [
     } },
   { id: "magpie", name: "Eurasian Magpie", latin: "Pica pica",
     desc: "a dry machine-gun rattle of alarm", tone: "amber", layer: "perch",
-    habitats: ["city","forest"], hw: { forest: 0.4 },
+    alarm: 1.0, habitats: ["city","forest"], hw: { forest: 0.4 },
     weights: { dawn: 0.35, day: 0.5, dusk: 0.25, night: 0 }, base: 27,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1401,7 +1401,7 @@ const SPECIES = [
     } },
   { id: "chaffinch", name: "Common Chaffinch", latin: "Fringilla coelebs",
     desc: "a rattling run downhill with a flourish at the end", tone: "sage", layer: "perch",
-    habitats: ["forest","meadow","city"], hw: { city: 0.4 },
+    alarm: 0.45, habitats: ["forest","meadow","city"], hw: { city: 0.4 },
     weights: { dawn: 0.6, day: 0.6, dusk: 0.2, night: 0 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0, f = 3400 + r()*300, gap = 0.09;
@@ -1473,7 +1473,7 @@ const SPECIES = [
     } },
   { id: "starling", name: "Common Starling", latin: "Sturnus vulgaris",
     desc: "whistles, clicks and borrowed noises", tone: "amber", layer: "perch",
-    habitats: ["city","meadow"], hw: { meadow: 0.5 },
+    alarm: 0.5, habitats: ["city","meadow"], hw: { meadow: 0.5 },
     weights: { dawn: 0.5, day: 0.6, dusk: 0.55, night: 0 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1552,7 +1552,7 @@ const SPECIES = [
     } },
   { id: "jay", name: "Eurasian Jay", latin: "Garrulus glandarius",
     desc: "a ripping screech from inside the wood", tone: "amber", layer: "perch",
-    habitats: ["forest"],
+    alarm: 1.0, habitats: ["forest"],
     weights: { dawn: 0.35, day: 0.5, dusk: 0.25, night: 0 }, base: 26,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1566,7 +1566,7 @@ const SPECIES = [
     } },
   { id: "jackdaw", name: "Western Jackdaw", latin: "Coloeus monedula",
     desc: "a bright metallic “tchak!” off the chimneys", tone: "sage", layer: "perch",
-    habitats: ["city"],
+    alarm: 0.6, habitats: ["city"],
     weights: { dawn: 0.55, day: 0.6, dusk: 0.4, night: 0 }, base: 18,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1625,7 +1625,7 @@ const SPECIES = [
     } },
   { id: "lapwing", name: "Northern Lapwing", latin: "Vanellus vanellus",
     desc: "a wheezy “pee-wit!” tumbling over the marsh", tone: "sage", layer: "ground",
-    habitats: ["wetland","meadow"], hw: { meadow: 0.5 },
+    alarm: 0.8, habitats: ["wetland","meadow"], hw: { meadow: 0.5 },
     weights: { dawn: 0.6, day: 0.45, dusk: 0.5, night: 0.1 }, base: 26,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1661,7 +1661,7 @@ const SPECIES = [
     } },
   { id: "moorhen", name: "Common Moorhen", latin: "Gallinula chloropus",
     desc: "one explosive bubbling note from the reeds", tone: "sage", layer: "ground",
-    habitats: ["wetland"],
+    alarm: 0.8, habitats: ["wetland"],
     weights: { dawn: 0.5, day: 0.5, dusk: 0.45, night: 0.15 }, base: 24,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1685,7 +1685,7 @@ const SPECIES = [
     } },
   { id: "tern", name: "Common Tern", latin: "Sterna hirundo",
     desc: "a grating “kee-arr” over the surf", tone: "amber", layer: "air",
-    habitats: ["beach"],
+    alarm: 0.6, habitats: ["beach"],
     weights: { dawn: 0.45, day: 0.6, dusk: 0.3, night: 0 }, base: 24,
     synth(ac, dest, t0, r) {
       let t = t0;
