@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS } from "./util.js?v=13";
-import { speciesIcon } from "./species.js?v=13";
-import { Scene } from "./scene.js?v=13";
-import { AudioEngine } from "./audio.js?v=13";
+import { state, sessionSerial, LOCATIONS } from "./util.js?v=14";
+import { speciesIcon } from "./species.js?v=14";
+import { Scene } from "./scene.js?v=14";
+import { AudioEngine } from "./audio.js?v=14";
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
@@ -169,6 +169,24 @@ on("volumeSlider", "input", () => {
   audio.setVolume(state.volume);
 });
 
+/* The mix. Each slider is a plain coefficient the engine multiplies into every
+   level in its group, so a group at zero costs nothing rather than being
+   turned down: the schedulers check it before they build anything at all. */
+for (const [id, key] of [["mixBirds", "birds"], ["mixWeather", "weather"],
+                         ["mixWater", "water"], ["mixTown", "town"],
+                         ["mixMusic", "music"]]) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(id + "Val");
+  if (!el) continue;
+  el.value = Math.round(state.mix[key]*100);
+  if (val) val.textContent = el.value;
+  el.addEventListener("input", () => {
+    state.mix[key] = el.value / 100;
+    if (val) val.textContent = el.value;
+    audio.applyMix();
+  });
+}
+
 function wireMiniSwitch(id, key, cb) {
   const el = on(id, "click", () => {
     state[key] = !state[key];
@@ -177,6 +195,19 @@ function wireMiniSwitch(id, key, cb) {
   });
 }
 wireMiniSwitch("spatialSwitch", "spatial");
+
+/* The occasional sounds — the ones somebody might not want at all. */
+for (const [id, key] of [["thunderSwitch", "thunder"], ["bellSwitch", "bell"],
+                         ["musicSwitch", "music"]]) {
+  const el = document.getElementById(id);
+  if (!el) continue;
+  el.setAttribute("aria-checked", String(state.cue[key]));
+  el.addEventListener("click", () => {
+    state.cue[key] = !state.cue[key];
+    el.setAttribute("aria-checked", String(state.cue[key]));
+    audio.applyMix();
+  });
+}
 wireMiniSwitch("subsSwitch", "subtitles", (on2) => {
   if (!on2) captionCard.classList.remove("visible");
 });

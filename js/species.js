@@ -927,7 +927,12 @@ function sharedNoise(ac) {
   }
   return _noiseBuf;
 }
+/* An exponential ramp is not allowed to land on zero, and a peak that has been
+   multiplied by a mix group can be exactly that when the listener has pulled
+   the slider all the way down. Silence-in-all-but-name instead of a throw. */
+const AUDIBLE = 1e-5;
 function burst(ac, dest, t, freq, q, dur, peak) {
+  peak = peak > AUDIBLE ? peak : AUDIBLE;
   const len = Math.max(0.05, dur + 0.05);
   const buf = sharedNoise(ac);
   const src = ac.createBufferSource();
@@ -970,7 +975,7 @@ function noteTrain(ac, dest, ns, type) {
     o.frequency.setValueAtTime(Math.max(40, n.f0), n.t);
     o.frequency.exponentialRampToValueAtTime(Math.max(40, n.f1), n.t + d);
     g.gain.setValueAtTime(0.0001, n.t);
-    g.gain.exponentialRampToValueAtTime(n.peak, n.t + Math.min(0.02, d*0.3));
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, n.peak), n.t + Math.min(0.02, d*0.3));
     g.gain.exponentialRampToValueAtTime(0.0001, n.t + d);
     end = n.t + d;
   }
@@ -996,7 +1001,7 @@ function pulseTrain(ac, dest, ps, q) {
     const d = next ? Math.max(0.006, Math.min(p.dur, next.t - p.t - 0.002)) : p.dur;
     bp.frequency.setValueAtTime(p.freq, p.t);
     g.gain.setValueAtTime(0.0001, p.t);
-    g.gain.exponentialRampToValueAtTime(p.peak, p.t + Math.min(0.008, d*0.3));
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, p.peak), p.t + Math.min(0.008, d*0.3));
     g.gain.exponentialRampToValueAtTime(0.0001, p.t + d);
   }
   src.connect(bp); bp.connect(g); g.connect(dest);
@@ -1822,12 +1827,13 @@ const CRITTER_VOICES = {
     } }
 };
 
-/* Only what another module actually asks for. `ICONS`, `ICON_KEY`, `noteTrain`
-   and `pulseTrain` are the machinery behind `speciesIcon` and the synths and are
-   used here alone. */
+/* Only what another module actually asks for. `ICONS`, `ICON_KEY` and
+   `pulseTrain` are the machinery behind `speciesIcon` and the synths and are
+   used here alone; `noteTrain` also plays the city's melody line, which is a
+   phrase like any other and wants the same one-oscillator treatment. */
 export {
   speciesIcon, PSTYLE, ANIM, COUNTERSING,
   GAIT, gaitFoot, gaitPose, gaitAt,
-  note, burst,
+  note, burst, noteTrain,
   SPECIES, CRITTER_VOICES
 };

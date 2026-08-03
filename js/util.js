@@ -49,7 +49,23 @@ const state = {
   subtitles: true,
   listening: false,
   timeFlow: true,     // the hours turn on their own
-  timeSpeed: 1        // 1 = a full hour of the day every 30 minutes
+  timeSpeed: 1,       // 1 = a full hour of the day every 30 minutes
+  /* What the listener wants to hear, and how much of it. These are plain
+     coefficients rather than nodes: every level in the engine is worked out
+     from a base and multiplied by its group on the way, so a slider costs
+     nothing in the graph and a group at zero costs nothing at all. */
+  mix: {
+    birds: 1,         // everything with a voice — song, calls, the cattle
+    weather: 1,       // wind, rain, leaves, thunder, the drip off a leaf
+    water: 1,         // surf, the lap of a wetland, stones in the backwash
+    town: 1,          // traffic, a passing car, the church bell
+    music: 0.7        // the city's lo-fi, which sounds nowhere else
+  },
+  cue: {
+    thunder: true,    // the flash and the roll that follows it
+    bell: true,       // the hour over the rooftops
+    music: true       // lo-fi beats, in the city only
+  }
 };
 function sessionSerial(seed) {
   const s = seed.toString(16).toUpperCase().padStart(8, "0");

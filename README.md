@@ -3,8 +3,11 @@
 An open casement onto a small wild place. A generative art-and-sound piece:
 five etched landscapes — meadow, forest, shore, wetland, city — that compose
 themselves in the browser, inhabited by birds and beasts whose voices are
-**synthesized in real time from a fresh seed**. No recordings, no loops; no two
-sessions are alike. Everything runs locally — nothing is sent anywhere.
+**synthesized in real time from a fresh seed**. Nothing is sampled and no two
+sessions are alike — down to the record somebody has on two floors down in the
+city, which draws its tempo and its chords from the same seed as the skyline.
+Each place is heard in its own room, and how much of each kind of sound you
+want is yours to set. Everything runs locally — nothing is sent anywhere.
 
 ## Running it
 
@@ -63,8 +66,9 @@ js/
   sky.js          The sky and what hangs in it — gradient, stars, sun, moon, clouds —
                   painted on a second canvas underneath by the GPU, with a Canvas 2D
                   backend that takes over verbatim where there is no WebGL2.
-  audio.js        The `AudioEngine` class — wind, aeolian drift, per-place ambience,
-                  turn-taking voices, and the odd church bell.
+  audio.js        The `AudioEngine` class — wind, aeolian drift, per-place ambience and
+                  the room that goes with it, turn-taking voices, the odd church bell,
+                  and the record somebody has on in the city.
   main.js         Entry point: theme toggle, the casement (opening and shutting the
                   window), the turning of the hours, subtitles, and all DOM wiring.
                   Boots the scene and the audio engine.
@@ -352,21 +356,30 @@ changed, and waits for the browser's own next frame.
 
 Everything used to run into one gain through one 4:1 compressor. A continuous
 bed feeding a compressor holds the whole mix down all the time, so a bird
-arrives into a room that has already been turned down for it. Measured with an
-analyser on each half:
+arrives into a room that has already been turned down for it.
+
+Measured at the **master output, after the limiter** — which is the only place
+that is what a listener hears; tapping each bus separately measures something
+nobody is listening to. The same bird is called in every place (the crow, which
+lives in all five), so the numbers compare like with like rather than telling
+you which species a place happens to have:
 
 ```
-                 before                          after
-                 bed rms   call peak   clear     bed rms   call peak   clear
-meadow  breeze    −26.8      −34.0     −7.2 dB    −41.5      −25.6    +15.9 dB
-meadow  rain      −24.2      −32.4     −8.2 dB    −38.5      −25.6    +12.9 dB
-wetland clear     −34.0      −35.6     −1.6 dB    −44.7      −27.2    +17.6 dB
-forest  clear     −36.9      −28.4     +8.5 dB    −47.9      −25.4    +22.5 dB
+                 bed rms   crow peak   clear
+meadow  clear     −41.2      −19.9     +21.2 dB
+meadow  breeze    −34.2      −19.3     +14.9 dB
+meadow  rain      −35.3      −19.4     +15.9 dB
+forest  clear     −41.8      −23.3     +18.5 dB
+beach   clear     −37.0      −21.5     +15.6 dB
+beach   breeze    −35.4      −23.3     +12.1 dB
+wetland clear     −40.4      −22.2     +18.2 dB
+city    clear     −34.4      −18.8     +15.5 dB
 ```
 
-A call's *peak* below the bed's *steady level* is the definition of inaudible,
-and that is what half the settings were. What fixed it, in order of how much
-each was worth:
+Before any of this the same measurement ran from −8.2 dB to +8.5 dB: a call's
+*peak* below the bed's *steady level* is the definition of inaudible, and that
+is what half the settings were. What fixed it, in order of how much each was
+worth:
 
 - **Two buses.** The beds have their own path and the voices have their own;
   the master carries nothing but a limiter, set high enough that it only ever
@@ -385,15 +398,85 @@ each was worth:
 - **Lower beds all round**, and a narrower spread between weathers: five times
   the wind for a breeze was a different room, not a windier one.
 
+Getting the beds down that far left the piece peaking at −21 dBFS with the
+loudness slider at three quarters — a lot of headroom nobody was using and a
+window you had to turn the system up to hear. `OUTPUT` spends it. It is the
+last thing in the chain, so it moves everything together and changes no
+balance: measured at the busiest the piece gets (city, rain, life at maximum,
+ninety seconds), the peak lands at −15.8 dBFS with zero clipped samples, and
+the limiter is never touched.
+
+### The room each place is heard in
+
+The strongest thing in a recording that tells you *where* it was made is not
+the birds in it — it is what happens to a sound after it has been made. Every
+voice was arriving into the same room: a wren in a wood and a wren on an open
+shore got identical reflections.
+
+`AIR` in `audio.js` gives each place its own. Four numbers — how much of a
+voice is sent at all, how long the tail takes to come round, how many times it
+does, and how dark it is when it gets back:
+
+| | send | tail | feedback | tone |
+|---|---|---|---|---|
+| **meadow** | 0.85 | 81 ms | 0.20 | 3.2 kHz |
+| **forest** | 1.15 | 52 ms | 0.42 | 2.6 kHz |
+| **beach** | 0.45 | 190 ms | 0.16 | 2.1 kHz |
+| **wetland** | 0.75 | 155 ms | 0.30 | 4.2 kHz |
+| **city** | 1.05 | 128 ms | 0.46 | 1.9 kHz |
+
+A wood is trunks close on every side — the most reflective natural place there
+is at short range, and the only one where the return is dense. A shore is the
+most open place in the piece: sound goes out over the water and does not come
+back, so almost nothing is sent, and what returns is long and dark. Flat water
+under open sky is a hard mirror — one long bright slap rather than a wash,
+which is most of why a wetland sounds like a wetland and not like a meadow with
+ducks on it. A street is hard walls a few metres off and brick that takes the
+top off everything before it gets back.
+
+Fog is the exception a listener will actually notice: it absorbs rather than
+reflects, so a foggy morning anywhere is a shorter, darker room than the same
+place clear. That is what makes fog *sound* like fog rather than merely look
+like it.
+
+Measured by exciting the air with a click and reading what is left of it half a
+second later:
+
+```
+meadow  −52.1 dB      beach   −26.6 dB      city  −17.1 dB
+forest  −38.6 dB      wetland −22.4 dB      forest in fog  −52.7 dB
+```
+
+It costs nothing: the delay line and the filters already existed for distance,
+and a place changes three params on them. The tail's *length* is stepped rather
+than ramped, under cover of a 120 ms dip in the return — ramping a delay time
+is pitch-shifting it, and sliding from a wood to a shore is a swoop nobody
+asked for.
+
 ### Keeping the audio thread fed
 
 The stutter when the land got busy was head-related panners: twelve or thirteen
 of them convolving at once under load, which is the most expensive thing in the
 graph by a long way. It also buys least on a far-off voice, which is already
 dull and quiet. So it is spent where it is worth spending — near voices, up to
-four at a time — and everything else gets an ordinary stereo pan. Measured
-under maximum load the count is now four, and the output peaks at −10 to
-−16 dBFS with no clipped samples.
+four at a time — and everything else gets an ordinary stereo pan.
+
+Ninety seconds at the busiest the piece gets — city, rain, life at maximum,
+with the record playing — sampled every fifteen seconds:
+
+```
+  t(s)  timers  live chains  hrtf  voices  bars
+     0       0       0         0       0     1
+    15       0       0         0       0     6
+    31       0       0         0       0    11
+    46       4       3         1       1    17
+    62       3       1         1       1    22
+    77       1       1         1       0    27
+```
+
+Nothing grows. The bar count climbs at exactly the tempo, which is the
+look-ahead scheduler never missing and never catching up in a rush. Peak
+−15.8 dBFS, zero clipped samples.
 
 ### What else the land does
 
@@ -411,6 +494,73 @@ sent to the bed bus so it steps back under a call like the rest of the weather:
 | **reeds** | dry stems knocking in the same gust the grass is answering. |
 
 Measured against the room each is heard in, they stand 7.5 to 23 dB clear.
+
+### What the listener gets to decide
+
+Five groups, each a plain coefficient rather than a node — every level in the
+engine is worked out from a base and multiplied by its group on the way, so a
+slider costs nothing in the graph and a group at zero costs nothing at all
+(the emitters check their group and return before building anything):
+
+| | |
+|---|---|
+| **Birds & animals** | everything with a voice — song, calls, the cattle on the hill |
+| **Wind & weather** | wind, rain, leaves, thunder, the drip off a leaf |
+| **Water** | surf, the lap of a wetland, stones in the backwash |
+| **Town** | traffic, a passing car, the church bell |
+| **Music** | the city's record, which sounds nowhere else |
+
+and three switches for the things that happen now and then rather than all the
+time: **thunder & lightning**, the **church bell**, and the **lo-fi beats**.
+
+A group is allowed all the way to zero, which is where the one interesting bug
+lived: an exponential ramp cannot reach zero and Web Audio throws rather than
+rounding, so a peak worked out from a group at zero took the engine down. Every
+such ramp now goes through `AudioEngine.ramp`, and the three shared primitives
+in `species.js` clamp their own peak. Thunder re-reads its group *inside* the
+delayed callback, because the roll arrives up to fourteen seconds after the
+flash and the slider may have moved in the meantime.
+
+### The city's record
+
+In the city, and only in the city, somebody two floors down has something on.
+It is generated like everything else: a tempo between 70 and 84 drawn from the
+session seed, one of three minor-seventh loops over a root drawn with it, an
+electric piano voiced with a sine at the bottom and detuned triangles above it,
+a sine bass, a brushed kit, and a noise floor with the odd click in it.
+
+Three things make it sound like a record rather than a synthesiser:
+
+- **It is compressed.** Measured at the master, the kit's transient stood 23 dB
+  over the record's own average and arriving in the city was a 23 dB jump above
+  the meadow — the loudest thing in the piece by a long way, which is not what
+  somebody else's music through a wall does. A compressor on the music bus
+  alone (−40 dB, 8:1, 18 dB knee) takes the crest to 17.5 dB and leans fifteen
+  decibels on a peak, which is the sound of the genre: the kick sits down into
+  the keys instead of standing on top of them. Web Audio's compressor makes its
+  own gain back, so a lower threshold is also a *louder* record — `MUSIC_TRIM`
+  is calibrated against those exact settings and wants re-measuring if they
+  change. The city now sits 8.5 dB over the meadow instead of 23.
+- **It drifts.** A few cents of tape wow, worked out from the audio clock as
+  two sines an irrational ratio apart so the period never quite repeats. It is
+  two automation events on a param each note already owns — a shared LFO node
+  would have to be wired into every key's `detune` and unwired again when the
+  note ended, a thousand times an hour.
+- **It is not the same bar four times.** The bar knows where it sits in the
+  loop: the last of the four drops its second kick and doubles the hats through
+  the fourth beat, so the loop turns over instead of restarting. A sparse line
+  over the top sounds on about three bars in five, drawn from the chord with
+  the ninth allowed in, always off the beat — two nodes for the whole phrase
+  via `noteTrain`.
+
+It is scheduled with a look-ahead, which is the only way to make a rhythm out
+of Web Audio that does not stutter: a timer every quarter-second books whatever
+falls inside the next second against the audio clock, so the timer's own jitter
+never reaches the sound. The graph outlives a pause — leaving the city and
+coming back does not rebuild it, only the look-ahead loop stops and starts —
+and a new seed disposes of it so the next session gets a new tempo.
+
+It runs into the same duck as the weather, so a bird still comes through it.
 
 ### The wind
 

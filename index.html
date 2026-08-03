@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>The Living Window</title>
-<link rel="icon" href="favicon.svg?v=13" type="image/svg+xml">
-<link rel="stylesheet" href="css/styles.css?v=13">
+<link rel="icon" href="favicon.svg?v=14" type="image/svg+xml">
+<link rel="stylesheet" href="css/styles.css?v=14">
 </head>
 <body>
 
@@ -181,6 +181,64 @@
         </div>
       </div>
 
+      <hr class="settings-divider">
+
+      <div class="control-group wide">
+        <span class="field-label">The mix — how much of each</span>
+        <div class="slider-row">
+          <span class="slider-label">Birds &amp; animals</span>
+          <input type="range" id="mixBirds" min="0" max="100" value="100" aria-label="Birds and animals">
+          <span class="slider-val" id="mixBirdsVal">100</span>
+        </div>
+        <div class="slider-row">
+          <span class="slider-label">Wind &amp; weather</span>
+          <input type="range" id="mixWeather" min="0" max="100" value="100" aria-label="Wind and weather">
+          <span class="slider-val" id="mixWeatherVal">100</span>
+        </div>
+        <div class="slider-row">
+          <span class="slider-label">Water</span>
+          <input type="range" id="mixWater" min="0" max="100" value="100" aria-label="Water">
+          <span class="slider-val" id="mixWaterVal">100</span>
+        </div>
+        <div class="slider-row">
+          <span class="slider-label">Town</span>
+          <input type="range" id="mixTown" min="0" max="100" value="100" aria-label="Town">
+          <span class="slider-val" id="mixTownVal">100</span>
+        </div>
+        <div class="slider-row">
+          <span class="slider-label">Music</span>
+          <input type="range" id="mixMusic" min="0" max="100" value="70" aria-label="Music">
+          <span class="slider-val" id="mixMusicVal">70</span>
+        </div>
+      </div>
+
+      <div class="control-group wide">
+        <span class="field-label">Occasional sounds</span>
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Thunder &amp; lightning</div>
+            <div class="switch-hint">Only in rain. The flash first, then the roll, however long the distance takes.</div>
+          </div>
+          <button class="mini-switch" id="thunderSwitch" role="switch" aria-checked="true" aria-label="Thunder and lightning"><span class="knob"></span></button>
+        </div>
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Church bell</div>
+            <div class="switch-hint">The hour, loosed over the city rooftops.</div>
+          </div>
+          <button class="mini-switch" id="bellSwitch" role="switch" aria-checked="true" aria-label="Church bell"><span class="knob"></span></button>
+        </div>
+        <div class="switch-row">
+          <div>
+            <div class="switch-name">Lo-fi beats</div>
+            <div class="switch-hint">In the city only — somebody two floors down has something on.</div>
+          </div>
+          <button class="mini-switch" id="musicSwitch" role="switch" aria-checked="true" aria-label="Lo-fi beats"><span class="knob"></span></button>
+        </div>
+      </div>
+
+      <hr class="settings-divider">
+
       <div class="control-group wide">
         <span class="field-label">Listening</span>
         <div class="switch-row">
@@ -202,6 +260,6 @@
   </div>
 </div>
 
-<script type="module" src="js/main.js?v=13"></script>
+<script type="module" src="js/main.js?v=14"></script>
 </body>
 </html>
