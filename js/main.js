@@ -4,10 +4,15 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS, holdWeather } from "./util.js?v=15";
-import { speciesIcon } from "./species.js?v=15";
-import { Scene } from "./scene.js?v=15";
-import { AudioEngine } from "./audio.js?v=15";
+import { state, sessionSerial, LOCATIONS, holdWeather, loadPrefs, savePrefs } from "./util.js?v=16";
+import { speciesIcon } from "./species.js?v=16";
+import { Scene } from "./scene.js?v=16";
+import { AudioEngine } from "./audio.js?v=16";
+
+/* Preferences come back before anything is wired, so every control below
+   reads the value it is going to show rather than the default it was born
+   with. The land itself is not in here — see loadPrefs. */
+const prefs = loadPrefs() || {};
 
 /* ---- Theme ---- */
 const themeSwitch = document.getElementById("themeSwitch");
@@ -24,6 +29,7 @@ function applyTheme(mode) {
 themeSwitch.addEventListener("click", () => {
   const isLight = document.documentElement.getAttribute("data-theme") === "light";
   applyTheme(isLight ? "dark" : "light");
+  savePrefs({ theme: isLight ? "dark" : "light" });
 });
 
 /* ---- Session number ---- */
@@ -172,6 +178,7 @@ const activityVal = document.getElementById("activityVal");
 on("activitySlider", "input", () => {
   state.activity = activitySlider.value / 100;
   activityVal.textContent = activitySlider.value;
+  savePrefs();
 });
 const volumeSlider = document.getElementById("volumeSlider");
 const volumeVal = document.getElementById("volumeVal");
@@ -179,6 +186,7 @@ on("volumeSlider", "input", () => {
   state.volume = volumeSlider.value / 100;
   volumeVal.textContent = volumeSlider.value;
   audio.setVolume(state.volume);
+  savePrefs();
 });
 
 /* The mix. Each slider is a plain coefficient the engine multiplies into every
@@ -196,6 +204,7 @@ for (const [id, key] of [["mixBirds", "birds"], ["mixWeather", "weather"],
     state.mix[key] = el.value / 100;
     if (val) val.textContent = el.value;
     audio.applyMix();
+    savePrefs();
   });
 }
 
@@ -204,6 +213,7 @@ function wireMiniSwitch(id, key, cb) {
     state[key] = !state[key];
     el.setAttribute("aria-checked", String(state[key]));
     if (cb) cb(state[key]);
+    savePrefs();
   });
 }
 wireMiniSwitch("spatialSwitch", "spatial");
@@ -218,6 +228,7 @@ for (const [id, key] of [["thunderSwitch", "thunder"], ["bellSwitch", "bell"],
     state.cue[key] = !state.cue[key];
     el.setAttribute("aria-checked", String(state.cue[key]));
     audio.applyMix();
+    savePrefs();
   });
 }
 wireMiniSwitch("subsSwitch", "subtitles", (on2) => {
@@ -289,7 +300,34 @@ function applyTimeSpeed() {
       : Math.round(mins*60) + " s";
   }
 }
-on("timeSpeedSlider", "input", applyTimeSpeed);
+on("timeSpeedSlider", "input", () => { applyTimeSpeed(); savePrefs(); });
+
+/* Push what came back out of storage into the controls themselves. The
+   sliders are the source of truth for their own value on the way *in* — each
+   handler reads `el.value` — so a restored preference has to land on the
+   element, not only in `state`. The mix rows already do this where they are
+   built; these three are the ones that read their default from the markup. */
+function syncPrefControls() {
+  const pairs = [["activitySlider", "activityVal", state.activity*100],
+                 ["volumeSlider", "volumeVal", state.volume*100]];
+  for (const [id, valId, v] of pairs) {
+    const el = document.getElementById(id), lab = document.getElementById(valId);
+    if (!el) continue;
+    el.value = Math.round(v);
+    if (lab) lab.textContent = el.value;
+  }
+  const ts = document.getElementById("timeSpeedSlider");
+  if (ts) ts.value = Math.round(Math.log2(state.timeSpeed)*15 + 50);
+  for (const [id, on2] of [["spatialSwitch", state.spatial],
+                           ["subsSwitch", state.subtitles],
+                           ["timeFlowSwitch", state.timeFlow],
+                           ["weatherFlowSwitch", state.weatherFlow]]) {
+    const el = document.getElementById(id);
+    if (el) el.setAttribute("aria-checked", String(on2));
+  }
+  if (timeSpeedRow) timeSpeedRow.classList.toggle("disabled", !state.timeFlow);
+}
+syncPrefControls();
 applyTimeSpeed();
 
 wireMiniSwitch("timeFlowSwitch", "timeFlow", (running) => {
@@ -363,11 +401,76 @@ on("settingsClose", "click", closeSettings);
 on("settingsOverlay", "click", (e) => {
   if (e.target === settingsOverlay) closeSettings();
 });
+/* ---- The keyboard ------------------------------------------------------
+
+   An ambient piece is one you leave running in another window, and reaching
+   for the mouse to change anything is the wrong gesture for it. Escape was
+   the only key this understood.
+
+   Nothing is hijacked while the settings panel has the focus, or while any
+   control is focused: the arrow keys belong to a slider that is being used,
+   and taking them away would break the panel for anybody driving it by
+   keyboard. Modifier combinations are left to the browser. */
+const KEY_HELP = "space open · ← → place · ↑ ↓ loudness · h hour · w weather"
+  + " · m mute · s settings · f fullscreen · e elsewhere";
+{ const el = document.getElementById("beginKeys"); if (el) el.textContent = KEY_HELP; }
+let mutedAt = null;
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !settingsOverlay.classList.contains("hidden")) closeSettings();
+  const settingsOpen = !settingsOverlay.classList.contains("hidden");
+  if (e.key === "Escape") {
+    if (settingsOpen) closeSettings();
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const t = e.target;
+  if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+  // inside the panel the keys belong to whatever has the focus
+  if (settingsOpen && e.key !== "s" && e.key !== "S") return;
+
+  const step = (list, cur, by) => list[(list.indexOf(cur) + by + list.length) % list.length];
+  const vol = (by) => {
+    const el = document.getElementById("volumeSlider");
+    if (!el) return;
+    el.value = Math.max(0, Math.min(100, (+el.value) + by));
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  switch (e.key) {
+    case " ": case "Spacebar":
+      windowOpen ? closeWindow() : openWindow();
+      break;
+    case "ArrowLeft":  setLocation(step(LOCATIONS, state.location, -1)); break;
+    case "ArrowRight": setLocation(step(LOCATIONS, state.location, 1)); break;
+    case "ArrowUp":    vol(5); break;
+    case "ArrowDown":  vol(-5); break;
+    case "h": case "H": setTime(step(PHASES, state.time, 1)); break;
+    case "w": case "W": {
+      const next = step(["clear", "breeze", "rain", "fog"], state.weather, 1);
+      state.weather = next; holdWeather(); audio.applyConditions();
+      syncSeg(document.getElementById("weatherSeg"), next);
+      break;
+    }
+    case "m": case "M": {
+      // a toggle, not a slider: it remembers what it was and puts it back
+      const el = document.getElementById("volumeSlider");
+      if (!el) break;
+      if (mutedAt === null) { mutedAt = +el.value; el.value = 0; }
+      else { el.value = mutedAt; mutedAt = null; }
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      break;
+    }
+    case "s": case "S": settingsOpen ? closeSettings() : openSettings(); break;
+    case "f": case "F": document.getElementById("fsBtn")?.click(); break;
+    case "e": case "E": document.getElementById("diceBtn")?.click(); break;
+    default: return;
+  }
+  e.preventDefault();
 });
 
-if (matchMedia("(prefers-color-scheme: light)").matches) applyTheme("light");
+/* A theme that was chosen wins over the one the system prefers; without a
+   saved choice the system's is still the right default. */
+if (prefs.theme === "light" || prefs.theme === "dark") applyTheme(prefs.theme);
+else if (matchMedia("(prefers-color-scheme: light)").matches) applyTheme("light");
 else applyTheme("dark");
 
 // The window starts shut: the land behind it is still, and costs nothing.

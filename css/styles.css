@@ -731,3 +731,15 @@ footer .term { font-style: italic; color: var(--text-dim); }
   .begin-card { animation: none; }
   * { transition-duration: 0.01s !important; }
 }
+
+/* The shortcuts, on the card you see before anything starts — small, quiet,
+   and the only place they are written down. */
+.begin-keys {
+  margin: 0.85rem 0 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  line-height: 1.7;
+  color: var(--text-faint, var(--text-muted));
+  opacity: 0.72;
+}

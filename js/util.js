@@ -176,8 +176,49 @@ function stepWeather(dt, hour, rand) {
 /* A weather chosen by hand gets its full span before the sky moves again. */
 function holdWeather() { wxHold = 360 + Math.random()*480; }
 
+/* ---- What survives a reload --------------------------------------------
+
+   Preferences only, and deliberately nothing else. The piece is ephemeral by
+   design — "a shut window keeps no time, holds no animals and makes no sound;
+   opening it begins somewhere new" — and that is about the *land*: the seed,
+   the place, the hour and the weather are all re-drawn every session and none
+   of them is written down here.
+
+   How loud you like it is not the land. Losing five mix sliders, three cue
+   switches, the theme and the spatial setting on every refresh is not
+   ephemerality, it is just a thing that needs setting up again. */
+const PREF_KEY = "livingwindow.prefs.v1";
+const PREF_FIELDS = ["volume", "activity", "spatial", "subtitles",
+                     "timeFlow", "timeSpeed", "weatherFlow"];
+
+function loadPrefs() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(PREF_KEY) || "null"); }
+  catch (e) { return null; }                 // private mode, or nonsense stored
+  if (!saved || typeof saved !== "object") return null;
+  for (const k of PREF_FIELDS) {
+    const v = saved[k];
+    if (typeof v === typeof state[k] && v !== null) state[k] = v;
+  }
+  for (const group of ["mix", "cue"]) {
+    const g = saved[group];
+    if (!g || typeof g !== "object") continue;
+    for (const k in state[group]) {
+      const v = g[k];
+      if (typeof v === typeof state[group][k]) state[group][k] = v;
+    }
+  }
+  return saved;                              // the caller wants `theme` off it
+}
+
+function savePrefs(extra) {
+  const out = { mix: { ...state.mix }, cue: { ...state.cue }, ...(extra || {}) };
+  for (const k of PREF_FIELDS) out[k] = state[k];
+  try { localStorage.setItem(PREF_KEY, JSON.stringify(out)); } catch (e) { /* full, or refused */ }
+}
+
 export {
   themeVar, mulberry32, parseColor, css, mix, REDUCED,
   LOCATIONS, LOC_HASH, WEATHER, state, sessionSerial,
-  stepWeather, holdWeather
+  stepWeather, holdWeather, loadPrefs, savePrefs
 };

@@ -29,9 +29,15 @@ start audio). Headphones are recommended, as each voice is placed spatially.
 
 Closing the window again — the last button in the top-right of the frame —
 swings the leaves shut, stops every voice and every animal, and ends the
-session. Nothing is kept: opening it again draws a fresh seed and a new
+session. The land is not kept: opening it again draws a fresh seed and a new
 serial. The piece is meant to be ephemeral, so there is no pause and no way
 back to an hour you have closed.
+
+What *is* kept is how you like it set — the theme, the loudness, the five mix
+groups, the three cue switches, spatial audio, subtitles and whether the hours
+and the sky move on their own. The seed, the place, the hour and the weather
+are never written down. Ephemerality is about the land; losing five sliders on
+every refresh is not ephemerality, it is a thing that needs setting up again.
 
 Left to itself the light moves on: dawn gives way to day, dusk, night and
 round again, an hour of the day every half hour. Both the turning and its
@@ -44,6 +50,24 @@ serial *is* the land you are looking at. Choosing a place by hand from
 settings does not re-roll the seed, so a place you leave and come back to
 during a session is exactly as you left it.
 
+### The keyboard
+
+An ambient piece is one you leave running in another window, and reaching for
+the mouse is the wrong gesture for it.
+
+```
+space  open or shut the casement      h  next hour
+← →    previous / next place          w  next weather
+↑ ↓    loudness                       m  mute (and put it back)
+s      settings      f  fullscreen    e  elsewhere — new ground
+esc    close settings
+```
+
+Nothing is hijacked while a control has the focus or the settings panel is
+open: the arrow keys belong to a slider that is being used, and taking them
+away would break the panel for anybody driving it by keyboard. Modifier
+combinations are left to the browser.
+
 ## Project layout
 
 ```
@@ -54,8 +78,9 @@ css/styles.css    All styling. Every colour is a semantic CSS custom property �
                   colour in a component rule is a bug.
 js/
   util.js         Shared primitives: seeded PRNG, colour math, world constants, the
-                  single mutable `state` object, and the weather — which lives here
-                  rather than in either canvas or engine because both read it.
+                  single mutable `state` object, the weather — which lives here rather
+                  than in either canvas or engine because both read it — and what
+                  survives a reload (preferences only; never the land).
   species.js      The voices and their marks: field-guide pictograms, the low-level synth
                   primitives, the species catalogue (habitat, hour weighting, synth), and
                   and three tables the drawing reads — `PSTYLE`, each species' field
@@ -320,6 +345,9 @@ does.
   rather than walk and the small birds used to row rather than fly. Every
   animal in the window — four-footed, winged or otherwise — now runs a frame
   table from `GAIT` in `species.js`, and so does the weather. See below.
+- **The light comes from somewhere.** Shadows fall away from the sun, stretch
+  and soften as it drops, and go out altogether under an overcast sky —
+  and a stroke of lightning throws its own, hard, from wherever it happened.
 - **The wind has weight.** A gust comes on fast, holds raggedly, and then
   simply drops; it crosses the frame rather than arriving everywhere at once;
   and what it pushes lags into it and springs back past upright when it lets
@@ -830,6 +858,107 @@ night   0.38 voices    38%
 Night is thinner by time than by voice count, because the things that own the
 small hours — an owl, a cricket — say long things rather than many.
 
+### The light
+
+The sun's position was worked out from the first — `drawCelestial` sets `celX`
+so the water can catch a glitter off it — and then nothing else in the frame
+used it. Every shadow in the piece was a small dark pool directly under its
+animal, which is what a shadow looks like at noon and at no other hour.
+
+`updateLight()` refreshes three numbers once a frame, and everything that casts
+reads them:
+
+```
+x     where the light is, 0..1 across the frame
+alt   how high it is: 1 overhead, 0 on the horizon
+str   how hard it is — cloud, rain and fog all soften a shadow until
+      there is not one, which is most of what an overcast day looks like
+```
+
+A shadow falls away from the light, stretches as `alt` drops (up to about
+three and a half times its width at the horizon), and goes softer as it
+stretches, because a long shadow has a large penumbra. Anchored at the feet:
+the near end stays put and the far end travels.
+
+Two things had to change for it to be visible at all. **Birds had no shadow.**
+`contactShadow` was called ten times from `drawCritters` and not once from
+`drawActors` — every bird in the piece floated a pixel above the ground. Only
+the ones actually on the ground get one now; a bird on a twig six feet up casts
+its shadow somewhere else entirely. And it shrinks and fades as the bird hops
+or springs, which is most of what says the feet were really touching.
+
+**And it is multiplied, not painted.** A shadow drawn as flat ink the colour of
+the darkest token is invisible on ground that is already nearly that colour —
+which the meadow at dawn is. They were being drawn and could not be seen.
+Multiply darkens whatever it lands on by a proportion, which is what a shadow
+does, and it reads on pale sand and dark turf alike.
+
+Lightning uses the same machinery. A stroke happens *somewhere*, and for the
+tenth of a second it lasts it is the only light there is: `updateLight` swings
+to the stroke's position, low and hard, and the wash over the land goes on as
+`screen` from the same point. The effect is the contradiction — the flash does
+not brighten a lit scene, it lights an unlit one. A landscape under a storm has
+no shadows at all until the sky opens, and then it has very sharp ones.
+
+### What the wind gets hold of
+
+`windBend` was read eighteen times in `scene.js` — grass, hedgerow, reeds,
+trees, clouds, smoke, rain — and by nothing that was alive. A gust would cross
+the frame, the grass would lie over, and the bird standing in it would not
+move.
+
+- **Perched birds** sit on the end of a lever that is being pushed about, so
+  the bird goes where the twig goes and the twig goes with it. Birds on the
+  ground are barely touched (a tenth of the exposure).
+- **They fluff.** A gust ruffles a bird's plumage — the same reflex as
+  fluffing in the cold, and the thing you actually see from a window.
+- **The light fliers are carried.** A butterfly does not fly through a gust,
+  it is taken by it; a bee less so; a dragonfly is a far better flier and
+  hardly notices. Those three numbers are 0.115, 0.055 and 0.028.
+- **Falling leaves** ride the same field the branches they fell from are
+  riding, and spin faster the harder they are carried.
+
+### Wet ground
+
+The engine has tracked this since the drips were added — `wetUntil` keeps the
+land dripping for the best part of a minute after the rain stops — and nothing
+showed it anywhere but the beach.
+
+`groundWet` follows `wx.wet` with a soak of twenty seconds and a dry of ninety,
+because ground takes a while to soak and a long while to give it up, and the
+dark patch a shower leaves behind is one of very few things in a landscape that
+tells you what the weather was doing a minute ago.
+
+Wet ground does two things at once and both are drawn: it goes darker (a
+multiply, strongest at the near edge) and it starts reflecting the sky (a
+screen of the sky's own colour). Above about a third wetness, standing water
+appears — puddles drawn from the session seed so a place keeps them in the same
+hollows all session, and skipped entirely where there is already water in the
+frame.
+
+They took three attempts to stop looking wrong. A bright sheet with a rim
+highlight reads as a saucer set down on the grass; standing water in a field is
+mostly just a place where the ground has stopped being matt. What works is a
+soaked ring underneath and a very low-contrast sheet of sky over it, and
+nothing else.
+
+### What stands in water
+
+`drawReflections` mirrors the far tree line and nothing else, so a heron in a
+marsh had none.
+
+This is deliberately **not** a mirrored re-paint. Running every painter a
+second time under a flipped transform is the faithful way and it doubles the
+cost of every animal near water — for a shape that is, at the size these
+appear, a dark smear broken by ripples. So it is drawn as what it looks like
+rather than as what it is: a soft column of the animal's own colour under its
+feet, cut across by two strips of the surface, because a reflection is always
+broken and always broken horizontally. Three ops instead of twenty-five.
+
+How much there is to reflect is how much of the animal is above the water: an
+egret on its legs throws a long one, a duck — sitting *in* the water rather
+than above it — throws almost none.
+
 ### The wind
 
 `windBend(x, stiff)` replaced `windWave(x)`, and it is not a function of `t` at
@@ -873,6 +1002,7 @@ rates, so a card and the window show the same stride.
   nut and the cuckoo's drooped-wing calling posture are all drawn from life.
 - **Ephemeral.** There is no pause and no going back. A shut window keeps no
   time, holds no animals and makes no sound; opening it begins somewhere new.
+  How you like it set is remembered; what you were looking at is not.
 - **Cheap to run.** A phrase costs two audio nodes, not two per note
   (`noteTrain` / `pulseTrain` in `species.js`), every voice's signal chain is
   unwired from the graph once it has decayed, and the canvas holds to a pixel

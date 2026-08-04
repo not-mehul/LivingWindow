@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=15";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=15";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=15";
+} from "./util.js?v=16";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=16";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=16";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -191,6 +191,7 @@ class Scene {
     const loc = state.location;
     const rng = mulberry32((seedBase ^ LOC_HASH[loc]) >>> 0);
     this._paths.clear();         // fresh ground: every kept outline is stale
+    this.seedBase = seedBase;    // kept so lazily-built ground can key off it
     this.loc = loc;
     this.flyers = []; this.ripples = [];
     this.actors = []; this.critters = [];
@@ -986,6 +987,17 @@ class Scene {
   lightning(far) {
     this.flashT = 0;
     this.flashFar = Math.max(0, Math.min(1, far));
+    // A stroke happens somewhere, and for the tenth of a second it lasts it
+    // is the only light there is: the shadows point away from *it*.
+    this.flashX = 0.12 + Math.random()*0.76;
+  }
+
+  /* How much of the frame the flash is lighting right now, 0 to 1. Read both
+     by the light — a near stroke throws a hard shadow from wherever it
+     happened — and by the wash that goes over the land. */
+  flashLit() {
+    if (this.flashT === undefined || this.flashT >= 1) return 0;
+    return gaitAt("strike", this.flashT, "lit") * (1 - this.flashFar*0.72);
   }
 
   updateFlash(dt) {
@@ -994,8 +1006,7 @@ class Scene {
   }
 
   drawFlash(c, W, H) {
-    if (this.flashT === undefined || this.flashT >= 1) return;
-    const lit = gaitAt("strike", this.flashT, "lit") * (1 - this.flashFar*0.72);
+    const lit = this.flashLit();
     if (lit < 0.004) return;
     // Most of it is up in the cloud: a wash across the sky that fades out
     // before it reaches the ground, and barely touches the near foreground.
@@ -1005,6 +1016,26 @@ class Scene {
     g.addColorStop(1, `rgba(${this.tok.foamRGB}, ${lit*0.04})`);
     c.fillStyle = g;
     c.fillRect(0, 0, W, H);
+
+    /* And the land. A stroke that lights the sky and leaves the ground
+       exactly as it was is a filter over a photograph, not a thing happening
+       in the frame — the whole point of lightning is that for a moment you
+       see the field. So the light lands where the stroke was and falls off
+       with distance from it, over everything, on top of everything. Screen
+       rather than a flat wash, because it is light being added. */
+    const near = 1 - this.flashFar;
+    const a = lit*(0.20 + near*0.34);
+    if (a < 0.01) return;
+    const lx = (this.flashX !== undefined ? this.flashX : 0.5) * W;
+    const pool = c.createRadialGradient(lx, H*0.18, 0, lx, H*0.18, W*(0.5 + near*0.5));
+    pool.addColorStop(0, `rgba(${this.tok.foamRGB}, ${a})`);
+    pool.addColorStop(0.6, `rgba(${this.tok.foamRGB}, ${a*0.45})`);
+    pool.addColorStop(1, `rgba(${this.tok.foamRGB}, 0)`);
+    c.save();
+    c.globalCompositeOperation = "screen";
+    c.fillStyle = pool;
+    c.fillRect(0, 0, W, H);
+    c.restore();
   }
 
   fishRise(x01) {
@@ -1134,6 +1165,8 @@ class Scene {
     this.drawCelestial(p, W, H, top, night);
     this.drawClouds(p, W, H, night);
     p.end();
+    // the sun has just been placed; everything that casts reads it from here
+    this.updateLight();
 
     switch (this.loc) {
       case "meadow": this.drawMeadow(c, W, H, dt, bot); break;
@@ -1142,6 +1175,7 @@ class Scene {
       case "wetland": this.drawWetland(c, W, H, dt, top, bot, night); break;
       case "city": this.drawCity(c, W, H, dt, bot, night); break;
     }
+    this.drawWetGround(c, W, H, top, bot);
 
     this.drawActors(c, W, H, bot, night);
     this.drawCritters(c, W, H, bot, night);
@@ -1170,6 +1204,7 @@ class Scene {
        to. This is the only clock in the piece that runs at the rate a
        listener perceives, so it is the one that steps the sky. */
     stepWeather(dt, state.time);
+    this.updateWetness(dt);
     this.updateWind(dt);
     this.updateFlash(dt);
     this.updateCelestial(dt);
@@ -1618,6 +1653,147 @@ class Scene {
     return false;
   }
 
+  /* ---- What stands in water -------------------------------------------
+
+     `drawReflections` mirrors the far tree line and nothing else, so a heron
+     standing in a marsh has no reflection at all.
+
+     This is deliberately not a mirrored re-paint. Running every painter a
+     second time under a flipped transform is the faithful way to do it and it
+     doubles the cost of every animal near water — for a shape that is, at the
+     size these appear, a dark smear broken by ripples. So it is drawn as what
+     it looks like rather than as what it is: a soft column of the animal's own
+     colour under its feet, cut across by the same lines the water already
+     carries. Three ops instead of twenty-five.
+
+     Returns quietly for anything not actually standing in water. */
+  waterReflection(c, x, footY, w, h, col, alpha) {
+    if (alpha <= 0.02 || h <= 1) return;
+    const surf = this.loc === "wetland" ? this.bankY
+               : this.loc === "beach" ? this.shoreY : null;
+    if (surf === null) return;
+    // only what is at or below the waterline — a bird up the bank has nothing
+    // to be reflected in
+    const H = this.H;
+    if (footY < surf*H - h*0.4) return;
+    const depth = h*0.62;
+    const g = c.createLinearGradient(0, footY, 0, footY + depth);
+    g.addColorStop(0, css([col[0], col[1], col[2], 0.5*alpha]));
+    g.addColorStop(0.45, css([col[0], col[1], col[2], 0.22*alpha]));
+    g.addColorStop(1, css([col[0], col[1], col[2], 0]));
+    c.save();
+    c.fillStyle = g;
+    c.beginPath();
+    c.ellipse(x, footY + depth*0.42, w*0.55, depth*0.58, 0, 0, Math.PI*2);
+    c.fill();
+    /* And the water moves under it. Two flat strips of the surface laid back
+       over the smear is what stops it reading as a shadow hanging in the
+       water — a reflection is always broken, and always broken horizontally. */
+    c.globalAlpha = 0.55*alpha;
+    c.fillStyle = css(this.tok.sea);
+    for (let k = 0; k < 2; k++) {
+      const ry = footY + depth*(0.28 + k*0.34) + Math.sin(this.t*0.9 + k*2.1 + x*0.02)*1.6;
+      c.fillRect(x - w*0.6, ry, w*1.2, 1.2 + k*0.6);
+    }
+    c.restore();
+  }
+
+  /* ---- Wet ground ------------------------------------------------------
+
+     How wet the ground is, which is not the same as how hard it is raining.
+     Ground takes a while to soak and a long while to give it up again, and
+     the dark patch a shower leaves behind is one of the very few things in a
+     landscape that tells you what the weather was doing a minute ago. The
+     engine has tracked this since the drips were added — `wetUntil` keeps the
+     land dripping for the best part of a minute after the rain stops — and
+     until now nothing showed it. */
+  updateWetness(dt) {
+    const want = state.wx.wet;
+    const now = this.groundWet || 0;
+    const tau = want > now ? 20 : 90;     // soaks in twenty seconds, dries in ninety
+    const next = now + (want - now)*(1 - Math.exp(-dt/tau));
+    this.groundWet = Math.abs(want - next) < 0.002 ? want : next;
+  }
+
+  /* Wet ground does two things at once: it goes darker, and it starts
+     reflecting the sky. Both are here — a multiply to soak it, and a pale
+     sheen that only the near, flat ground catches — with standing water on
+     top of that once it has had enough rain to pool.
+
+     Drawn after the land and before anything alive, so the animals stand on
+     the wet ground rather than being tinted by it. */
+  drawWetGround(c, W, H, top, bot) {
+    const w = this.groundWet || 0;
+    if (w < 0.02) return;
+    const band = this.groundBand();
+    const y0 = Math.max(0, (Math.min(band[0], band[1]) - 0.07)) * H;
+    const h = H - y0;
+    if (h <= 0) return;
+
+    const dark = c.createLinearGradient(0, y0, 0, H);
+    dark.addColorStop(0, "rgba(96,88,80,0)");
+    dark.addColorStop(1, `rgba(96,88,80,${(0.55*w).toFixed(3)})`);
+    c.save();
+    c.globalCompositeOperation = "multiply";
+    c.fillStyle = dark;
+    c.fillRect(0, y0, W, h);
+    c.restore();
+
+    // the sheen: the sky, lying on the ground, weakest at the horizon
+    const sheen = c.createLinearGradient(0, y0, 0, H);
+    sheen.addColorStop(0, `rgba(${top[0]|0},${top[1]|0},${top[2]|0},0)`);
+    sheen.addColorStop(1, `rgba(${top[0]|0},${top[1]|0},${top[2]|0},${(0.16*w).toFixed(3)})`);
+    c.save();
+    c.globalCompositeOperation = "screen";
+    c.fillStyle = sheen;
+    c.fillRect(0, y0, W, h);
+    c.restore();
+
+    /* And standing water, once there has been enough of it. Puddles sit on
+       the near ground where it is flattest, hold a piece of sky, and are the
+       one part of this that reads at a glance. Where there is already water
+       in the frame — a shore, a marsh — there is nothing to add. */
+    if (this.loc === "beach" || this.loc === "wetland" || w < 0.35) return;
+    const pud = this.puddles();
+    const pa = Math.min(1, (w - 0.35)/0.4);
+    c.save();
+    const soaked = css(this.tok.inkDeep);
+    // Water lying in grass, not discs laid on top of it: the soaked ring goes
+    // down first, the water is a low-contrast sheet of sky over it, and the
+    // only bright part is the thin line where the far edge catches the light.
+    for (const p of pud) {
+      const py = (band[1] + (band[0] - band[1])*p.z) * H + p.dy*H;
+      const pw = p.r*W*(0.6 + p.z*0.7);
+      c.globalAlpha = pa * 0.20;
+      c.fillStyle = soaked;
+      c.beginPath(); c.ellipse(p.x*W, py, pw*1.3, pw*0.25, 0, 0, Math.PI*2); c.fill();
+      /* And the water itself, low and flat and barely lighter than what it is
+         lying in. A brighter sheet with a rim reads as a saucer set down on
+         the grass; standing water in a field is mostly just a place where the
+         ground has stopped being matt. */
+      c.globalAlpha = pa * (0.13 + p.z*0.10);
+      c.fillStyle = css(mix(bot, top, 0.30));
+      c.beginPath(); c.ellipse(p.x*W, py, pw, pw*0.115, 0, 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+  }
+
+  /* Where the water stands. Drawn from the session seed so a place keeps its
+     puddles in the same hollows all session, and rebuilt when the land is. */
+  puddles() {
+    const key = this.loc + ":" + this.seedBase;
+    if (this._puddleKey === key) return this._puddles;
+    const rng = mulberry32(((this.seedBase || 0) ^ 0x9D7E5) >>> 0);
+    const n = 4 + Math.floor(rng()*4);
+    this._puddles = [];
+    for (let i = 0; i < n; i++) {
+      this._puddles.push({ x: 0.05 + rng()*0.9, z: rng(),
+        r: 0.020 + rng()*0.045, dy: (rng() - 0.5)*0.02 });
+    }
+    this._puddleKey = key;
+    return this._puddles;
+  }
+
   groundBand() {
     // The near end sits on the lit ground, not down in the dark strip at the
     // very bottom of the frame — an animal standing there is a black shape on
@@ -1644,14 +1820,82 @@ class Scene {
     };
   }
 
+  /* ---- Where the light is coming from, and how hard it is ----------------
+
+     The sun's position was already worked out — `drawCelestial` sets `celX`
+     for the water's glitter — and then nothing else in the frame used it.
+     Every shadow in the piece was a small pool directly under its animal,
+     which is what a shadow looks like at noon and at no other hour of the day.
+
+     Refreshed once a frame and read by everything that casts: the direction
+     a shadow falls, how far it stretches, and how dark it is allowed to be.
+
+       x     where the light is, 0..1 across the frame
+       alt   how high it is: 1 overhead, 0 on the horizon
+       str   how hard the light is — cloud, rain and fog all soften a shadow
+             until there is not one, which is most of what an overcast day
+             looks like.  */
+  updateLight() {
+    const m = this.timeMix, total = m.dawn + m.day + m.dusk + m.night || 1;
+    const day = (m.dawn + m.day + m.dusk) / total;
+    // The sun climbs and sets; the moon is taken as high and weak all night.
+    const alt = (m.dawn*0.20 + m.day*0.95 + m.dusk*0.16 + m.night*0.62) / total;
+    /* An overcast sky is a light source the size of the sky, and a light
+       source the size of the sky casts no shadow at all. Rain and fog take
+       it away almost entirely; that absence is itself a weather cue. */
+    const clear = (1 - state.wx.wet*0.85) * (1 - state.wx.haze*0.9);
+    const lit = this._lit || (this._lit = { x: 0.5, alt: 1, str: 1 });
+    lit.x = this.celX !== undefined ? this.celX : 0.5;
+    lit.alt = Math.max(0.08, alt);
+    // moonlight is a tenth of daylight, and it is still a shadow
+    lit.str = clear * (day*0.95 + (1 - day)*0.30);
+
+    /* And then a stroke of lightning, which for a tenth of a second is the
+       only light there is. It comes from where it happened rather than from
+       the sun, it is low and hard, and it throws a shadow across a landscape
+       that a moment ago — being under a storm — had none at all. That
+       contradiction is the whole effect: the flash does not brighten a lit
+       scene, it lights an unlit one. */
+    const f = this.flashLit();
+    if (f > 0.01) {
+      const k = Math.min(1, f*1.6);
+      lit.x += (this.flashX - lit.x) * k;
+      lit.alt += (0.30 - lit.alt) * k;
+      lit.str += (1.15 - lit.str) * k;
+    }
+    return lit;
+  }
+
   /* The small dark pool a body casts on the ground beneath it. Nothing
-     grounds an animal like the shadow it stands in. */
+     grounds an animal like the shadow it stands in — and nothing gives away
+     the hour like which way it points and how far it reaches. A low sun
+     throws it a long way sideways and softens it as it goes; at noon it is
+     a tight dark spot under the feet. */
   contactShadow(c, x, y, w, alpha) {
-    if (alpha <= 0.01) return;
+    const L = this._lit || this.updateLight();
+    const a0 = alpha * L.str;
+    if (a0 <= 0.01) return;
+    const lean = 1 - L.alt;                       // 0 overhead, 1 at the horizon
+    const away = x >= L.x*this.W ? 1 : -1;        // it falls away from the light
+    const rx = w * (1 + lean*lean*2.6);
+    // anchored at the feet: the near end stays put and the far end travels
+    const cx = x + away * (rx - w) * 0.9;
+    // a long shadow is a soft one — the penumbra grows with the distance
+    const a = a0 / (1 + lean*1.35);
+    if (a <= 0.01) return;
+    /* Multiplied, not painted. A shadow drawn as flat ink the colour of the
+       darkest token is invisible on ground that is already nearly that
+       colour, which is what the meadow at dawn is — the shadows were there
+       and could not be seen. Multiply darkens whatever it lands on by a
+       proportion, which is what a shadow actually does, and it reads on pale
+       sand and dark turf alike. */
     c.save();
-    c.globalAlpha = alpha;
-    c.fillStyle = css(this.tok.inkDeep);
-    c.beginPath(); c.ellipse(x, y, w, Math.max(1, w*0.22), 0, 0, Math.PI*2); c.fill();
+    c.globalCompositeOperation = "multiply";
+    c.globalAlpha = Math.min(0.9, a*2.4);
+    c.fillStyle = "rgb(96,88,80)";
+    c.beginPath();
+    c.ellipse(cx, y, rx, Math.max(1, w*0.22), 0, 0, Math.PI*2);
+    c.fill();
     c.restore();
   }
 
@@ -2092,10 +2336,14 @@ class Scene {
 
   updateFallingLeaves(dt) {
     if (!this.leaves) return;
+    /* A leaf already off the tree is the lightest thing in the wood, so it
+       reads the same gust the branches are reading — and it spins faster the
+       harder it is being carried, which is what a leaf in a gust does. */
     for (const l of this.leaves) {
+      const push = this.windBend(l.x);
       l.y += l.sp*dt;
-      l.x += (l.drift + Math.sin(this.t*1.2 + l.ph)*0.02)*dt;
-      l.rot += dt*1.6;
+      l.x += (l.drift + Math.sin(this.t*1.2 + l.ph)*0.02 + push*0.10)*dt;
+      l.rot += dt*(1.6 + Math.abs(push)*4.5);
       if (l.y > 0.96) { l.y = 0.28 + Math.random()*0.12; l.x = Math.random(); }
     }
   }
@@ -2863,7 +3111,24 @@ class Scene {
       const colStr = css([col[0], col[1], col[2], 1]);
       const rimStr = css(mix(col, bot, 0.6));            // a touch lighter, for rim/eye
       const deepStr = css(mix(this.tok.inkDeep, bot, Math.max(0.02, a.depthMix - 0.10)));
-      const x = a.x*W, y = a.y*H;
+      /* The wind gets the birds too.
+
+         `windBend` is read eighteen times in this file — by the grass, the
+         hedgerow, the reeds, the trees, the clouds, the smoke and the rain —
+         and until now by nothing that was alive. A gust would cross the frame,
+         the grass would lie over, and the bird standing in it would not move.
+
+         A bird on a twig is sitting on the end of a lever that is being
+         pushed about, so it goes where the twig goes and the twig goes with
+         it; one on the ground is barely touched. And in a gust a bird fluffs
+         — it is the same reflex as fluffing in the cold, and it is the thing
+         you actually see from a window. */
+      const exposure = a.ground ? 0.10 : 1;
+      const bend = this.windBend(a.x) * exposure;
+      const swayX = bend * a.s * 0.15;
+      const swayY = -Math.abs(bend) * a.s * 0.045;
+      const ruffle = Math.max(0, bend) * 0.12;
+      const x = a.x*W + swayX, y = a.y*H + swayY;
 
       // Idle life: breathing, the odd glance and tail-flick, a wing-settle on arrival.
       const iv = a.ivar || {};
@@ -2910,10 +3175,44 @@ class Scene {
       const hopStep = bhop ? Math.max(0, bhop.rise) : 0;
       const stride = stepping && a.walks ? a.stridePh : 0;
 
+      /* The pool a bird stands in. Every four-footed thing in the frame has
+         had one of these since the beginning; not one bird did, and a bird
+         on the ground without a shadow floats a pixel above it.
+
+         Only the ones actually on the ground get one: a bird on a twig six
+         feet up casts its shadow somewhere else entirely, and a dark ellipse
+         under a perched bird's feet in mid-air is worse than none at all. It
+         shrinks and fades as the bird leaves the ground — on a hop, on the
+         spring into flight — which is most of what says the feet were really
+         touching it. */
+      const onGround = a.ground || a.beh === "wader" || a.beh === "duck"
+        || a.beh === "frog" || a.beh === "pheasant" || a.beh === "egret"
+        || a.beh === "cockerel";
+      if (onGround && a.alpha > 0.05 && !a.flightIn) {
+        const air = Math.max(flyProg, flyIn);
+        const lift = (hopBob + hopStep*a.s*0.45) / Math.max(1, a.s*0.5);
+        const off = Math.max(0, 1 - lift) * (1 - air);
+        const fx = (a.ground ? a.x : a.restX)*W + swayX;
+        const fy = a.restY*H + swayY;
+        this.contactShadow(c, fx, fy + a.s*0.05, a.s*0.40*(0.75 + off*0.25),
+          0.19 * a.alpha * off);
+        /* And what it is standing in, if it is standing in anything. How much
+           there is to reflect is how much of the bird is above the water: an
+           egret on its legs throws a long one, and a duck — which is sitting
+           *in* the water rather than above it — throws almost none. */
+        const stands = a.beh === "egret" ? 1.15 : a.beh === "wader" ? 0.95
+          : a.beh === "duck" ? 0.22 : a.beh === "frog" ? 0.3 : 0.7;
+        this.waterReflection(c, fx, fy, a.s*0.55, a.s*1.5*stands, col,
+          a.alpha * off * 0.55);
+      }
+
       switch (a.beh) {
         case "perch": {
           const ps = PSTYLE[a.id] || {};
-          this.drawPerchFooting(c, (a.ground ? a.x : a.restX)*W, a.restY*H, a.s,
+          // the twig bends with the bird on it, not underneath a bird that
+          // has been blown off it
+          this.drawPerchFooting(c, (a.ground ? a.x : a.restX)*W + swayX,
+            a.restY*H + swayY, a.s,
             a.perchType, bot, a.alpha * landed * (1 - flyProg));
           const hopG = a.gest === "hop"
             ? gaitPose("birdHop", a.gestT/a.gestDur).rise*a.s*0.22 : 0;
@@ -2927,7 +3226,7 @@ class Scene {
             x: rot ? 0 : x, y: (rot ? 0 : y) - hopBob - hopG - hopStep*a.s*0.45,
             s: a.s*(ps.sc || 1), flip: a.flip, alpha: a.alpha,
             color: colStr, rim: rimStr, deep: deepStr, marks: ps,
-            plump: (ps.plump || 1) * (iv.puff || 1) * (1 + fluffG*0.24),
+            plump: (ps.plump || 1) * (iv.puff || 1) * (1 + fluffG*0.24 + ruffle),
             tailLen: (ps.tail || 1.1) * (iv.tail || 1), tailUp: !!ps.tailUp,
             billLen: ps.bill || 0.45,
             crest: ps.crest || (iv.crest && !ps.tailUp && !ps.cap), rimLight: iv.rim,
@@ -4821,6 +5120,18 @@ class Scene {
          running its own gait, just going somewhere else and fast. It runs out
          hard and eases off over about a second and a half, and if it makes the
          edge of the frame it is gone — which is what a rabbit does. */
+      /* And the wind takes the light ones. A butterfly does not fly through
+         a gust, it is carried by it, and that is most of what says the thing
+         in the air weighs nothing. A dragonfly is a far better flier and
+         hardly notices. */
+      const carry = cr.kind === "butterfly" ? 0.115
+                  : cr.kind === "bee" ? 0.055
+                  : cr.kind === "dragonfly" ? 0.028 : 0;
+      if (carry) {
+        const push = this.windBend(cr.x);
+        cr.x += push * carry * dt;
+        cr.y -= Math.max(0, push) * 0.010 * dt;
+      }
       if (cr.bolt) {
         cr.boltT += dt;
         const u = Math.max(0, 1 - cr.boltT/1.6);
