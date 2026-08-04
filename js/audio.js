@@ -187,16 +187,51 @@ class AudioEngine {
     const F = Math.floor(fs * 0.05);          // 50 ms cross-fade
     const M = N + F;
     const tmp = new Float32Array(M);
-    const aLow = 1 - Math.exp(-2*Math.PI*1000/fs);   // split point ~1 kHz
-    let low = 0;
+    const aLow = 1 - Math.exp(-2*Math.PI*800/fs);    // split point ~800 Hz
+    /* And a roof on it. White noise carries as much power in the octave above
+       ten kilohertz as in the whole of the rest of the spectrum, so splitting
+       it and weighting the halves still left a measured centroid of 10.2 kHz
+       — which is not rain, it is television static. Rain heard from inside a
+       room is a wash between about five hundred hertz and five kilohertz.
+       One pole is not enough roof: at six decibels an octave it still left the
+       centroid at 8.4 kHz. Two of them, lower down, is what actually takes the
+       sizzle off. */
+    const aTop = 1 - Math.exp(-2*Math.PI*4200/fs);
+    let low = 0, t1 = 0, t2 = 0;
     const twoPiOverN = 2*Math.PI / N;
     for (let i = 0; i < M; i++) {
       const w = Math.random()*2 - 1;
       low += aLow*(w - low);
       const high = w - low;
+      t1 += aTop*(high - t1);
+      t2 += aTop*(t1 - t2);
       const ph = twoPiOverN * (i % N);               // periodic over N → seamless
       const mod = 1 + 0.16*Math.sin(ph*2) + 0.10*Math.sin(ph*5 + 1.3);
-      tmp[i] = (low*1.5 + high*0.6) * mod;
+      tmp[i] = (low*1.6 + t2*1.5) * mod;
+    }
+
+    /* The patter. A wash alone is the *sound* of rain without any of its
+       grain: what tells you it is rain and not a fan is that it is made of
+       individual impacts, thousands of them, each one a short ring on
+       whatever it landed on. Written into the buffer rather than scheduled,
+       so a downpour costs exactly what a drizzle does at run time — which is
+       nothing, since this is read back as samples.
+
+       Written across the whole of M, tail included, so the cross-fade below
+       carries the drops over the seam like everything else. */
+    const drops = Math.floor(seconds * 240);
+    for (let k = 0; k < drops; k++) {
+      const at = Math.floor(Math.random() * (M - 400));
+      const f = 700 + Math.random()*2600;            // what it landed on
+      const decay = 0.0025 + Math.random()*0.0055;
+      const amp = 0.10 + Math.random()*0.30;
+      const len = Math.min(400, Math.floor(decay*4*fs));
+      const w = 2*Math.PI*f/fs, d = Math.exp(-1/(decay*fs));
+      let env = amp;
+      for (let j = 0; j < len; j++) {
+        tmp[at + j] += Math.sin(w*j) * env * (0.6 + Math.random()*0.4);
+        env *= d;
+      }
     }
     let peak = 1e-6;
     for (let i = 0; i < M; i++) { const a = Math.abs(tmp[i]); if (a > peak) peak = a; }
@@ -393,22 +428,64 @@ class AudioEngine {
     tsrc.connect(twash); twash.connect(twg); twg.connect(this.trafficGain);
     this.trafficGain.connect(this.bedBus);
 
-    // surf bed — the low body of the sea (approach and drag-back)
+    /* Surf body — the low roar of the sea, approaching and dragging back.
+
+       The wave scheduler sweeps this filter and this gain, so during a wave
+       it moves plenty. Between waves it did not move at all, and the sea
+       between waves is most of the time: a fixed lowpass on steady noise held
+       at one level is the definition of static. So it breathes on its own as
+       well, slowly and shallowly — the swell that is always there under the
+       waves that break out of it. */
     this.surfGain = ac.createGain(); this.surfGain.gain.value = 0;
     this.surfFilter = ac.createBiquadFilter();
     this.surfFilter.type = "lowpass"; this.surfFilter.frequency.value = 400;
+    /* The base sits below unity because the modulation is *added* to it: a
+       gain of one with noise swinging around it averages more than one and
+       peaks a great deal more, which put ten decibels back on the beach and
+       took a bird's headroom there from twelve to six. Base and depth are set
+       together so the mean comes out where it was. */
+    this.surfTex = ac.createGain(); this.surfTex.gain.value = 0.82;
     this.wideNoise().connect(this.surfFilter);
-    this.surfFilter.connect(this.surfGain);
+    this.surfFilter.connect(this.surfTex);
+    this.surfTex.connect(this.surfGain);
     this.surfGain.connect(this.bedBus);
+    const smod = this.loopNoise();
+    const smodLP = ac.createBiquadFilter();
+    smodLP.type = "lowpass"; smodLP.frequency.value = 1.1; smodLP.Q.value = 0.7;
+    const smodAmt = ac.createGain(); smodAmt.gain.value = 11;
+    smod.connect(smodLP); smodLP.connect(smodAmt); smodAmt.connect(this.surfTex.gain);
 
-    // surf foam — the bright hiss of a wave breaking and washing back, with a
-    // band of mid roll under it so the sea is not only sub and sizzle
+    /* Surf foam — a wave breaking and washing back.
+
+       This was a high-pass at 1100 on pink noise and nothing else, which
+       measured a spectral centroid of 8.6 kHz: that is a cymbal, or static,
+       and it is not what water sounds like. Breaking water lives between
+       about seven hundred hertz and four kilohertz — there is very little of
+       it above that, and what there is is the *spray*, not the wave. So the
+       band is closed at both ends now.
+
+       And it is made granular. Foam is thousands of bubbles bursting, which
+       is why the leaf bed's trick — a second noise source taken down to a few
+       hertz and used to modulate the level — is exactly the right one here
+       too. Two nodes, and it is noise driving noise, which is what the real
+       thing is. Without it the level holds far too still to be liquid. */
     this.surfFoamGain = ac.createGain(); this.surfFoamGain.gain.value = 0;
     this.surfFoamFilter = ac.createBiquadFilter();
-    this.surfFoamFilter.type = "highpass"; this.surfFoamFilter.frequency.value = 1100;
+    this.surfFoamFilter.type = "highpass"; this.surfFoamFilter.frequency.value = 700;
+    const foamTop = ac.createBiquadFilter();
+    foamTop.type = "lowpass"; foamTop.frequency.value = 4200; foamTop.Q.value = 0.5;
+    this.foamTex = ac.createGain(); this.foamTex.gain.value = 0.74;
     const foamSrc = this.wideNoise();
     foamSrc.connect(this.surfFoamFilter);
-    this.surfFoamFilter.connect(this.surfFoamGain);
+    this.surfFoamFilter.connect(foamTop);
+    foamTop.connect(this.foamTex);
+    this.foamTex.connect(this.surfFoamGain);
+    // the bubbles: a few hertz of noise on the level, deeper than the leaves
+    const fmod = this.loopNoise();
+    const fmodLP = ac.createBiquadFilter();
+    fmodLP.type = "lowpass"; fmodLP.frequency.value = 7.5; fmodLP.Q.value = 0.7;
+    const fmodAmt = ac.createGain(); fmodAmt.gain.value = 17;   // pink noise is small
+    fmod.connect(fmodLP); fmodLP.connect(fmodAmt); fmodAmt.connect(this.foamTex.gain);
     // A broad band low down passes a great deal of pink noise — at a Q of a
     // half and a gain of a half this alone put seventeen decibels back on the
     // beach and buried the birds again. It wants to be a suggestion of body
@@ -1460,15 +1537,43 @@ class AudioEngine {
     this.wowRate = 0.31 + r()*0.14;
     this.wowCents = 5.5;
 
-    // vinyl: a soft noise floor and the odd click, which is most of the genre
-    this.vinylGain = ac.createGain(); this.vinylGain.gain.value = 0.030;
-    const vhp = ac.createBiquadFilter(); vhp.type = "highpass"; vhp.frequency.value = 900;
-    const vlp = ac.createBiquadFilter(); vlp.type = "lowpass"; vlp.frequency.value = 5200;
+    /* Vinyl: the noise floor a record has, and the crackle on it.
+
+       Two things were wrong with this and they compounded. It ran *into* the
+       compressor, so between beats — when the only signal is the noise floor
+       — the glue released and its makeup gain lifted the hiss by the better
+       part of twenty decibels. And the hiss itself measured a flutter of
+       0.039, which is to say it did not move at all: the flattest thing in
+       the piece, and the textbook description of static.
+
+       So it goes in *after* the glue and is never compressed, keeping the
+       wall and the trim, which is where a record's surface noise belongs
+       anyway — it is on the record, not in the mastering. It is darker, and a
+       third of what it was. And it is granular, by the same trick the leaves
+       use: surface noise crackles, it does not hiss. The clicks that carry
+       most of the character are scheduled per bar in `playBar`. */
+    this.vinylGain = ac.createGain(); this.vinylGain.gain.value = 0.011;
+    const vhp = ac.createBiquadFilter(); vhp.type = "highpass"; vhp.frequency.value = 420;
+    const vlp = ac.createBiquadFilter(); vlp.type = "lowpass"; vlp.frequency.value = 2600;
     const vsrc = this.wideNoise();
-    vsrc.connect(vhp); vhp.connect(vlp); vlp.connect(this.vinylGain);
-    this.vinylGain.connect(this.musicIn);
-    this.musicNodes = [vsrc, vhp, vlp, this.vinylGain, this.musicIn, warm, glue, wall,
-                       this.musicTrim, this.musicGain];
+    this.vinylTex = ac.createGain(); this.vinylTex.gain.value = 0.8;
+    vsrc.connect(vhp); vhp.connect(vlp); vlp.connect(this.vinylTex);
+    this.vinylTex.connect(this.vinylGain);
+    this.vinylGain.connect(wall);            // past the glue: never pumped
+    /* The crackle has its own way in. Sending it through `vinylGain` put it
+       through the hiss's own level — a hundredth — and a click at a hundredth
+       of its amplitude is not a click. It is surface noise like the hiss, so
+       it takes the same route past the glue, but at its own level. */
+    this.vinylCrackle = ac.createGain(); this.vinylCrackle.gain.value = 0.5;
+    this.vinylCrackle.connect(wall);
+    const vmod = this.loopNoise();
+    const vmodLP = ac.createBiquadFilter();
+    vmodLP.type = "lowpass"; vmodLP.frequency.value = 9; vmodLP.Q.value = 0.7;
+    const vmodAmt = ac.createGain(); vmodAmt.gain.value = 16;
+    vmod.connect(vmodLP); vmodLP.connect(vmodAmt); vmodAmt.connect(this.vinylTex.gain);
+    this.musicNodes = [vsrc, vhp, vlp, this.vinylTex, this.vinylGain, this.vinylCrackle,
+                       vmod, vmodLP, vmodAmt,
+                       this.musicIn, warm, glue, wall, this.musicTrim, this.musicGain];
 
     this.bpm = 70 + Math.floor(r()*14);            // slow, always
     this.beat = 60/this.bpm;
@@ -1619,9 +1724,18 @@ class AudioEngine {
     if (last) {
       for (let e = 0; e < 4; e++) this.hat(t0 + B*3 + e*B*0.25, 0.007 + e*0.002);
     }
-    // and now and then a click off the record
-    if (r() < 0.5) {
-      burst(ac, this.musicIn, t0 + r()*B*4, 2200 + r()*3000, 6, 0.006, 0.012 + r()*0.014);
+    /* And the crackle. With the hiss taken down to almost nothing this is
+       what says record: a handful of small ticks a bar, none of them in the
+       same place twice, most of them barely there and one now and then that
+       you actually notice. They go past the glue with the rest of the
+       surface noise — a compressor would even them out, and evenness is the
+       one thing a scratch does not have. */
+    const ticks = 2 + Math.floor(r()*4);
+    for (let k = 0; k < ticks; k++) {
+      const soft = r() < 0.75;
+      burst(ac, this.vinylCrackle, t0 + r()*B*4,
+        1800 + r()*4200, 4 + r()*5, 0.004 + r()*0.005,
+        soft ? 0.05 + r()*0.10 : 0.22 + r()*0.30);
     }
   }
 

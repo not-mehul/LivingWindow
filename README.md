@@ -106,7 +106,7 @@ and shuts the window.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds six harnesses. None is part of the piece; all need a static
+`tools/` holds nine harnesses. None is part of the piece; all need a static
 server running and drive a headless Chromium through Playwright.
 
 ```bash
@@ -115,6 +115,9 @@ node tools/trajectory.mjs   outdir   # what every animal did, frame by frame
 node tools/critters.mjs              # every creature through update and paint
 node tools/actors.mjs [outfile]      # every singer, and every way of leaving
 node tools/weather.mjs               # the sky drifting, the alarm, and the hour
+node tools/mix.mjs                   # how far a call stands clear of its room
+node tools/texture.mjs               # which beds are still static
+node tools/soak.mjs                  # ninety busy seconds: leaks, growth, clipping
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
 ```
 
@@ -167,6 +170,28 @@ It quiets the audio, stops the scene's own frame loop and reseeds the random
 stream before recording, because an actor's build — its scale, its plumpness,
 which way it looks and when — is drawn from `Math.random` the moment it is
 spawned.
+
+`mix.mjs`, `texture.mjs` and `soak.mjs` are the three that answer "does it
+sound right" rather than "did it throw", and each has one lesson built into it
+that cost real time to learn:
+
+- **`mix.mjs` reports the *median* short-term level of a room, not the mean.**
+  One wave crest inside a three-second window moved the beach ten decibels
+  between runs and made the whole row meaningless — it read as a six-decibel
+  regression that did not exist. It also calls the same species (the crow,
+  which lives everywhere) in every place, because picking whatever perch bird a
+  place happened to have was measuring the species and not the room.
+- **`texture.mjs` thresholds the spectral centroid.**
+  `getFloatFrequencyData` floors every empty bin at `minDecibels`, and a
+  thousand floored bins outweigh the handful carrying the signal, so
+  everything more than 40 dB below the loudest bin is not counted. Without
+  that, a cow's low and a church bell both measure five kilohertz.
+- **`soak.mjs` hushes nothing and fakes nothing.** An earlier version silenced
+  the beds to isolate a cue and ended up measuring the click its own
+  `setValueAtTime` made. If you need to know what is loud, wrap the emitters
+  with timestamps and see what fired just before the peak — the answer here
+  was drips, the record's kick and an alarm coinciding, and it was not the
+  thing that had been suspected twice.
 
 `weather.mjs` covers the three things a still picture cannot show: that the sky
 drifts on its own and every dial moves smoothly (it reports the largest
@@ -399,14 +424,14 @@ you which species a place happens to have:
 
 ```
                  bed rms   crow peak   clear
-meadow  clear     −41.2      −19.9     +21.2 dB
-meadow  breeze    −34.2      −19.3     +14.9 dB
-meadow  rain      −35.3      −19.4     +15.9 dB
-forest  clear     −41.8      −23.3     +18.5 dB
-beach   clear     −37.0      −21.5     +15.6 dB
-beach   breeze    −35.4      −23.3     +12.1 dB
-wetland clear     −40.4      −22.2     +18.2 dB
-city    clear     −34.4      −18.8     +15.5 dB
+meadow  clear     −42.3      −25.9     +16.4 dB
+meadow  breeze    −38.1      −25.1     +13.0 dB
+meadow  rain      −38.1      −23.5     +14.6 dB
+forest  clear     −38.5      −20.7     +17.7 dB
+beach   clear     −38.6      −21.9     +16.7 dB
+beach   breeze    −34.4      −21.8     +12.6 dB
+wetland clear     −41.0      −21.4     +19.7 dB
+city    clear     −38.9      −18.1     +20.9 dB
 ```
 
 Before any of this the same measurement ran from −8.2 dB to +8.5 dB: a call's
@@ -511,6 +536,71 @@ Nothing grows. The bar count climbs at exactly the tempo, which is the
 look-ahead scheduler never missing and never catching up in a rush. Peak
 −15.8 dBFS, zero clipped samples.
 
+### Noise, and how it stops sounding like noise
+
+Nearly every bed here is filtered noise, and filtered noise is one small step
+away from static. What separates them is measurable, and `tools/texture.mjs`
+measures it — two numbers per bed, taken from the bed's own tap:
+
+- **flutter** — the standard deviation of the short-term level as a fraction of
+  its mean. Static holds one level and scores near zero. Anything granular —
+  leaves, foam, rain on a roof — is thousands of small events and scores high.
+- **drift** — how much the spectral centroid moves. A fixed filter on steady
+  noise never moves; water gets brighter as it breaks and darker as it drains.
+
+The leaf bed is the reference. It already did the granular trick — a second
+noise source taken down to a few hertz and used to modulate the level, which is
+noise driving noise, two nodes, and what the real thing is — and it is the one
+bed nobody ever complained about. Three others were not doing it:
+
+```
+                    flutter          centroid
+                 before  after    before   after
+the record's hiss  0.037  0.559    3814 →  2206 Hz
+surf foam          2.257  2.768    8623 →  3402 Hz
+surf body          0.328  0.639     470 →   440 Hz
+rain               0.395  0.395   10227 →  6463 Hz
+leaves (reference) 0.593    —      4863        —
+```
+
+**The record's noise floor** scored 0.037 — the flattest thing in the piece,
+and the textbook description of static. Two things were wrong and they
+compounded. It ran *into* the glue compressor, so between beats, when the only
+signal is the noise floor, the glue released and its makeup gain lifted the
+hiss by the better part of twenty decibels. And the hiss did not move at all.
+It now goes in after the glue and is never compressed — which is where a
+record's surface noise belongs anyway, on the record rather than in the
+mastering — at a third of its old level, darker, and granular. What carries
+the character instead is **crackle**: two to five small ticks a bar, none in
+the same place twice, most barely there and one now and then you actually
+notice. (Those went through the hiss's own gain at first, which is to say at a
+hundredth of their amplitude. A click at a hundredth of its amplitude is not a
+click.)
+
+**Surf foam** was a high-pass at 1100 Hz on pink noise and nothing else, which
+measured a centroid of 8.6 kHz. That is a cymbal. Breaking water lives between
+about seven hundred hertz and four kilohertz, so the band is closed at both
+ends now, and it is granular too — foam is bubbles.
+
+**Surf body** is swept by the wave scheduler, so during a wave it moves
+plenty. Between waves it did not move at all, and the sea between waves is most
+of the time. It breathes on its own now.
+
+**Rain** was white noise split at 1 kHz and weighted. White noise carries as
+much power in the octave above ten kilohertz as in the whole of the rest of the
+spectrum, so that still left a centroid of 10.2 kHz — television static. It has
+a two-pole roof at 4.2 kHz now (one pole was not enough: at 6 dB an octave it
+only came down to 8.4 kHz), and the wash has **patter** written into it — some
+240 individual impacts a second, each a short ring on whatever it landed on.
+The loop is pre-rendered, so a downpour costs exactly what a drizzle does at
+run time, which is nothing.
+
+One trap worth recording: the modulation is *added* to the texture gain, so a
+base of 1 with noise swinging around it averages more than one and peaks a
+great deal more. Left uncompensated it put ten decibels back on the beach and
+took a bird's headroom there from twelve to six. Base and depth are set
+together.
+
 ### What else the land does
 
 Not everything that makes a sound is somebody's voice. Each of these is built
@@ -560,7 +650,9 @@ In the city, and only in the city, somebody two floors down has something on.
 It is generated like everything else: a tempo between 70 and 84 drawn from the
 session seed, one of three minor-seventh loops over a root drawn with it, an
 electric piano voiced with a sine at the bottom and detuned triangles above it,
-a sine bass, a brushed kit, and a noise floor with the odd click in it.
+a sine bass, a brushed kit, and a surface that crackles (see above — the
+crackle is the point of it; the hiss underneath is nearly nothing, and it does
+not go through the compressor, which is what used to turn it into static).
 
 Three things make it sound like a record rather than a synthesiser:
 
