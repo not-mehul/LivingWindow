@@ -6,8 +6,8 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=18";
-import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain } from "./species.js?v=18";
+import { mulberry32, REDUCED, state } from "./util.js?v=19";
+import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain } from "./species.js?v=19";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
@@ -59,7 +59,9 @@ const ALARM_CAUSE = {
   fox:    "a fox on the path",
   cat:    "a cat up on the wall",
   badger: "something heavy in the undergrowth",
-  otter:  "an otter up among the ducks"
+  otter:  "an otter up among the ducks",
+  stoat:  "something quick along the hedge",
+  owl:    "an owl, and every small bird knows it"
 };
 
 /* The room each place is heard in. `send` scales how much of a voice goes to

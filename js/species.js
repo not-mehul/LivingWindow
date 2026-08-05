@@ -311,6 +311,24 @@ const GAIT = {
     ]
   },
 
+  /* A stoat's bound. Much the tightest of these: the animal is a tube, so the
+     back does nearly all the work, folding almost double at the gather and
+     straightening into a line at the stretch. It barely leaves the ground —
+     the arch is what carries it, not the height. */
+  weave: {
+    chan: ["rise", "stretch", "fore", "hind", "arch", "tilt", "tail"],
+    body: [
+      [0.00, 0.00, 0.00, -0.55, -1.00,  1.00,  0.20,  0.70],  // folded double
+      [0.10, 0.14, 0.55,  0.10, -0.15,  0.45,  0.30,  0.95],
+      [0.22, 0.42, 1.00,  0.80,  0.75, -0.55,  0.10,  0.30],  // straightens out flat
+      [0.36, 0.52, 1.00,  1.00,  1.00, -0.85, -0.06, -0.45],
+      [0.50, 0.46, 0.84,  1.00,  0.62, -0.70, -0.18, -0.85],
+      [0.64, 0.22, 0.38,  0.85, -0.10,  0.15, -0.14, -0.55],
+      [0.78, 0.04, 0.08,  0.40, -0.72,  0.80,  0.02,  0.15],
+      [0.90, 0.00, 0.00, -0.10, -0.96,  1.00,  0.14,  0.55]
+    ]
+  },
+
   /* ---- and the standing things, which are cycles too ---- */
 
   /* Grazing: a bite taken, then chewed — twice, three times — with the head

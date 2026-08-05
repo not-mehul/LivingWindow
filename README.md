@@ -368,6 +368,75 @@ does.
   leaning hard; far ones short, slow and almost not there. It squalls, it leans
   with whatever the wind is doing, and every drop lands on something — a ring
   where it meets water, a flick of pale spray where it meets ground.
+- **Animals notice each other.** A rabbit that sees a fox does not run — it
+  stops, dead still with its ears up, and only bolts if the fox keeps coming.
+  Pigeons do not freeze at all: they go, and they go together. See below.
+- **Things come with young.** A doe walks with a fawn in her tracks, a vixen
+  with cubs, a mallard with a brood. See below.
+
+### The things that had never been there
+
+A round of creatures and behaviours, most of which exist to do something no
+other animal in the piece does:
+
+- **Turnstones** work rather than run. A party of three to six shuffles along
+  the strand line getting the bill under weed and *heaving* — the whole body
+  behind it, front end down, tail braced. They arrive together and stay
+  together, which is the point: everything else here is alone.
+- **A crab** travels along its own width, so the shell never turns to face
+  where it is going. It is the only sideways thing in the window. Drawn with
+  long radiating legs it read as a spider, which is the one animal a crab must
+  not look like; the legs stay under the carapace now and the carapace is
+  nearly the whole animal.
+- **A seal's head** beyond the surf: up, a long look at the beach, and gone,
+  and it does not come back. Drawn as a tall egg it was a rock. A seal's head
+  is wider than it is tall, sits *in* the surface rather than on it, and has a
+  muzzle.
+- **A gull with a shell** carries it up, lets go, follows it down and picks
+  over what broke. It is one gesture, so it is one creature with the shell as
+  part of it rather than two that have to find each other.
+- **Pigeons** on the pavement: the body walks smoothly and the head is held
+  dead still and then snapped forward, which is what makes a pigeon read as a
+  pigeon at any size. They go up as one — over a cat, a fox, or nothing at all.
+- **A moth** at a lit window. It is fastened to a particular window and dies
+  when the light does; it does not fly so much as fail to leave.
+- **A stoat** bounds, and nothing else here moves like it: the animal is a
+  tube, so the back does the work — folding almost double at the gather and
+  straightening into a line at the stretch (`GAIT.weave`). Then it stands
+  straight up on its hind legs, taller than its own length, and is gone.
+- **A bird bathes in a puddle.** This one only happens where the weather has
+  already left standing water, so it is the rain that puts it on the screen —
+  the surest sign in the piece that one system knows about another. Nothing
+  else in the window throws anything.
+- **A lizard suns itself**, and it is the only behaviour here that the *light*
+  asks for rather than the hour: it comes out when `lit.str` is high, so an
+  overcast noon gets nothing and a clear one gets a lizard flat against the
+  ground doing nothing at all for a minute. A cat lies out on the warm tiles
+  on the same condition, and goes in when the sun does.
+- **Mobbing.** An owl caught out in daylight is not left alone. It is one of
+  the few things in nature that is a *scene* rather than an animal — neither
+  party reads without the other — so the owl and its escort are one creature,
+  each small bird on its own loop, shutting the loop down and going in.
+- **Movement in depth.** `cr.toward` is a rate of change of depth. An animal
+  that has it walks a diagonal: it grows or shrinks, its shadow lengthens or
+  tightens, and it slows going away because the plane already said so. None of
+  the painters had to be told.
+- **Predator and prey.** `Scene.HUNTS` and `Scene.PREY` are two small tables,
+  gathered once a frame. Nearness counts in the animal's own terms — something
+  at the same distance across the field matters, something two fields back does
+  not, however close it looks on the glass. Near enough and a prey animal
+  freezes in its most alert pose; nearer still and it bolts. The stillness is
+  the tell, and it is far more legible than motion because everything else in
+  the field is still moving.
+- **Family groups.** A parent with young keeps a short history of where it has
+  been, and each young thing is simply *the parent a second and a half ago,
+  smaller* (`trailAt`). Everything about the young is therefore right by
+  construction: it stops when she stops, it puts its feet where hers went, and
+  it slows going away up the field. It needs a step of depth as well as the
+  lag — at a doe's walking pace two seconds of trail is a third of her own
+  length, so on the lag alone the fawn is drawn inside her. Ducklings are the
+  exception: they are actors rather than critters, and they swim in a scribble
+  rather than a line, so each gets its own offset and its own rock.
 
 ### The gaits, frame by frame
 
@@ -397,8 +466,11 @@ head-bob, which is not a bob at all — the head is thrown forward and then held
 the last moment. That hold is a straight slide in the data and a jump between
 two frames set close together; there is no sine that has it in it.
 
-**Leaping** — `bound`, `hop`, `lope`, `scamper`: gather, drive, a hollow-backed
-stretch, and a landing taken on the forefeet with the hind swinging through.
+**Leaping** — `bound`, `hop`, `lope`, `scamper`, `weave`: gather, drive, a
+hollow-backed stretch, and a landing taken on the forefeet with the hind
+swinging through. `weave` is the tightest of them, and the odd one out: the
+stoat barely leaves the ground, and the arch is what carries it rather than
+the height.
 
 **In the air** — `beatSlow` (gull, tern, heron, goose, owl), `beatQuick` (small
 birds, cuckoo, pigeon, duck, pheasant), `beatWhir` (lark, kestrel, swift) and
@@ -946,7 +1018,7 @@ meadow       0.52     1.035 … 0.645     4.0 ×
 forest       0.60     1.045 … 0.864     1.7 ×
 beach        0.53     1.030 … 0.821     1.7 ×
 wetland      0.57     1.030 … 0.675     4.4 ×
-city         0.89     1.030 … 0.958     2.0 ×
+city         0.80     1.030 … 0.916     2.0 ×
 ```
 
 The bands they replaced were 4.7%, 9.5%, 4.3% and 2.6% of frame height. The
@@ -981,6 +1053,33 @@ than over them, and they work their way across the field head-down at a
 hand's breadth a minute, turning at the boundary rather than walking out of
 the field. It is the slowest motion in the piece and the only one you notice
 by having looked away and looked back.
+
+### Where the near edge of a plane actually is
+
+Every plane's near edge is deliberately *below* the bottom of the frame: that
+is what puts the grass at your feet off the glass, where it belongs. How much
+of the plane that costs varies enormously, and nothing was checking.
+
+`nearZ()` is the nearest depth at which an animal is still in the picture —
+`planeZ(0.988)`, the depth whose ground line sits just inside the bottom edge.
+Spawning, `crossing()` and the depth-travel clamp all use it, so no place can
+put a creature under the sill.
+
+The city was where this showed. It had a horizon at 0.885, a pavement one
+twentieth of the frame deep, and a plane fitted into that: sixteen pixels of
+usable ground for everything that walks, with everything nearer than z ≈ 0.41
+drawn below the window. A quarter of the street's animals had never been
+visible. The street is deeper now — `CITY_GROUND`, one constant where there
+had been six copies of `0.95` — and the plane comes with it.
+
+The road went dark at the same time and for the same reason. It had been mixed
+a tenth of the way toward the sky, which is exactly where the animal-colour
+ramp ends: a pigeon standing on the road came out the colour of the road. It
+was there and it could not be seen. The road is now a twenty-fifth of the way
+up, with a paler pavement across the back of it, and the city's animals get
+their own ramp well clear of both. The city is the only place where this is
+needed — everywhere else has a pale far hill behind the animals, and contrast
+runs both ways.
 
 ### The light
 

@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=18";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=18";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=18";
+} from "./util.js?v=19";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=19";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=19";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -18,6 +18,14 @@ const TURN = 1/(Math.PI*2);
 /* One reused pair for `gaitFoot` to fill — a foot's reach and its lift. Four
    calls an animal a frame is not a place to be allocating. */
 const FOOT = [0, 0];
+
+/* Where the street meets the buildings. It was a literal 0.95 in half a dozen
+   places, which gave the city a pavement one twentieth of the frame deep —
+   and once the plane was fitted into that, sixteen pixels of usable ground
+   for everything that walks. A pigeon standing at the near kerb was drawn
+   below the bottom of the window. Nine per cent is still a view down onto a
+   street from a first-floor room; it is simply a view with a street in it. */
+const CITY_GROUND = 0.908;
 
 /* The wind field: how many springs across the frame, how fast the gusts come
    round, and how much of one is in the air at once (1 puts a whole gust across
@@ -199,6 +207,10 @@ class Scene {
     this.lastDeer = this.t - 60; this.lastCat = this.t - 40; this.lastSkein = this.t - 20;
     this.lastFox = this.t - 55; this.lastRabbit = this.t - 30; this.lastHeron = this.t - 50;
     this.lastPorpoise = this.t - 40; this.lastSquirrel = this.t - 25; this.lastHare = this.t - 50;
+    this.lastTurnstone = this.t - 40; this.lastCrab = this.t - 30; this.lastSeal = this.t - 60;
+    this.lastPigeons = this.t - 35; this.lastMoth = this.t - 30; this.lastStoat = this.t - 70;
+    this.lastShell = this.t - 50; this.lastBather = this.t - 25;
+    this.lastSunner = this.t - 40; this.lastMob = this.t - 60;
     this.lastHedgehog = this.t - 60; this.lastBadger = this.t - 80; this.lastOtter = this.t - 45;
     this.lastPounce = this.t - 20;
 
@@ -704,7 +716,7 @@ class Scene {
          down at a pavement from a first-floor window, not out across a field
          — but a cat crossing it near should still be bigger than one at the
          far kerb, and until now nothing in the city knew that. */
-      this.plane = this.makePlane(0.885, 1.03, 0.958);
+      this.plane = this.makePlane(0.80, 1.03, CITY_GROUND + 0.008);
       this.backBlocks = this.makeSkyline(rng, 0.30, 0.28, 0.05, 0.10);
       this.frontBlocks = this.makeSkyline(rng, 0.55, 0.30, 0.07, 0.13);
       for (const b of this.frontBlocks) {
@@ -732,18 +744,18 @@ class Scene {
       const nRoof = 5 + Math.floor(rng()*3);
       for (let i = 0; i < nRoof && this.frontBlocks.length; i++) {
         const b = this.frontBlocks[Math.floor(rng()*this.frontBlocks.length)];
-        this.perches.push({ x: b.x + b.w * rng(), y: 0.95 - b.h, depth: 4 + rng()*5, type: "roof" });
+        this.perches.push({ x: b.x + b.w * rng(), y: CITY_GROUND - b.h, depth: 4 + rng()*5, type: "roof" });
       }
       // aerial tips make favourite lookouts
       for (const b of this.frontBlocks) {
         if (b.antenna && rng() < 0.6) {
-          this.perches.push({ x: b.x + b.w*0.5, y: 0.95 - b.h - 0.035, depth: 4 + rng()*4, type: "post" });
+          this.perches.push({ x: b.x + b.w*0.5, y: CITY_GROUND - b.h - 0.035, depth: 4 + rng()*4, type: "post" });
         }
       }
       // and the far skyline carries the odd distant silhouette
       if (this.backBlocks.length && rng() < 0.7) {
         const bb = this.backBlocks[Math.floor(rng()*this.backBlocks.length)];
-        this.perches.push({ x: bb.x + bb.w*rng(), y: 0.95 - (bb.h + 0.18), depth: 12 + rng()*4, type: "roof" });
+        this.perches.push({ x: bb.x + bb.w*rng(), y: CITY_GROUND - (bb.h + 0.18), depth: 12 + rng()*4, type: "roof" });
       }
     }
   }
@@ -1038,6 +1050,20 @@ class Scene {
       a.y = Math.min(Math.max(y01, wy + 0.05), by - 0.04);
       a.data.dir = Math.random() < 0.5 ? 1 : -1;
       if (id === "moorhen") { a.data.moorhen = true; a.s *= 0.8; }
+      /* A brood behind her. Ducklings do not swim in a line — they swim in a
+         scribble, all of them roughly astern and each one making its own
+         way — so each gets its own offset and its own rock, and none of them
+         is ever quite where the last one was. */
+      if (Math.random() < 0.35) {
+        const nd = 3 + Math.floor(Math.random()*5);
+        a.data.brood = [];
+        for (let i = 0; i < nd; i++) {
+          a.data.brood.push({ dx: 0.022 + Math.random()*0.075,
+            dy: (Math.random() - 0.5)*0.020, ph: Math.random()*Math.PI*2,
+            sp: 0.9 + Math.random()*0.7, sz: 0.30 + Math.random()*0.10,
+            wob: 0.004 + Math.random()*0.008 });
+        }
+      }
     }
     else if (id === "littleegret") {
       a.beh = "egret"; a.linger = 5 + Math.random()*4;
@@ -1996,6 +2022,41 @@ class Scene {
     c.restore();
   }
 
+  /* An animal crossing the field, and whether it is also crossing it in
+     depth. Most keep to their line; some come forward and some work away,
+     and one that does is worth several that do not — it is the only motion
+     in the piece that uses the ground plane for anything.
+
+     Returns a starting depth and a rate. The rate is small: a whole crossing
+     of the frame moves it a third of the way in or out, which is a walk, not
+     a charge at the glass. */
+  /* The nearest depth an animal can stand at and still be in the picture.
+
+     Every plane's near edge is deliberately below the bottom of the frame —
+     that is what puts the grass at your feet off the glass — but how much of
+     the plane that costs varies enormously. The meadow loses a sliver; the
+     city, whose whole pavement is the bottom twentieth of the frame, loses
+     everything nearer than z≈0.3, and a quarter of the street's animals were
+     being drawn under the edge of the window. */
+  nearZ() {
+    if (!this.plane) return 0.04;
+    return Math.max(0.04, Math.min(0.6, this.planeZ(0.988)));
+  }
+
+  crossing(nearBias) {
+    const r = Math.random();
+    const near = this.nearZ();
+    const z0 = nearBias !== undefined ? Math.max(near, nearBias)
+      : near + Math.random()*(0.82 - near);
+    if (r < 0.42) return { z: z0, toward: 0 };               // keeps its line
+    const away = Math.random() < 0.5;
+    // never so far in that it walks off the bottom, nor so far out that it
+    // becomes a speck in the hedge
+    const rate = (0.020 + Math.random()*0.045) * (away ? 1 : -1);
+    const from = away ? Math.min(z0, Math.max(near, 0.45)) : Math.max(z0, 0.5);
+    return { z: from, toward: rate };
+  }
+
   /* Where the water stands. Drawn from the session seed so a place keeps its
      puddles in the same hollows all session, and rebuilt when the land is. */
   puddles() {
@@ -2082,10 +2143,17 @@ class Scene {
          two apart is what made a far rabbit hop the same distance as a near
          one. */
       speed: this.plane ? this.planeScale(zz)/this.planeScale(0) : 1 - zz*0.55,
-      // A light touch only: these animals stand on dark ground but against
-      // a pale far hill, so contrast runs both ways and a strong ramp would
-      // lose them at one end or the other.
-      col: css(mix(this.tok.inkDeep, bot, 0.03 + zz*0.10))
+      /* A light touch only: these animals stand on dark ground but against
+         a pale far hill, so contrast runs both ways and a strong ramp would
+         lose them at one end or the other.
+
+         Except in the city, where there is no pale far hill — the pavement is
+         one flat dark slab, mixed at the same tenth this ramp reaches, and a
+         pigeon standing on it came out exactly the colour of the ground. It
+         was there and it could not be seen. The street's animals are lifted
+         clear of their own footing. */
+      col: css(mix(this.tok.inkDeep, bot,
+        this.loc === "city" ? 0.30 + zz*0.16 : 0.03 + zz*0.10))
     };
   }
 
@@ -3244,7 +3312,7 @@ class Scene {
 
   drawCity(c, W, H, dt, bot, night) {
     this.drawSkyBirds(c, W, H, bot, night);
-    const groundY = H * 0.95;
+    const groundY = H * CITY_GROUND;
     c.fillStyle = css(mix(this.tok.ink, bot, 0.42));
     for (const b of this.backBlocks) {
       c.fillRect(b.x*W, groundY - (b.h + 0.18)*H, b.w*W, (b.h + 0.18)*H);
@@ -3332,8 +3400,16 @@ class Scene {
       c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.16));
       c.fillRect(vx - 3, byTop - 5, 6, 5);
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
+    /* The road. Darker than it was, and it has to be: it is the only surface
+       in the piece that anything stands on which is *not* lit from above, and
+       at a tenth of the way to the sky it came out the same value as the
+       animals standing on it. Two shades of pavement — the carriageway and a
+       paler pavement at the back — give the street a near and a far as well,
+       which is what stops it reading as a black bar. */
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.04));
     c.fillRect(0, groundY, W, H - groundY);
+    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.13));
+    c.fillRect(0, groundY, W, Math.max(2, (H - groundY)*0.30));
     // street lamps warming the pavement after dark
     if (night > 0.2 && this.streetlamps) {
       const fcs = this.tok.fireflyRGB;
@@ -3793,10 +3869,21 @@ class Scene {
           c.restore();
           break;
         }
-        case "duck": this.paintDuck(c, {
-          x, y: y - gaitAt("paddle", a.t*1.3*TURN, "rock")*1.5, s: a.s,
-          flip: a.data.dir < 0, alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr,
-          moorhen: a.data.moorhen, sing, breath, t: a.t }); break;
+        case "duck": {
+          this.paintDuck(c, {
+            x, y: y - gaitAt("paddle", a.t*1.3*TURN, "rock")*1.5, s: a.s,
+            flip: a.data.dir < 0, alpha: a.alpha, color: colStr, rim: rimStr, deep: deepStr,
+            moorhen: a.data.moorhen, sing, breath, t: a.t });
+          for (const d of (a.data.brood || [])) {
+            const dx = x - a.data.dir*d.dx*this.W + Math.sin(a.t*d.sp + d.ph)*d.wob*this.W;
+            const dy = y + d.dy*this.H
+              - gaitAt("paddle", (a.t*1.3 + d.ph)*TURN, "rock")*1.2;
+            this.paintDuck(c, { x: dx, y: dy, s: a.s*d.sz,
+              flip: a.data.dir < 0, alpha: a.alpha, color: colStr, rim: rimStr,
+              deep: deepStr, moorhen: false, sing: 0, breath, t: a.t + d.ph });
+          }
+          break;
+        }
         case "pecker": this.paintWoodpecker(c, { x, y, s: a.s, alpha: a.alpha, color: colStr,
           rim: rimStr, deep: deepStr, sing, t: a.t }); break;
         case "wader": this.paintWader(c, { x, y, s: a.s, flip: a.data.dir < 0,
@@ -5034,9 +5121,18 @@ class Scene {
       this.lastDeer = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "deer", x: dir > 0 ? -0.08 : 1.08, dir,
+        ...this.crossing(),
         tx: 0.25 + Math.random()*0.5, state: "enter", t: 0, timer: 0,
         head: 0, cycles: 2 + Math.floor(Math.random()*3), lp: 0, bp: 0,
-        sz: 0.85 + Math.random()*0.3 });
+        sz: 0.85 + Math.random()*0.3,
+        /* And a third of the does have a fawn in their tracks. It needs a
+           step of depth as well as the lag: at a doe's walking pace two
+           seconds of trail is a third of her own length, so on the lag
+           alone the fawn is drawn inside her. Half a step off her line puts
+           it where you actually see one — at her flank, slightly behind. */
+        young: Math.random() < 0.32
+          ? [{ lag: 1.5 + Math.random()*0.7, sz: 0.52 + Math.random()*0.08,
+               off: (Math.random() < 0.5 ? -1 : 1)*(0.035 + Math.random()*0.03) }] : null });
     }
     if (this.loc === "beach" && night < 0.5 && n("runner") < 4 && P(0.05)) {
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -5049,7 +5145,9 @@ class Scene {
       }
     }
     // a red squirrel bounding across the litter, sitting up to nibble
-    if (this.loc === "forest" && dayish > 0.4 && calmW && n("squirrel") === 0
+    // grey squirrels are as much a park animal as a wood one
+    if ((this.loc === "forest" || this.loc === "city") && dayish > 0.4 && calmW
+        && n("squirrel") === 0
         && this.t - this.lastSquirrel > 40 && P(0.03)) {
       this.lastSquirrel = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -5057,12 +5155,83 @@ class Scene {
         mode: "bound", timer: 0.8 + Math.random()*1.2, t: 0, ph: 0,
         sz: 0.85 + Math.random()*0.35 });
     }
+    /* Mobbing. An owl caught out in daylight is not left alone: every small
+       bird within earshot goes for it, and they keep at it until it has left
+       the wood. It is one of the few things in nature that is genuinely a
+       *scene* rather than an animal — nothing here reads unless the two
+       parties are drawn as one thing, so they are one creature. */
+    if ((this.loc === "forest" || this.loc === "meadow") && dayish > 0.45
+        && n("mob") === 0 && this.t - this.lastMob > 130 && P(0.010)) {
+      this.lastMob = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const birds = [];
+      const nb = 3 + Math.floor(Math.random()*4);
+      for (let i = 0; i < nb; i++) {
+        birds.push({ ph: Math.random()*Math.PI*2, sp: 1.3 + Math.random()*1.1,
+          r: 0.035 + Math.random()*0.05, ry: 0.5 + Math.random()*0.6,
+          dive: Math.random()*4, flap: Math.random()*6 });
+      }
+      this.critters.push({ kind: "mob", dir, birds, t: 0,
+        x: dir > 0 ? -0.14 : 1.14, y: 0.22 + Math.random()*0.22,
+        flap: 0, sz: 0.9 + Math.random()*0.25 });
+      this.raiseAlarm(dir > 0 ? 0 : 1, "owl");
+    }
+    /* Sunning. This is the only behaviour in the piece that the *light* asks
+       for rather than the hour: a lizard comes out when the sun is actually
+       on the ground, so an overcast noon gets nothing and a clear one gets
+       one flat against a stone doing nothing at all for a minute — which is
+       precisely what a lizard does, and precisely what a scene full of
+       ceaseless motion has been missing. */
+    if ((this.loc === "meadow" || this.loc === "beach") && n("lizard") === 0
+        && (this._lit ? this._lit.str : 0) > 0.62 && dayish > 0.5
+        && this.t - this.lastSunner > 55 && P(0.035)) {
+      this.lastSunner = this.t;
+      this.critters.push({ kind: "lizard", x: 0.1 + Math.random()*0.8,
+        z: 0.04 + Math.random()*0.35, dir: Math.random() < 0.5 ? 1 : -1,
+        mode: "bask", timer: 4 + Math.random()*10, t: 0, ph: 0, push: 0,
+        life: 40 + Math.random()*50, sz: 0.85 + Math.random()*0.35 });
+    }
+    /* A bird in a puddle. This one exists because the rain already left
+       something behind and nothing had ever used it: standing water was
+       scenery. It only happens where there is a puddle to stand in, so it is
+       weather that puts it on the screen — the surest sign in the piece that
+       one system knows about another. */
+    if ((this.loc === "meadow" || this.loc === "forest" || this.loc === "city")
+        && (this.groundWet || 0) > 0.42 && night < 0.5 && n("bather") === 0
+        && this.t - this.lastBather > 40 && P(0.05)) {
+      const pud = this.puddles();
+      if (pud.length) {
+        this.lastBather = this.t;
+        const p = pud[Math.floor(Math.random()*pud.length)];
+        this.critters.push({ kind: "bather", p: pud.indexOf(p),
+          x: p.x + (Math.random() - 0.5)*p.r, z: 1 - p.z,
+          dir: Math.random() < 0.5 ? 1 : -1, t: 0, ph: 0,
+          mode: "dip", timer: 0.8 + Math.random()*1.4,
+          splash: 0, cycles: 2 + Math.floor(Math.random()*4),
+          sz: 0.85 + Math.random()*0.3 });
+      }
+    }
+    /* A stoat. Nothing else here moves like this: a string of tight arched
+       bounds along a hedge line, then straight up on its hind legs to stand
+       taller than its own length looking at you, then gone. It is the fastest
+       thing in the piece and on screen for the least time. */
+    if ((this.loc === "meadow" || this.loc === "forest") && night < 0.6
+        && n("stoat") === 0 && this.t - this.lastStoat > 90 && P(0.014)) {
+      this.lastStoat = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "stoat", x: dir > 0 ? -0.06 : 1.06, dir,
+        ...this.crossing(0.25 + Math.random()*0.4),
+        mode: "bound", timer: 0.8 + Math.random()*1.4, t: 0, bp: 0, rear: 0,
+        sz: 0.85 + Math.random()*0.3 });
+      this.raiseAlarm(dir > 0 ? 0 : 1, "stoat");
+    }
     // a brown hare loping the field edge, drawn up tall when it stops
     if (this.loc === "meadow" && (duskdawn > 0.4 || dayish > 0.55) && n("hare") === 0
         && this.t - this.lastHare > 70 && P(0.016)) {
       this.lastHare = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "hare", x: dir > 0 ? -0.07 : 1.07, dir,
+        ...this.crossing(),
         mode: "lope", timer: 1.5 + Math.random()*2, t: 0, ph: 0,
         sz: 0.85 + Math.random()*0.35 });
     }
@@ -5082,6 +5251,7 @@ class Scene {
       this.lastBadger = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "badger", x: dir > 0 ? -0.08 : 1.08, dir,
+        ...this.crossing(0.10 + Math.random()*0.4),
         t: 0, lp: 0, sz: 0.9 + Math.random()*0.25 });
       this.raiseAlarm(dir > 0 ? 0 : 1, "badger");
     }
@@ -5096,14 +5266,23 @@ class Scene {
         sz: 0.85 + Math.random()*0.3 });
       this.raiseAlarm(dir > 0 ? 0 : 1, "otter");
     }
-    if (this.loc === "city" && night > 0.5 && n("cat") === 0
+    /* A cat on the rooftops after dark — and one lying out in the sun by day,
+       which is a different animal entirely. The daylight one is gated on the
+       light itself rather than the hour, so an overcast afternoon has no cat
+       on the tiles and a clear one does. */
+    if (this.loc === "city" && n("cat") === 0
         && this.t - this.lastCat > 70 && P(0.03)
+        && (night > 0.5 || (this._lit ? this._lit.str : 0) > 0.66)
         && this.frontBlocks && this.frontBlocks.length) {
       this.lastCat = this.t;
       const bi = Math.floor(Math.random()*this.frontBlocks.length);
       const dir = Math.random() < 0.5 ? 1 : -1;
-      this.critters.push({ kind: "cat", b: bi, u: dir > 0 ? 0 : 1, dir, mode: "walk", timer: 0, t: 0 });
-      this.raiseAlarm(dir > 0 ? 0.1 : 0.9, "cat");
+      const sunning = night <= 0.5;
+      this.critters.push({ kind: "cat", b: bi, dir, t: 0,
+        u: sunning ? 0.2 + Math.random()*0.6 : (dir > 0 ? 0 : 1),
+        mode: sunning ? "sun" : "walk",
+        timer: sunning ? 25 + Math.random()*45 : 0 });
+      if (!sunning) this.raiseAlarm(dir > 0 ? 0.1 : 0.9, "cat");
     }
     if (this.loc === "meadow" && (dayish > 0.3 || duskdawn > 0.4) && calmW && n("rabbit") === 0
         && this.t - this.lastRabbit > 30 && P(0.035)) {
@@ -5113,13 +5292,25 @@ class Scene {
         mode: "hop", timer: 0.3 + Math.random()*0.3, t: 0, hopPh: 0, ear: 0,
         sz: 0.85 + Math.random()*0.3 });
     }
-    if ((this.loc === "meadow" || this.loc === "forest") && (duskdawn > 0.45 || night > 0.4)
+    /* The fox, and it works the street as readily as the field — an urban
+       fox is the more likely animal of the two now, and it wanted nothing but
+       a place in this condition and a lit hour to trot through. */
+    if ((this.loc === "meadow" || this.loc === "forest" || this.loc === "city")
+        && (duskdawn > 0.45 || night > 0.4)
         && n("fox") === 0 && this.t - this.lastFox > 80 && P(0.018)) {
       this.lastFox = this.t;
       const dir = Math.random() < 0.5 ? 1 : -1;
       this.critters.push({ kind: "fox", x: dir > 0 ? -0.08 : 1.08, dir,
+        ...this.crossing(),
         mode: "trot", timer: 1.2 + Math.random()*1.5, t: 0, lp: 0, look: 0,
-        sz: 0.85 + Math.random()*0.3 });
+        sz: 0.85 + Math.random()*0.3,
+        /* A vixen with cubs, at the time of year and the hour you would
+           actually see them — and cubs do not walk in a line the way a fawn
+           does, so they get different lags and take their own ground. */
+        young: Math.random() < 0.22
+          ? Array.from({ length: 1 + Math.floor(Math.random()*2) }, () => ({
+              lag: 0.55 + Math.random()*0.9, sz: 0.46 + Math.random()*0.12,
+              off: (Math.random() - 0.5)*0.05 })) : null });
       this.raiseAlarm(dir > 0 ? 0 : 1, "fox");
     }
     if ((this.loc === "wetland" || this.loc === "beach") && dayish > 0.3
@@ -5131,6 +5322,97 @@ class Scene {
         mode: "wait", timer: 3 + Math.random()*4, t: 0, vx: 0, flap: 0,
         neck: 0.4, phase: 0, acts: 0,
         sz: 0.85 + Math.random()*0.3 });
+    }
+    /* Turnstones. Sanderlings run; turnstones *work* — a tight party of them
+       shuffling along the strand line, each one heaving weed and shingle over
+       to see what is underneath. They arrive together and they stay together,
+       which is the thing about them: everything else in this piece is alone. */
+    if (this.loc === "beach" && night < 0.6 && n("turnstone") === 0
+        && this.t - this.lastTurnstone > 60 && P(0.024)) {
+      this.lastTurnstone = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const flock = 3 + Math.floor(Math.random()*4);
+      const z0 = 0.10 + Math.random()*0.45;
+      const at = dir > 0 ? -0.06 : 1.06;
+      for (let i = 0; i < flock; i++) {
+        this.critters.push({ kind: "turnstone", dir, t: Math.random()*3,
+          x: at - dir*(i*0.035 + Math.random()*0.02),
+          z: Math.max(0.04, z0 + (Math.random() - 0.5)*0.10),
+          mode: "work", timer: 0.4 + Math.random()*1.6, ph: Math.random()*6,
+          heave: 0, sz: 0.9 + Math.random()*0.2 });
+      }
+    }
+    /* A crab, sideways and suspicious, out of one bit of weed and into the
+       next. It is the only thing in the piece that does not face where it is
+       going, which is exactly why it is worth having. */
+    if (this.loc === "beach" && n("crab") === 0
+        && this.t - this.lastCrab > 55 && P(0.02)) {
+      this.lastCrab = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "crab", x: dir > 0 ? -0.04 : 1.04, dir,
+        z: 0.05 + Math.random()*0.35, mode: "scuttle", timer: 0.3 + Math.random()*0.5,
+        t: 0, ph: 0, claw: 0, sz: 0.85 + Math.random()*0.4 });
+    }
+    /* A seal's head, out beyond the surf. Up, a long look at the beach, and
+       gone — and it does not come back, which is what makes you doubt you
+       saw it. */
+    if (this.loc === "beach" && n("seal") === 0 && state.wx.gust < 0.7
+        && this.t - this.lastSeal > 95 && P(0.011)) {
+      this.lastSeal = this.t;
+      this.critters.push({ kind: "seal", x: 0.15 + Math.random()*0.7,
+        y: this.horizonY + (this.shoreY - this.horizonY)*(0.45 + Math.random()*0.35),
+        dir: Math.random() < 0.5 ? 1 : -1, t: 0, up: 0,
+        life: 7 + Math.random()*7, sz: 0.9 + Math.random()*0.3 });
+    }
+    /* A gull with a shell. It carries it up, lets go, and follows it down —
+       the whole business only makes sense as one gesture, so it is one
+       creature with the shell as part of it rather than two that have to
+       find each other. */
+    if (this.loc === "beach" && night < 0.5 && n("shelldrop") === 0
+        && this.t - this.lastShell > 75 && P(0.014)) {
+      this.lastShell = this.t;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      this.critters.push({ kind: "shelldrop", dir, t: 0, ph: 0,
+        x: 0.2 + Math.random()*0.6, z: 0.10 + Math.random()*0.3,
+        mode: "climb", timer: 0, gy: 0.42 + Math.random()*0.1,
+        sy: 0, sv: 0, bounces: 0, sz: 0.9 + Math.random()*0.25 });
+    }
+    /* Pigeons. The pavement bird — a loose scatter of them pecking at nothing,
+       heads going like clockwork, and then the whole lot up at once over
+       something none of them could name. */
+    if (this.loc === "city" && night < 0.55 && n("pigeon") === 0
+        && this.t - this.lastPigeons > 55 && P(0.03)) {
+      this.lastPigeons = this.t;
+      const cx = 0.2 + Math.random()*0.6;
+      const flock = 4 + Math.floor(Math.random()*5);
+      for (let i = 0; i < flock; i++) {
+        this.critters.push({ kind: "pigeon", t: Math.random()*4,
+          x: Math.max(0.03, Math.min(0.97, cx + (Math.random() - 0.5)*0.34)),
+          z: 0.06 + Math.random()*0.6,
+          dir: Math.random() < 0.5 ? 1 : -1,
+          mode: "peck", timer: 0.4 + Math.random()*2.2, ph: Math.random()*6,
+          bob: Math.random()*6, fly: 0, vx: 0, vy: 0,
+          sz: 0.9 + Math.random()*0.2 });
+      }
+    }
+    /* A moth at a lit window — the one thing in the city that is not going
+       anywhere. It only exists because a window is on, so it is fastened to
+       one and dies when the light does. */
+    if (this.loc === "city" && night > 0.45 && n("moth") === 0
+        && this.t - this.lastMoth > 45 && P(0.05)
+        && this.frontBlocks && this.frontBlocks.length) {
+      const lit = [];
+      for (let bi = 0; bi < this.frontBlocks.length; bi++) {
+        const b = this.frontBlocks[bi];
+        for (let wi = 0; wi < b.lit.length; wi++) if (b.lit[wi].on) lit.push([bi, wi]);
+      }
+      if (lit.length) {
+        this.lastMoth = this.t;
+        const [bi, wi] = lit[Math.floor(Math.random()*lit.length)];
+        this.critters.push({ kind: "moth", b: bi, w: wi, t: 0, ph: Math.random()*6,
+          life: 12 + Math.random()*20, ox: 0, oy: 0, tx: 0, ty: 0,
+          timer: 0, sz: 0.85 + Math.random()*0.4 });
+      }
     }
     // a porpoise arcing through the surf — rare, unhurried
     if (this.loc === "beach" && state.wx.wet < 0.3 && n("porpoise") === 0
@@ -5166,8 +5448,52 @@ class Scene {
      along the way is either recomputed there from the state left here, or —
      where it is accumulated across the branches rather than derived — written
      onto the critter at the end of its case. */
+  /* Who eats whom, as far as the frame is concerned. */
+  static get HUNTS() { return { fox: 1, cat: 1, badger: 0.5, heron: 0.6, stoat: 1 }; }
+  static get PREY() { return { rabbit: 1, hare: 1, squirrel: 1, hedgehog: 0.6, deer: 0.8 }; }
+
   updateCritters(dt) {
     const bot = this.skyColors()[1];
+    /* ---- Prey notice predators --------------------------------------
+
+       Nothing in this frame had ever looked at anything else: three animals
+       on screen were three separate worlds, and the only thing that coupled
+       them was the blanket `flush` an alarm call set off.
+
+       A rabbit that sees a fox does not run. It *stops* — dead still, ears
+       up, for as long as it takes — and it only runs if the fox keeps
+       coming. The stillness is the tell, and it is far more legible than
+       motion because everything else in the field is still moving.
+
+       Gathered once per frame rather than per animal: five critters is
+       twenty-five comparisons done twenty-five times if you are careless. */
+    const hunters = [];
+    for (const c of this.critters) {
+      const w = Scene.HUNTS[c.kind];
+      if (w) hunters.push({ x: c.x, z: c.z === undefined ? 0.5 : c.z, w });
+    }
+    /* Pigeons do not freeze, they go — and they go *together*, which is the
+       only reason to have more than one. Decided once for the whole flock so
+       they leave on the same frame rather than trailing off one at a time. */
+    let flushPigeons = Math.random() < 0.035*dt;
+    if (!flushPigeons && hunters.length) {
+      for (const cr of this.critters) {
+        if (cr.kind !== "pigeon" || cr.fly) continue;
+        for (const h of hunters) {
+          if (Math.abs(h.x - cr.x) < 0.22 && Math.abs(h.z - cr.z) < 0.28) { flushPigeons = true; break; }
+        }
+        if (flushPigeons) break;
+      }
+    }
+    if (flushPigeons) {
+      for (const cr of this.critters) {
+        if (cr.kind === "pigeon" && !cr.fly) {
+          cr.fly = 0.001; cr.y = undefined;
+          cr.vx = cr.dir*(0.10 + Math.random()*0.09);
+          cr.vy = -(0.11 + Math.random()*0.10);
+        }
+      }
+    }
     /* The fox measures its own crouch and reach against its drawn size, so this
        one pass needs the height of the frame. It is the same number draw() is
        handed — resize() sets both — and the same colours, because frame() has
@@ -5181,9 +5507,52 @@ class Scene {
          below the bottom of the frame — which is what puts the grass at your
          feet off the edge of the glass, as it should be — and an animal
          standing there would be half out of the picture. */
-      if (cr.z === undefined) cr.z = 0.06 + Math.random()*0.9;
+      if (cr.z === undefined) {
+        const nz = this.nearZ();
+        cr.z = nz + Math.random()*(0.96 - nz);
+      } else if (cr.z < 0.99) {
+        // and a depth chosen at spawn is held to the same edge
+        cr.z = Math.max(this.nearZ(), cr.z);
+      }
       const D = this.groundDepth(cr.z, bot);
       let dead = false;
+
+      /* How near the nearest hunter is, in the animal's own terms: something
+         at the same distance across the field matters, something two fields
+         back does not, however close it looks on the glass. */
+      const wary = Scene.PREY[cr.kind];
+      if (wary && hunters.length && !cr.bolt) {
+        let worst = 0;
+        for (const h of hunters) {
+          const dx = Math.abs(h.x - cr.x), dz = Math.abs(h.z - cr.z);
+          if (dz > 0.30) continue;
+          /* Half a field wide. A rabbit sees a fox a long way off — the
+             point of the whole behaviour is the long still stare before
+             anything happens, and at ten paces there is no time for one. */
+          worst = Math.max(worst, h.w*wary*Math.max(0, 1 - dx/0.55)*(1 - dz/0.30));
+        }
+        if (worst > 0.62) {
+          // too close. Go.
+          cr.bolt = (cr.x < (hunters[0].x)) ? -1 : 1;
+          cr.boltT = 0; cr.frozen = 0;
+        } else if (worst > 0.10) {
+          cr.frozen = Math.max(cr.frozen || 0, 0.9 + worst*2.6);
+        }
+      }
+      if (cr.frozen > 0) {
+        cr.frozen -= dt;
+        /* Held. Whatever it was doing, it is not doing it — and it holds the
+           most alert shape it has: a rabbit sits bolt upright with its ears
+           up, a hare freezes mid-crouch, a squirrel goes still on its
+           haunches, a deer lifts its head off the grass. */
+        if (cr.kind === "rabbit") { cr.mode = "sit"; cr.ear = 1; cr.act = null; }
+        else if (cr.kind === "hare") cr.mode = "alert";
+        else if (cr.kind === "squirrel") cr.mode = "sit";
+        else if (cr.kind === "deer") { cr.state = "alert"; cr.head = 0; }
+        else if (cr.kind === "hedgehog") cr.mode = "sniffup";
+        cr.timer = Math.max(cr.timer || 0, cr.frozen);
+        cr.t += 0;                       // its own clock still runs; its feet do not
+      }
       switch (cr.kind) {
         case "butterfly": {
           /* A butterfly does not fly a curve. It goes a little way in one
@@ -5285,6 +5654,231 @@ class Scene {
           // standing still, it works the wet sand with quick jabs of the bill
           break;
         }
+        case "turnstone": {
+          /* A working bird, not a running one. Two or three shuffling steps,
+             then it gets its bill under something and heaves — the whole body
+             behind it, front end down, tail up. Then a step, and again. */
+          cr.timer -= dt;
+          if (cr.mode === "step") {
+            cr.x += cr.dir*0.014*dt*D.speed; cr.ph += dt*13;
+            if (cr.timer <= 0) {
+              cr.mode = "work"; cr.timer = 0.5 + Math.random()*1.8;
+              cr.heaveT = 0;
+            }
+          } else {
+            // the heave itself is quick — a shove and a recovery, then a wait
+            cr.heaveT = (cr.heaveT || 0) + dt;
+            const every = 0.9;
+            const u = (cr.heaveT % every)/every;
+            cr.heave = u < 0.42 ? Math.sin(u/0.42*Math.PI) : 0;
+            if (cr.timer <= 0) {
+              cr.mode = "step"; cr.heave = 0; cr.timer = 0.3 + Math.random()*0.6;
+              // one bird in six turns back through the party it came with
+              if (Math.random() < 0.16) cr.dir *= -1;
+            }
+          }
+          if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
+          break;
+        }
+        case "mob": {
+          /* The owl goes straight and heavily; the small birds do not. Each
+             one runs its own loop about the owl and every so often shuts the
+             loop right down and goes in — which is the dive, and it is the
+             only part of this anybody watches. */
+          cr.x += cr.dir*0.055*dt;
+          cr.y += Math.sin(cr.t*0.9)*0.006*dt;
+          cr.flap += dt*4.2;
+          for (const b of cr.birds) {
+            b.ph += dt*b.sp;
+            b.flap += dt*22;
+            b.dive -= dt;
+            if (b.dive <= 0) { b.dive = 1.6 + Math.random()*3.4; b.diveT = 0.55; }
+            if (b.diveT > 0) b.diveT -= dt;
+          }
+          if (cr.x < -0.2 || cr.x > 1.2) { dead = true; break; }
+          break;
+        }
+        case "lizard": {
+          /* Long stillness, a burst, more stillness. The press-up is the one
+             thing it does while basking, and it is worth the four lines.
+             And if the sun goes in — a cloud, rain coming on — so does it. */
+          cr.timer -= dt;
+          if (cr.mode === "bask") {
+            cr.push = Math.max(0, cr.push - dt*4);
+            if (cr.timer <= 0) {
+              cr.mode = Math.random() < 0.45 ? "pushup" : "dart";
+              cr.timer = cr.mode === "pushup" ? 1.4 + Math.random() : 0.18 + Math.random()*0.22;
+            }
+          } else if (cr.mode === "pushup") {
+            cr.push = Math.max(0, Math.sin(cr.t*11));
+            if (cr.timer <= 0) { cr.mode = "bask"; cr.timer = 4 + Math.random()*11; }
+          } else {
+            cr.x += cr.dir*0.10*dt*D.speed; cr.ph += dt*30;
+            if (cr.timer <= 0) {
+              cr.mode = "bask"; cr.timer = 3 + Math.random()*12;
+              if (Math.random() < 0.4) cr.dir *= -1;
+            }
+          }
+          if ((this._lit ? this._lit.str : 1) < 0.4 || cr.t > cr.life
+              || cr.x < -0.05 || cr.x > 1.05) { dead = true; break; }
+          break;
+        }
+        case "bather": {
+          /* Three things in turn and then it has had enough: a dip, which is
+             the breast down and the head under; the shake, which throws water
+             off in every direction; and the interval, standing there looking
+             ridiculous. */
+          cr.timer -= dt;
+          cr.ph += dt*(cr.mode === "shake" ? 26 : 7);
+          if (cr.mode === "dip") {
+            cr.splash = Math.max(0, Math.sin(cr.t*7.5));
+            if (cr.timer <= 0) { cr.mode = "shake"; cr.timer = 0.5 + Math.random()*0.5; }
+          } else if (cr.mode === "shake") {
+            cr.splash = 1;
+            if (cr.timer <= 0) {
+              cr.mode = "stand"; cr.timer = 0.8 + Math.random()*1.8; cr.splash = 0;
+            }
+          } else {
+            cr.splash = Math.max(0, cr.splash - dt*2);
+            if (cr.timer <= 0) {
+              if (--cr.cycles <= 0) { dead = true; break; }
+              cr.mode = "dip"; cr.timer = 0.7 + Math.random()*1.3;
+            }
+          }
+          // and the puddle it is standing in has to still be there
+          if ((this.groundWet || 0) < 0.30) { dead = true; break; }
+          break;
+        }
+        case "stoat": {
+          cr.timer -= dt;
+          if (cr.mode === "bound") {
+            cr.x += cr.dir*0.075*dt*D.speed; cr.bp += dt*9;
+            cr.rear = Math.max(0, cr.rear - dt*4);
+            if (cr.timer <= 0) {
+              // up on the hind legs, the whole length of it vertical
+              cr.mode = "rear"; cr.timer = 0.7 + Math.random()*1.3;
+            }
+          } else {
+            cr.rear = Math.min(1, cr.rear + dt*5);
+            if (cr.timer <= 0) {
+              cr.mode = "bound"; cr.timer = 0.7 + Math.random()*1.5;
+              if (Math.random() < 0.2) cr.dir *= -1;
+            }
+          }
+          if (cr.x < -0.1 || cr.x > 1.1) { dead = true; break; }
+          break;
+        }
+        case "shelldrop": {
+          /* Climb, let go, follow it down, and pick over what broke. The shell
+             is in the gull's own coordinates until it is dropped; after that
+             it has a velocity and the ground has the last word. */
+          cr.ph += dt*5;
+          if (cr.mode === "climb") {
+            cr.gy += (0.30 - cr.gy)*Math.min(1, dt*0.7);
+            cr.x += cr.dir*0.02*dt;
+            cr.sy = cr.gy + 0.012;
+            if (cr.gy < 0.335) { cr.mode = "drop"; cr.sv = 0; }
+          } else if (cr.mode === "drop") {
+            cr.sv += 1.1*dt;                      // the shell falls
+            cr.sy += cr.sv*dt;
+            cr.gy += (0.34 - cr.gy)*Math.min(1, dt*0.6);
+            if (cr.sy >= D.y) {
+              cr.sy = D.y;
+              if (cr.bounces++ < 2) { cr.sv *= -0.34; }
+              else { cr.mode = "stoop"; cr.sv = 0; }
+            }
+          } else if (cr.mode === "stoop") {
+            // down after it, fast and steep
+            cr.gy += (D.y - 0.004 - cr.gy)*Math.min(1, dt*2.2);
+            if (cr.gy > D.y - 0.012) { cr.mode = "pick"; cr.timer = 2.5 + Math.random()*3; }
+          } else {
+            cr.timer -= dt;
+            cr.gy = D.y - 0.004;
+            if (cr.timer <= 0) { dead = true; break; }
+          }
+          break;
+        }
+        case "pigeon": {
+          /* On the ground it is all head: the body walks smoothly and the head
+             is held still, then snapped forward — which is what makes a pigeon
+             read as a pigeon at any size. And they go up together. */
+          cr.timer -= dt;
+          if (cr.fly > 0) {
+            cr.fly += dt;
+            cr.x += cr.vx*dt; cr.y = (cr.y === undefined ? D.y : cr.y) + cr.vy*dt;
+            cr.vy = Math.max(-0.34, cr.vy - 0.10*dt);
+            cr.ph += dt*17;
+            if (cr.y < -0.06 || cr.x < -0.12 || cr.x > 1.12) { dead = true; break; }
+            break;
+          }
+          if (cr.mode === "walk") {
+            cr.x += cr.dir*0.011*dt*D.speed; cr.ph += dt*10; cr.bob += dt*7;
+            if (cr.timer <= 0) {
+              cr.mode = "peck"; cr.timer = 0.5 + Math.random()*2.2;
+            }
+          } else {
+            // head down, up, down — the pecking is its own little clock
+            cr.bob += dt*4.2;
+            if (cr.timer <= 0) {
+              cr.mode = "walk"; cr.timer = 0.6 + Math.random()*1.6;
+              if (Math.random() < 0.35) cr.dir *= -1;
+            }
+          }
+          if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
+          break;
+        }
+        case "moth": {
+          /* Not flight so much as failure to leave. It picks a point near the
+             glass and blunders towards it, overshoots, and picks another. */
+          const b = this.frontBlocks && this.frontBlocks[cr.b];
+          const wnd = b && b.lit[cr.w];
+          if (!wnd || (!wnd.on && (wnd.fade || 0) > 0.9)) { dead = true; break; }
+          cr.timer -= dt;
+          if (cr.timer <= 0) {
+            const a = Math.random()*Math.PI*2, r = 0.004 + Math.random()*0.022;
+            cr.tx = Math.cos(a)*r; cr.ty = Math.sin(a)*r*0.7;
+            cr.timer = 0.12 + Math.random()*0.4;
+          }
+          const k = Math.min(1, dt*5.5);
+          cr.ox += (cr.tx - cr.ox)*k; cr.oy += (cr.ty - cr.oy)*k;
+          cr.ph += dt*40;
+          if (cr.t > cr.life) { dead = true; break; }
+          break;
+        }
+        case "crab": {
+          /* Sideways: it travels along its own width, so the body never turns.
+             Bursts of scuttle, then a freeze with one claw up — and the freeze
+             is the whole character of the thing. */
+          cr.timer -= dt;
+          if (cr.mode === "scuttle") {
+            cr.x += cr.dir*0.05*dt*D.speed; cr.ph += dt*22;
+            cr.claw = Math.max(0, cr.claw - dt*4);
+            if (cr.timer <= 0) {
+              cr.mode = "still"; cr.timer = 0.5 + Math.random()*2.2;
+            }
+          } else {
+            cr.claw = Math.min(1, cr.claw + dt*3);
+            if (cr.timer <= 0) {
+              cr.mode = "scuttle"; cr.timer = 0.25 + Math.random()*0.55;
+              if (Math.random() < 0.3) cr.dir *= -1;
+            }
+          }
+          if (cr.x < -0.08 || cr.x > 1.08) { dead = true; break; }
+          break;
+        }
+        case "seal": {
+          /* Up, a long look, and gone. It surfaces once, holds, and sinks —
+             and the drift while it is up is the swell carrying it, not
+             swimming. */
+          const up = Math.min(1, cr.t/1.4);
+          const down = Math.max(0, Math.min(1, (cr.t - (cr.life - 1.6))/1.6));
+          cr.up = up*(1 - down);
+          cr.x += cr.dir*0.004*dt;
+          // the head turns, slowly, along the length of the beach
+          cr.look = Math.sin(cr.t*0.55)*0.9;
+          if (cr.t > cr.life) { dead = true; break; }
+          break;
+        }
         case "cat": {
           const b = this.frontBlocks && this.frontBlocks[cr.b];
           if (!b) { dead = true; break; }
@@ -5298,6 +5892,15 @@ class Scene {
               cr.actT = 0;
             }
             if (cr.u < -0.05 || cr.u > 1.05) { dead = true; break; }
+          } else if (cr.mode === "sun") {
+            /* Flat out on the warm tiles, and it stays that way — for a
+               minute at a time, which no other creature here does. The only
+               thing that moves is its breathing, and the sun going in ends
+               it: a cat does not lie on a cold roof. */
+            cr.timer -= dt;
+            if (cr.timer <= 0 || (this._lit ? this._lit.str : 1) < 0.42) {
+              cr.mode = "walk"; cr.act = null;
+            }
           } else {
             cr.timer -= dt;
             if (cr.mode === "sit" && !cr.act && Math.random() < 0.25*dt) {
@@ -5632,6 +6235,42 @@ class Scene {
         cr.x += push * carry * dt;
         cr.y -= Math.max(0, push) * 0.010 * dt;
       }
+      /* ---- Coming and going ------------------------------------------
+
+         Depth was decided once when an animal spawned and never touched
+         again, so everything in every place travelled strictly left to right
+         at a fixed distance. The plane under all five places was being used
+         entirely statically.
+
+         `cr.toward` is a rate of change of depth. An animal that has it walks
+         a diagonal: it grows or shrinks, its shadow lengthens or tightens,
+         it slows as it goes back because the same ground covers fewer pixels
+         — every one of those falls out of the plane on its own, and nothing
+         in any painter has to know about it.
+
+         It is deliberately not for everything. A butterfly's path is already
+         a stitch and a heron standing still is standing still; this is for
+         the things that are *going* somewhere. */
+      /* ---- and what follows it ---------------------------------------
+         A fawn does not walk beside its mother, it walks in her tracks —
+         and neither does a fox cub. So a parent with young keeps a short
+         history of where it has been, and each young thing is simply the
+         parent a second and a half ago, smaller. Everything the young does
+         is therefore correct by construction: it stops when she stops, it
+         puts its feet where hers went, and it slows going away up the field
+         because the plane already said so. */
+      if (cr.young) {
+        (cr.trail || (cr.trail = [])).push({ t: cr.t, x: cr.x, z: cr.z });
+        // three and a half seconds is longer than the longest lag below
+        while (cr.trail.length > 2 && cr.t - cr.trail[0].t > 3.5) cr.trail.shift();
+      }
+      if (cr.toward) {
+        const nz = this.nearZ();
+        cr.z = Math.max(nz, Math.min(0.99, cr.z + cr.toward*dt));
+        // arrived, or gone as far back as the field goes: settle to a line
+        if (cr.z <= nz + 0.005 || cr.z >= 0.985) cr.toward = 0;
+      }
+
       if (cr.bolt) {
         cr.boltT += dt;
         const u = Math.max(0, 1 - cr.boltT/1.6);
@@ -5675,6 +6314,20 @@ class Scene {
             s: dS, dir: cr.dir,
             head: cr.head, walking, lp: cr.lp, color: D.col, t: cr.t,
             grazing: cr.state === "graze", alert: cr.state === "alert", leap });
+          // the fawn, walking where she walked a second ago
+          for (const y of (cr.young || [])) {
+            const p = this.trailAt(cr, y.lag);
+            const zz = Math.max(0.03, Math.min(0.99, p.z + (y.off || 0)));
+            const YD = this.groundDepth(zz, bot);
+            const yS = dS*y.sz*(YD.scale/Math.max(0.01, D.scale));
+            this.contactShadow(c, p.x*W, YD.y*H, yS*0.75, 0.2*(1 - zz*0.6)*(1 - rise));
+            this.paintDeer(c, { x: p.x*W, y: (YD.y - rise*0.045)*H,
+              s: yS, dir: cr.dir,
+              // it does not graze when she does; it stands and watches
+              head: 0, walking, lp: cr.lp + 0.7, color: YD.col, t: cr.t + y.lag,
+              grazing: false, alert: cr.state === "graze" || cr.state === "alert",
+              leap });
+          }
           break;
         }
         case "runner": {
@@ -5686,10 +6339,115 @@ class Scene {
           c.restore();
           break;
         }
+        case "turnstone": {
+          c.save(); c.translate(cr.x*W, D.y*H);
+          c.scale(D.scale*(cr.sz || 1), D.scale*(cr.sz || 1));
+          this.contactShadow(c, 0, 1, 5.5, 0.17*(1 - cr.z*0.6));
+          this.paintTurnstone(c, cr.dir, cr.mode === "step", cr.ph, cr.heave || 0, D.col);
+          c.restore();
+          break;
+        }
+        case "mob": {
+          const oS = H*0.055*(cr.sz || 1);
+          const ox = cr.x*W, oy = cr.y*H;
+          this.paintOwl(c, { x: ox, y: oy, s: oS, alpha: 1, color: colDark,
+            rim: colFar, fly: 1, flip: cr.dir < 0,
+            flap: gaitAt("beatSlow", cr.flap*TURN, "beat") });
+          // and the escort, each on its own orbit, closing on the dive
+          for (const b of cr.birds) {
+            const shut = b.diveT > 0 ? 1 - Math.max(0, b.diveT)/0.55 : 0;
+            const close = 1 - Math.sin(shut*Math.PI)*0.78;
+            const bx = ox + Math.cos(b.ph)*b.r*W*close;
+            const by = oy + Math.sin(b.ph)*b.r*b.ry*H*close - oS*0.4;
+            this.paintSmallBirdFlight(c, bx, by, oS*0.30,
+              Math.cos(b.ph) >= 0 ? 1 : -1, b.flap, colDark);
+          }
+          break;
+        }
+        case "lizard": {
+          const lS = D.scale*(cr.sz || 1);
+          c.save(); c.translate(cr.x*W, D.y*H); c.scale(lS, lS);
+          this.contactShadow(c, 0, 0.6, 9, 0.12*(1 - cr.z*0.6));
+          this.paintLizard(c, cr.dir, cr.mode === "dart", cr.ph, cr.push || 0, D.col);
+          c.restore();
+          break;
+        }
+        case "bather": {
+          const pud = this.puddles();
+          const p = pud[cr.p];
+          const bS = D.scale*(cr.sz || 1);
+          const py = D.y + (p ? p.dy : 0)*0.4;
+          c.save(); c.translate(cr.x*W, py*H); c.scale(bS, bS);
+          this.paintBather(c, cr.dir, cr.mode, cr.ph, cr.splash || 0, D.col,
+            `rgba(${this.tok.foamRGB || "230,230,230"}, 1)`);
+          c.restore();
+          break;
+        }
+        case "stoat": {
+          const leap = cr.mode === "bound" ? gaitPose("weave", cr.bp*TURN) : null;
+          const rise = leap ? Math.max(0, leap.rise) : 0;
+          const sS = H*0.026*(cr.sz || 1)*D.scale;
+          this.contactShadow(c, cr.x*W, D.y*H, sS*1.5, 0.18*(1 - cr.z*0.6)*(1 - rise));
+          this.paintStoat(c, { x: cr.x*W, y: D.y*H - rise*sS*0.55, s: sS,
+            dir: cr.dir, leap, rear: cr.rear || 0, color: D.col, t: cr.t });
+          break;
+        }
+        case "shelldrop": {
+          const gS = 5.5*(cr.sz || 1)*(0.7 + D.scale*0.5);
+          // the shell, in the air or lying where it stopped
+          if (cr.mode !== "climb") {
+            c.fillStyle = D.col;
+            c.beginPath();
+            c.ellipse(cr.x*W, cr.sy*H, gS*0.30, gS*0.20, cr.sv*0.6, 0, Math.PI*2);
+            c.fill();
+          }
+          if (cr.mode === "pick") this.contactShadow(c, cr.x*W, D.y*H, gS*1.1, 0.15);
+          this.paintGullFlight(c, cr.x*W, cr.gy*H, gS, cr.dir,
+            cr.mode === "pick" ? 0 : cr.ph, cr.mode === "pick" ? D.col : colDark);
+          break;
+        }
+        case "pigeon": {
+          const pS = D.scale*(cr.sz || 1);
+          if (cr.fly) {
+            const y = cr.y === undefined ? D.y : cr.y;
+            this.paintPigeonFlight(c, cr.x*W, y*H, 4.6*pS + 1.6, cr.dir, cr.ph, colDark);
+            break;
+          }
+          c.save(); c.translate(cr.x*W, D.y*H); c.scale(pS, pS);
+          this.contactShadow(c, 0, 1, 6.5, 0.17*(1 - cr.z*0.6));
+          this.paintPigeon(c, cr.dir, cr.mode === "walk", cr.ph, cr.bob, D.col);
+          c.restore();
+          break;
+        }
+        case "moth": {
+          const b = this.frontBlocks && this.frontBlocks[cr.b];
+          const wnd = b && b.lit[cr.w];
+          if (!wnd) break;
+          const bx = b.x*W, bw = b.w*W, bh = b.h*H, byTop = H*CITY_GROUND - bh;
+          const wx = bx + wnd.u*bw + Math.min(bw*0.11, 7)*0.5;
+          const wy = byTop + wnd.v*bh + Math.min(bh*0.045, 10)*0.5;
+          this.paintMoth(c, wx + cr.ox*W, wy + cr.oy*H, 2.2*(cr.sz || 1), cr.ph,
+            Math.max(0, Math.min(1, Math.min(cr.t, cr.life - cr.t)*1.2)));
+          break;
+        }
+        case "crab": {
+          c.save(); c.translate(cr.x*W, D.y*H);
+          c.scale(D.scale*(cr.sz || 1), D.scale*(cr.sz || 1));
+          this.contactShadow(c, 0, 0.5, 5, 0.14*(1 - cr.z*0.6));
+          this.paintCrab(c, cr.dir, cr.mode === "scuttle", cr.ph, cr.claw || 0, D.col);
+          c.restore();
+          break;
+        }
+        case "seal": {
+          if (cr.up > 0.02) this.paintSeal(c, cr.x*W, cr.y*H, H*0.02*(cr.sz || 1),
+            cr.dir, cr.up, cr.look || 0, colDark, colFar);
+          break;
+        }
         case "cat": {
           const b = this.frontBlocks && this.frontBlocks[cr.b];
-          this.paintCat(c, { x: cr.x*W, y: (0.95 - b.h)*H, dir: cr.dir,
-            sit: cr.mode === "sit" || cr.mode === "stretch", t: cr.t, color: colDark,
+          this.paintCat(c, { x: cr.x*W, y: (CITY_GROUND - b.h)*H, dir: cr.dir,
+            sit: cr.mode === "sit" || cr.mode === "stretch",
+            flat: cr.mode === "sun" ? 1 : 0, t: cr.t, color: colDark,
             groom: cr.act === "groom" ? gaitPose("groom", cr.actT*0.6) : null,
             stretch: cr.mode === "stretch" ? Math.sin(Math.PI*Math.min(1, cr.actT/1.4)) : 0 });
           break;
@@ -5714,6 +6472,20 @@ class Scene {
             look: cr.mode === "pause" ? Math.sin(cr.t*1.8) : 0,
             ears: cr.mode === "listen" || cr.mode === "pounce" ? 1 : 0,
             color: D.col }, cr.pose));
+          /* Cubs. They get her trail but not her poses: she may be flat to
+             the ground listening for a vole, and they are simply behind her
+             with their ears up, which is the whole comedy of it. */
+          for (const y of (cr.young || [])) {
+            const p = this.trailAt(cr, y.lag);
+            const zz = Math.max(0.03, Math.min(0.99, p.z + (y.off || 0)));
+            const YD = this.groundDepth(zz, bot);
+            const yS = H*0.05*(cr.sz || 1)*YD.scale*y.sz;
+            this.contactShadow(c, p.x*W, YD.y*H, yS*0.9, 0.2*(1 - zz*0.6));
+            this.paintFox(c, { x: p.x*W, y: YD.y*H, s: yS, dir: cr.dir,
+              walking: cr.mode === "trot", lp: cr.lp + y.lag*4,
+              look: 0, ears: 1, color: YD.col,
+              crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0 });
+          }
           break;
         }
         case "heron": {
@@ -5838,6 +6610,26 @@ class Scene {
         }
       }
     }
+  }
+
+  /* Where a parent was, `lag` seconds ago. Linear between the two samples
+     that straddle it, so a young thing does not shudder along at the rate
+     the trail was recorded. Before there is enough history it simply stands
+     where the parent is, which is what it looks like anyway at the moment
+     one walks into frame. */
+  trailAt(cr, lag) {
+    const tr = cr.trail;
+    if (!tr || tr.length < 2) return { x: cr.x, z: cr.z };
+    const want = cr.t - lag;
+    if (want <= tr[0].t) return { x: tr[0].x, z: tr[0].z };
+    for (let i = tr.length - 1; i > 0; i--) {
+      if (tr[i - 1].t <= want) {
+        const a = tr[i - 1], b = tr[i];
+        const u = (want - a.t)/Math.max(1e-4, b.t - a.t);
+        return { x: a.x + (b.x - a.x)*u, z: a.z + (b.z - a.z)*u };
+      }
+    }
+    return { x: cr.x, z: cr.z };
   }
 
   /* A filled tapered segment — width w0 at (x0,y0), w1 at (x1,y1) — so legs and
@@ -5978,6 +6770,37 @@ class Scene {
     c.fillStyle = o.color;
     const sway = Math.sin(o.t*2)*1.6;
     const tip = Math.sin(o.t*3.1)*1.4;           // the tail-tip's own restlessness
+    if (o.flat) {
+      /* Asleep in the sun: on its side, poured over the tiles, and the only
+         thing moving is the ribcage. Everything is drawn along the ground —
+         no upright anything — which is what makes it read as sleep and not
+         as a cat that has stopped. */
+      const breath = Math.sin(o.t*1.5)*0.28;
+      // tail, laid out flat behind and stirring once in a while
+      c.beginPath();
+      c.moveTo(-4.6, -1.2);
+      c.quadraticCurveTo(-8.4, -1.6 + tip*0.3, -11.4, -0.2 + tip*0.7);
+      c.quadraticCurveTo(-8.6, -0.2, -4.6, -0.2);
+      c.closePath(); c.fill();
+      // the body: one long low mound, deepest at the shoulder
+      c.beginPath();
+      c.moveTo(-5.0, -0.3);
+      c.quadraticCurveTo(-4.4, -3.4 - breath, -0.6, -3.9 - breath);
+      c.quadraticCurveTo(3.4, -4.3 - breath, 5.6, -2.6);
+      c.quadraticCurveTo(6.6, -1.4, 5.6, -0.3);
+      c.closePath(); c.fill();
+      // head down on the tiles, ears flat to the line of it
+      c.beginPath(); c.ellipse(6.6, -1.5, 2.3, 1.7, -0.1, 0, Math.PI*2); c.fill();
+      c.beginPath();
+      c.moveTo(5.6, -2.8); c.lineTo(5.0, -4.3); c.lineTo(6.8, -3.1);
+      c.moveTo(7.6, -2.9); c.lineTo(8.9, -4.0); c.lineTo(8.6, -2.4);
+      c.closePath(); c.fill();
+      // and the forepaws out in front, which is the whole of the pose
+      c.beginPath(); c.ellipse(8.4, -0.5, 2.4, 0.7, 0, 0, Math.PI*2); c.fill();
+      c.beginPath(); c.ellipse(-3.4, -0.5, 1.4, 0.6, 0, 0, Math.PI*2); c.fill();
+      c.restore();
+      return;
+    }
     if (o.sit) {
       // tail wrapped round the haunches, its tip stirring
       c.beginPath();
@@ -6724,6 +7547,395 @@ class Scene {
       c.moveTo(1.2, -1); c.lineTo(1.2, 2.2);
       c.stroke();
     }
+    c.restore();
+  }
+
+  /* A turnstone. Shorter in the leg than a sanderling, heavier in the chest,
+     and built round one action: getting the bill under a stone and shoving.
+     The heave tips the whole bird — front end down, tail up, legs braced. */
+  paintTurnstone(c, dir, stepping, ph, heave, colDark) {
+    c.save();
+    if (dir < 0) c.scale(-1, 1);
+    c.rotate(heave*0.55);                       // the shove goes through the body
+    c.fillStyle = colDark; c.strokeStyle = colDark; c.lineCap = "round";
+    // body: deeper-chested than the sanderling, and lower to the sand
+    c.beginPath();
+    c.moveTo(4.2, -3.0);
+    c.quadraticCurveTo(1.2, -5.0, -2.4, -4.0);
+    c.quadraticCurveTo(-5.4, -3.2, -6.6, -1.9);
+    c.lineTo(-4.2, -1.3);
+    c.quadraticCurveTo(-0.6, 0.1, 3.4, -1.2);
+    c.quadraticCurveTo(5.4, -1.9, 4.2, -3.0);
+    c.closePath(); c.fill();
+    // head, and the short wedge of a bill that does the work
+    c.beginPath(); c.arc(4.2, -4.2, 1.55, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.moveTo(5.5, -4.6); c.lineTo(7.5, -3.9); c.lineTo(5.5, -3.7);
+    c.closePath(); c.fill();
+    // legs. Braced apart under a heave, swinging under a step, together at rest
+    c.lineWidth = 1.05;
+    const brace = heave*1.6;
+    if (stepping) {
+      const sw = Math.sin(ph);
+      c.beginPath();
+      c.moveTo(-0.6, -0.7); c.lineTo(-0.6 + sw*1.9, 2.0);
+      c.moveTo(1.4, -0.7);  c.lineTo(1.4 - sw*1.9, 2.0);
+      c.stroke();
+    } else {
+      c.beginPath();
+      c.moveTo(-0.6, -0.7); c.lineTo(-0.6 - brace, 2.0);
+      c.moveTo(1.4, -0.7);  c.lineTo(1.4 + brace*0.4, 2.0);
+      c.stroke();
+    }
+    // and what it turned over, right at the end of the bill where it is
+    // being turned rather than lying off on its own somewhere
+    if (heave > 0.05) {
+      const A = c.globalAlpha;
+      c.globalAlpha = A*0.55;
+      c.beginPath();
+      c.ellipse(8.3, -2.6 + heave*0.6, 1.6, 0.85, heave*0.9, 0, Math.PI*2);
+      c.fill();
+      c.globalAlpha = A;
+    }
+    c.restore();
+  }
+
+  /* A lizard, flat to the ground and pressed against it — the flattest thing
+     in the piece, which is why it needs the shadow to be seen at all. The
+     legs go out sideways at the elbow, not down, and the tail is longer than
+     everything else put together. */
+  paintLizard(c, dir, running, ph, push, colDark) {
+    c.save();
+    if (dir < 0) c.scale(-1, 1);
+    c.translate(0, -push*1.1);
+    c.fillStyle = colDark; c.strokeStyle = colDark;
+    c.lineCap = "round"; c.lineJoin = "round";
+    // legs: four, splayed, and the sprawl is the whole silhouette
+    c.lineWidth = 0.85;
+    const sw = running ? Math.sin(ph) : 0;
+    let li = 0;
+    for (const [bx, s] of [[2.0, -1], [2.0, 1], [-1.4, -1], [-1.4, 1]]) {
+      const swing = running ? sw*(li % 2 ? -1 : 1)*1.3 : 0;
+      li++;
+      c.beginPath();
+      c.moveTo(bx, -1.1 - push*0.4);
+      c.quadraticCurveTo(bx + s*0.4 + swing, 0.1, bx + s*1.4 + swing*1.2, 0.6);
+      c.stroke();
+    }
+    // body — a low wedge, widest at the shoulders
+    c.beginPath();
+    c.moveTo(3.4, -1.5);
+    c.quadraticCurveTo(1.4, -2.4, -1.6, -1.9);
+    c.quadraticCurveTo(-2.6, -1.5, -1.6, -0.9);
+    c.quadraticCurveTo(1.0, -0.4, 3.2, -0.9);
+    c.closePath(); c.fill();
+    // head, blunt and barely separate from the body
+    c.beginPath();
+    c.ellipse(4.0, -1.25, 1.3, 0.75, -0.08, 0, Math.PI*2);
+    c.fill();
+    // the tail: longer than the animal, and it flicks when it runs
+    const tk = running ? Math.sin(ph*0.5)*1.6 : Math.sin(ph*0.08)*0.4;
+    c.lineWidth = 0.95;
+    c.beginPath();
+    c.moveTo(-1.8, -1.35);
+    c.quadraticCurveTo(-5.0, -1.3 + tk, -8.6, -0.7 + tk*1.8);
+    c.stroke();
+    c.restore();
+  }
+
+  /* A small bird bathing. Nothing else in the piece throws anything: the
+     splash is a handful of short strokes leaving the body, and it is the only
+     reason to draw this at all. */
+  paintBather(c, dir, mode, ph, splash, colDark, foam) {
+    c.save();
+    if (dir < 0) c.scale(-1, 1);
+    c.fillStyle = colDark; c.strokeStyle = colDark; c.lineCap = "round";
+    const dip = mode === "dip" ? splash : 0;
+    const shake = mode === "shake" ? Math.sin(ph)*0.3 : 0;
+    c.save();
+    c.translate(0, dip*1.5);
+    c.rotate(shake);
+    // a round little body, low in the water, with the tail cocked
+    c.beginPath();
+    c.moveTo(3.0, -3.6);
+    c.quadraticCurveTo(0.4, -5.4, -2.6, -4.2);
+    c.lineTo(-5.6, -5.0);
+    c.lineTo(-4.6, -3.2);
+    c.quadraticCurveTo(-1.4, -1.6, 2.2, -2.2);
+    c.quadraticCurveTo(4.0, -2.8, 3.0, -3.6);
+    c.closePath(); c.fill();
+    // head, driven right down through a dip
+    c.beginPath();
+    c.arc(3.4 + dip*0.6, -4.6 + dip*2.2, 1.5, 0, Math.PI*2);
+    c.fill();
+    c.lineWidth = 0.8;
+    c.beginPath();
+    c.moveTo(4.7 + dip*0.6, -4.5 + dip*2.2);
+    c.lineTo(6.3 + dip*0.9, -4.1 + dip*2.4);
+    c.stroke();
+    c.restore();
+    // water going everywhere
+    if (splash > 0.05) {
+      const A = c.globalAlpha;
+      c.strokeStyle = foam; c.lineWidth = 0.85;
+      c.globalAlpha = A*0.65*splash;
+      c.beginPath();
+      for (let k = 0; k < 7; k++) {
+        const a = -Math.PI*0.15 - k*0.34 - ph*0.11;
+        const r0 = 2.6, r1 = r0 + 3.4*splash*(0.5 + (k % 3)*0.28);
+        c.moveTo(Math.cos(a)*r0, -3.2 + Math.sin(a)*r0*0.8);
+        c.lineTo(Math.cos(a)*r1, -3.2 + Math.sin(a)*r1*0.8);
+      }
+      c.stroke();
+      // and the ring it is standing in
+      c.globalAlpha = A*0.4*splash;
+      c.beginPath();
+      c.ellipse(0, -0.6, 6 + splash*3, 1.9 + splash, 0, 0, Math.PI*2);
+      c.stroke();
+      c.globalAlpha = A;
+    }
+    c.restore();
+  }
+
+  /* A stoat: a tube of an animal on very short legs, with a black tip to the
+     tail that is the one mark worth drawing at this size. Bounding, the back
+     does the work; standing, the whole length of it goes vertical and it is
+     suddenly twice as tall as anything about it suggested. */
+  paintStoat(c, o) {
+    const s = o.s, L = o.leap;
+    const rear = o.rear || 0;
+    const arch = L ? L.arch : 0.15;
+    const str = L ? L.stretch : 0;
+    c.save();
+    c.translate(o.x, o.y);
+    if (o.dir < 0) c.scale(-1, 1);
+    c.fillStyle = o.color; c.strokeStyle = o.color;
+    c.lineCap = "round"; c.lineJoin = "round";
+    /* Standing up: the body pivots about the hind feet until it is upright,
+       and the same drawing serves — a long body, rotated. */
+    c.rotate(-rear*1.28);
+    const hipX = -s*1.5, shX = s*1.1;
+    // the back, drawn as one arch from hip to shoulder
+    const midY = -s*(0.62 + arch*0.52);
+    c.lineWidth = s*0.46;
+    c.beginPath();
+    c.moveTo(hipX, -s*0.55);
+    c.quadraticCurveTo((hipX + shX)/2, midY*1.55, shX, -s*0.62);
+    c.stroke();
+    // legs — short enough to be almost an afterthought, which is the point
+    c.lineWidth = s*0.17;
+    const fore = L ? L.fore : 0, hind = L ? L.hind : 0;
+    c.beginPath();
+    c.moveTo(shX - s*0.1, -s*0.5); c.lineTo(shX + fore*s*0.55, -s*0.02 - Math.max(0, fore)*s*0.28);
+    c.moveTo(hipX + s*0.1, -s*0.45); c.lineTo(hipX + hind*s*0.6, -s*0.02 - Math.max(0, hind)*s*0.3);
+    c.stroke();
+    // head: small, flat, carried out in front on a neck no thicker than it
+    c.lineWidth = s*0.42;
+    c.beginPath();
+    c.moveTo(shX, -s*0.66);
+    c.lineTo(shX + s*0.85 + str*s*0.2, -s*0.62 - rear*s*0.1);
+    c.stroke();
+    c.beginPath();
+    c.arc(shX + s*1.0 + str*s*0.2, -s*0.62, s*0.26, 0, Math.PI*2);
+    c.fill();
+    // the tail — long, held out behind, and tipped black
+    const tw = L ? L.tail : Math.sin(o.t*2.2)*0.4;
+    c.lineWidth = s*0.24;
+    c.beginPath();
+    c.moveTo(hipX, -s*0.55);
+    c.quadraticCurveTo(hipX - s*0.9, -s*0.55 - tw*s*0.5,
+      hipX - s*1.7, -s*0.35 - tw*s*0.85);
+    c.stroke();
+    c.fillStyle = this.tok ? css(this.tok.inkDeep) : o.color;
+    c.beginPath();
+    c.arc(hipX - s*1.75, -s*0.34 - tw*s*0.88, s*0.2, 0, Math.PI*2);
+    c.fill();
+    c.restore();
+  }
+
+  /* A pigeon on the pavement. Everything about the shape is round — round
+     chest, round head, no neck to speak of — and the head is the only part
+     that moves sharply: held dead still while the body walks, then snapped
+     forward. Pecking is the same motion taken all the way down. */
+  paintPigeon(c, dir, walking, ph, bob, colDark) {
+    c.save();
+    if (dir < 0) c.scale(-1, 1);
+    c.fillStyle = colDark; c.strokeStyle = colDark;
+    c.lineCap = "round";
+    // the head's own clock: a fast throw and a slow catch up
+    const hb = walking ? Math.max(0, Math.sin(bob))*1.6
+      : Math.max(0, Math.sin(bob))*1.0;
+    const peck = walking ? 0 : Math.pow(Math.max(0, Math.sin(bob*0.5)), 3);
+    // legs
+    c.lineWidth = 1.1;
+    const sw = walking ? Math.sin(ph)*1.8 : 0;
+    c.beginPath();
+    c.moveTo(-0.4, -1.2); c.lineTo(-0.4 + sw, 2.2);
+    c.moveTo(1.1, -1.2);  c.lineTo(1.1 - sw, 2.2);
+    c.stroke();
+    // the body — deep chest forward, tail trailing low and squared off
+    c.beginPath();
+    c.moveTo(3.6, -4.4);
+    c.quadraticCurveTo(0.6, -6.4, -3.2, -5.0);
+    c.lineTo(-7.4, -3.0);
+    c.lineTo(-6.8, -1.9);
+    c.quadraticCurveTo(-2.0, -0.6, 2.4, -2.0);
+    c.quadraticCurveTo(4.6, -3.0, 3.6, -4.4);
+    c.closePath(); c.fill();
+    // folded wing, a shade in from the edge
+    const A = c.globalAlpha;
+    c.globalAlpha = A*0.55;
+    c.beginPath();
+    c.moveTo(1.6, -4.6);
+    c.quadraticCurveTo(-1.6, -4.4, -5.2, -2.9);
+    c.quadraticCurveTo(-1.6, -2.4, 1.8, -3.4);
+    c.closePath(); c.fill();
+    c.globalAlpha = A;
+    // head, on its short thick neck, pitched down through a peck
+    c.save();
+    c.translate(3.8, -5.4 - hb*0.35);
+    c.rotate(peck*1.15);
+    c.beginPath(); c.arc(0, 0, 1.9, 0, Math.PI*2); c.fill();
+    c.beginPath();
+    c.moveTo(1.5, 0.1); c.lineTo(3.5, 0.7); c.lineTo(1.5, 1.0);
+    c.closePath(); c.fill();
+    c.restore();
+    c.restore();
+  }
+
+  /* The same bird going up, which is the only way most people ever see a
+     flock of them: wings high, body tipped back, all of it a clatter. */
+  paintPigeonFlight(c, x, y, s, dir, ph, col) {
+    c.save();
+    c.translate(x, y);
+    if (dir < 0) c.scale(-1, 1);
+    c.fillStyle = col; c.strokeStyle = col;
+    c.lineWidth = Math.max(1, s*0.17); c.lineCap = "round";
+    const beat = Math.sin(ph);
+    // body, tipped back on the climb
+    c.save();
+    c.rotate(-0.42);
+    c.beginPath();
+    c.ellipse(0, 0, s*0.62, s*0.30, 0, 0, Math.PI*2);
+    c.fill();
+    c.beginPath(); c.arc(s*0.62, -s*0.10, s*0.22, 0, Math.PI*2); c.fill();
+    c.restore();
+    // wings — deep, blunt, and swept back at the tip
+    for (const side of [-1, 1]) {
+      const up = beat*side;
+      c.beginPath();
+      c.moveTo(0, -s*0.1);
+      c.quadraticCurveTo(-s*0.5, -s*0.1 - up*s*0.9, -s*1.25, -up*s*1.25);
+      c.stroke();
+    }
+    c.restore();
+  }
+
+  /* A moth against a lit window: a pale scrap on a wall of light, and the
+     wings are never still enough to have a shape. */
+  paintMoth(c, x, y, s, ph, alpha) {
+    const A = c.globalAlpha;
+    const beat = 0.35 + Math.abs(Math.sin(ph))*0.65;
+    c.globalAlpha = A*alpha*0.85;
+    c.fillStyle = `rgba(${this.tok.fireflyRGB}, 1)`;
+    c.beginPath();
+    c.ellipse(x, y, s*1.35*beat, s*0.55, 0.2, 0, Math.PI*2);
+    c.fill();
+    c.globalAlpha = A*alpha;
+    c.beginPath();
+    c.ellipse(x, y, s*0.34, s*0.5, 0, 0, Math.PI*2);
+    c.fill();
+    c.globalAlpha = A;
+  }
+
+  /* A crab. It travels along its own width, so the shell never turns to face
+     where it is going — the one thing in the piece that moves sideways. */
+  paintCrab(c, dir, running, ph, claw, colDark) {
+    c.save();
+    if (dir < 0) c.scale(-1, 1);
+    c.fillStyle = colDark; c.strokeStyle = colDark;
+    c.lineCap = "round"; c.lineJoin = "round";
+    c.lineWidth = 0.8;
+    /* Legs: four a side, and they have to stay *under* the shell rather than
+       radiating from it — drawn long and thin the whole thing read as a
+       spider, which is the one animal a crab must not look like. They reach
+       barely past the carapace and they bend down, not out. */
+    const sw = running ? Math.sin(ph) : 0;
+    for (let i = 0; i < 4; i++) {
+      const bx = -1.9 + i*1.3;
+      const swing = running ? sw*(i % 2 ? -1 : 1)*1.1 : 0;
+      for (const s of [-1, 1]) {
+        c.beginPath();
+        c.moveTo(bx*0.5, -2.4);
+        c.quadraticCurveTo(bx + s*2.4 + swing, -2.9,
+          bx + s*3.3 + swing*1.2, -0.2);
+        c.stroke();
+      }
+    }
+    // and the claws, folded in front of the face or held up
+    c.lineWidth = 1.2;
+    for (const s of [-1, 1]) {
+      const lift = claw*2.2;
+      c.beginPath();
+      c.moveTo(s*2.2, -2.4);
+      c.quadraticCurveTo(s*3.6, -1.8 - lift, s*4.0, -1.2 - lift*1.9);
+      c.stroke();
+      c.beginPath();
+      c.ellipse(s*4.2, -1.2 - lift*1.9, 1.35, 0.8, s*0.35 - claw*0.9, 0, Math.PI*2);
+      c.fill();
+    }
+    /* The carapace, which is nearly the whole animal: broad, domed, and
+       drawn over the leg roots so they emerge from under it. */
+    c.beginPath();
+    c.moveTo(-4.2, -2.6);
+    c.quadraticCurveTo(-3.6, -5.6, 0, -5.9);
+    c.quadraticCurveTo(3.6, -5.6, 4.2, -2.6);
+    c.quadraticCurveTo(0, -1.5, -4.2, -2.6);
+    c.closePath(); c.fill();
+    // two eyes on short stalks, up over the front edge
+    c.lineWidth = 0.75;
+    c.beginPath();
+    c.moveTo(-1.2, -5.5); c.lineTo(-1.5, -6.9);
+    c.moveTo(1.2, -5.5);  c.lineTo(1.5, -6.9);
+    c.stroke();
+    c.beginPath(); c.arc(-1.5, -7.0, 0.5, 0, Math.PI*2); c.fill();
+    c.beginPath(); c.arc(1.5, -7.0, 0.5, 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
+  /* A seal's head beyond the surf: a dark round nothing with a wake round it,
+     up for a long look and then gone. Rising and sinking is a matter of how
+     much of it is above the line, so the water clips it rather than the head
+     moving — which is what actually happens. */
+  paintSeal(c, x, y, s, dir, up, look, colDark, colFar) {
+    /* How far out of the water it is. A seal's head is wider than it is tall
+       and it sits *in* the surface rather than on it, so the drawing is a
+       round head with the waterline taken across it — drawn as a tall egg it
+       read as a rock, which is exactly the wrong animal. */
+    const h = s*(0.30 + up*0.62);
+    c.save();
+    c.translate(x, y);
+    // the water it is standing in: a slack ring, wider as more of it shows
+    c.strokeStyle = colFar;
+    c.globalAlpha = 0.4*up; c.lineWidth = 1;
+    c.beginPath();
+    c.ellipse(0, s*0.06, s*(1.2 + up*0.9), s*0.30, 0, 0, Math.PI*2);
+    c.stroke();
+    c.globalAlpha = 1;
+    c.save();
+    c.beginPath(); c.rect(-s*4, -s*7, s*8, s*7); c.clip();
+    c.fillStyle = colDark;
+    const hx = look*s*0.14, hy = -h*0.62;
+    // the muzzle first, so the round of the skull sits over its root
+    const mx = (look >= 0 ? 1 : -1)*(dir >= 0 ? 1 : -1);
+    c.beginPath();
+    c.ellipse(hx + mx*s*0.55, hy + h*0.30, s*0.36, h*0.30, mx*0.18, 0, Math.PI*2);
+    c.fill();
+    // and the head: broad, domed, no neck to speak of
+    c.beginPath();
+    c.ellipse(hx, hy, s*0.72, h*0.66, look*0.14, 0, Math.PI*2);
+    c.fill();
+    c.restore();
     c.restore();
   }
 
