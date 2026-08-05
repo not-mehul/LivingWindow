@@ -345,6 +345,10 @@ does.
   rather than walk and the small birds used to row rather than fly. Every
   animal in the window — four-footed, winged or otherwise — now runs a frame
   table from `GAIT` in `species.js`, and so does the weather. See below.
+- **The ground goes back.** The meadow is one plane in perspective, not a
+  stack of ridges: how far below the horizon a thing stands and how big it is
+  are the same number, so a rabbit at the back of the field is a quarter the
+  size of one at your feet and crosses the frame a quarter as fast. See below.
 - **The light comes from somewhere.** Shadows fall away from the sun, stretch
   and soften as it drops, and go out altogether under an overcast sky —
   and a stroke of lightning throws its own, hard, from wherever it happened.
@@ -857,6 +861,77 @@ night   0.38 voices    38%
 
 Night is thinner by time than by voice count, because the things that own the
 small hours — an owl, a cricket — say long things rather than many.
+
+### The meadow, and the ground it stands on
+
+The meadow was three stacked bands: a ridge at 0.62, a second at 0.78 and a lip
+of foreground at 0.92. Each was a filled outline with a hard edge, none of them
+agreed about where the ground was, and every animal lived in the **5.8 per cent
+of frame height** between the last two. A rabbit at the back of the field stood
+thirty pixels above one at the front and there was nothing else to say it was
+further off. Theatre flats, not a field.
+
+It is one plane now, and one relation does all of it. For a camera at a fixed
+height above flat ground, an object's distance *below the horizon on screen*
+and its *apparent size* are the same number — both go as 1/d:
+
+```
+y(z)     = horizon + near/(1 + z(d−1))
+scale(z) = 1/(1 + z(d−1))
+```
+
+`z` is 0 at the near edge and 1 at the far edge of the field; `d` is how many
+times further away the far edge is. In the meadow that gives a ground band of
+**0.65 to 1.035** — roughly 38% of the frame, against 5.8% before — and a size
+range of about **four to one**.
+
+Everything that stands on the ground reads the same pair, so nothing can
+disagree with anything else: grass, flowers, stones, hedges, cattle, the field
+tree, every animal, the puddles, and where the rain lands. Three things fell
+out of it that had been wrong on their own:
+
+- **Speed is not a separate choice.** An animal covering a metre of ground at
+  twice the distance crosses half as many pixels, so the screen speed *is* the
+  scale. Setting the two independently is what made a far rabbit hop the same
+  distance as a near one.
+- **So is leap height.** The rabbit, the hare and the squirrel all lifted by a
+  fixed fraction of the *frame* — `y: D.y*H − hop*H*0.035` — so a rabbit at the
+  back of the field jumped as many pixels into the air as one at your feet.
+- **Depth is where the birds sing from.** A ground perch's `depth`, which is
+  what the audio pans and filters by, is now read off the same z, so a bird
+  that looks far away sounds far away.
+
+The hills are gone. What replaced them is a single low ridge on the horizon —
+scenery, nothing walks on it — and **field boundaries**: three hedgerows
+crossing the plane at known depths, each drawn at the height, twig thickness,
+wind response and haze that its depth allows. A real field is not an empty
+plane, it is a plane with lines across it, and those lines are what tell you
+how big it is.
+
+Two bugs found by drawing it:
+
+- `Math.pow(rng(), 0.55)` pushed the grass *away* from the viewer, not toward
+  it. An exponent below one biases toward 1, which is the far edge — so the
+  near third of the field was bare while the far edge was a thicket. It wants
+  to be above one.
+- A blade that leans by a fixed few pixels stands near-vertical when it is
+  40 px tall. Two hundred of those is a bed of nails. Grass leans by a fraction
+  of its own length.
+
+And one performance lesson worth keeping. The plane is painted as a gradient
+across half the frame, and at 1920×1080 that is a million pixels of gradient
+evaluation every frame — **6.5 ms**, where the flat `Path2D` fills it replaced
+were nearly free. It is rendered once to an offscreen canvas and blitted, keyed
+on a coarse step of the light, and the field's tonal patchwork is painted into
+the same image because it never moves either. That took the meadow from 17.4 ms
+back to 12.3 against a 10.6 ms baseline — about two milliseconds for a field
+with 360 blades of perspective grass, three hedgerows and twice the flowers,
+where before there were 110 blades and one hedge.
+
+Worth recording how that was found: a JS profile of the whole draw came to
+**1.36 ms**. All of the cost was rasterization, which no amount of function
+timing will show — the bench forces it to land with a `getImageData`, and only
+the A/B of one drawing call against another finds it.
 
 ### The light
 

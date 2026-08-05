@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=16";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=16";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=16";
+} from "./util.js?v=17";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=17";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=17";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -269,11 +269,20 @@ class Scene {
     // that most convinces the eye there is depth here at all.
     this.fg = [];
     if (loc === "meadow") {
-      for (let i = 0; i < 15; i++) {
-        const edge = rng() < 0.78;
-        this.fg.push({ x: edge ? (rng() < 0.5 ? rng()*0.3 - 0.03 : 0.73 + rng()*0.3) : rng(),
-          h: edge ? 0.13 + rng()*0.17 : 0.05 + rng()*0.05,
-          ph: rng()*Math.PI*2, lean: (rng() - 0.5)*0.9, head: rng() < 0.3 });
+      /* The near edge, right against the glass. Shortened and thickened up
+         into a fringe: at the old height, against a field whose own grass now
+         obeys perspective, a dozen lone stalks read as a picket fence rather
+         than as the nearest grass in the picture. */
+      /* Kept to the edges, where it frames the view. Out in the middle of a
+         field whose own grass now runs right up to the glass, a lone stalk
+         twice the height of everything around it reads as a post — the near
+         edge should be the corners of the window, not a picket line across
+         the middle of it. */
+      for (let i = 0; i < 26; i++) {
+        const left = rng() < 0.5;
+        this.fg.push({ x: left ? rng()*0.30 - 0.05 : 0.75 + rng()*0.30,
+          h: 0.075 + rng()*0.125,
+          ph: rng()*Math.PI*2, lean: (rng() - 0.5)*0.9, head: rng() < 0.34 });
       }
     } else if (loc === "forest") {
       this.fgTrunks = [
@@ -318,9 +327,57 @@ class Scene {
     }
 
     if (loc === "meadow") {
-      this.hillA = this.makeRidge(rng, 0.62, 0.10);
-      this.hillB = this.makeRidge(rng, 0.78, 0.07);
-      this.treeX = rng() < 0.5 ? 0.12 + rng()*0.1 : 0.78 + rng()*0.1;
+      /* ---- The field, as one receding plane ----------------------------
+
+         What was here before was three stacked bands: a ridge at 0.62, a
+         second at 0.78, and a lip of foreground at 0.92. Each was a filled
+         outline with a hard edge, none of them agreed about where the ground
+         was, and the animals lived in the six per cent of frame height
+         between the last two — so a rabbit at the back of the field stood
+         thirty pixels above one at the front and there was nothing to tell
+         you it was further away. Theatre flats, not a field.
+
+         Now there is one plane and one horizon. Everything that stands on
+         the ground reads `planeY`/`planeScale`, so the grass, the flowers,
+         the stones, the hedges, the cattle and every animal all agree about
+         how far away each other are. The only things above the horizon are
+         the sky and the far country. */
+      this.horizonY = 0.505 + rng()*0.035;
+      this.plane = {
+        horizon: this.horizonY,
+        near: 1.035 - this.horizonY,   // screen offset of the ground at our feet
+        d: 4.0 + rng()*0.7,            // the far edge is four-odd times as far off
+        top: 1.25                      // what "full size" means at the near edge
+      };
+      const py = (z) => this.planeY(z), ps = (z) => this.planeScale(z)/this.plane.top;
+
+      /* The far country: one low ridge sitting on the horizon, and that is
+         all. It is scenery — nothing walks on it — so it is shallow, pale,
+         and never comes down into the field. */
+      this.hillA = this.makeRidge(rng, this.horizonY - 0.012, 0.026);
+
+      /* Field boundaries. A real field is not an empty plane, it is a plane
+         with lines across it, and those lines are the thing that says how
+         big it is. Three of them at known depths, each with its own hedge,
+         each drawn at the height that depth allows. */
+      this.bounds = [];
+      const zs = [0.86, 0.62 + rng()*0.06, 0.34 + rng()*0.07];
+      for (let i = 0; i < zs.length; i++) {
+        const z = zs[i], ph = rng()*Math.PI*2, f = 2.1 + i*1.7, amp = 0.005*ps(z);
+        // a boundary is not dead straight, and the further one wanders less
+        // on screen for exactly the same wander on the ground
+        const line = (x) => py(z) + Math.sin(x*f*Math.PI + ph)*amp;
+        this.bounds.push({ z, line, hedge: this.makeHedgerow(rng, line),
+          gap: 0.2 + rng()*0.55 });
+      }
+      // the nearest boundary is the hedge a bird can sit on
+      this.hedgeLine = this.bounds[this.bounds.length - 1].line;
+      this.hedge = this.bounds[this.bounds.length - 1].hedge;
+
+      /* The field tree, standing on the plane like everything else — a third
+         of the way back, so it has ground both in front of it and behind. */
+      this.treeX = rng() < 0.5 ? 0.11 + rng()*0.12 : 0.77 + rng()*0.12;
+      this.treeZ = 0.30 + rng()*0.10;
       this.tree = this.makeTree(rng);
       // Foliage gathered at the ends of the branches. A tree standing bare in
       // a summer field is the one thing in this view that never looked right.
@@ -332,57 +389,101 @@ class Scene {
         this.treeLeaves.push({ x: sg.x2, y: sg.y2, r: 0.017 + rng()*0.021,
           dx: (rng()-0.5)*0.026, dy: (rng()-0.5)*0.026 });
       }
-      this.grass = this.makeGrass(rng, 110, 0.03, 0.05);
-      // A hedgerow running across the middle distance — the field boundary
-      // that stops the middle of the picture from being an empty band of
-      // colour — then a couple of far trees, wildflowers and stones.
-      /* A hedge follows the ground it grows out of. Hung on the average of
-         two independent ridges it matched neither, and read as a dark tube
-         winding across the hillside with nothing to do with the land under
-         it. Set just below the far ridge it belongs to that ridge, which is
-         where a field boundary is actually seen from here. */
-      this.hedgeLine = (x) => this.hillA(x) + 0.052;
-      this.hedge = this.makeHedgerow(rng, this.hedgeLine);
-      // a couple of shrubs standing out on their own, away from the hedge line
-      this.shrubs = [];
-      for (let i = 0; i < 2 + Math.floor(rng()*3); i++) {
-        const x = rng();
-        this.shrubs.push({ x, y: this.hillB(x), r: 0.014 + rng()*0.022, seed: rng() });
+
+      /* Trees out along the boundaries, at the depth of the line they stand
+         in, so they are small where the line is far. */
+      this.distantTrees = [];
+      for (const b of this.bounds) {
+        const n = b.z > 0.7 ? 2 + Math.floor(rng()*3) : 1 + Math.floor(rng()*2);
+        for (let i = 0; i < n; i++) {
+          const x = 0.05 + rng()*0.9;
+          /* Crown width against height matters more than either alone: a
+             ball on a stick is a mushroom, and that is what these were. A
+             tree's crown is about as wide as the part of the tree it sits
+             on is tall. */
+          const th = (0.17 + rng()*0.11)*ps(b.z);
+          this.distantTrees.push({ x, y: b.line(x), z: b.z, h: th,
+            r: th*(0.38 + rng()*0.10) });
+        }
       }
-      // Cattle out on the far hill, in ones and twos as cattle actually stand.
+      // a shrub or two standing out on the open field
+      this.shrubs = [];
+      for (let i = 0; i < 2 + Math.floor(rng()*2); i++) {
+        const x = rng(), z = 0.26 + rng()*0.34;
+        this.shrubs.push({ x, z, y: py(z), r: (0.032 + rng()*0.030)*ps(z), seed: rng() });
+      }
+
+      /* Cattle, out in the middle distance where cattle are — small, because
+         that is what a beast four fields away looks like. */
       this.cattle = [];
-      if (rng() < 0.8) {
+      if (rng() < 0.85) {
         const herd = 2 + Math.floor(rng()*4);
+        const cz = 0.66 + rng()*0.2;
         let cx = 0.10 + rng()*0.55;
         for (let i = 0; i < herd; i++) {
-          cx += (0.035 + rng()*0.085);
+          cx += (0.03 + rng()*0.07);
           if (cx > 0.94) break;
-          this.cattle.push({ x: cx, sz: 0.85 + rng()*0.3, dir: rng() < 0.5 ? -1 : 1,
+          this.cattle.push({ x: cx, z: cz + (rng() - 0.5)*0.08,
+            sz: 0.85 + rng()*0.3, dir: rng() < 0.5 ? -1 : 1,
             ph: rng()*Math.PI*2, calf: rng() < 0.22,
             // most of a cow's day is head-down; the rest is standing about
             head: rng() < 0.68 ? 1 : 0, next: 6 + rng()*14 });
         }
       }
-      this.distantTrees = [];
-      for (let i = 0; i < 2 + Math.floor(rng()*2); i++) {
-        const x = 0.08 + rng()*0.84;
-        this.distantTrees.push({ x, y: this.hillA(x), h: 0.05 + rng()*0.05, r: 0.018 + rng()*0.022 });
+
+      /* And the field itself, which is grass. Every blade, flower and stone
+         carries a depth, and its height on screen is that depth's scale —
+         which is the whole difference between a meadow and a green stripe
+         with some marks on it. Sorted far to near so the near ones overlap
+         the far ones, as they must. */
+      /* A field is not one colour. Different grass, different years of
+         cutting, a hollow that holds the wet — a real one is a patchwork of
+         very slightly different tones, and without them a plane in
+         perspective is still a plane painted flat. These are broad and soft
+         and nobody should be able to point at one. */
+      this.patches = [];
+      for (let i = 0; i < 7 + Math.floor(rng()*5); i++) {
+        const z = Math.pow(rng(), 1.3);
+        this.patches.push({ x: rng(), z, y: py(z),
+          w: (0.10 + rng()*0.26)*(0.35 + ps(z)), h: (0.018 + rng()*0.03)*ps(z),
+          tone: rng() < 0.5 ? -1 : 1, k: 0.3 + rng()*0.7 });
       }
+      this.patches.sort((a, b) => b.z - a.z);
+
+      this.grass = [];
+      for (let i = 0; i < (REDUCED ? 190 : 360); i++) {
+        /* An exponent *above* one pulls z toward zero, which is toward the
+           viewer. Below one pushes it to the back — which is what was here,
+           and why the near third of the field was bare while the far edge was
+           a thicket. Perspective puts most of the visible blades near. */
+        const z = Math.pow(rng(), 1.8);
+        this.grass.push({ x: rng()*1.06 - 0.03, z, y: py(z),
+          h: (0.022 + rng()*0.046)*ps(z), ph: rng()*Math.PI*2, lean: (rng()-0.5)*1.5 });
+      }
+      this.grass.sort((a, b) => b.z - a.z);
       this.flowers = [];
-      for (let i = 0; i < 18 + Math.floor(rng()*12); i++) {
-        this.flowers.push({ x: rng(), h: 0.018 + rng()*0.028, tone: rng(), ph: rng()*Math.PI*2 });
+      for (let i = 0; i < 40 + Math.floor(rng()*20); i++) {
+        const z = Math.pow(rng(), 1.6);
+        this.flowers.push({ x: rng(), z, y: py(z), h: (0.016 + rng()*0.026)*ps(z),
+          tone: rng(), ph: rng()*Math.PI*2 });
       }
+      this.flowers.sort((a, b) => b.z - a.z);
       this.rocks = [];
-      for (let i = 0; i < 3 + Math.floor(rng()*4); i++) {
-        this.rocks.push({ x: 0.04 + rng()*0.92, r: 0.008 + rng()*0.016, shade: rng() });
+      for (let i = 0; i < 4 + Math.floor(rng()*5); i++) {
+        const z = Math.pow(rng(), 1.7)*0.8;
+        this.rocks.push({ x: 0.04 + rng()*0.92, z, y: py(z),
+          r: (0.016 + rng()*0.026)*ps(z), shade: rng() });
       }
+      this.rocks.sort((a, b) => b.z - a.z);
+
       // Perches derived from the tree's real branch tips, so a bird lands on a
       // branch that is actually drawn — never floating in mid-air.
-      const baseYn = this.hillB(this.treeX);
+      const treeBase = py(this.treeZ), treeS = ps(this.treeZ);
       const tips = this.tree
         .filter(sg => sg.w <= 1)
-        .map(sg => ({ x: this.treeX + sg.x2*0.5, y: baseYn + sg.y2*0.9 }))
-        .filter(p => p.y < baseYn - 0.04 && p.x > 0.04 && p.x < 0.96)
+        .map(sg => ({ x: this.treeX + sg.x2*0.5*treeS*1.45,
+                      y: treeBase + sg.y2*0.9*treeS*1.45 }))
+        .filter(p => p.y < treeBase - 0.03 && p.x > 0.04 && p.x < 0.96)
         .sort((a, b) => a.y - b.y);
       this.perches = [];
       const nBranch = 4 + Math.floor(rng()*2);
@@ -397,17 +498,19 @@ class Scene {
       for (const bu of this.shrubs.slice(0, 1 + Math.floor(rng()*2))) {
         this.perches.push({ x: bu.x, y: bu.y - bu.r*1.5, depth: 7 + rng()*3, type: "ground" });
       }
-      if (this.rocks && this.rocks.length) {
+      /* Ground perches are placed by depth now, and their `depth` — which is
+         what the audio pans and filters by — is read off the same z, so a
+         bird that looks far away sounds far away. */
+      if (this.rocks.length) {
         const rk = this.rocks[Math.floor(rng()*this.rocks.length)];
-        this.perches.push({ x: rk.x, y: 0.915, depth: 2.5 + rng()*2, type: "ground" });
+        this.perches.push({ x: rk.x, y: rk.y, depth: 2 + rk.z*12, type: "ground" });
       }
-      const groundYn = (x) => 0.92 - (x*0.5 - 0.25)*(x*0.5 - 0.25)*0.1;   // the grass line
-      for (let k = 0; k < 2; k++) {
-        const gx1 = 0.15 + rng()*0.7;
-        this.perches.push({ x: gx1, y: groundYn(gx1), depth: 2 + rng()*2, type: "ground" });
+      for (let k = 0; k < 3; k++) {
+        const gz = 0.06 + rng()*0.45, gx1 = 0.12 + rng()*0.76;
+        this.perches.push({ x: gx1, y: py(gz), depth: 2 + gz*12, type: "ground" });
       }
-      const hx = 0.28 + rng()*0.44;
-      this.perches.push({ x: hx, y: this.hillB(hx) - 0.004, depth: 8 + rng()*3, type: "ground" });
+      const hz = this.bounds[1].z, hx = 0.28 + rng()*0.44;
+      this.perches.push({ x: hx, y: this.bounds[1].line(hx) - 0.004, depth: 2 + hz*12, type: "ground" });
     } else if (loc === "forest") {
       this.hillA = this.makeRidge(rng, 0.55, 0.06);
       this.trunksFar = []; this.trunksMid = []; this.trunksNear = [];
@@ -1447,7 +1550,9 @@ class Scene {
     const ns = 1 + Math.floor(rng()*3);
     for (let i = 0; i < ns; i++) {
       const u = 0.12 + rng()*0.76;
-      standards.push({ x: from + (to - from)*u, h: 0.05 + rng()*0.055, r: 0.016 + rng()*0.018 });
+      // same rule as the field trees: a crown is not wider than its tree
+      const sh = 0.055 + rng()*0.06;
+      standards.push({ x: from + (to - from)*u, h: sh, r: sh*(0.36 + rng()*0.10) });
     }
     const h0 = 0.030 + rng()*0.018;
     const height = (x) => {
@@ -1466,52 +1571,70 @@ class Scene {
     return { from, to, height, standards, posts, seed: rng() };
   }
 
-  drawHedgerow(c, W, H, baseFn, bot) {
-    const hg = this.hedge;
+  /* A hedgerow along a field boundary.
+
+     `z` is how far off the boundary is, and everything about the hedge comes
+     off it: how tall it stands on the glass, how thick its twigs are, how far
+     the wind moves it, and how much of the air between you and it has taken
+     the colour out. A boundary four fields away drawn at the same height as
+     the one at the bottom of the garden is exactly what made this view read
+     as flats standing in a row.
+
+     It fills down to the *ground*, not to a fixed number of pixels below its
+     own top — a ribbon of constant thickness following a wavy line is what
+     makes a hedge look like a tube. */
+  drawHedgerow(c, W, H, baseFn, bot, z) {
+    const hg = z === undefined ? this.hedge
+      : (this.bounds || []).find(b => b.line === baseFn)?.hedge;
     if (!hg) return;
-    const body = css(mix(this.tok.inkDeep, bot, 0.15));
-    const twig = css(mix(this.tok.inkDeep, bot, 0.24));
-    const wind = 0.35 + state.wx.gust*0.65;
+    const dep = this.plane && z !== undefined
+      ? this.planeScale(z)/this.plane.top : 1;
+    const air = z === undefined ? 0 : z;         // how much haze is in front of it
+    const body = css(mix(this.tok.inkDeep, bot, 0.15 + air*0.16));
+    const twig = css(mix(this.tok.inkDeep, bot, 0.24 + air*0.14));
+    const wind = (0.35 + state.wx.gust*0.65)*dep;
     const n = 96;
-    // The mass of the hedge: its crown ragged where the wind is working it,
-    // its foot following the ground it grows out of.
     c.fillStyle = body;
     c.beginPath();
     for (let i = 0; i <= n; i++) {
       const x = hg.from + (hg.to - hg.from)*(i/n);
       const sway = this.windBend(x)*wind*2.6 + Math.sin(this.t*1.3 + x*22)*wind*0.5;
-      const ty = (baseFn(x) - hg.height(x))*H + sway*0.3;
+      const ty = (baseFn(x) - hg.height(x)*dep)*H + sway*0.3;
       if (i === 0) c.moveTo(x*W + sway, ty); else c.lineTo(x*W + sway, ty);
     }
-    /* Down past its own foot and into the mass of the next ridge, which is
-       painted over the top of it a moment later. Filling five pixels below the
-       base left the hedge standing on nothing — a ribbon of constant thickness
-       following a wavy line, which is what made it read as a tube. */
+    // down to the ground it grows out of, and a little into it
     for (let i = n; i >= 0; i--) {
       const x = hg.from + (hg.to - hg.from)*(i/n);
-      c.lineTo(x*W, Math.max(baseFn(x), this.hillB(x))*H + 6);
+      c.lineTo(x*W, baseFn(x)*H + Math.max(1, 6*dep));
     }
     c.closePath(); c.fill();
     // Loose growth standing proud of the cut line — the year's new shoots that
-    // give a hedge its bristled top instead of a shaved one.
-    c.strokeStyle = twig;
-    c.lineWidth = 1;
-    c.beginPath();
-    for (let i = 0; i < 64; i++) {
-      const x = hg.from + (hg.to - hg.from)*((i*0.0673 + hg.seed) % 1);
-      const hgt = hg.height(x);
-      if (hgt < 0.008) continue;
-      const tx = x*W, ty = (baseFn(x) - hgt)*H;
-      const lean = Math.sin(i*3.1 + hg.seed*9)*5 + Math.sin(this.t*1.6 + x*18)*wind*2.6;
-      const up = 4 + ((i*7) % 5)*2.6;
-      c.moveTo(tx, ty + 3);
-      c.quadraticCurveTo(tx + lean*0.4, ty - up*0.5, tx + lean, ty - up);
+    // give a hedge its bristled top instead of a shaved one. Below a certain
+    // distance there is nothing to see, so nothing is drawn.
+    if (dep > 0.5) {
+      c.strokeStyle = twig;
+      c.lineWidth = 1;
+      c.beginPath();
+      for (let i = 0; i < 64; i++) {
+        const x = hg.from + (hg.to - hg.from)*((i*0.0673 + hg.seed) % 1);
+        const hgt = hg.height(x)*dep;
+        if (hgt < 0.006) continue;
+        const tx = x*W, ty = (baseFn(x) - hgt)*H;
+        const lean = (Math.sin(i*3.1 + hg.seed*9)*5 + Math.sin(this.t*1.6 + x*18)*wind*2.6)*dep;
+        const up = (4 + ((i*7) % 5)*2.6)*dep;
+        c.moveTo(tx, ty + 2);
+        c.quadraticCurveTo(tx + lean*0.4, ty - up*0.5, tx + lean, ty - up);
+      }
+      c.stroke();
     }
-    c.stroke();
-    // standards left uncut along the line
-    const trunkCol = css(mix(this.tok.inkDeep, bot, 0.12));
+    /* Standards left uncut along the line. On the farthest boundary they are
+       eight pixels of tree and three fills each, so they are left to the
+       trees that boundary already carries. */
+    if (dep < 0.32) return;
+    const trunkCol = css(mix(this.tok.inkDeep, bot, 0.12 + air*0.16));
     for (const st of hg.standards) {
-      this.smallTree(c, st.x, baseFn(st.x) - hg.height(st.x)*0.35, st.h, st.r, W, H, trunkCol);
+      this.smallTree(c, st.x, baseFn(st.x) - hg.height(st.x)*dep*0.35,
+        st.h*dep, st.r*dep, W, H, trunkCol);
     }
   }
 
@@ -1606,17 +1729,22 @@ class Scene {
     if (!this.cattle || !this.cattle.length) return;
     const col = css(mix(this.tok.ink, bot, 0.30));
     const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
+    /* Cattle stand on the plane like everything else. `baseFn` is still
+       accepted for the places that have not been given one. */
+    const groundAt = baseFn || ((x, cw) => this.planeY(cw.z));
     for (const cw of this.cattle) {
-      const s = Math.min(W, H)*0.026*cw.sz;
+      const dep = this.plane && cw.z !== undefined
+        ? this.planeScale(cw.z)/this.plane.top : 1;
+      const s = Math.min(W, H)*0.075*cw.sz*dep;
       // The tail hangs, and then it does not: one hard slap at a fly and a
       // lazy swing back, with half the cycle spent doing nothing at all.
-      this.cowShape(c, cw.x*W, baseFn(cw.x)*H, s, cw.dir, cw.hd, col,
+      this.cowShape(c, cw.x*W, groundAt(cw.x, cw)*H, s, cw.dir, cw.hd, col,
         cw.ph > 2.4 ? pale : null,
         gaitAt("swish", (this.t*1.7 + cw.ph)*TURN, "swing"),
         cw.hd > 0.4 ? gaitPose("graze", cw.chewPh || 0) : null);
       // a calf keeping close in, head up, all legs and no barrel yet
       if (cw.calf) {
-        this.cowShape(c, (cw.x*W) - cw.dir*s*1.9, baseFn(cw.x - cw.dir*0.012)*H,
+        this.cowShape(c, (cw.x*W) - cw.dir*s*1.9, groundAt(cw.x - cw.dir*0.012, cw)*H,
           s*0.58, cw.dir, 0.15, col, null,
           gaitAt("swish", (this.t*2.6 + cw.ph)*TURN, "swing"), null);
       }
@@ -1761,9 +1889,14 @@ class Scene {
     // Water lying in grass, not discs laid on top of it: the soaked ring goes
     // down first, the water is a low-contrast sheet of sky over it, and the
     // only bright part is the thin line where the far edge catches the light.
+    /* `p.z` runs 0 far to 1 near, which is the opposite way round from the
+       plane's own z — where a place has a plane, the puddle sits and sizes on
+       it exactly rather than on a straight line between the band's ends. */
     for (const p of pud) {
-      const py = (band[1] + (band[0] - band[1])*p.z) * H + p.dy*H;
-      const pw = p.r*W*(0.6 + p.z*0.7);
+      const pz = 1 - p.z;
+      const py = (this.plane ? this.planeY(pz) : band[1] + (band[0] - band[1])*p.z)*H
+        + p.dy*H*(this.plane ? this.planeScale(pz)/this.plane.top : 1);
+      const pw = p.r*W*(this.plane ? this.planeScale(pz)/this.plane.top : 0.6 + p.z*0.7);
       c.globalAlpha = pa * 0.20;
       c.fillStyle = soaked;
       c.beginPath(); c.ellipse(p.x*W, py, pw*1.3, pw*0.25, 0, 0, Math.PI*2); c.fill();
@@ -1799,20 +1932,62 @@ class Scene {
     // very bottom of the frame — an animal standing there is a black shape on
     // black. The far end stops short of the ridge it would otherwise climb.
     switch (this.loc) {
-      case "meadow":  return [0.930, 0.872];
+      // the plane is the band; the literals are only a floor for the moment
+      // before reseed has built one
+      case "meadow":  return this.plane ? [this.planeY(0), this.planeY(1)] : [0.99, 0.64];
       case "forest":  return [0.945, 0.898];
       case "beach":   return [(this.shoreY || 0.82) + 0.125, (this.shoreY || 0.82) + 0.03];
       case "wetland": return [(this.bankY || 0.86) + 0.035, (this.bankY || 0.86) - 0.008];
       default:        return [0.978, 0.952];
     }
   }
+  /* ---- The ground, in perspective ---------------------------------------
+
+     For a camera at a fixed height above a flat plane, an object's distance
+     below the horizon on screen and its apparent size are *the same number*:
+     both go as 1/d. That single relation is what makes a field read as a
+     field, and it is the whole of this:
+
+       y(z)     = horizon + near/(1 + z(d−1))
+       scale(z) = 1/(1 + z(d−1))
+
+     `z` is 0 at the near edge of the frame and 1 at the far edge of the
+     field, `d` is how many times further away the far edge is than the near
+     one. Everything that stands on the ground — grass, flowers, stones,
+     hedges, cattle, every animal — takes its screen position and its size
+     from the same pair, so nothing can disagree with anything else.
+
+     Places that have not been given a plane keep the old flat band. */
+  planeY(z) {
+    const p = this.plane;
+    if (!p) { const [n, f] = this.groundBand(); return n + (f - n)*z; }
+    return p.horizon + p.near/(1 + z*(p.d - 1));
+  }
+  planeScale(z) {
+    const p = this.plane;
+    if (!p) return 1.22 - z*0.62;
+    return p.top/(1 + z*(p.d - 1));
+  }
+  /* And the inverse, for anything that knows where it is on screen but not
+     how far away that makes it — a bird choosing a spot on the grass. */
+  planeZ(y) {
+    const p = this.plane;
+    if (!p) return 0.5;
+    const s = Math.max(1e-4, y - p.horizon);
+    return Math.max(0, Math.min(1, (p.near/s - 1)/(p.d - 1)));
+  }
+
   groundDepth(z, bot) {
-    const [near, far] = this.groundBand();
     const zz = Math.max(0, Math.min(1, z === undefined ? 0.5 : z));
     return {
-      y: near + (far - near)*zz,
-      scale: 1.22 - zz*0.62,
-      speed: 1 - zz*0.55,
+      y: this.planeY(zz),
+      scale: this.planeScale(zz),
+      /* How fast it crosses the frame. In perspective this is not a separate
+         choice: an animal covering a metre of ground at twice the distance
+         crosses half as many pixels, so the speed *is* the scale. Setting the
+         two apart is what made a far rabbit hop the same distance as a near
+         one. */
+      speed: this.plane ? this.planeScale(zz)/this.planeScale(0) : 1 - zz*0.55,
       // A light touch only: these animals stand on dark ground but against
       // a pale far hill, so contrast runs both ways and a strong ramp would
       // lose them at one end or the other.
@@ -2049,7 +2224,9 @@ class Scene {
     // a rasterization each time; drawn pen by pen it is three.
     const fgSway = (g) => this.windBend(g.x)*14 + Math.sin(this.t*1.5 + g.ph)*3.6*wa + g.lean*7;
 
-    c.lineWidth = Math.max(2, mn*0.009);
+    // Thinner than it was: against a field whose own grass now runs to the
+    // frame edge, a five-pixel bar reads as a post rather than a stem.
+    c.lineWidth = Math.max(1.6, mn*0.0062);
     c.beginPath();
     for (const g of this.fg) {
       const gx = g.x*W, gy = H + 4, len = g.h*H, sway = fgSway(g);
@@ -2114,58 +2291,177 @@ class Scene {
   }
 
   drawMeadow(c, W, H, dt, bot) {
-    this.drawSkyBirds(c, W, H, bot, this.nightness());
-    this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.45), W, H);
-    const farTree = css(mix(this.tok.ink, bot, 0.38));
-    for (const t of (this.distantTrees || [])) this.smallTree(c, t.x, t.y, t.h, t.r, W, H, farTree);
-    this.drawCattle(c, W, H, this.hillA, bot);
-    this.distanceHaze(c, W, H, 0.52, 0.82, 0.075*(1 - this.nightness()*0.55));
-    this.drawHedgerow(c, W, H, this.hedgeLine, bot);
-    this.drawRidge(c, this.hillB, mix(this.tok.ink, bot, 0.18), W, H);
+    const night = this.nightness();
+    this.drawSkyBirds(c, W, H, bot, night);
+
+    /* The far country, on the horizon and nowhere else. */
+    this.drawRidge(c, this.hillA, mix(this.tok.ink, bot, 0.52), W, H);
+
+    /* The field. One plane, painted as one gradient: pale and hazy where it
+       meets the sky because that is what distance does to colour, and darker
+       under your feet. A hard-edged band would be a flat again.
+
+       Kept as a blit rather than evaluated every frame. Half of a full-screen
+       canvas is a million pixels, and a gradient costs a great deal more per
+       pixel than the flat Path2D fills this replaced — it put six and a half
+       milliseconds on the meadow, which is most of a frame. The colours only
+       move as the hour turns, so it is rebuilt on a coarse step of the light
+       and blitted the rest of the time. */
+    const hy = this.horizonY*H;
+    c.drawImage(this.groundPlane(W, H, hy, bot), 0, Math.round(hy) - 1);
+
+    /* Everything now goes down back to front, which on a plane is the only
+       order there is. */
+    const mn = Math.min(W, H);
+    const treesByZ = (this.distantTrees || []).slice().sort((a, b) => b.z - a.z);
+    let ti = 0;
+    for (let bi = 0; bi < this.bounds.length; bi++) {
+      const b = this.bounds[bi];
+      // the trees standing in this boundary, before the hedge that hides their feet
+      while (ti < treesByZ.length && treesByZ[ti].z >= b.z - 0.001) {
+        const t = treesByZ[ti++];
+        this.smallTree(c, t.x, t.y, t.h, t.r, W, H,
+          css(mix(this.tok.inkDeep, bot, 0.10 + t.z*0.20)));
+      }
+      this.drawHedgerow(c, W, H, b.line, bot, b.z);
+      if (bi === 0) {
+        // the cattle graze between the first boundary and the second
+        this.drawCattle(c, W, H, null, bot);
+        this.distanceHaze(c, W, H, this.horizonY - 0.02,
+          this.planeY(0.55), 0.085*(1 - night*0.55));
+      }
+    }
+    while (ti < treesByZ.length) {
+      const t = treesByZ[ti++];
+      this.smallTree(c, t.x, t.y, t.h, t.r, W, H,
+        css(mix(this.tok.inkDeep, bot, 0.10 + t.z*0.20)));
+    }
+
     const shrubCol = css(mix(this.tok.inkDeep, bot, 0.15));
     for (const bu of (this.shrubs || [])) {
       this.bushShape(c, bu.x, bu.y, bu.r, bu.seed, W, H, shrubCol);
     }
-    const baseY = this.hillB(this.treeX) * H;
+
+    /* The field tree, standing on the plane at its own depth, so its trunk
+       meets the ground where the ground actually is and its size is the size
+       that depth allows. */
+    const baseY = this.planeY(this.treeZ)*H;
+    const tS = (this.planeScale(this.treeZ)/this.plane.top)*1.45;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.06));
     c.lineCap = "round";
     const treeBend = this.windBend(this.treeX, true);
-    for (const s of this.tree) {
-      c.lineWidth = 0.8 + s.w * 1.1;
-      const gw = (4 - s.w)*(0.22 + state.wx.gust*0.63);
-      const sway = treeBend*gw*3.4 + Math.sin(this.t*1.1 + s.y1*8)*gw*0.7;
+    for (const sg of this.tree) {
+      c.lineWidth = Math.max(0.6, (0.8 + sg.w*1.1)*tS);
+      const gw = (4 - sg.w)*(0.22 + state.wx.gust*0.63)*tS;
+      const sway = treeBend*gw*3.4 + Math.sin(this.t*1.1 + sg.y1*8)*gw*0.7;
       c.beginPath();
-      c.moveTo(this.treeX*W + s.x1*W*0.5 + sway*0.4, baseY + s.y1*H*0.9);
-      c.lineTo(this.treeX*W + s.x2*W*0.5 + sway, baseY + s.y2*H*0.9);
+      c.moveTo(this.treeX*W + sg.x1*W*0.5*tS + sway*0.4, baseY + sg.y1*H*0.9*tS);
+      c.lineTo(this.treeX*W + sg.x2*W*0.5*tS + sway, baseY + sg.y2*H*0.9*tS);
       c.stroke();
     }
-    // the crown, swaying with the branches that carry it
     if (this.treeLeaves) {
-      const mnT = Math.min(W, H);
       c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.10));
       for (const lf of this.treeLeaves) {
-        const lw = 3.6*(0.22 + state.wx.gust*0.63);
+        const lw = 3.6*(0.22 + state.wx.gust*0.63)*tS;
         const sway = treeBend*lw*3.4 + Math.sin(this.t*1.1 + lf.y*8)*lw*0.7;
         c.beginPath();
-        c.arc(this.treeX*W + (lf.x + lf.dx)*W*0.5 + sway,
-          baseY + (lf.y + lf.dy)*H*0.9, lf.r*mnT, 0, Math.PI*2);
+        c.arc(this.treeX*W + (lf.x + lf.dx)*W*0.5*tS + sway,
+          baseY + (lf.y + lf.dy)*H*0.9*tS, Math.max(0.8, lf.r*mn*tS), 0, Math.PI*2);
         c.fill();
       }
     }
-    c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.14));
-    c.beginPath();
-    c.moveTo(0, H); c.lineTo(0, H*0.92);
-    c.quadraticCurveTo(W*0.5, H*0.88, W, H*0.93);
-    c.lineTo(W, H); c.closePath(); c.fill();
-    const groundYn = (x) => 0.92 - (x*0.5 - 0.25)*(x*0.5 - 0.25)*0.1;
+
+    // stones, lying on the ground at their own depth
     for (const rk of (this.rocks || [])) {
-      const rr = rk.r*Math.min(W, H);
-      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05 + rk.shade*0.07));
-      c.beginPath(); c.ellipse(rk.x*W, groundYn(rk.x)*H + 5, rr, rr*0.6, 0, Math.PI, 0); c.fill();
+      const rr = Math.max(0.7, rk.r*mn);
+      c.fillStyle = css(mix(this.tok.inkDeep, bot, 0.05 + rk.shade*0.07 + (1 - rk.z)*0.02));
+      c.beginPath();
+      c.ellipse(rk.x*W, rk.y*H, rr, rr*0.55, 0, Math.PI, 0);
+      c.fill();
     }
-    this.drawFlowers(c, W, H, groundYn, bot);
-    this.drawGrassTufts(c, W, H, this.grass, groundYn, css(mix(this.tok.inkDeep, bot, 0.10)));
+
+    this.drawFlowers(c, W, H, bot);
+    this.drawMeadowGrass(c, W, H, bot);
     this.drawMotes(c, W, H, this.dayness());
+  }
+
+  /* The field's own gradient, painted once and kept. Keyed on the size and on
+     a coarse step of the ground colour: the hour has to move appreciably
+     before it is worth a rebuild, and between rebuilds this is one blit. */
+  groundPlane(W, H, hy, bot) {
+    const y0 = Math.round(hy) - 1, h = Math.max(1, H - y0);
+    const q = (v) => Math.round(v/6);
+    const key = `${W}|${H}|${h}|${q(bot[0])},${q(bot[1])},${q(bot[2])}|`
+      + `${q(this.tok.ink[0])},${q(this.tok.inkDeep[0])}`;
+    if (this._planeKey === key && this._planeCv) return this._planeCv;
+    const cv = this._planeCv && this._planeCv.width === W && this._planeCv.height === h
+      ? this._planeCv : Object.assign(document.createElement("canvas"), { width: W, height: h });
+    const g2 = cv.getContext("2d");
+    g2.clearRect(0, 0, W, h);
+    const g = g2.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, css(mix(this.tok.ink, bot, 0.50)));
+    g.addColorStop(0.16, css(mix(this.tok.ink, bot, 0.34)));
+    g.addColorStop(0.46, css(mix(this.tok.inkDeep, bot, 0.19)));
+    g.addColorStop(1, css(mix(this.tok.inkDeep, bot, 0.06)));
+    g2.fillStyle = g;
+    g2.fillRect(0, 0, W, h);
+    /* The field's own patchwork goes on here rather than in the frame: it is
+       broad, soft, never quite one colour, and — being part of the ground —
+       it never moves. A dozen large translucent ellipses a frame is exactly
+       the kind of overdraw that costs a millisecond and is invisible. */
+    for (const pa of (this.patches || [])) {
+      g2.globalAlpha = 0.055*pa.k*(0.4 + (1 - pa.z)*0.6);
+      g2.fillStyle = pa.tone > 0 ? css(this.tok.ink) : css(bot);
+      g2.beginPath();
+      g2.ellipse(pa.x*W, pa.y*H - y0, pa.w*W, Math.max(1, pa.h*H), 0, 0, Math.PI*2);
+      g2.fill();
+    }
+    g2.globalAlpha = 1;
+    this._planeCv = cv; this._planeKey = key;
+    return cv;
+  }
+
+  /* The grass, which is most of what a meadow is.
+
+     One flat line of tufts along a single baseline is a fringe, not a field.
+     Every tuft carries a depth: it stands where that depth puts it, it is as
+     tall as that depth allows, and it is drawn in one of three passes from
+     far to near so the near grass genuinely stands in front of the far. Each
+     pass is a single path in a single colour — three strokes for three
+     hundred blades — and the far pass is paler, which is the same aerial
+     perspective the ground itself has. */
+  drawMeadowGrass(c, W, H, bot) {
+    if (!this.grass) return;
+    const wa = this.windAmt();
+    // far · middle · near: where the band starts and stops, how pale it is,
+    // and how thick a blade is at that distance
+    const bands = [[1.01, 0.62, 0.30, 0.6], [0.62, 0.28, 0.18, 1.0],
+                   [0.28, -0.01, 0.09, 1.6]];
+    c.lineCap = "round";
+    for (const [zHi, zLo, tint, pen] of bands) {
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, tint));
+      c.lineWidth = pen;
+      let any = false;
+      c.beginPath();
+      for (const gr of this.grass) {
+        if (gr.z >= zHi || gr.z < zLo) continue;
+        const near = 1 - gr.z;
+        const gx = gr.x*W, gy = gr.y*H, hh = gr.h*H;
+        /* A blade leans by a fraction of its own length, not by a fixed few
+           pixels: at a fixed offset every blade in the near band stood
+           near-vertical and parallel, and forty of those is a bed of nails
+           rather than grass. The wind is on top of that, and it moves a near
+           blade further across the glass than a far one for the same wind. */
+        const sway = gr.lean*hh*0.62
+          + (this.windBend(gr.x)*7.5 + Math.sin(this.t*1.8 + gr.ph)*2.2*wa)*(0.3 + near*0.7);
+        c.moveTo(gx, gy + 2);
+        // a blade five pixels tall has no curve in it worth paying for
+        if (hh < 7) c.lineTo(gx + sway, gy - hh);
+        else c.quadraticCurveTo(gx + sway*0.25, gy - hh*0.62, gx + sway, gy - hh);
+        any = true;
+      }
+      if (any) c.stroke();
+    }
   }
 
   /* Stems first, all of them in one path: they share a colour and a width, and
@@ -2173,25 +2469,42 @@ class Scene {
      times the rasterizer is asked. The heads cannot join them — they are drawn
      at 0.82, and two translucent petals that overlap must darken each other,
      which only happens if each is laid down in its own turn. */
-  drawFlowers(c, W, H, baseYfn, bot) {
+  drawFlowers(c, W, H, bot) {
     if (!this.flowers) return;
     const wa = this.windAmt();
     c.lineWidth = 1;
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.16));   // stems share one colour
     c.beginPath();
     for (const f of this.flowers) {
-      const gx = f.x*W, gy = baseYfn(f.x)*H;
-      const sway = this.windBend(f.x)*6 + Math.sin(this.t*1.6 + f.ph)*1.8*wa;
-      c.moveTo(gx, gy + 3);
+      const gx = f.x*W, gy = f.y*H, near = 1 - f.z;
+      const sway = (this.windBend(f.x)*6 + Math.sin(this.t*1.6 + f.ph)*1.8*wa)*(0.3 + near*0.7);
+      c.moveTo(gx, gy + 2);
       c.quadraticCurveTo(gx + sway*0.4, gy - f.h*H*0.55, gx + sway, gy - f.h*H);
     }
     c.stroke();
-    for (const f of this.flowers) {
-      const gx = f.x*W, gy = baseYfn(f.x)*H;
-      const sway = this.windBend(f.x)*6 + Math.sin(this.t*1.6 + f.ph)*1.8*wa;
-      const rgb = f.tone < 0.4 ? this.tok.amberRGB : f.tone < 0.72 ? this.tok.sageRGB : this.tok.cloudRGB;
-      c.fillStyle = `rgba(${rgb}, 0.82)`;
-      c.beginPath(); c.arc(gx + sway, gy - f.h*H, Math.max(1.3, f.h*H*0.11), 0, Math.PI*2); c.fill();
+    /* The heads go down three at a time — one path per colour — rather than
+       one fill apiece. Sixty flowers was sixty rasterizations of a disc four
+       pixels across, which is the sort of thing that costs a milliseconds and
+       buys nothing. Distance is spent on size here rather than on alpha,
+       since alpha is what would have forced them apart again. */
+    const tones = [[0.4, this.tok.amberRGB], [0.72, this.tok.sageRGB], [1.1, this.tok.cloudRGB]];
+    let lo = -1;
+    for (const [hi, rgb] of tones) {
+      c.fillStyle = `rgba(${rgb}, 0.74)`;
+      let any = false;
+      c.beginPath();
+      for (const f of this.flowers) {
+        if (f.tone <= lo || f.tone > hi) continue;
+        const near = 1 - f.z;
+        const sway = (this.windBend(f.x)*6 + Math.sin(this.t*1.6 + f.ph)*1.8*wa)*(0.3 + near*0.7);
+        const r = Math.max(0.6, f.h*H*0.13);
+        const cx = f.x*W + sway, cy = f.y*H - f.h*H;
+        c.moveTo(cx + r, cy);
+        c.arc(cx, cy, r, 0, Math.PI*2);
+        any = true;
+      }
+      if (any) c.fill();
+      lo = hi;
     }
   }
 
@@ -4680,8 +4993,12 @@ class Scene {
     for (let i = this.critters.length - 1; i >= 0; i--) {
       const cr = this.critters[i];
       cr.t += dt;
-      // where this individual stands in the depth of the field, decided once
-      if (cr.z === undefined) cr.z = Math.random();
+      /* Where this individual stands in the depth of the field, decided once.
+         Never right at the near edge: the plane's nearest ground sits just
+         below the bottom of the frame — which is what puts the grass at your
+         feet off the edge of the glass, as it should be — and an animal
+         standing there would be half out of the picture. */
+      if (cr.z === undefined) cr.z = 0.06 + Math.random()*0.9;
       const D = this.groundDepth(cr.z, bot);
       let dead = false;
       switch (cr.kind) {
@@ -5199,7 +5516,7 @@ class Scene {
           const hop = leap ? Math.max(0, leap.rise) : 0;
           const rS = H*0.032*(cr.sz || 1)*D.scale;
           this.contactShadow(c, cr.x*W, D.y*H, rS*0.8, 0.2*(1 - cr.z*0.6)*(1 - hop));
-          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035, s: rS,
+          this.paintRabbit(c, { x: cr.x*W, y: D.y*H - hop*H*0.035*D.scale, s: rS,
             dir: cr.dir, leap, sit: cr.mode === "sit", ear: cr.ear || 0, color: D.col,
             t: cr.t, nibble: cr.act === "nibble" ? 1 : 0,
             wash: cr.act === "wash" ? gaitPose("groom", cr.actT*0.7) : null });
@@ -5261,7 +5578,8 @@ class Scene {
         }
         case "squirrel": {
           const leap = cr.mode === "bound" ? gaitPose("scamper", cr.ph*TURN) : null;
-          const hopY = leap ? Math.max(0, leap.rise)*0.018 : 0;
+          // a leap clears its own body's worth of ground, not the frame's
+          const hopY = leap ? Math.max(0, leap.rise)*0.018*D.scale : 0;
           const qS = H*0.03*(cr.sz || 1)*D.scale;
           this.contactShadow(c, cr.x*W, D.y*H, qS*0.7, 0.17*(1 - cr.z*0.6)*(1 - hopY*40));
           this.paintSquirrel(c, { x: cr.x*W, y: (D.y - hopY)*H, s: qS,
@@ -5281,7 +5599,7 @@ class Scene {
         }
         case "hare": {
           const leap = cr.mode === "lope" ? gaitPose("lope", cr.ph*TURN) : null;
-          const lift = leap ? Math.max(0, leap.rise)*0.024 : 0;
+          const lift = leap ? Math.max(0, leap.rise)*0.024*D.scale : 0;
           const hS = H*0.042*(cr.sz || 1)*D.scale;
           this.contactShadow(c, cr.x*W, D.y*H, hS*0.85, 0.19*(1 - cr.z*0.6)*(1 - lift*40));
           this.paintHare(c, { x: cr.x*W, y: (D.y - lift)*H, s: hS,
