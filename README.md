@@ -933,6 +933,55 @@ Worth recording how that was found: a JS profile of the whole draw came to
 timing will show — the bench forces it to land with a `getImageData`, and only
 the A/B of one drawing call against another finds it.
 
+### The same ground under every place
+
+The meadow's plane was the first; all five have one now, built from the three
+numbers a place already knows about itself — where its horizon is, where the
+ground meets the bottom of the frame, and how far back a creature can stand.
+`makePlane` works out the depth factor from those, so nothing has to guess:
+
+```
+            horizon   band            size range
+meadow       0.52     1.035 … 0.645     4.0 ×
+forest       0.60     1.045 … 0.864     1.7 ×
+beach        0.53     1.030 … 0.821     1.7 ×
+wetland      0.57     1.030 … 0.675     4.4 ×
+city         0.89     1.030 … 0.958     2.0 ×
+```
+
+The bands they replaced were 4.7%, 9.5%, 4.3% and 2.6% of frame height. The
+shallow ones are honest: a strand seen from a dune really is foreshortened, and
+a street from a first-floor window is a narrow strip. What matters is that a
+cat crossing the near kerb is now bigger than one at the far, and crosses
+faster.
+
+Each place also had one thing standing on it that ignored depth entirely, and
+each is the same fix:
+
+- **The wood's trunks** all met the floor on one line at 0.93. A wood is the
+  one place where the recession of the ground is completely hidden by what
+  stands on it — unless what stands on it recedes too. The three ranks now
+  carry depths and meet the floor where their own depth puts it.
+- **The reed bed** was forty-two identical stems on one line: a picket fence
+  standing in water. Seventy-eight at every distance is a bed.
+- **The beach** had pebbles all one size from the tide line to your feet, and
+  groyne posts all one height. A shingle at your feet is the size of a fist
+  and one at the water's edge is a speck.
+- **The wood's undergrowth** — grass, ferns, mushrooms — was a fringe pinned
+  along the bottom of the picture at 0.93 and 0.945.
+
+`drawDepthTufts` is the meadow's grass routine generalised: three passes far to
+near, one path each, the far pass paler and finer, every blade leaning by a
+fraction of its own length. The meadow, the wood and the dune all use it.
+
+And the cattle graze. They were the slow background motion this view is built
+around and they had been pushed too far back to read — three pale specks
+behind the haze. They are nearer now, the haze goes down before them rather
+than over them, and they work their way across the field head-down at a
+hand's breadth a minute, turning at the boundary rather than walking out of
+the field. It is the slowest motion in the piece and the only one you notice
+by having looked away and looked back.
+
 ### The light
 
 The sun's position was worked out from the first — `drawCelestial` sets `celX`

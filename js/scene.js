@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=17";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=17";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=17";
+} from "./util.js?v=18";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=18";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=18";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -343,12 +343,8 @@ class Scene {
          how far away each other are. The only things above the horizon are
          the sky and the far country. */
       this.horizonY = 0.505 + rng()*0.035;
-      this.plane = {
-        horizon: this.horizonY,
-        near: 1.035 - this.horizonY,   // screen offset of the ground at our feet
-        d: 4.0 + rng()*0.7,            // the far edge is four-odd times as far off
-        top: 1.25                      // what "full size" means at the near edge
-      };
+      this.plane = this.makePlane(this.horizonY, 1.035,
+        this.horizonY + 0.118 + rng()*0.016);
       const py = (z) => this.planeY(z), ps = (z) => this.planeScale(z)/this.plane.top;
 
       /* The far country: one low ridge sitting on the horizon, and that is
@@ -415,19 +411,24 @@ class Scene {
 
       /* Cattle, out in the middle distance where cattle are — small, because
          that is what a beast four fields away looks like. */
+      /* Cattle out in the middle distance. Not so far off that they are three
+         pale specks — they are the slow background motion this view is built
+         around, and a herd you cannot quite make out is not motion at all. */
       this.cattle = [];
       if (rng() < 0.85) {
-        const herd = 2 + Math.floor(rng()*4);
-        const cz = 0.66 + rng()*0.2;
-        let cx = 0.10 + rng()*0.55;
+        const herd = 3 + Math.floor(rng()*4);
+        const cz = 0.52 + rng()*0.16;
+        let cx = 0.08 + rng()*0.5;
         for (let i = 0; i < herd; i++) {
-          cx += (0.03 + rng()*0.07);
+          cx += (0.04 + rng()*0.09);
           if (cx > 0.94) break;
-          this.cattle.push({ x: cx, z: cz + (rng() - 0.5)*0.08,
+          this.cattle.push({ x: cx, z: cz + (rng() - 0.5)*0.10,
             sz: 0.85 + rng()*0.3, dir: rng() < 0.5 ? -1 : 1,
             ph: rng()*Math.PI*2, calf: rng() < 0.22,
             // most of a cow's day is head-down; the rest is standing about
-            head: rng() < 0.68 ? 1 : 0, next: 6 + rng()*14 });
+            head: rng() < 0.68 ? 1 : 0, next: 6 + rng()*14,
+            // and it works its way across the field while it does it
+            step: (0.0016 + rng()*0.0022) });
         }
       }
 
@@ -513,20 +514,54 @@ class Scene {
       this.perches.push({ x: hx, y: this.bounds[1].line(hx) - 0.004, depth: 2 + hz*12, type: "ground" });
     } else if (loc === "forest") {
       this.hillA = this.makeRidge(rng, 0.55, 0.06);
+      /* The floor of a wood, which had a band of four and a half per cent of
+         frame height to live in — every deer, badger and squirrel at the same
+         size on the same line. Its horizon is eye level among the trunks. */
+      this.plane = this.makePlane(0.60, 1.045, 0.845 + rng()*0.02);
+      /* Three ranks of trunk, and now they stand at three depths rather than
+         all meeting the floor on one line at 0.93. A wood is the one place
+         where the recession of the ground is completely hidden by what is
+         standing on it — unless the things standing on it recede too. */
       this.trunksFar = []; this.trunksMid = []; this.trunksNear = [];
-      for (let i = 0; i < 11; i++) this.trunksFar.push(this.makeTrunk(rng, 0.30 + rng()*0.12, 2.8 + rng()*1.8, 0.85));
-      for (let i = 0; i < 7; i++)  this.trunksMid.push(this.makeTrunk(rng, 0.23 + rng()*0.10, 4.6 + rng()*2.8, 1));
-      for (let i = 0; i < 6; i++)  this.trunksNear.push(this.makeTrunk(rng, 0.16 + rng()*0.10, 7.5 + rng()*5, 1.25));
-      this.grass = this.makeGrass(rng, 64, 0.04, 0.07);
-      // undergrowth: ferns, mushrooms and a slow drift of falling leaves
+      for (let i = 0; i < 11; i++) {
+        const tr = this.makeTrunk(rng, 0.30 + rng()*0.12, 2.8 + rng()*1.8, 0.85);
+        tr.z = 0.78 + rng()*0.2; this.trunksFar.push(tr);
+      }
+      for (let i = 0; i < 7; i++) {
+        const tr = this.makeTrunk(rng, 0.23 + rng()*0.10, 4.6 + rng()*2.8, 1);
+        tr.z = 0.42 + rng()*0.22; this.trunksMid.push(tr);
+      }
+      for (let i = 0; i < 6; i++) {
+        const tr = this.makeTrunk(rng, 0.16 + rng()*0.10, 7.5 + rng()*5, 1.25);
+        tr.z = 0.06 + rng()*0.20; this.trunksNear.push(tr);
+      }
+      /* Undergrowth, standing where its depth puts it and as tall as that
+         depth allows. Along one line at 0.93 it was a fringe pinned to the
+         bottom of the picture; spread through the wood it is a floor. */
+      this.grass = [];
+      for (let i = 0; i < 130; i++) {
+        const z = Math.pow(rng(), 1.6);
+        this.grass.push({ x: rng()*1.06 - 0.03, z, y: this.planeY(z),
+          h: (0.045 + rng()*0.055)*(this.planeScale(z)/this.plane.top),
+          ph: rng()*Math.PI*2, lean: (rng()-0.5)*1.2 });
+      }
+      this.grass.sort((a, b) => b.z - a.z);
       this.ferns = [];
-      for (let i = 0; i < 16; i++) {
-        this.ferns.push({ x: rng(), size: 0.03 + rng()*0.045, lean: (rng()-0.5)*0.7, blades: 4 + Math.floor(rng()*3) });
+      for (let i = 0; i < 22; i++) {
+        const z = Math.pow(rng(), 1.5);
+        this.ferns.push({ x: rng(), z, y: this.planeY(z),
+          size: (0.045 + rng()*0.055)*(this.planeScale(z)/this.plane.top),
+          lean: (rng()-0.5)*0.7, blades: 4 + Math.floor(rng()*3) });
       }
+      this.ferns.sort((a, b) => b.z - a.z);
       this.mushrooms = [];
-      for (let i = 0; i < 6 + Math.floor(rng()*5); i++) {
-        this.mushrooms.push({ x: rng(), size: 0.006 + rng()*0.011, tall: rng() < 0.5, tone: rng() });
+      for (let i = 0; i < 8 + Math.floor(rng()*6); i++) {
+        const z = Math.pow(rng(), 1.7)*0.8;
+        this.mushrooms.push({ x: rng(), z, y: this.planeY(z),
+          size: (0.009 + rng()*0.014)*(this.planeScale(z)/this.plane.top),
+          tall: rng() < 0.5, tone: rng() });
       }
+      this.mushrooms.sort((a, b) => b.z - a.z);
       // Pools of light let through the canopy. They drift as the crowns move
       // and breathe as the leaves open and close over them.
       this.dapples = [];
@@ -556,27 +591,51 @@ class Scene {
     } else if (loc === "beach") {
       this.horizonY = 0.50 + rng()*0.05;
       this.shoreY = 0.80 + rng()*0.03;
+      /* The sand, from the water's edge to your feet. It is a shallow plane —
+         a strand seen from a dune really is foreshortened — but a shallow one
+         is still an honest one, where a fixed band was not. */
+      this.plane = this.makePlane(this.horizonY, 1.03, this.shoreY + 0.012);
       this.foam = [{ p: rng() }, { p: rng() }, { p: rng() }];
       this.wet = 0;          // how far up the sand the last wave reached
       this.duneSide = rng() < 0.5 ? 0 : 1;
+      /* Marram on the dune, at its own depths like everything else. */
       this.duneGrass = [];
-      for (let i = 0; i < 32; i++) {
-        const gx = this.duneSide === 0 ? rng()*0.26 : 0.74 + rng()*0.26;
-        this.duneGrass.push({ x: gx, h: 0.05 + rng()*0.07, ph: rng()*Math.PI*2, lean: (rng()-0.5)*0.8 });
+      for (let i = 0; i < 54; i++) {
+        const gx = this.duneSide === 0 ? rng()*0.28 : 0.72 + rng()*0.28;
+        const z = Math.pow(rng(), 1.6);
+        this.duneGrass.push({ x: gx, z, y: this.planeY(z),
+          h: (0.075 + rng()*0.085)*(this.planeScale(z)/this.plane.top),
+          ph: rng()*Math.PI*2, lean: (rng()-0.5)*1.3 });
       }
+      this.duneGrass.sort((a, b) => b.z - a.z);
       // pebbles and shells on the wet sand, a rock islet offshore, driftwood
+      /* Stones on the strand. A shingle at your feet is the size of a fist
+         and one at the water's edge is a speck, and drawn all one size they
+         were the flattest thing on the beach. */
       this.pebbles = [];
-      for (let i = 0; i < 18 + Math.floor(rng()*12); i++) {
-        this.pebbles.push({ x: rng(), y: this.shoreY + 0.04 + rng()*(0.98 - this.shoreY - 0.04),
-          r: 0.004 + rng()*0.011, shade: rng(), shell: rng() < 0.18 });
+      for (let i = 0; i < 26 + Math.floor(rng()*16); i++) {
+        const z = Math.pow(rng(), 1.5);
+        this.pebbles.push({ x: rng(), z, y: this.planeY(z),
+          r: (0.009 + rng()*0.020)*(this.planeScale(z)/this.plane.top),
+          shade: rng(), shell: rng() < 0.18 });
       }
+      this.pebbles.sort((a, b) => b.z - a.z);
       // a natural rock islet out on the water (no boats — this is a wild place)
       this.islet = rng() < 0.65 ? { x: 0.12 + rng()*0.76, w: 0.05 + rng()*0.07, h: 0.018 + rng()*0.022 } : null;
       this.driftwood = rng() < 0.6 ? { x: 0.18 + rng()*0.6, w: 0.05 + rng()*0.06, ang: (rng()-0.5)*0.4 } : null;
+      /* Groyne posts, standing in a line down the beach — so each is a
+         little further off than the last, and a little shorter for it. */
       this.posts = [];
-      const npost = 2 + Math.floor(rng()*2);
-      for (let i = 0; i < npost; i++) this.posts.push({ x: 0.2 + rng()*0.6, h: 0.05 + rng()*0.03 });
-      this.perches = this.posts.map(p => ({ x: p.x, y: this.shoreY - p.h, depth: 5 + rng()*4, type: "post" }));
+      const npost = 3 + Math.floor(rng()*3);
+      for (let i = 0; i < npost; i++) {
+        const z = 0.10 + (i/Math.max(1, npost - 1))*0.78 + (rng() - 0.5)*0.08;
+        const sc = this.planeScale(z)/this.plane.top;
+        this.posts.push({ x: 0.14 + rng()*0.72, z, y: this.planeY(z),
+          h: (0.085 + rng()*0.05)*sc, w: Math.max(1.2, 4.2*sc) });
+      }
+      this.posts.sort((a, b) => b.z - a.z);
+      this.perches = this.posts.map(p => ({ x: p.x, y: p.y - p.h,
+        depth: 2 + p.z*12, type: "post" }));
       for (let k = 0; k < 2 + Math.floor(rng()*2); k++) {
         this.perches.push({ x: 0.12 + rng()*0.76, y: this.shoreY + 0.05 + rng()*0.06,
           depth: 2.5 + rng()*3, type: "ground" });
@@ -593,15 +652,26 @@ class Scene {
       this.treeline = this.makeRidge(rng, 0.50, 0.03);
       this.waterY = 0.56 + rng()*0.03;
       this.bankY = 0.86;
+      /* Bank and shallows together: a heron out in the water is further off
+         than a moorhen at the reeds, and until now they were the same size on
+         the same line four per cent of the frame apart. */
+      this.plane = this.makePlane(this.waterY, 1.03, this.waterY + 0.085 + rng()*0.02);
       this.rippleLines = [];
       for (let i = 0; i < 5; i++) {
         this.rippleLines.push({ y: this.waterY + 0.05 + rng()*(this.bankY - this.waterY - 0.08), ph: rng()*Math.PI*2, sp: 0.06 + rng()*0.08 });
       }
+      /* Reeds, at their own depths. Forty-two identical stems along one line
+         is a picket fence standing in water; a reed bed is stems at every
+         distance, the far ones a fine fringe and the near ones over your
+         head. They keep to the sides, where the bank is. */
       this.reeds = [];
-      for (let i = 0; i < 42; i++) {
+      for (let i = 0; i < 78; i++) {
         const side = rng();
-        const x = side < 0.55 ? rng()*0.34 : 0.66 + rng()*0.34;
-        this.reeds.push({ x, h: 0.14 + rng()*0.14, ph: rng()*Math.PI*2, head: rng() < 0.45, lean: (rng()-0.5)*0.5 });
+        const x = side < 0.55 ? rng()*0.36 : 0.64 + rng()*0.36;
+        const z = Math.pow(rng(), 1.5);
+        this.reeds.push({ x, z, y: this.planeY(z),
+          h: (0.20 + rng()*0.16)*(this.planeScale(z)/this.plane.top),
+          ph: rng()*Math.PI*2, head: rng() < 0.45, lean: (rng()-0.5)*0.5 });
       }
       // lily pads on the open water, a half-sunk log, trees along the far bank
       this.lilies = [];
@@ -630,6 +700,11 @@ class Scene {
           depth: 5 + rng()*4, type: "ground" });
       }
     } else {
+      /* The street. It is the shallowest plane of the five — you are looking
+         down at a pavement from a first-floor window, not out across a field
+         — but a cat crossing it near should still be bigger than one at the
+         far kerb, and until now nothing in the city knew that. */
+      this.plane = this.makePlane(0.885, 1.03, 0.958);
       this.backBlocks = this.makeSkyline(rng, 0.30, 0.28, 0.05, 0.10);
       this.frontBlocks = this.makeSkyline(rng, 0.55, 0.30, 0.07, 0.13);
       for (const b of this.frontBlocks) {
@@ -1722,6 +1797,16 @@ class Scene {
       cw.hd = (cw.hd === undefined) ? cw.head : cw.hd + (cw.head - cw.hd)*Math.min(1, dt*1.4);
       // its own tempo through a mouthful, so a field of them is not one animal
       cw.chewPh = (cw.chewPh || cw.ph) + dt*(0.34 + cw.ph*0.03);
+      /* And it grazes its way across the field — head down, a step every few
+         seconds, a whole minute to cross a hand's breadth of glass. This is
+         the slowest motion in the piece and the only one you notice by having
+         looked away and looked back. It turns at the field's edge rather than
+         walking out of it, because the herd belongs to this field. */
+      if (cw.hd < 0.5) {
+        cw.x += cw.dir*cw.step*dt*(this.plane ? this.planeScale(cw.z)/this.plane.top : 1);
+        if (cw.x < 0.06) { cw.x = 0.06; cw.dir = 1; }
+        if (cw.x > 0.94) { cw.x = 0.94; cw.dir = -1; }
+      }
     }
   }
 
@@ -1927,14 +2012,13 @@ class Scene {
     return this._puddles;
   }
 
+  /* Where the ground a creature can stand on begins and ends. Every place has
+     a plane now, so this is the plane's own two ends; the literals are only a
+     floor for the moment before `reseed` has built one. */
   groundBand() {
-    // The near end sits on the lit ground, not down in the dark strip at the
-    // very bottom of the frame — an animal standing there is a black shape on
-    // black. The far end stops short of the ridge it would otherwise climb.
+    if (this.plane) return [this.planeY(0), this.planeY(1)];
     switch (this.loc) {
-      // the plane is the band; the literals are only a floor for the moment
-      // before reseed has built one
-      case "meadow":  return this.plane ? [this.planeY(0), this.planeY(1)] : [0.99, 0.64];
+      case "meadow":  return [0.99, 0.64];
       case "forest":  return [0.945, 0.898];
       case "beach":   return [(this.shoreY || 0.82) + 0.125, (this.shoreY || 0.82) + 0.03];
       case "wetland": return [(this.bankY || 0.86) + 0.035, (this.bankY || 0.86) - 0.008];
@@ -1958,6 +2042,16 @@ class Scene {
      from the same pair, so nothing can disagree with anything else.
 
      Places that have not been given a plane keep the old flat band. */
+  /* Build a plane from the three things a place knows about itself: where its
+     horizon is, where the ground meets the bottom of the frame, and where the
+     furthest ground a creature can stand on lies. `d` falls out of those, so
+     no place has to guess at it. */
+  makePlane(horizon, nearY, farY, top) {
+    const near = nearY - horizon;
+    return { horizon, near, d: Math.max(1.05, near/Math.max(0.002, farY - horizon)),
+      top: top || 1.25 };
+  }
+
   planeY(z) {
     const p = this.plane;
     if (!p) { const [n, f] = this.groundBand(); return n + (f - n)*z; }
@@ -2325,10 +2419,13 @@ class Scene {
       }
       this.drawHedgerow(c, W, H, b.line, bot, b.z);
       if (bi === 0) {
-        // the cattle graze between the first boundary and the second
-        this.drawCattle(c, W, H, null, bot);
+        /* The haze goes down before the herd, not over it. Drawn behind it
+           the cattle came out as three pale smudges — the one thing in the
+           middle distance that is supposed to hold the eye, washed out by the
+           air in front of it. */
         this.distanceHaze(c, W, H, this.horizonY - 0.02,
-          this.planeY(0.55), 0.085*(1 - night*0.55));
+          this.planeY(0.62), 0.085*(1 - night*0.55));
+        this.drawCattle(c, W, H, null, bot);
       }
     }
     while (ti < treesByZ.length) {
@@ -2381,8 +2478,88 @@ class Scene {
     }
 
     this.drawFlowers(c, W, H, bot);
-    this.drawMeadowGrass(c, W, H, bot);
+    this.drawDepthTufts(c, W, H, this.grass, bot, 0.09);
     this.drawMotes(c, W, H, this.dayness());
+  }
+
+  /* The field's own gradient, painted once and kept. Keyed on the size and on
+     a coarse step of the ground colour: the hour has to move appreciably
+     before it is worth a rebuild, and between rebuilds this is one blit. */
+  groundPlane(W, H, hy, bot) {
+    const y0 = Math.round(hy) - 1, h = Math.max(1, H - y0);
+    const q = (v) => Math.round(v/6);
+    const key = `${W}|${H}|${h}|${q(bot[0])},${q(bot[1])},${q(bot[2])}|`
+      + `${q(this.tok.ink[0])},${q(this.tok.inkDeep[0])}`;
+    if (this._planeKey === key && this._planeCv) return this._planeCv;
+    const cv = this._planeCv && this._planeCv.width === W && this._planeCv.height === h
+      ? this._planeCv : Object.assign(document.createElement("canvas"), { width: W, height: h });
+    const g2 = cv.getContext("2d");
+    g2.clearRect(0, 0, W, h);
+    const g = g2.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, css(mix(this.tok.ink, bot, 0.50)));
+    g.addColorStop(0.16, css(mix(this.tok.ink, bot, 0.34)));
+    g.addColorStop(0.46, css(mix(this.tok.inkDeep, bot, 0.19)));
+    g.addColorStop(1, css(mix(this.tok.inkDeep, bot, 0.06)));
+    g2.fillStyle = g;
+    g2.fillRect(0, 0, W, h);
+    /* The field's own patchwork goes on here rather than in the frame: it is
+       broad, soft, never quite one colour, and — being part of the ground —
+       it never moves. A dozen large translucent ellipses a frame is exactly
+       the kind of overdraw that costs a millisecond and is invisible. */
+    for (const pa of (this.patches || [])) {
+      g2.globalAlpha = 0.055*pa.k*(0.4 + (1 - pa.z)*0.6);
+      g2.fillStyle = pa.tone > 0 ? css(this.tok.ink) : css(bot);
+      g2.beginPath();
+      g2.ellipse(pa.x*W, pa.y*H - y0, pa.w*W, Math.max(1, pa.h*H), 0, 0, Math.PI*2);
+      g2.fill();
+    }
+    g2.globalAlpha = 1;
+    this._planeCv = cv; this._planeKey = key;
+    return cv;
+  }
+
+  /* Tufts that carry a depth — the meadow's grass, the wood's undergrowth,
+     the marram on a dune. All the same problem and all the same answer.
+
+     One flat line of tufts along a single baseline is a fringe, not a field.
+     Every tuft stands where its depth puts it, is as tall as that depth
+     allows, and is drawn in one of three passes from far to near so the near
+     grass genuinely stands in front of the far. Each pass is a single path in
+     a single colour — three strokes for three hundred blades — and the far
+     pass is paler and finer, which is the same aerial perspective the ground
+     itself has. */
+  drawDepthTufts(c, W, H, list, bot, tint) {
+    if (!list || !list.length) return;
+    const wa = this.windAmt();
+    // far · middle · near: where the band starts and stops, how much paler it
+    // is than the near one, and how thick a blade is at that distance
+    const bands = [[1.01, 0.62, 0.21, 0.6], [0.62, 0.28, 0.09, 1.0],
+                   [0.28, -0.01, 0, 1.6]];
+    c.lineCap = "round";
+    for (const [zHi, zLo, pale, pen] of bands) {
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, tint + pale));
+      c.lineWidth = pen;
+      let any = false;
+      c.beginPath();
+      for (const gr of list) {
+        if (gr.z >= zHi || gr.z < zLo) continue;
+        const near = 1 - gr.z;
+        const gx = gr.x*W, gy = gr.y*H, hh = gr.h*H;
+        /* A blade leans by a fraction of its own length, not by a fixed few
+           pixels: at a fixed offset every blade in the near band stood
+           near-vertical and parallel, and forty of those is a bed of nails
+           rather than grass. The wind is on top of that, and it moves a near
+           blade further across the glass than a far one for the same wind. */
+        const sway = gr.lean*hh*0.62
+          + (this.windBend(gr.x)*7.5 + Math.sin(this.t*1.8 + gr.ph)*2.2*wa)*(0.3 + near*0.7);
+        c.moveTo(gx, gy + 2);
+        // a blade five pixels tall has no curve in it worth paying for
+        if (hh < 7) c.lineTo(gx + sway, gy - hh);
+        else c.quadraticCurveTo(gx + sway*0.25, gy - hh*0.62, gx + sway, gy - hh);
+        any = true;
+      }
+      if (any) c.stroke();
+    }
   }
 
   /* The field's own gradient, painted once and kept. Keyed on the size and on
@@ -2518,7 +2695,8 @@ class Scene {
     // so the crowns come round to a gust well after the field has.
     const gust = 1 + 1.9*this.windBend(0.5, true);
     const drawTrunk = (tr, colStr) => {
-      const groundY = H * 0.93;
+      // where this trunk's own depth puts the floor, not one line for all
+      const groundY = (tr.z !== undefined ? this.planeY(tr.z) : 0.93) * H;
       const topY = H * tr.top;
       const sway = this.windBend(tr.x, true)*7.5
         + Math.sin(this.t*1.1 + tr.x*9)*1.2*wa;
@@ -2561,8 +2739,7 @@ class Scene {
     this.drawDapples(c, W, H, gust);
     this.drawFerns(c, W, H, bot);
     this.drawMushrooms(c, W, H, bot);
-    this.drawGrassTufts(c, W, H, this.grass, () => 0.93,
-      css(mix(this.tok.inkDeep, bot, 0.12)));
+    this.drawDepthTufts(c, W, H, this.grass, bot, 0.12);
     this.drawMotes(c, W, H, this.dayness());
     this.drawFallingLeaves(c, W, H, bot);
   }
@@ -2613,8 +2790,8 @@ class Scene {
     c.lineWidth = 1.5;
     c.beginPath();
     for (const f of this.ferns) {
-      const gx = f.x*W, gy = 0.93*H, len = f.size*H, sw = sway(f);
-      c.moveTo(gx, gy + 3);
+      const gx = f.x*W, gy = f.y*H, len = f.size*H, sw = sway(f);
+      c.moveTo(gx, gy + 2);
       c.quadraticCurveTo(gx + sw*0.5, gy - len*0.5, gx + sw, gy - len);
     }
     c.stroke();
@@ -2622,7 +2799,7 @@ class Scene {
     c.lineWidth = 1;
     c.beginPath();
     for (const f of this.ferns) {
-      const gx = f.x*W, gy = 0.93*H, len = f.size*H, sw = sway(f);
+      const gx = f.x*W, gy = f.y*H, len = f.size*H, sw = sway(f);
       for (let i = 1; i <= f.blades; i++) {
         const t = i/(f.blades + 1), bx = gx + sw*t, by = gy - len*t, bl = len*0.28*(1 - t*0.5);
         c.moveTo(bx, by); c.lineTo(bx - bl, by - bl*0.5);
@@ -2637,7 +2814,7 @@ class Scene {
     c.lineCap = "round";
     c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.24));   // stems share one colour
     for (const m of this.mushrooms) {
-      const gx = m.x*W, gy = 0.945*H, r = m.size*Math.min(W, H);
+      const gx = m.x*W, gy = m.y*H, r = m.size*Math.min(W, H);
       const stemH = m.tall ? r*2.4 : r*1.3;
       c.lineWidth = Math.max(1.3, r*0.7);
       c.beginPath(); c.moveTo(gx, gy); c.lineTo(gx, gy - stemH); c.stroke();
@@ -2730,7 +2907,7 @@ class Scene {
     this.drawWetSand(c, W, H, top, bot, night);
     // pebbles and the odd shell strewn along the tide line
     for (const pb of (this.pebbles || [])) {
-      const r = pb.r*Math.min(W, H);
+      const r = Math.max(0.6, pb.r*Math.min(W, H));
       if (pb.shell) {
         c.strokeStyle = `rgba(${this.tok.foamRGB}, 0.5)`; c.lineWidth = 1.1;
         c.beginPath(); c.arc(pb.x*W, pb.y*H, r*1.2, Math.PI*0.12, Math.PI*0.88); c.stroke();
@@ -2747,16 +2924,17 @@ class Scene {
       c.lineWidth = 2.4; c.beginPath(); c.moveTo(ww*0.1, 0); c.lineTo(ww*0.24, -ww*0.13); c.stroke();
       c.restore();
     }
-    c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.12));
-    c.lineWidth = 3; c.lineCap = "round";
+    c.lineCap = "round";
     for (const p of this.posts) {
+      // each post stands where its depth puts it, and weathers with distance
+      c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.12 + p.z*0.16));
+      c.lineWidth = p.w;
       c.beginPath();
-      c.moveTo(p.x*W, sy + 2);
-      c.lineTo(p.x*W, sy - p.h*H);
+      c.moveTo(p.x*W, p.y*H + 2);
+      c.lineTo(p.x*W, p.y*H - p.h*H);
       c.stroke();
     }
-    this.drawGrassTufts(c, W, H, this.duneGrass, () => this.shoreY + 0.12,
-      css(mix(this.tok.inkDeep, bot, 0.18)));
+    this.drawDepthTufts(c, W, H, this.duneGrass, bot, 0.18);
   }
 
   updateFoam(dt) {
@@ -2960,13 +3138,17 @@ class Scene {
     const wa = this.windAmt();
     const reedCol = css(mix(this.tok.inkDeep, bot, 0.10));
     c.strokeStyle = reedCol; c.fillStyle = reedCol; c.lineWidth = 1.3;
-    const reedSway = (r) => this.windBend(r.x)*9 + Math.sin(this.t*1.3 + r.ph)*2.2*wa + r.lean*5;
-    // Forty-two stems in one pen: one path, one stroke.
+    /* A stem bends by a fraction of its own length and a near one is moved
+       further across the glass by the same wind — the same two rules the
+       meadow's grass got, and for the same reason. */
+    const reedSway = (r) => r.lean*r.h*H*0.30
+      + (this.windBend(r.x)*9 + Math.sin(this.t*1.3 + r.ph)*2.2*wa)*(0.3 + (1 - r.z)*0.7);
+    // Every stem in one pen: one path, one stroke.
     c.beginPath();
     for (const r of this.reeds) {
-      const rx = r.x * W, sway = reedSway(r);
-      c.moveTo(rx, by + 3);
-      c.quadraticCurveTo(rx + sway*0.35, by - r.h*H*0.55, rx + sway, by - r.h*H);
+      const rx = r.x * W, ry = r.y*H, sway = reedSway(r);
+      c.moveTo(rx, ry + 2);
+      c.quadraticCurveTo(rx + sway*0.35, ry - r.h*H*0.55, rx + sway, ry - r.h*H);
     }
     c.stroke();
     // The seed heads used to each take a save/translate/rotate. An ellipse can
@@ -2979,9 +3161,10 @@ class Scene {
       const sway = reedSway(r), th = sway * 0.01;
       const sn = Math.sin(th), cs = Math.cos(th);
       // where translate(topX, topY) → rotate(th) → ellipse(0, 2, …) puts the centre
-      const cx = r.x*W + sway - 2*sn, cy = by - r.h*H + 2*cs;
-      c.moveTo(cx + 2*cs, cy + 2*sn);   // the arc's own start, or it joins the last head
-      c.ellipse(cx, cy, 2, 7, th, 0, Math.PI*2);
+      const hs = Math.max(0.7, 2*(this.planeScale(r.z)/this.plane.top));
+      const cx = r.x*W + sway - hs*sn, cy = r.y*H - r.h*H + hs*cs;
+      c.moveTo(cx + hs*cs, cy + hs*sn);  // the arc's own start, or it joins the last head
+      c.ellipse(cx, cy, hs, hs*3.5, th, 0, Math.PI*2);
     }
     c.fill();
     this.drawMotes(c, W, H, this.dayness());
