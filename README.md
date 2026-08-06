@@ -13,17 +13,25 @@ want is yours to set. Everything runs locally — nothing is sent anywhere.
 
 Because the app is split into ES modules, it must be served over HTTP — opening
 `index.html` directly from the filesystem (`file://`) will not load the modules.
-Start any static server from the project root:
+Start any static server from the project root. The piece itself has no
+dependencies and no build step — `npm install` is for the benches in `tools/`
+and nothing else, so this is all it takes from a fresh clone:
 
 ```bash
-# Python 3
-python3 -m http.server 8000
-
-# …or Node
-npx serve .
+npm run serve                 # python3 -m http.server 8123
+# …or, without npm at all:
+python3 -m http.server 8123
+npx serve . -l 8123
 ```
 
-Then open <http://localhost:8000/>. The window starts shut: press **Begin
+Port 8123 by choice rather than necessity: any port serves the piece, but the
+benches look for that one, so using it everywhere means one server does for
+both. Then open <http://localhost:8123/>.
+
+Two pages: `/` is the window, `/bestiary.html` is the field bench of every
+voice and every gait, drawn and sounded card by card.
+
+The window starts shut: press **Begin
 listening** and the casement swings open (a browser gesture is required to
 start audio). Headphones are recommended, as each voice is placed spatially.
 
