@@ -36,6 +36,7 @@
    is the wood, not the bird. And ESC-50 clips are loudness-normalised and
    sometimes clipped, so absolute level says nothing; only shape does. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs';
 import { execFileSync } from 'child_process';
 
@@ -73,8 +74,7 @@ if (!existsSync(DIR + 'list.tsv')) {
 const list = readFileSync(DIR + 'list.tsv', 'utf8').trim().split('\n')
   .map(l => l.split('\t'));
 
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium',
-  args: ['--use-gl=swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+const b = await chromium.launch({ ...chromiumPath(), args: ['--use-gl=swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await b.newPage({ viewport: { width: 900, height: 560 } });
 const errs = [];
 page.on('pageerror', e => errs.push('' + e.message));

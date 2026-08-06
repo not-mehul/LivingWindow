@@ -13,8 +13,8 @@
    The leaf bed is the reference: it already does the granular trick (noise
    driving noise) and is the one bed nobody has complained about. */
 import { chromium } from 'playwright';
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium',
-  args: ['--use-gl=swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+import { chromiumPath } from './lib/browser.mjs';
+const b = await chromium.launch({ ...chromiumPath(), args: ['--use-gl=swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const p = await b.newPage({ viewport: { width: 900, height: 560 } });
 p.on('pageerror', e => console.log('ERR', e.message));
 await p.goto('http://127.0.0.1:8123/?hook=1', { waitUntil: 'networkidle' });

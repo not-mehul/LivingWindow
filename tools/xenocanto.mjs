@@ -12,8 +12,8 @@
    for it, so the mapping is exact rather than a judgement call.
 
        export XC_KEY=<your key>            # never a file, never an argument
-       node tools/xenocanto.mjs --fetch    # download, once
-       node tools/xenocanto.mjs            # measure and compare
+       node tools/xenocanto.mjs --fetch    # download, once — node and curl only
+       node tools/xenocanto.mjs            # measure — needs Playwright + a server
 
    ---------------------------------------------------------------------------
    THE KEY
@@ -39,7 +39,6 @@
    here to measure against and never shipped. `manifest.json` records the
    catalogue number, recordist and licence of everything downloaded, which is
    what any use of them would have to credit. */
-import { chromium } from 'playwright';
 import { readFileSync, writeFileSync, existsSync, mkdirSync, statSync } from 'fs';
 import { execFileSync } from 'child_process';
 
@@ -90,8 +89,7 @@ async function fetchAll() {
     process.exit(2);
   }
   mkdirSync(DIR, { recursive: true });
-  const { SPECIES, CRITTER_VOICES } = await loadCatalogue();
-  const all = SPECIES.concat(Object.values(CRITTER_VOICES))
+  const all = loadCatalogue()
     .filter(s => s.latin && (!ONLY.length || ONLY.includes(s.id)));
   const manifest = existsSync(DIR + 'manifest.json')
     ? JSON.parse(readFileSync(DIR + 'manifest.json', 'utf8')) : {};
@@ -148,7 +146,7 @@ async function fetchAll() {
         en: r.en, rec: r.rec, cnt: r.cnt, type: r.type, q: r.q,
         length: r.length, lic: r.lic, url: r.url };
       // xeno-canto asks that its API not be hammered; this is not a race
-      execFileSync('sleep', ['0.6']);
+      await new Promise(res => setTimeout(res, 600));
     }
     console.log(`  ${sp.id.padEnd(14)} ${String(got).padStart(2)} recording(s)`
       + `   ${js.numRecordings} available`);
@@ -158,27 +156,57 @@ async function fetchAll() {
     + `\n  attribution for every one of them is in refaudio/xc/manifest.json`);
 }
 
-/* The catalogue, read out of the page rather than imported here, because
-   species.js is a browser module. */
+/* The catalogue, read straight out of the source file.
+
+   Downloading recordings needs a species list and nothing else, so it should
+   not need a browser, a static server, or a copy of Playwright — all of which
+   the first version of this demanded, because it read the list by importing
+   `species.js` into a page. That put a fifty-megabyte dependency and a
+   running web server between somebody and their first download, and on a
+   machine without Playwright installed it failed before printing anything
+   useful. Every id sits on the same line as its binomial, so a regex over the
+   file is all it takes. */
+function loadCatalogue() {
+  const src = readFileSync(ROOT + 'js/species.js', 'utf8');
+  const out = [];
+  const re = /id:\s*"([a-z]+)"[^}]*?latin:\s*"([^"]+)"/g;
+  let m;
+  while ((m = re.exec(src))) out.push({ id: m[1], latin: m[2] });
+  if (!out.length) throw new Error('could not read any species out of js/species.js');
+  return out;
+}
+
+/* Playwright is needed to *measure* — the recordings are decoded and the
+   synthesis rendered inside a real browser — but not to fetch. Imported at
+   the point of use so a missing install cannot break the download. */
 let _page = null, _browser = null;
 async function openPage() {
   if (_page) return _page;
-  _browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium',
-    args: ['--use-gl=swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+  const { launch } = await import('./lib/browser.mjs');
+  try {
+    _browser = await launch({ args: ['--use-gl=swiftshader',
+      '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+  } catch (e) {
+    if (e.code !== 'NO_PLAYWRIGHT') throw e;
+    console.error('\n  Comparing needs Playwright and a static server:\n'
+      + '\n      npm install && npx playwright install chromium'
+      + '\n      python3 -m http.server 8123 &'
+      + '\n      node tools/xenocanto.mjs\n'
+      + '\n  Downloading needs neither — `--fetch` works as it is.\n');
+    process.exit(4);
+  }
   _page = await _browser.newPage({ viewport: { width: 900, height: 560 } });
   _page.on('pageerror', e => console.log('  page error:', scrub(e.message)));
-  await _page.goto('http://127.0.0.1:8123/?hook=1', { waitUntil: 'networkidle' });
+  const url = (process.env.BENCH_URL || 'http://127.0.0.1:8123/') + '?hook=1';
+  try {
+    await _page.goto(url, { waitUntil: 'networkidle' });
+  } catch (e) {
+    console.error(`\n  Could not reach ${url} — start a static server in the`
+      + '\n  project root first:  python3 -m http.server 8123\n');
+    await _browser.close();
+    process.exit(5);
+  }
   return _page;
-}
-async function loadCatalogue() {
-  const p = await openPage();
-  return p.evaluate(async () => {
-    const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=21');
-    const slim = s => ({ id: s.id, latin: s.latin, layer: s.layer });
-    return { SPECIES: SPECIES.map(slim),
-      CRITTER_VOICES: Object.fromEntries(
-        Object.entries(CRITTER_VOICES).map(([k, v]) => [k, slim(v)])) };
-  });
 }
 
 async function compare() {

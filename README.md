@@ -131,8 +131,21 @@ and shuts the window.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds twelve harnesses, and a shared measuring stick in `tools/lib/`. None is part of the piece; all need a static
-server running and drive a headless Chromium through Playwright.
+`tools/` holds twelve harnesses, and shared machinery in `tools/lib/`. None is
+part of the piece — the piece itself has no dependencies and no build step —
+but they drive a headless Chromium, so they need one installed, and they talk
+to a static server on port 8123:
+
+```bash
+npm run setup      # npm install && npx playwright install chromium
+npm run serve      # python3 -m http.server 8123   (leave running)
+```
+
+`package.json` exists only for these. It declares Playwright, and every
+harness has a script (`npm run voice`, `npm run bench`, …). The browser is
+found by `tools/lib/browser.mjs`: `CHROMIUM_PATH` if you set it, otherwise
+whatever Playwright installed. One tool needs neither Playwright nor the
+server — `xenocanto.mjs --fetch` downloads with node and curl alone.
 
 ```bash
 node tools/bench.mjs        label    # frame cost per place
@@ -849,9 +862,15 @@ breath, wobble and fundamental in one table.
 
 ```bash
 export XC_KEY=<your key>            # from https://xeno-canto.org/account
-node tools/xenocanto.mjs --fetch    # download, once
-node tools/xenocanto.mjs            # measure and compare
+node tools/xenocanto.mjs --fetch    # download — node and curl only
+node tools/xenocanto.mjs            # measure — needs Playwright and the server
 ```
+
+Fetching deliberately needs nothing but node and curl. Reading the species
+list by importing `species.js` into a page would have put a browser, a
+running web server and a fifty-megabyte dependency between somebody and their
+first download; every id sits on the same line as its binomial, so a regex
+over the source is all it takes.
 
 Sound type matters and is set per species: most of these birds are being
 imitated *singing*, but a crow, a gull and a heron are only ever heard here

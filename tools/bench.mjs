@@ -3,6 +3,7 @@
    instrumented identically. Reports frame time and rasterization submissions
    per frame, per location. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 
 const URL_BASE = process.env.BENCH_URL || 'http://127.0.0.1:8123/';
 const LABEL = process.argv[2] || 'run';
@@ -70,8 +71,7 @@ const stats = (a) => {
 };
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium',
-  args: ['--autoplay-policy=no-user-gesture-required', '--enable-gpu', '--use-gl=swiftshader']
+  ...chromiumPath(), args: ['--autoplay-policy=no-user-gesture-required', '--enable-gpu', '--use-gl=swiftshader']
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 await page.addInitScript(initScript);

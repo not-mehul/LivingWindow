@@ -7,6 +7,7 @@
    the deer can. If two builds produce identical trajectories, the update
    logic came through untouched, whatever happened to the drawing. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 import { writeFileSync, mkdirSync } from 'fs';
 
 const OUT = process.argv[2];   // e.g. node tools/trajectory.mjs before/
@@ -92,7 +93,7 @@ const initScript = () => {
 };
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader']
+  ...chromiumPath(), args: ['--use-gl=swiftshader']
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 /* Say so, loudly. A throw inside frame() breaks the rAF chain and the world

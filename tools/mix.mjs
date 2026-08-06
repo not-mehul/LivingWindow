@@ -7,9 +7,9 @@
    one of them, so the numbers compare like with like. Picking whatever perch
    bird a place happened to have was measuring the species, not the room. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 const URL = (process.env.BENCH_URL || 'http://127.0.0.1:8123/') + '?hook=1';
-const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium',
-  args: ['--use-gl=swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
+const b = await chromium.launch({ ...chromiumPath(), args: ['--use-gl=swiftshader', '--autoplay-policy=no-user-gesture-required', '--mute-audio'] });
 const page = await b.newPage({ viewport: { width: 900, height: 560 } });
 page.on('pageerror', e => console.log('ERR', e.message));
 await page.goto(URL, { waitUntil: 'networkidle' });

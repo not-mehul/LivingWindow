@@ -1,0 +1,25 @@
+{
+  "name": "living-window",
+  "version": "1.0.0",
+  "private": true,
+  "description": "An open casement onto a small wild place: five generative landscapes with synthesised wildlife voices. The piece itself has no dependencies and no build step — it is served as static files. This manifest exists only for the benches in tools/, which drive a headless browser.",
+  "type": "module",
+  "scripts": {
+    "serve": "python3 -m http.server 8123",
+    "setup": "npm install && npx playwright install chromium",
+    "bench": "node tools/bench.mjs",
+    "critters": "node tools/critters.mjs",
+    "actors": "node tools/actors.mjs",
+    "voice": "node tools/voice.mjs",
+    "texture": "node tools/texture.mjs",
+    "mix": "node tools/mix.mjs",
+    "soak": "node tools/soak.mjs",
+    "weather": "node tools/weather.mjs",
+    "gradient": "node tools/gradient.mjs",
+    "reference": "node tools/reference.mjs",
+    "xenocanto": "node tools/xenocanto.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.49.0"
+  }
+}
