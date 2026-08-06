@@ -6,9 +6,9 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=20";
+import { mulberry32, REDUCED, state } from "./util.js?v=21";
 import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain,
-  gaitAt } from "./species.js?v=20";
+  gaitAt } from "./species.js?v=21";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
@@ -198,9 +198,14 @@ class AudioEngine {
        room is a wash between about five hundred hertz and five kilohertz.
        One pole is not enough roof: at six decibels an octave it still left the
        centroid at 8.4 kHz. Two of them, lower down, is what actually takes the
-       sizzle off. */
-    const aTop = 1 - Math.exp(-2*Math.PI*4200/fs);
-    let low = 0, t1 = 0, t2 = 0;
+       sizzle off.
+
+       Held against six real recordings of rain (`tools/reference.mjs`), 4.2 kHz
+       was still nearly an octave too bright: real rain measures a centroid
+       around 3.7 kHz and this measured 6.5. Rain is a *wash* with grain in it,
+       not a hiss with clicks in it. */
+    const aTop = 1 - Math.exp(-2*Math.PI*1500/fs);
+    let low = 0, t1 = 0, t2 = 0, t3 = 0;
     const twoPiOverN = 2*Math.PI / N;
     for (let i = 0; i < M; i++) {
       const w = Math.random()*2 - 1;
@@ -208,9 +213,13 @@ class AudioEngine {
       const high = w - low;
       t1 += aTop*(high - t1);
       t2 += aTop*(t1 - t2);
+      // a third pole: at twelve decibels an octave the tail three octaves up
+      // is still inside the measurement's own window, and still audible as
+      // sizzle. Eighteen puts it under.
+      t3 += aTop*(t2 - t3);
       const ph = twoPiOverN * (i % N);               // periodic over N → seamless
       const mod = 1 + 0.16*Math.sin(ph*2) + 0.10*Math.sin(ph*5 + 1.3);
-      tmp[i] = (low*1.6 + t2*1.5) * mod;
+      tmp[i] = (low*1.6 + t3*2.6) * mod;
     }
 
     /* The patter. A wash alone is the *sound* of rain without any of its
@@ -222,12 +231,18 @@ class AudioEngine {
 
        Written across the whole of M, tail included, so the cross-fade below
        carries the drops over the seam like everything else. */
-    const drops = Math.floor(seconds * 240);
+    /* Three times as many drops at a third of the level. The same measurement
+       said the flutter was 0.37 against real rain's 0.13 — the grain was
+       coarse enough to read as a spatter of separate clicks rather than the
+       continuous seethe a lot of small impacts actually make. More of them,
+       quieter, is what closes that: the graininess stays and the clicking
+       goes. */
+    const drops = Math.floor(seconds * 760);
     for (let k = 0; k < drops; k++) {
       const at = Math.floor(Math.random() * (M - 400));
-      const f = 700 + Math.random()*2600;            // what it landed on
-      const decay = 0.0025 + Math.random()*0.0055;
-      const amp = 0.10 + Math.random()*0.30;
+      const f = 420 + Math.random()*1300;            // what it landed on
+      const decay = 0.0045 + Math.random()*0.0080;
+      const amp = 0.035 + Math.random()*0.11;
       const len = Math.min(400, Math.floor(decay*4*fs));
       const w = 2*Math.PI*f/fs, d = Math.exp(-1/(decay*fs));
       let env = amp;
@@ -355,8 +370,13 @@ class AudioEngine {
        really appears when the gust is up. */
     this.windGain = ac.createGain(); this.windGain.gain.value = 0;
     this.windLP = ac.createBiquadFilter();
-    this.windLP.type = "lowpass"; this.windLP.frequency.value = 420; this.windLP.Q.value = 0.4;
-    const wlp2 = ac.createBiquadFilter(); wlp2.type = "lowpass"; wlp2.frequency.value = 1500;
+    /* Held against six real recordings of wind, this bed was two octaves too
+       dark — a centroid of 383 Hz against the world's 1494. Two lowpasses at
+       420 and 1500 leave a rumble, and a rumble is what a microphone in a
+       pocket records. Wind that anybody stands out in is mostly the hiss of
+       air dragging over things, and that lives above a kilohertz. */
+    this.windLP.type = "lowpass"; this.windLP.frequency.value = 1500; this.windLP.Q.value = 0.4;
+    const wlp2 = ac.createBiquadFilter(); wlp2.type = "lowpass"; wlp2.frequency.value = 4200;
     const wsrc = this.wideNoise();
     wsrc.connect(this.windLP); this.windLP.connect(wlp2); wlp2.connect(this.windGain);
     this.windGain.connect(this.bedBus);
@@ -643,7 +663,16 @@ class AudioEngine {
       (L === "city" ? 0.030 * (1 - night*0.55) : 0) * this.g("town"));
     // The sea's resting hiss between waves — kept low so the waves themselves carry.
     this.surfFloor = L === "beach" ? 0.008 * (0.9 + wx.gust*0.55 + wx.wet*0.3) : 0;
+    /* And a floor under the foam as well. Held against real recordings of sea
+       waves this bed measured a centroid of 591 Hz against the world's 2567 —
+       it was a rumble, because between one wave and the next the foam was
+       scheduled to exactly nothing and only the body was left. A beach is
+       never silent between waves: the last one is still draining back through
+       the shingle while the next is still out. That drain is most of what a
+       beach actually sounds like, and it lives high. */
+    this.surfFoamFloor = L === "beach" ? 0.0060 * (0.85 + wx.gust*0.7) : 0;
     this.set(this.surfGain.gain, this.surfFloor * this.g("water"));
+    this.set(this.surfFoamGain.gain, this.surfFoamFloor * this.g("water"));
     if (this.surfFoamGain && L !== "beach") this.set(this.surfFoamGain.gain, 0, 0.4);
     /* Haze takes the top off a voice, and so does the hour: night air is dense
        and a call across it arrives duller as well as further away. */
@@ -976,7 +1005,7 @@ class AudioEngine {
       this.rideGust(this.windGain.gain, lvl*f, lvl*0.34, span);
       // brighter under load, and the moan comes up with it — both on the
       // same curve, because they are the same gust
-      this.rideGust(this.windLP.frequency, 300 + f*520, 260, span);
+      this.rideGust(this.windLP.frequency, 1150 + f*2400, 820, span);
       this.rideGust(this.windMoan.gain,
         lvl * Math.max(0, f - 0.7) * 0.5, 1e-5, span);
       this.set(this.windMoanBP.frequency, 190 + f*130, 3.0);
@@ -1008,6 +1037,9 @@ class AudioEngine {
       this.set(this.windGain.gain, this.windBase * this.breath * this.g("weather"), 26);
       this.set(this.rainGain.gain, (this.rainTarget || 0) * this.breath * this.g("weather"), 24);
       this.set(this.surfGain.gain, this.surfFloor * this.breath * this.g("water"), 22);
+      if (this.surfFoamFloor) {
+        this.set(this.surfFoamGain.gain, this.surfFoamFloor * this.breath * this.g("water"), 22);
+      }
       if (this.leafTarget)
         this.set(this.leavesGain.gain, this.leafTarget * this.breath * this.g("weather"), 24);
       setTimeout(breathe, 24000 + this.rng()*16000);
@@ -1213,12 +1245,14 @@ class AudioEngine {
         ff.setTargetAtTime(240, crest, dur*0.25);
 
         // Foam: silent on the approach, then the break and a hissing wash-back.
+        const fFloor = Math.max(0.0001, (this.surfFoamFloor || 0)*gw);
         const fg = this.surfFoamGain.gain;
         fg.cancelScheduledValues(t);
-        fg.setValueAtTime(0.0001, t);
-        fg.setValueAtTime(0.0001, Math.max(t, crest - 0.18));
+        fg.setValueAtTime(fFloor, t);
+        fg.setValueAtTime(fFloor, Math.max(t, crest - 0.18));
         fg.linearRampToValueAtTime(foamPeak, crest + 0.12);
-        fg.exponentialRampToValueAtTime(0.0001, crest + 1.8 + this.rng()*1.3);
+        // back to the drain, not to nothing
+        fg.exponentialRampToValueAtTime(fFloor, crest + 1.8 + this.rng()*1.3);
         const fff = this.surfFoamFilter.frequency;
         fff.cancelScheduledValues(t);
         fff.setValueAtTime(1700, t);

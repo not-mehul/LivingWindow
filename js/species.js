@@ -959,22 +959,29 @@ const AUDIBLE = 1e-5;
    quieter than the sine it replaced and moved the whole mix. */
 const TIMBRE = {
   // near-pure, a touch of body: a fluted thrush note, a cuckoo
-  flute:   { h: [1, 0.28, 0.11, 0.040, 0.015],             hold: 0.42, vib: 16, vibHz: 5.2 },
+  flute:   { h: [1, 0.28, 0.11, 0.040, 0.015],             hold: 0.42, vib: 16, vibHz: 5.2,
+             bow: 0.26, snap: 0.34 },
   // thin and silvery — a robin, a blue tit
-  silver:  { h: [1, 0.22, 0.12, 0.060, 0.030, 0.014],      hold: 0.34, vib: 19, vibHz: 6.4 },
+  silver:  { h: [1, 0.22, 0.12, 0.060, 0.030, 0.014],      hold: 0.34, vib: 19, vibHz: 6.4,
+             bow: 0.30, snap: 0.42 },
   /* The cleanest thing here — an otter, a curlew's rising note. This one
      stays low on purpose: a whistle really is about as close to a sine as
      nature gets, and pushing partials into it to satisfy a number would make
      it the wrong bird. */
-  whistle: { h: [1, 0.18, 0.07, 0.025],                    hold: 0.46, vib: 12, vibHz: 4.6 },
+  whistle: { h: [1, 0.18, 0.07, 0.025],                    hold: 0.46, vib: 12, vibHz: 4.6,
+             bow: 0.22, snap: 0.30 },
   // the commonest passerine sound by far
-  reed:    { h: [1, 0.34, 0.16, 0.075, 0.035, 0.018],      hold: 0.30, vib: 21, vibHz: 6.0 },
+  reed:    { h: [1, 0.34, 0.16, 0.075, 0.035, 0.018],      hold: 0.30, vib: 21, vibHz: 6.0,
+             bow: 0.30, snap: 0.44 },
   // harsh and wheezy — a starling, a greenfinch's drawn-out note
-  buzz:    { h: [1, 0.60, 0.42, 0.28, 0.19, 0.12, 0.08],   hold: 0.36, vib: 26, vibHz: 5.4 },
+  buzz:    { h: [1, 0.60, 0.42, 0.28, 0.19, 0.12, 0.08],   hold: 0.36, vib: 26, vibHz: 5.4,
+             bow: 0.34, snap: 0.40 },
   // hollow, and mostly even partials: every pigeon and the owl
-  coo:     { h: [1, 0.30, 0.06, 0.020, 0.008],             hold: 0.52, vib: 14, vibHz: 4.2 },
+  coo:     { h: [1, 0.30, 0.06, 0.020, 0.008],             hold: 0.52, vib: 14, vibHz: 4.2,
+             bow: 0.20, snap: 0.24 },
   // nasal, with the energy up in the second and third — a mew, a meow
-  mew:     { h: [1, 0.45, 0.30, 0.10, 0.05],               hold: 0.38, vib: 24, vibHz: 5.8 }
+  mew:     { h: [1, 0.45, 0.30, 0.10, 0.05],               hold: 0.38, vib: 24, vibHz: 5.8,
+             bow: 0.38, snap: 0.30 }
 };
 const BUILTIN = { sine: 1, square: 1, sawtooth: 1, triangle: 1 };
 
@@ -1044,6 +1051,56 @@ function addVibrato(ac, o, t, end, cents, hz) {
   o.detune.setValueCurveAtTime(c, t, span);
 }
 
+/* ---- the shape of a slide -------------------------------------------------
+
+   Held against real recordings (`tools/reference.mjs`), the loudest thing
+   wrong with these voices after the timbre was that their *pitch* went in
+   straight lines. Every note here glided from f0 to f1 down a single
+   exponential ramp; measured as scatter about its own trend — which is
+   exactly what a straight line has none of — the catalogue read 0.0 to 1.2%
+   where real crows, roosters, frogs and hens read 11 to 26%.
+
+   An animal does not slide evenly between two pitches. It snaps most of the
+   way in the first tenth of the note and then eases, and it does not arrive
+   in a straight line while it is doing it. So the glide is bowed: the
+   endpoints are exactly the ones the caller asked for, and the path between
+   them is not a line.
+
+   In log-frequency, so the bow is the same musical size wherever it is:
+
+       f(u) = f0 · (f1/f0)^g(u),   g(u) = u + bow·sin(πu) + snap·(√u − u)
+
+   `snap` front-loads the slide; `bow` bends the middle off the line. A note
+   that does not glide at all (f0 = f1) is untouched by both, which is right —
+   there is nothing to bend. */
+function pitchCurve(f0, f1, dur, bow, snap) {
+  const a = Math.max(40, f0), b = Math.max(40, f1);
+  const lr = Math.log(b/a);
+  const n = Math.max(4, Math.min(160, Math.round(dur/0.006)));
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const u = i/(n - 1);
+    const g = u + bow*Math.sin(Math.PI*u) + snap*(Math.sqrt(u) - u);
+    c[i] = a*Math.exp(lr*g);
+  }
+  c[0] = a; c[n - 1] = b;
+  return c;
+}
+
+/* Lay a note's pitch on the oscillator: bowed where there is a glide to bow,
+   and the plain two-point ramp where there is not — a curve costs an array
+   and a straight note does not need one. */
+function layPitch(o, t, f0, f1, dur, T) {
+  const bow = T ? T.bow : 0.22, snap = T ? T.snap : 0.30;
+  const ratio = Math.max(f0, f1)/Math.max(40, Math.min(f0, f1));
+  if (ratio < 1.02 || dur < 0.02 || (!bow && !snap)) {
+    o.frequency.setValueAtTime(Math.max(40, f0), t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+    return;
+  }
+  o.frequency.setValueCurveAtTime(pitchCurve(f0, f1, dur, bow, snap), t, dur);
+}
+
 /* The envelope of one note: up, held, and down — with a slight droop across
    the hold, because a bird does not sustain a note at a dead level either.
 
@@ -1051,21 +1108,30 @@ function addVibrato(ac, o, t, end, cents, hz) {
    lasting the whole rest of the note, so the measured attack was a fifth of
    the measured decay on every voice in the catalogue and every note was a
    struck thing rather than a sung one. */
-function shapeNote(g, t, dur, peak, hold) {
+function shapeNote(g, t, dur, peak, hold, hit, release) {
   const a = Math.min(0.018, dur*0.30);
   const h = Math.max(0, Math.min(dur - a - 0.006, dur*(hold === undefined ? 0.40 : hold)));
-  g.gain.setValueAtTime(AUDIBLE, t);
-  g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak), t + a);
+  if (hit === false) {
+    // tied: carry on from wherever the last segment left off
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak), t + Math.min(0.02, dur*0.4));
+  } else {
+    g.gain.setValueAtTime(AUDIBLE, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak), t + a);
+  }
   g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak*0.82), t + a + h);
-  g.gain.exponentialRampToValueAtTime(AUDIBLE, t + dur);
+  if (release === false) {
+    // and the next segment picks it up rather than starting again
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak*0.9), t + dur);
+  } else {
+    g.gain.exponentialRampToValueAtTime(AUDIBLE, t + dur);
+  }
 }
 
 /* Synth primitives — the building blocks of every voice. */
 function note(ac, dest, t, f0, f1, dur, peak, type) {
   const T = TIMBRE[type];
   const o = voiceOsc(ac, type);
-  o.frequency.setValueAtTime(Math.max(40, f0), t);
-  o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+  layPitch(o, t, f0, f1, dur, T);
   const g = ac.createGain();
   shapeNote(g, t, dur, peak, T && T.hold);
   if (T) addVibrato(ac, o, t, t + dur, T.vib, T.vibHz);
@@ -1125,12 +1191,19 @@ function noteTrain(ac, dest, ns, type) {
   for (let i = 0; i < ns.length; i++) {
     const n = ns[i], next = ns[i + 1];
     const d = next ? Math.max(0.01, Math.min(n.dur, next.t - n.t - 0.004)) : n.dur;
-    o.frequency.setValueAtTime(Math.max(40, n.f0), n.t);
-    o.frequency.exponentialRampToValueAtTime(Math.max(40, n.f1), n.t + d);
+    layPitch(o, n.t, n.f0, n.f1, d, T);
     /* Each note gets the timbre's own hold — but a note inside a fast run has
        no room for one, and `shapeNote` gives it whatever is left. A trill
        stays a trill. */
-    shapeNote(g, n.t, d, n.peak, n.hold !== undefined ? n.hold : (T && T.hold));
+    /* Tied segments. Real calls are not always a string of separate notes:
+       a cockerel's last syllable, a crow's caw, a frog's croak are each *one*
+       sustained sound with the pitch moving about inside it — and measured
+       against real recordings that was the loudest thing still missing. A
+       note marked `link` is not re-articulated; the one before it does not
+       release. So a gesture can be written as segments and still come out as
+       one note with a contour in it. */
+    shapeNote(g, n.t, d, n.peak, n.hold !== undefined ? n.hold : (T && T.hold),
+      !n.link, !(next && next.link));
     end = n.t + d;
   }
   // one waver across the whole phrase, not one per note
@@ -1324,7 +1397,16 @@ const SPECIES = [
       let t = t0;
       const reps = 2 + Math.floor(r()*3);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 560 + r()*60, 410, 0.24, 0.026, "sawtooth");
+        /* A caw rises into itself and cracks on the way down; drawn as one
+           glide from 560 to 410 it read as 0.8% of pitch movement against a
+           real crow's 16%. */
+        const f = 520 + r()*70;
+        noteTrain(ac, dest, [
+          { t,            f0: f,        f1: f*1.28, dur: 0.05, peak: 0.026 },
+          { t: t + 0.05,  f0: f*1.28,   f1: f*1.10, dur: 0.07, peak: 0.026, link: 1 },
+          { t: t + 0.12,  f0: f*1.14,   f1: f*0.86, dur: 0.07, peak: 0.024, link: 1 },
+          { t: t + 0.19,  f0: f*0.86,   f1: f*0.70, dur: 0.06, peak: 0.020, link: 1 }
+        ], "sawtooth");
         burst(ac, dest, t, 900, 0.8, 0.22, 0.02);
         t += 0.34 + r()*0.1;
       }
@@ -1527,10 +1609,18 @@ const SPECIES = [
       bp.connect(dest);
       let t = t0;
       const ns = [];
-      ns.push({ t, f0: 620, f1: 660, dur: 0.18, peak: 0.05 }); t += 0.24;
-      ns.push({ t, f0: 750, f1: 780, dur: 0.16, peak: 0.05 }); t += 0.22;
-      ns.push({ t, f0: 900, f1: 930, dur: 0.3, peak: 0.06 }); t += 0.36;
-      ns.push({ t, f0: 830, f1: 560, dur: 0.55, peak: 0.05 }); t += 0.6;
+      /* er — er — ERRRR-rr. The first two syllables are separate; the third
+         and the long fourth are one continuous sound with a break in the
+         middle of it, which is the part that makes a cockerel a cockerel and
+         which four flat notes could not produce. Written as tied segments
+         with the pitch thrown about between them. */
+      ns.push({ t, f0: 600 + r()*50, f1: 680, dur: 0.17, peak: 0.05 }); t += 0.23;
+      ns.push({ t, f0: 730, f1: 800, dur: 0.15, peak: 0.05 }); t += 0.21;
+      ns.push({ t, f0: 820, f1: 1010, dur: 0.13, peak: 0.062 }); t += 0.13;
+      ns.push({ t, f0: 1010, f1: 980, dur: 0.15, peak: 0.062, link: 1 }); t += 0.15;
+      ns.push({ t, f0: 700, f1: 880, dur: 0.10, peak: 0.05,  link: 1 }); t += 0.10;
+      ns.push({ t, f0: 880, f1: 620, dur: 0.20, peak: 0.052, link: 1 }); t += 0.20;
+      ns.push({ t, f0: 640, f1: 470, dur: 0.30, peak: 0.042, link: 1 }); t += 0.42;
       noteTrain(ac, bp, ns, "sawtooth");
       return t - t0 + 0.2;
     } },

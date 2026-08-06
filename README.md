@@ -131,7 +131,7 @@ and shuts the window.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds ten harnesses. None is part of the piece; all need a static
+`tools/` holds eleven harnesses, and a shared measuring stick in `tools/lib/`. None is part of the piece; all need a static
 server running and drive a headless Chromium through Playwright.
 
 ```bash
@@ -142,6 +142,7 @@ node tools/actors.mjs [outfile]      # every singer, and every way of leaving
 node tools/weather.mjs               # the sky drifting, the alarm, and the hour
 node tools/mix.mjs                   # how far a call stands clear of its room
 node tools/voice.mjs   [id …]        # what each voice is made of, partial by partial
+node tools/reference.mjs             # the piece held against real field recordings
 node tools/texture.mjs               # which beds are still static
 node tools/soak.mjs                  # ninety busy seconds: leaks, growth, clipping
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
@@ -714,6 +715,121 @@ at 400 Hz moves a fourteenth of one bin. It reported dead-steady zeros for
 exactly the thing it was built to find. It now steps frames across the whole
 note, fits a line through the frequency track so an intentional glide is not
 counted as vibrato, and interpolates a parabola through the peak bin.
+
+### Held against the world
+
+Every harness above measures this piece against *itself*: is the mix
+balanced, did the frame get slower, is that bed still static. None of them can
+answer the only question that matters for something pretending to be a window
+onto a field — does it sound like the thing it is imitating.
+
+`tools/reference.mjs` fetches real field recordings, runs the *same*
+instrument over them that the other two harnesses run over the synthesis, and
+prints the two columns side by side. The instrument lives in `tools/lib/dsp.js`
+and all three import it; a comparison between the piece and the world is worth
+nothing unless both sides are measured with one ruler.
+
+```bash
+node tools/reference.mjs --fetch     # download the clips (once, ~33 MB)
+node tools/reference.mjs             # measure and compare
+```
+
+The recordings are ESC-50 — five-second environmental clips drawn from
+Freesound, assembled by Karol Piczak, the standard reference set for this kind
+of work. They land in `refaudio/`, which is git-ignored: they are other
+people's recordings under CC BY-NC, used here to measure against and never
+shipped.
+
+What it said the first time it ran:
+
+```
+                    harmonics    breath    wobble%
+  real crow            0.150     0.664      16.06
+  ours                 0.338     0.210       0.22
+  real rooster         0.328     0.435      25.77
+  ours                 0.127     0.003       0.02
+
+                     flutter     drift%   centroid
+  real rain            0.129       5.0       3717 Hz
+  ours                 0.393       2.3       6454 Hz
+  real wind            0.243      38.7       1494 Hz
+  ours                 0.302      30.7        379 Hz
+  real sea_waves       0.454      20.6       2567 Hz
+  ours                 0.644      31.9        351 Hz
+```
+
+Four things came out of that, three of them things nobody would have found by
+listening for them:
+
+- **The pitch went in straight lines.** Every note glided from f0 to f1 down a
+  single exponential ramp, and measured as scatter about its own trend — which
+  is exactly what a straight line has none of — the catalogue read 0.0 to 1.2%
+  where real animals read 11 to 26%. An animal does not slide evenly between
+  two pitches: it snaps most of the way in the first tenth of the note and
+  eases after, and it does not travel in a straight line while doing it. The
+  glide is bowed now, in log-frequency so the bow is the same musical size
+  wherever it lands, with the caller's endpoints kept exactly.
+- **Some calls are one sound, not a string of notes.** A cockerel's last
+  syllable, a crow's caw: the pitch moves about *inside* a single sustained
+  sound. `noteTrain` could only re-articulate, so those were written as flat
+  notes. A note marked `link` is not re-articulated and the one before it does
+  not release, which lets a gesture be written as segments and still come out
+  as one note with a contour in it. The cockerel went from 0.02% to 7.3%, the
+  crow from 0.2% to 3.8%.
+- **The wind was two octaves too dark** — 379 Hz against the world's 1494. Two
+  lowpasses at 420 and 1500 leave a rumble, and a rumble is what a microphone
+  in a pocket records. Wind anybody stands out in is mostly the hiss of air
+  dragging over things, and that lives above a kilohertz.
+- **The sea had no drain.** 351 Hz against 2567: between one wave and the next
+  the foam was scheduled to exactly nothing and only the body was left. A beach
+  is never silent between waves — the last one is still draining back through
+  the shingle while the next is still out, and that drain is most of what a
+  beach actually sounds like. It lives high.
+
+And the rain was both too bright and too spattery — a hiss with clicks in it
+rather than a wash with grain in it. Three poles of roof instead of two, lower
+down, and three times as many drops at a third of the level each.
+
+Where it stands now:
+
+```
+                     flutter     drift%   centroid
+  real rain            0.129       5.0       3717 Hz
+  ours                 0.172       4.2       4680 Hz
+  real wind            0.243      38.7       1494 Hz
+  ours                 0.257      39.1       1243 Hz
+  real sea_waves       0.454      20.6       2567 Hz
+  ours                 0.407      31.9       2214 Hz
+```
+
+Three cautions on reading any of this, all of them learned by getting them
+wrong first:
+
+- **Attack, decay and crest do not survive the trip.** A synthesised call is
+  rendered into silence, so its envelope really does fall thirty decibels
+  either side of the peak. A five-second field recording is a continuous
+  scene: the level never reaches the floor, the walk runs to the edge of the
+  clip, and the tool cheerfully reports that a real blackbird has a
+  two-and-a-half-second attack. It has no such thing — that number is the
+  length of the recording. Where the floor is never reached there is now no
+  reading given.
+- **Window length is part of the measurement.** Our beds are captured live so
+  the reading contains real gusts and squalls; a five-second clip cannot
+  contain those. Comparing a twenty-second capture with a five-second clip
+  scored our own weather as grain, and the rain looked three times as spattery
+  as it was. The capture is cut into five-second pieces and the median taken.
+- **The whole bed, not one node of it.** The surf is a body *and* a foam band
+  on two separate gains. Measuring only the body said the sea was a 351 Hz
+  rumble — true of the half that was measured, and useless. A listener hears
+  the sum.
+
+Parity is not the target and should not be. A field recording is a *scene* —
+the bird is at a distance, in a room, with everything else that was going on
+that morning — so its breath column is partly the wood rather than the animal,
+and its wobble is partly the analysis window spanning several syllables of a
+call that never stops. What the tool is for is direction and size: it will not
+tell you the right number for a wood pigeon, and it will tell you instantly
+that twenty-six of your voices are sine waves and your sea has no foam in it.
 
 ### The wind you can hear, and the wind you can see
 

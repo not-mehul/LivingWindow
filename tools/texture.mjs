@@ -23,33 +23,24 @@ for (const line of await p.evaluate(async () => {
   const { audio, scene, state } = window.__lw;
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   const ac = audio.ac;
-  /* The spectral centroid, counting only what is actually there.
-     `getFloatFrequencyData` floors every empty bin at minDecibels, and a
-     thousand bins sitting on that floor outweigh the handful carrying the
-     signal — which is how a cow's low and a church bell both measured five
-     kilohertz. Everything more than 40 dB below the loudest bin is bed
-     noise or nothing, and is not counted. */
-  const centroid = (an, fd) => {
-    an.getFloatFrequencyData(fd);
-    let top = -Infinity;
-    for (let k = 2; k < fd.length; k++) if (fd[k] > top) top = fd[k];
-    if (!isFinite(top) || top < -95) return -1;
-    const cut = top - 40;
-    let num = 0, den = 0;
-    for (let k = 2; k < fd.length; k++) {
-      if (fd[k] < cut) continue;
-      const mag = Math.pow(10, fd[k]/20);
-      num += mag * k * ac.sampleRate/2/fd.length; den += mag;
-    }
-    return den > 0 ? num/den : -1;
-  };
+  /* The spectral centroid comes from the shared instrument, so a bed measured
+     here and a real recording measured by `reference.mjs` are measured the
+     same way. It counts only what is actually there: every empty bin sits on
+     the analysis floor, and a thousand bins on the floor outweigh the handful
+     carrying the signal.
+
+     That rule was written down here and then not applied — the helper
+     carrying it was dead code and the measurement below inlined a version
+     with no threshold at all, so every centroid in this table was being
+     dragged toward the middle of the spectrum by the analyser's own silence. */
+  const D = await import('/tools/lib/dsp.js?v=21');
   const out = [];
 
   const measure = async (label, node, ms) => {
     const an = ac.createAnalyser();
     an.fftSize = 2048; an.smoothingTimeConstant = 0;
     node.connect(an);
-    const td = new Float32Array(2048), fd = new Float32Array(1024);
+    const td = new Float32Array(2048);
     const lv = [], ce = [];
     const end = performance.now() + ms;
     while (performance.now() < end) {
@@ -59,14 +50,8 @@ for (const line of await p.evaluate(async () => {
       const rms = Math.sqrt(s/td.length);
       if (rms > 1e-7) {
         lv.push(rms);
-        an.getFloatFrequencyData(fd);
-        let num = 0, den = 0;
-        for (let k = 2; k < fd.length; k++) {
-          const mag = Math.pow(10, fd[k]/20);
-          num += mag * k * ac.sampleRate/2/fd.length;
-          den += mag;
-        }
-        if (den > 0) ce.push(num/den);
+        const c = D.centroidOf(D.spectrumAt(td, 0, 2048), ac.sampleRate, 2048);
+        if (c > 0) ce.push(c);
       }
       await sleep(20);
     }
