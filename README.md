@@ -890,11 +890,49 @@ other people's work under Creative Commons licences, mostly CC BY-NC-SA;
 `manifest.json` records the catalogue number, recordist and licence of every
 one, which is what any use of them would have to credit.
 
-One limitation worth knowing before trusting a row: the fundamental is picked
-from the loudest harmonic stack in the frame, so a recording with something
-else going on in it can report the background's pitch rather than the bird's.
-Quality-A single-species recordings are mostly clean, but a row whose `f0`
-looks implausible is more likely a detection failure than a finding.
+The first real run of it produced a table that was mostly wrong, in three
+ways that are worth writing down because none of them announced itself.
+
+**It asked an archive of birds for mammals.** This catalogue contains a fox, a
+badger, a roe deer, a house cat, an otter, a hedgehog, a squirrel and a frog.
+xeno-canto holds birds, grasshoppers and bats. Asked for `gen:Meles sp:meles`
+anyway, the search did not return nothing — it returned three recordings of
+something else, which decoded, measured and printed exactly like any other
+row. The query is `grp:birds` now, and every recording's own genus and epithet
+are checked against what was requested before it is kept; a mismatch is
+refused and reported rather than filed under the name that was asked for.
+
+**Its pitch estimator was wrong.** Picking the loudest bin and asking whether
+half of it also carries energy put a blackbird at 4784 Hz and a tawny owl at
+2423 Hz — a blackbird sings around two kilohertz and an owl hoots at four
+hundred. It was locking onto an upper partial. It now takes the strongest
+peaks, considers that each might be the first, second, third or fourth
+harmonic of something, and scores each implied fundamental by how much energy
+its whole comb explains. Checked against synthetic tones of known pitch,
+including the case where the second harmonic is louder than the first — the
+classic way this fails — it is exact on all of them.
+
+That estimator was upstream of the harmonic column, so correcting it moved the
+ESC-50 table too, and reversed a conclusion drawn from it: real crow harmonics
+read 0.150 before and 0.476 after, against our 0.34. Our harsher voices are if
+anything not harmonic *enough*, where the broken measurement had said they
+were too buzzy.
+
+**It reported bandwidth as biology.** Twenty species read exactly 0.000
+harmonics. A bird singing at five kilohertz has its second harmonic at ten and
+its third at fifteen, and field recordings are routinely high-passed by the
+recordist and low-passed by mp3 — so those harmonics were missing from the
+*file*, not from the bird. Where fewer than two harmonics fit under what the
+recording actually carries, there is now no reading rather than a zero, and
+the table prints each recording's bandwidth beside the pitch.
+
+Two things still need reading with care. An `f0` ratio within a hair of a
+whole octave is far more likely to be the estimator disagreeing with itself
+about which partial is the fundamental than a bird singing an octave away from
+where it does, so those are listed separately, to be checked by ear rather
+than acted on. And a field recording is a *scene* — the bird is at a distance,
+in a room, with everything else that was going on that morning — so its breath
+column is partly the wood rather than the animal.
 
 ### The wind you can hear, and the wind you can see
 

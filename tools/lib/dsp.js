@@ -127,23 +127,70 @@ function bandE(mag, kf, half) {
   return e;
 }
 
-/* The fundamental. The loudest partial is usually it, but not always — a
-   voice whose second partial dominates would otherwise be reported an octave
-   high, which then makes its harmonics look like nothing. So the loudest peak
-   is tested against the hypothesis that it is really the second or third
-   partial of something lower. */
+/* The fundamental.
+
+   Picking the loudest bin and asking whether half of it also carries energy
+   is not good enough, and the way it failed was loud: held against real
+   recordings it put a blackbird at 4784 Hz and a tawny owl at 2423 Hz. A
+   blackbird sings around two kilohertz and an owl hoots at four hundred — the
+   estimator was locking onto an upper partial, or onto whatever the noise
+   floor happened to peak at, and every number downstream inherited it.
+
+   Instead: take the strongest peaks, and for each one consider that it might
+   be the first, second, third or fourth harmonic of something. Score each
+   implied fundamental by how much energy its whole comb explains, penalise
+   the lower guesses slightly so a comb is not preferred merely for being
+   dense, and require the fundamental itself to be carrying something. */
 function findF0(mag, sr, N) {
-  let top = 0, topK = 1;
-  for (let k = 2; k < mag.length - 1; k++) if (mag[k] > top) { top = mag[k]; topK = k; }
+  const nyq = mag.length;
+  let top = 0;
+  for (let k = 2; k < nyq - 1; k++) if (mag[k] > top) top = mag[k];
   if (top <= 0) return 0;
-  let best = topK;
-  for (const div of [2, 3]) {
-    const k = topK/div;
-    if (k < 3) continue;
-    // a real sub-harmonic carries a fair share; a spurious one carries none
-    if (bandE(mag, k, 2) > bandE(mag, topK, 2)*0.08) { best = k; break; }
+  const peaks = [];
+  for (let k = 3; k < nyq - 2; k++) {
+    if (mag[k] > mag[k - 1] && mag[k] >= mag[k + 1] && mag[k] > top*0.08) peaks.push(k);
   }
-  return refine(mag, Math.round(best))*sr/N;
+  peaks.sort((a, b) => mag[b] - mag[a]);
+  let best = 0, bestScore = -1;
+  for (const p of peaks.slice(0, 10)) {
+    for (let m = 1; m <= 4; m++) {
+      const kf = p/m;
+      if (kf < 3) continue;
+      // the fundamental has to be there at all, or this is not its comb
+      if (m > 1 && bandE(mag, kf, 2) < bandE(mag, p, 2)*0.02) continue;
+      let score = 0, used = 0;
+      for (let h = 1; h <= 10; h++) {
+        const k = kf*h;
+        if (k >= nyq - 2) break;
+        score += Math.sqrt(bandE(mag, k, 2));
+        used++;
+      }
+      if (used < 2) continue;
+      score /= Math.pow(m, 0.4);
+      if (score > bestScore) { bestScore = score; best = kf; }
+    }
+  }
+  return best ? refine(mag, Math.round(best))*sr/N : 0;
+}
+
+/* The highest frequency a recording actually carries, taken as the last bin
+   within 40 dB of the loudest.
+
+   This matters because it decides whether the harmonic question can be asked
+   at all. A bird singing at five kilohertz has its second harmonic at ten and
+   its third at fifteen — and field recordings are routinely high-passed by
+   the recordist and low-passed by mp3, so those harmonics are not missing
+   from the bird, they are missing from the file. Reported without this, the
+   result was a column of exactly 0.000 for twenty species, which read as a
+   fact about birds and was a fact about bandwidth. */
+function frameBandwidth(mag, sr, N) {
+  let top = 0;
+  for (let k = 2; k < mag.length; k++) if (mag[k] > top) top = mag[k];
+  if (top <= 0) return 0;
+  const cut = top*0.01;
+  let last = 2;
+  for (let k = 2; k < mag.length; k++) if (mag[k] >= cut) last = k;
+  return last*sr/N;
 }
 
 /* What a voice is made of, measured on the loudest note.
@@ -212,15 +259,20 @@ export function voiceMetrics(d, sr, opt) {
     if (kf < 3) continue;
     let tot = 0;
     for (let k = 2; k < mag.length; k++) tot += mag[k]*mag[k];
-    let e1 = bandE(mag, kf, 2), up = 0;
+    const bw = frameBandwidth(mag, sr, N);
+    let e1 = bandE(mag, kf, 2), up = 0, fit = 0;
     for (let h = 2; h <= 8; h++) {
       const k = kf*h;
-      if (k >= mag.length - 2) break;
-      up += bandE(mag, k, 2);
+      if (k >= mag.length - 2 || k*sr/N > bw) break;
+      up += bandE(mag, k, 2); fit++;
     }
-    if (e1 + up <= 0 || tot <= 0) continue;
-    fr.push({ t: (at + N/2)/sr, f: f0,
-      harm: up/(e1 + up), breath: Math.max(0, 1 - (e1 + up)/tot) });
+    if (e1 <= 0 || tot <= 0) continue;
+    /* With no room for a second and a third harmonic under the recording's
+       own ceiling there is no harmonic reading to give, and saying zero would
+       be a lie with a number on it. */
+    fr.push({ t: (at + N/2)/sr, f: f0, bw,
+      harm: fit >= 2 ? up/(e1 + up) : null,
+      breath: Math.max(0, 1 - (e1 + up)/tot) });
   }
   const ad = isolated ? attack/Math.max(1e-4, decay) : null;
   if (fr.length < 2) return { harmonics: null, breath: null, wobble: null,
@@ -240,7 +292,10 @@ export function voiceMetrics(d, sr, opt) {
     for (const x of fr) { const e = x.f - (mf + slope*(x.t - mt)); v += e*e; }
     wobble = Math.sqrt(v/fr.length)/Math.max(1, mf);
   }
-  return { harmonics: mean(fr.map(x => x.harm)), breath: mean(fr.map(x => x.breath)),
+  const harms = fr.map(x => x.harm).filter(x => x !== null);
+  return { harmonics: harms.length ? mean(harms) : null,
+    breath: mean(fr.map(x => x.breath)),
+    bandwidth: mean(fr.map(x => x.bw)),
     wobble, attack, ad, crest, f0: mean(fr.map(x => x.f)) };
 }
 

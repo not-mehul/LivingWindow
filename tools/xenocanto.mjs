@@ -113,7 +113,14 @@ async function fetchAll() {
     /* q:A is the top quality band; len 3–30 s keeps a download to a few
        hundred kilobytes and, more to the point, keeps the clip to something
        like the length of one call rather than four minutes of a wood. */
-    const q = `gen:${gen} sp:${epi} q:A len:3-30`
+    /* grp:birds, because that is what this archive is. xeno-canto holds
+       birds, grasshoppers and bats — and this catalogue also contains a fox,
+       a badger, a roe deer, a house cat, an otter, a hedgehog, a squirrel and
+       a frog, none of which it can possibly have. Asked for `gen:Meles
+       sp:meles` anyway, the search did not return nothing: it returned three
+       recordings of something else, which were then measured and reported as
+       a badger. */
+    const q = `gen:${gen} sp:${epi} grp:birds q:A len:3-30`
       + (TYPE[sp.id] ? ` type:${TYPE[sp.id]}` : '');
     const url = `${API}?query=${encodeURIComponent(q)}&key=${encodeURIComponent(KEY)}&per_page=50`;
     let js;
@@ -128,10 +135,23 @@ async function fetchAll() {
       if (js.error.code === 'invalid_key' || js.error.code === 'missing_parameter') process.exit(3);
       continue;
     }
-    const recs = (js.recordings || [])
-      .filter(r => r.file && !(r._meta && r._meta.redacted_fields))
-      .slice(0, PER);
-    if (!recs.length) { console.log(`  ${sp.id.padEnd(14)} nothing found`); continue; }
+    /* And check that what came back is what was asked for. A search that
+       matches loosely is worse than one that matches nothing, because the
+       recordings arrive, decode, measure and print like any others — there is
+       no stage at which a wrong species announces itself. Every recording
+       carries the genus and epithet it actually is; if they disagree with the
+       request, it is not ours. */
+    const want = (gen + ' ' + epi).toLowerCase();
+    const all2 = (js.recordings || [])
+      .filter(r => r.file && !(r._meta && r._meta.redacted_fields));
+    const recs = all2.filter(r =>
+      `${r.gen || ''} ${r.sp || ''}`.trim().toLowerCase() === want).slice(0, PER);
+    if (!recs.length) {
+      const got = [...new Set(all2.map(r => `${r.gen} ${r.sp}`))].slice(0, 2).join(', ');
+      console.log(`  ${sp.id.padEnd(14)} not in xeno-canto`
+        + (got ? ` — the search offered ${got} instead, refused` : ''));
+      continue;
+    }
     let got = 0;
     for (const r of recs) {
       const out = `${DIR}${sp.id}--${r.id}.mp3`;
@@ -143,6 +163,7 @@ async function fetchAll() {
         got++;
       } catch (e) { continue; }
       manifest[`${sp.id}--${r.id}`] = { id: r.id, species: sp.id, latin: sp.latin,
+        got: `${r.gen} ${r.sp}`.trim(),
         en: r.en, rec: r.rec, cnt: r.cnt, type: r.type, q: r.q,
         length: r.length, lic: r.lic, url: r.url };
       // xeno-canto asks that its API not be hammered; this is not a race
@@ -216,6 +237,20 @@ async function compare() {
     process.exit(1);
   }
   const manifest = JSON.parse(readFileSync(DIR + 'manifest.json', 'utf8'));
+  /* A manifest written before the identity check has no record of what each
+     recording actually turned out to be, so there is no way to tell a real
+     blackbird from whatever a loose search handed back in its place. Rather
+     than measure it and hope, say so. */
+  const unchecked = Object.values(manifest).filter(m => !m.got).length;
+  if (unchecked) {
+    console.error(`\n  ${unchecked} of ${Object.keys(manifest).length} recordings were`
+      + ' downloaded before the species check existed,'
+      + '\n  and cannot be trusted to be the bird they are filed under. Re-fetch:'
+      + '\n\n      rm -rf refaudio/xc'
+      + '\n      export XC_KEY=<your key>'
+      + '\n      node tools/xenocanto.mjs --fetch\n');
+    process.exit(6);
+  }
   const files = Object.keys(manifest)
     .filter(k => existsSync(`${DIR}${k}.mp3`))
     .filter(k => !ONLY.length || ONLY.includes(manifest[k].species));
@@ -226,8 +261,8 @@ async function compare() {
   await page.waitForTimeout(1000);
 
   const rows = await page.evaluate(async ([files, byFile]) => {
-    const D = await import('/tools/lib/dsp.js?v=21');
-    const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=21');
+    const D = await import('/tools/lib/dsp.js?v=22');
+    const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=22');
     const ALL = SPECIES.concat(Object.values(CRITTER_VOICES));
     const ac = window.__lw.audio.ac;
     const SR = 44100;
@@ -268,7 +303,8 @@ async function compare() {
       rH: med(real[id], 'harmonics'), oH: med(ours[id], 'harmonics'),
       rB: med(real[id], 'breath'),    oB: med(ours[id], 'breath'),
       rW: med(real[id], 'wobble'),    oW: med(ours[id], 'wobble'),
-      rF: med(real[id], 'f0'),        oF: med(ours[id], 'f0') }));
+      rF: med(real[id], 'f0'),        oF: med(ours[id], 'f0'),
+      rBW: med(real[id], 'bandwidth') }));
   }, [files, Object.fromEntries(files.map(k => [k, manifest[k].species]))]);
 
   await _browser.close();
@@ -278,24 +314,55 @@ async function compare() {
   console.log('\n  Per species: the real bird / ours.  ' + rows.length + ' species,'
     + ' ' + files.length + ' recordings.\n');
   console.log('  ' + 'species'.padEnd(14) + ' n' + '     harmonics'
-    + '         breath' + '        wobble%' + '        f0 (Hz)');
+    + '         breath' + '        wobble%' + '        f0 (Hz)   band');
   for (const r of rows) {
     console.log('  ' + r.id.padEnd(14) + String(r.n).padStart(2)
       + '   ' + pair(r.rH, r.oH, 3, 6)
       + '  ' + pair(r.rB, r.oB, 3, 6)
       + '  ' + pair(r.rW === null ? null : r.rW*100, r.oW === null ? null : r.oW*100, 1, 6)
-      + '  ' + pair(r.rF, r.oF, 0, 6));
+      + '  ' + pair(r.rF, r.oF, 0, 6)
+      + '  ' + f(r.rBW === null ? null : r.rBW/1000, 1, 5) + 'k');
   }
   /* The one number a listener would notice before any of the others: a voice
-     that is simply in the wrong octave. */
-  const off = rows.filter(r => r.rF && r.oF
-    && (r.oF/r.rF > 1.6 || r.oF/r.rF < 0.62));
+     in the wrong octave.
+
+     It is also the number most easily got wrong, so it is only reported where
+     the estimate can be trusted on both sides. A ratio that is very close to
+     a whole number of octaves is far more likely to be the estimator
+     disagreeing with itself about which partial is the fundamental than a
+     bird singing an octave from where it does — so those are set aside to be
+     looked at rather than acted on. */
+  const oct = x => Math.log2(x);
+  const off = [], suspect = [];
+  for (const r of rows) {
+    if (!r.rF || !r.oF) continue;
+    const ratio = r.oF/r.rF, o = oct(ratio);
+    if (ratio > 0.62 && ratio < 1.6) continue;
+    const nearOctave = Math.abs(o - Math.round(o)) < 0.12 && Math.round(o) !== 0;
+    (nearOctave ? suspect : off).push({ r, ratio });
+  }
   if (off.length) {
     console.log('\n  pitched well away from the real bird:');
-    for (const r of off) {
+    for (const { r, ratio } of off) {
       console.log(`    ${r.id.padEnd(14)} ours ${Math.round(r.oF)} Hz against `
-        + `${Math.round(r.rF)} Hz  (×${(r.oF/r.rF).toFixed(2)})`);
+        + `${Math.round(r.rF)} Hz  (×${ratio.toFixed(2)})`);
     }
+  }
+  if (suspect.length) {
+    console.log('\n  within a hair of a whole octave — check these by ear before'
+      + '\n  believing them, an octave error is the classic way a pitch'
+      + '\n  estimator fails and it fails silently:');
+    for (const { r, ratio } of suspect) {
+      console.log(`    ${r.id.padEnd(14)} ours ${Math.round(r.oF)} Hz against `
+        + `${Math.round(r.rF)} Hz  (×${ratio.toFixed(2)})`);
+    }
+  }
+  const noH = rows.filter(r => r.rH === null);
+  if (noH.length) {
+    console.log(`\n  no harmonic reading for ${noH.length} species — their second`
+      + '\n  and third harmonics fall above what the recording carries, so the'
+      + '\n  harmonics are missing from the file rather than from the bird:'
+      + '\n    ' + noH.map(r => r.id).join(', '));
   }
   console.log('\n  Attack, decay and crest are deliberately absent: a field'
     + '\n  recording is continuous, so its envelope never reaches the floor'
