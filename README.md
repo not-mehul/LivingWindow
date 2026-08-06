@@ -131,7 +131,7 @@ and shuts the window.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds eleven harnesses, and a shared measuring stick in `tools/lib/`. None is part of the piece; all need a static
+`tools/` holds twelve harnesses, and a shared measuring stick in `tools/lib/`. None is part of the piece; all need a static
 server running and drive a headless Chromium through Playwright.
 
 ```bash
@@ -143,6 +143,7 @@ node tools/weather.mjs               # the sky drifting, the alarm, and the hour
 node tools/mix.mjs                   # how far a call stands clear of its room
 node tools/voice.mjs   [id …]        # what each voice is made of, partial by partial
 node tools/reference.mjs             # the piece held against real field recordings
+node tools/xenocanto.mjs             # …and against the actual species, one by one
 node tools/texture.mjs               # which beds are still static
 node tools/soak.mjs                  # ninety busy seconds: leaks, growth, clipping
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
@@ -830,6 +831,51 @@ and its wobble is partly the analysis window spanning several syllables of a
 call that never stops. What the tool is for is direction and size: it will not
 tell you the right number for a wood pigeon, and it will tell you instantly
 that twenty-six of your voices are sine waves and your sea has no foam in it.
+
+### One species at a time
+
+ESC-50's classes are broad: one `chirping_birds` bucket stands in for a
+blackbird, a robin, a wren and a chaffinch at once. That is enough to discover
+that half the catalogue was sine waves. It is not enough to ask whether *our
+blackbird* sounds like a blackbird.
+
+`tools/xenocanto.mjs` asks that question. xeno-canto holds half a million
+quality-rated recordings filterable by species, sound type and length, and
+every entry in `SPECIES` already carries the Latin binomial needed to request
+one — so the mapping is exact rather than a judgement call. It queries per
+species, takes the top-quality recordings between three and thirty seconds
+long, and prints the real bird against ours side by side, with harmonics,
+breath, wobble and fundamental in one table.
+
+```bash
+export XC_KEY=<your key>            # from https://xeno-canto.org/account
+node tools/xenocanto.mjs --fetch    # download, once
+node tools/xenocanto.mjs            # measure and compare
+```
+
+Sound type matters and is set per species: most of these birds are being
+imitated *singing*, but a crow, a gull and a heron are only ever heard here
+calling, and a recording of the wrong one is a comparison against a sound the
+piece never makes.
+
+**The key never touches the repository.** It is read from `XC_KEY` and from
+nowhere else — never written to a file, never put in the manifest, and
+scrubbed out of every error message before printing, because it travels in
+the query string and a failed request would otherwise spill it into a terminal
+log or a CI transcript. curl's stderr is captured rather than inherited for
+the same reason. Passing the key as a command-line argument is refused
+outright: arguments end up in shell history and in the process table.
+
+The recordings land in `refaudio/xc/`, git-ignored like the rest. They are
+other people's work under Creative Commons licences, mostly CC BY-NC-SA;
+`manifest.json` records the catalogue number, recordist and licence of every
+one, which is what any use of them would have to credit.
+
+One limitation worth knowing before trusting a row: the fundamental is picked
+from the loudest harmonic stack in the frame, so a recording with something
+else going on in it can report the background's pitch rather than the bird's.
+Quality-A single-species recordings are mostly clean, but a row whose `f0`
+looks implausible is more likely a detection failure than a finding.
 
 ### The wind you can hear, and the wind you can see
 

@@ -185,9 +185,18 @@ export function voiceMetrics(d, sr, opt) {
      attack. It has no such thing — the number is the length of the recording.
      Where the floor is never reached, there is no reading to give. */
   const ePk = Math.round(pkAt/ENV_HOP), lo = pk*0.0316;
-  let a0 = ePk; while (a0 > 0 && env[a0] > lo) a0--;
-  let d1 = ePk; while (d1 < env.length - 1 && env[d1] > lo) d1++;
-  const isolated = a0 > 0 && d1 < env.length - 1;
+  /* And the floor has to be reached *near* the peak. Refusing a reading only
+     when the level never falls at all is not enough: a three-minute recording
+     usually does fall silent somewhere, just not anywhere relevant, and the
+     walk then measures the distance to that unrelated gap. Tested on a
+     three-minute mp3 this reported an attack of eleven and a half seconds and
+     believed it. A note that takes longer than a second and a half to arrive
+     is not a note. */
+  const REACH = Math.round(1.5*sr/ENV_HOP);
+  const aStop = Math.max(0, ePk - REACH), dStop = Math.min(env.length - 1, ePk + REACH);
+  let a0 = ePk; while (a0 > aStop && env[a0] > lo) a0--;
+  let d1 = ePk; while (d1 < dStop && env[d1] > lo) d1++;
+  const isolated = env[a0] <= lo && env[d1] <= lo;
   const attack = isolated ? (ePk - a0)*ENV_HOP/sr : null;
   const decay = isolated ? (d1 - ePk)*ENV_HOP/sr : null;
 
