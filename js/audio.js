@@ -6,8 +6,9 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=19";
-import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain } from "./species.js?v=19";
+import { mulberry32, REDUCED, state } from "./util.js?v=20";
+import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain,
+  gaitAt } from "./species.js?v=20";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
@@ -512,8 +513,37 @@ class AudioEngine {
     this.resumeSchedulers();
   }
 
+  /* Aim a parameter at a value. Everything that is not a one-shot goes
+     through here.
+
+     The one complication is the wind, which no longer aims at anything: a
+     gust is written out as a whole curve (see `rideGust`), and a curve that
+     is still unrolling makes any `setTargetAtTime` inside its span a throw
+     rather than a glitch — and the weather, the hour and the breath tide all
+     set the same parameters on clocks of their own. So a parameter known to
+     be riding a curve is truncated where it stands first. `cancelScheduledValues`
+     will not do it: a curve that *started* before now is not scheduled after
+     now, so it survives the cancel and the throw happens anyway. */
   set(param, v, tau) {
-    param.setTargetAtTime(v, this.ac.currentTime, tau || 1.2);
+    const now = this.ac.currentTime;
+    const until = this._riding && this._riding.get(param);
+    if (until !== undefined) {
+      if (now < until && param.cancelAndHoldAtTime) {
+        try { param.cancelAndHoldAtTime(now); } catch (e) { /* already done */ }
+      }
+      this._riding.delete(param);
+    }
+    try {
+      param.setTargetAtTime(v, now, tau || 1.2);
+    } catch (e) {
+      /* A curve booked in this very block cannot be held at a time it has
+         not reached yet, so it survives the hold and the aim is refused.
+         Clear it outright and aim again — a gust the listener is a hundredth
+         of a second into is worth nothing against a place change. */
+      param.cancelScheduledValues(now);
+      if (this._riding) this._riding.delete(param);
+      param.setTargetAtTime(v, now, tau || 1.2);
+    }
   }
 
   /* An exponential ramp cannot reach zero, and Web Audio throws rather than
@@ -893,29 +923,77 @@ class AudioEngine {
     }
   }
 
+  /* One gust, written out as a curve rather than aimed at as a target.
+
+     A `setTargetAtTime` toward a new level, every few seconds, is a smooth
+     swell — and measured against the leaves it was going on in the same
+     frame it was less than a quarter as lively (flutter 0.17 against 0.74).
+     The reason is that an exponential approach has no *inside*: it goes to
+     the new level and sits there, and real wind never sits anywhere.
+
+     `GAIT.gust` already says what the shape is — a long lull, a fast arrival,
+     a ragged top, and then a drop — and the grass, the reeds and the chimney
+     smoke have all been answering it for some time. The wind you can *hear*
+     was the last thing in the frame not reading it. Sampled into a curve it
+     costs no nodes and the whole frame agrees with itself. */
+  gustCurve(peak, floor, n) {
+    const c = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const f = gaitAt("gust", i/(n - 1), "force");
+      // never all the way down: a lull is still air moving
+      c[i] = Math.max(1e-5, floor + (peak - floor)*Math.max(0, f));
+    }
+    return c;
+  }
+
+  /* A parameter driven by a whole gust at once. Any automation already booked
+     on it has to go first — the breath tide sets these same params on its own
+     clock, and a curve that overlaps another curve is a throw, not a glitch. */
+  rideGust(param, peak, floor, span) {
+    if (!param) return;
+    const t = this.ac.currentTime;
+    if (!this._riding) this._riding = new Map();
+    try {
+      if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
+      param.cancelScheduledValues(t + 1e-4);
+      param.setValueCurveAtTime(this.gustCurve(peak, floor, 64), t, span);
+      this._riding.set(param, t + span);
+    } catch (e) {
+      // whatever else has this parameter, it can keep it for this gust
+      this._riding.delete(param);
+      try { param.setTargetAtTime(peak, t, 1.6); } catch (e2) { /* nothing to do */ }
+    }
+  }
+
   startGusts(gen) {
     const gust = () => {
       if (!this.running || gen !== this.gen) return;
       const f = 0.55 + this.rng()*0.95;
       const gw = this.g("weather");
-      this.set(this.windGain.gain, this.windBase * (this.breath || 1) * f * gw, 1.6);
-      // brighter under load, and the moan comes up with it
-      this.set(this.windLP.frequency, 300 + f*520, 2.0);
-      this.set(this.windMoan.gain, this.windBase * (this.breath || 1) * gw
-        * Math.max(0, f - 0.7) * 0.5, 2.4);
+      const span = 4.0 + this.rng()*5.5;
+      const lvl = this.windBase * (this.breath || 1) * gw;
+      // the gust's own shape, not a level to settle at
+      this.rideGust(this.windGain.gain, lvl*f, lvl*0.34, span);
+      // brighter under load, and the moan comes up with it — both on the
+      // same curve, because they are the same gust
+      this.rideGust(this.windLP.frequency, 300 + f*520, 260, span);
+      this.rideGust(this.windMoan.gain,
+        lvl * Math.max(0, f - 0.7) * 0.5, 1e-5, span);
       this.set(this.windMoanBP.frequency, 190 + f*130, 3.0);
       // What the wind does to the leaves is the same thing it does to the
       // grass you can see moving: the two should rise and fall together.
       if (this.leafTarget) {
-        this.set(this.leavesGain.gain,
-          this.leafTarget * (this.breath || 1) * (0.4 + f*0.85) * this.g("weather"), 2.2);
+        const lt = this.leafTarget * (this.breath || 1) * this.g("weather");
+        this.rideGust(this.leavesGain.gain, lt*(0.4 + f*0.85), lt*0.34, span);
       }
       // dry reeds knock together in the same gust the grass is answering
       if (state.location === "wetland" && f > 0.9 && this.rng() < 0.6) {
         this.once(() => this.playReedRattle((this.rng()*2 - 1)*0.8,
           Math.min(1, (f - 0.9)*2.2)), 400 + this.rng()*900);
       }
-      setTimeout(gust, 4000 + this.rng()*5500);
+      // the next gust starts where this one's curve ends, so no two curves
+      // are ever booked on the same parameter at once
+      setTimeout(gust, span*1000);
     };
     setTimeout(gust, 2500);
   }
@@ -1706,7 +1784,13 @@ class AudioEngine {
         const st = tones[Math.floor(r()*tones.length)];
         const f = root * 8 * Math.pow(2, st/12);
         const d = B * (0.4 + r()*0.55);
-        ns.push({ t: t0 + at, f0: f, f1: f, dur: d, peak: 0.020 + r()*0.012 });
+        /* Struck, not sung. `noteTrain` learned to hold a note at level
+           before letting it decay, which is what a *voice* does — and it
+           made the record's melody line sustain like an organ and put three
+           and a half decibels on the city's bed. Whatever is playing on that
+           record has hammers in it. */
+        ns.push({ t: t0 + at, f0: f, f1: f, dur: d, peak: 0.020 + r()*0.012,
+          hold: 0.08 });
         at += B * (0.5 + Math.floor(r()*3)*0.5);
       }
       if (ns.length) noteTrain(ac, this.musicIn, ns, "triangle");

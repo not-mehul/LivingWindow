@@ -73,7 +73,7 @@ const out = await page.evaluate(async () => {
   state.location = 'meadow'; scene.reseed(state.seed); audio.applyConditions();
   await sleep(2500);
   // let the meadow fill up first
-  const { SPECIES } = await import('/js/species.js?v=19');
+  const { SPECIES } = await import('/js/species.js?v=20');
   const perch = SPECIES.filter(s => s.layer === 'perch' && s.habitats.includes('meadow'));
   for (let i = 0; i < 8; i++) { audio.performCall(perch[i % perch.length]); await sleep(150); }
   await sleep(1800);

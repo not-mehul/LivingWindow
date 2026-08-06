@@ -131,7 +131,7 @@ and shuts the window.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds nine harnesses. None is part of the piece; all need a static
+`tools/` holds ten harnesses. None is part of the piece; all need a static
 server running and drive a headless Chromium through Playwright.
 
 ```bash
@@ -141,6 +141,7 @@ node tools/critters.mjs              # every creature through update and paint
 node tools/actors.mjs [outfile]      # every singer, and every way of leaving
 node tools/weather.mjs               # the sky drifting, the alarm, and the hour
 node tools/mix.mjs                   # how far a call stands clear of its room
+node tools/voice.mjs   [id …]        # what each voice is made of, partial by partial
 node tools/texture.mjs               # which beds are still static
 node tools/soak.mjs                  # ninety busy seconds: leaks, growth, clipping
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
@@ -639,6 +640,104 @@ with the record playing — sampled every fifteen seconds:
 Nothing grows. The bar count climbs at exactly the tempo, which is the
 look-ahead scheduler never missing and never catching up in a rush. Peak
 −15.8 dBFS, zero clipped samples.
+
+### What a voice is made of
+
+Every bed here was checked, and none of the *voices* ever were. `tools/voice.mjs`
+renders each of the fifty-two calls into an `OfflineAudioContext` on a fixed
+seed and takes it apart. The first run said the thing nobody had looked at:
+
+```
+                        partials   wobble
+  blackbird              0.013      0.25%
+  woodpigeon             0.011      0.00%
+  owl                    0.009      0.00%
+  … 26 of 52 under 0.06
+```
+
+`partials` is the fraction of a note's energy that is not the fundamental. A
+pure sine reads 0.01 — the analysis window's own skirt and nothing else — and
+twenty-six of the fifty-two voices read exactly that, because twenty-six of
+them *were* one `OscillatorNode` of type `"sine"`. That is the single sound
+everybody recognises instantly as a synthesiser, and it was most of the cast.
+
+A bird is a whistle with a body behind it. Even the voices we call pure — a
+blackbird's fluted note, a wood pigeon's coo — carry a second partial ten to
+fifteen decibels down and a third below that, and it is those two that make
+the difference between a flute and a test tone. So `TIMBRE` in `species.js`
+writes out seven of them as partial amplitudes, realised as `PeriodicWave`s
+built once per context: `flute`, `silver`, `whistle`, `reed`, `buzz`, `coo`,
+`mew`. The rough voices keep their sawtooth — a fox's bark really is closer to
+one than to any tidy harmonic series.
+
+Two things travel with the timbre, because they are properties of the same
+voice and there is no sense in setting them apart:
+
+- **A hold.** Every note went from its peak straight into an exponential decay
+  lasting the rest of its length: measured attack a fifth of measured decay on
+  every voice in the catalogue, so every note was a *ding*. `shapeNote` gives
+  a note an attack, a hold at level with a slight droop across it, and then a
+  decay — and a note in a fast run gets whatever is left, so a trill stays a
+  trill.
+- **A waver.** Several voices measured a frequency deviation of exactly zero;
+  nothing in a wood is that steady. The obvious implementation — an LFO on the
+  oscillator's detune — is the wrong *sound*, because an even sinusoidal
+  vibrato is an opera singer, not a bird. The curve is written out and handed
+  to the param instead: half waver, half slow random drift, depth coming up
+  over the first third the way real vibrato develops. It costs no nodes at all,
+  where an LFO and a depth gain would have cost two per phrase, and no two
+  phrases get the same one.
+
+Amplitudes are pre-scaled to the rms of a unit sine with normalisation off.
+Left to normalise itself a `PeriodicWave` is scaled to a *peak* of one, which
+would have made every bright voice quieter than the sine it replaced and moved
+the whole mix.
+
+Afterwards, nothing reads as a sine, and the mix keeps 16–31 dB of clearance:
+
+```
+                        partials   wobble
+  blackbird              0.103      3.77%
+  woodpigeon             0.088      0.55%
+  owl                    0.086      0.27%
+  … 0 of 52 under 0.03
+```
+
+Two of those readings were the tool's fault before they were the code's, which
+is worth recording because both failed silently. Walking raw samples for an
+attack time does not work — a sine crosses zero every half cycle, so the walk
+back from the peak stops at the first crossing and every voice reported an
+attack of half a millisecond. And the first wobble reading took three frames
+twenty-four milliseconds apart, which is an eighth of one cycle of a five-hertz
+waver, off a spectrum quantised to 23 Hz bins: a held note wavering seven cents
+at 400 Hz moves a fourteenth of one bin. It reported dead-steady zeros for
+exactly the thing it was built to find. It now steps frames across the whole
+note, fits a line through the frequency track so an intentional glide is not
+counted as vibrato, and interpolates a parabola through the peak bin.
+
+### The wind you can hear, and the wind you can see
+
+The audible wind was the last thing in the frame not reading `GAIT.gust`. The
+grass, the reeds and the chimney smoke had all been answering it for some time;
+the wind itself aimed a `setTargetAtTime` at a new level every few seconds,
+which is a smooth swell — and measured against the leaves rustling in the same
+frame it was less than a quarter as lively (flutter 0.17 against 0.63). An
+exponential approach has no *inside*: it goes to the new level and sits there,
+and wind never sits anywhere.
+
+A gust is now written out as a whole curve sampled from the same table — the
+long lull, the fast arrival, the ragged top, the drop — and the level, the
+cutoff, the moan and the leaves all ride one copy of it, because they are one
+gust. Flutter 0.24, and the spectral drift went 7.5% to 29%: it gets brighter
+as it arrives, which is what a stronger flow does.
+
+The cost of that is one piece of book-keeping. A curve still unrolling makes
+any `setTargetAtTime` inside its span a throw rather than a glitch, and the
+weather, the hour and the breath tide all set those same parameters on clocks
+of their own. `AudioEngine.set` truncates a parameter known to be riding a
+curve before aiming it. `cancelScheduledValues` will not do it — a curve that
+*started* before now is not scheduled after now, so it survives the cancel and
+the throw happens anyway; it takes `cancelAndHoldAtTime`.
 
 ### Noise, and how it stops sounding like noise
 
