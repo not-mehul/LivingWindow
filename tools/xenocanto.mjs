@@ -262,8 +262,8 @@ async function compare() {
   await page.waitForTimeout(1000);
 
   const rows = await page.evaluate(async ([files, byFile]) => {
-    const D = await import('/tools/lib/dsp.js?v=24');
-    const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=24');
+    const D = await import('/tools/lib/dsp.js?v=26');
+    const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=26');
     const ALL = SPECIES.concat(Object.values(CRITTER_VOICES));
     const ac = window.__lw.audio.ac;
     const SR = 44100;

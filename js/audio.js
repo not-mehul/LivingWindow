@@ -6,9 +6,9 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=24";
+import { mulberry32, REDUCED, state } from "./util.js?v=26";
 import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain,
-  gaitAt } from "./species.js?v=24";
+  gaitAt } from "./species.js?v=26";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
@@ -671,8 +671,18 @@ class AudioEngine {
     this.rainTarget = 0.038 * wx.wet;
     this.set(this.rainGain.gain, this.rainTarget * (this.breath || 1) * this.g("weather"));
     // Leaf hiss follows the wind: a still, clear night in the wood is quiet.
-    const leafBase = L === "forest" ? 0.034 : L === "wetland" ? 0.017 : 0;
-    this.leafTarget = leafBase * (0.32 + wx.gust*1.45 + wx.wet*0.7) * stillNight;
+    const leafBase = L === "forest" ? 0.030 : L === "wetland" ? 0.015 : 0;
+    /* Only when there is weather to move them. The constant third that used to
+       sit in front of the gust meant a dead-calm wood on a clear night still
+       hissed steadily — leaves that rustle with no wind, which is the one
+       thing a listener notices as wrong without being able to say why. Below
+       a breath of gust and with no rain, the wood is quiet. */
+    /* The deadband sits above clear weather's own gust of 0.24, so a still
+       clear wood is silent and a breeze (1.0), rain (0.52) or the wind ahead
+       of a storm is what moves the leaves — which is what a wood does. Fog,
+       at 0.10, is the stillest of the four and rustles least of all. */
+    const stir = Math.max(0, wx.gust - 0.26)*2.4 + wx.wet*0.8;
+    this.leafTarget = leafBase * Math.min(1.6, stir) * stillNight;
     this.set(this.leavesGain.gain, this.leafTarget * (this.breath || 1) * this.g("weather"));
     /* A city empties out overnight. It never goes silent — a town at four in
        the morning still hums — but the difference between that and the middle
@@ -1268,9 +1278,13 @@ class AudioEngine {
         fg.cancelScheduledValues(t);
         fg.setValueAtTime(fFloor, t);
         fg.setValueAtTime(fFloor, Math.max(t, crest - 0.18));
-        fg.linearRampToValueAtTime(foamPeak, crest + 0.12);
+        /* A wave breaks over the better part of a second and drains for
+           several. Reaching full foam a tenth of a second after the crest was
+           a hiss switched on, and switched-on noise is the definition of a
+           blast. */
+        fg.linearRampToValueAtTime(foamPeak, crest + 0.55);
         // back to the drain, not to nothing
-        fg.exponentialRampToValueAtTime(fFloor, crest + 1.8 + this.rng()*1.3);
+        fg.exponentialRampToValueAtTime(fFloor, crest + 3.2 + this.rng()*1.8);
         const fff = this.surfFoamFilter.frequency;
         fff.cancelScheduledValues(t);
         fff.setValueAtTime(1700, t);
@@ -1548,21 +1562,28 @@ class AudioEngine {
     pan.out.connect(this.bedDetail);
     const src = this.wideNoise();
     const bp = ac.createBiquadFilter();
-    bp.type = "bandpass"; bp.frequency.value = 2100 + r()*1100; bp.Q.value = 0.9;
+    bp.type = "bandpass"; bp.frequency.value = 1250 + r()*650; bp.Q.value = 0.75;
     const g = ac.createGain();
     g.gain.setValueAtTime(0.0001, at);
-    g.gain.linearRampToValueAtTime(amp, at + len*0.22);
+    g.gain.linearRampToValueAtTime(amp, at + len*0.42);
     g.gain.exponentialRampToValueAtTime(0.0001, at + len);
-    // the rattle: the individual stones, as a fast wobble on the level
-    const lfo = ac.createOscillator();
-    lfo.type = "sawtooth"; lfo.frequency.value = 21 + r()*13;
-    const lg = ac.createGain(); lg.gain.value = amp*0.55;
-    lfo.connect(lg); lg.connect(g.gain);
-    lfo.start(at); lfo.stop(at + len + 0.05);
+    /* The stones. This was a *sawtooth* oscillator at twenty to thirty-five
+       hertz driving the level by more than half — which is not a beach, it is
+       a buzz, sitting exactly in the band the ear hears as harshness, and it
+       is what made the water sound like a burst of static. Shingle is
+       thousands of small irregular collisions, so the modulation is noise
+       taken down to a few tens of hertz: the same trick the foam and the leaf
+       bed use, and it is granular where a sawtooth is periodic. */
+    const lfo = this.loopNoise();
+    const lfoLP = ac.createBiquadFilter();
+    lfoLP.type = "lowpass"; lfoLP.frequency.value = 26 + r()*14; lfoLP.Q.value = 0.7;
+    const lg = ac.createGain(); lg.gain.value = amp*11;
+    lfo.connect(lfoLP); lfoLP.connect(lg); lg.connect(g.gain);
     src.connect(bp); bp.connect(g); g.connect(pan.node);
     this.once(() => {
       try { src.stop(); } catch (e) { /* already stopped */ }
-      disconnect(src, bp, g, lg);
+      try { lfo.stop(); } catch (e) { /* already stopped */ }
+      disconnect(src, bp, g, lg, lfoLP);
     }, (at - ac.currentTime + len + 0.4)*1000);
     this.retire(pan, at - ac.currentTime + len + 0.6);
   }
@@ -1974,10 +1995,12 @@ class AudioEngine {
   startTimberScheduler(gen) {
     const creak = () => {
       if (!this.running || gen !== this.gen) return;
-      const windy = 0.18 + state.wx.gust*0.82;
-      if (state.location === "forest" && this.rng() < windy*0.7) {
-        this.playCreak((this.rng()*2 - 1)*0.8);
-      }
+      /* The creak is gone. It was a single band of noise at a Q of twenty-two
+         swept slowly through a fifth at half gain — which on paper is timber
+         under load and in the ear is a warble, a tuned wobble arriving out of
+         nowhere every twenty seconds in an otherwise quiet wood. Nothing else
+         in the piece draws attention to itself like that, and a wood does not
+         either. `playCreak` is kept but nothing calls it. */
       setTimeout(creak, 12000 + this.rng()*26000);
     };
     setTimeout(creak, 9000 + this.rng()*14000);

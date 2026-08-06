@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=24";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=24";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=24";
+} from "./util.js?v=26";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=26";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=26";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -1836,14 +1836,16 @@ class Scene {
     }
   }
 
-  drawCattle(c, W, H, baseFn, bot) {
+  /* One cow, or the whole herd when none is named — the meadow now hands them
+     over one at a time so each can take its own place in the depth ordering. */
+  drawCattle(c, W, H, baseFn, bot, only) {
     if (!this.cattle || !this.cattle.length) return;
     const col = css(mix(this.tok.ink, bot, 0.30));
     const pale = `rgba(${this.tok.foamRGB}, 0.35)`;
     /* Cattle stand on the plane like everything else. `baseFn` is still
        accepted for the places that have not been given one. */
     const groundAt = baseFn || ((x, cw) => this.planeY(cw.z));
-    for (const cw of this.cattle) {
+    for (const cw of (only ? [only] : this.cattle)) {
       const dep = this.plane && cw.z !== undefined
         ? this.planeScale(cw.z)/this.plane.top : 1;
       const s = Math.min(W, H)*0.075*cw.sz*dep;
@@ -2476,7 +2478,17 @@ class Scene {
        order there is. */
     const mn = Math.min(W, H);
     const treesByZ = (this.distantTrees || []).slice().sort((a, b) => b.z - a.z);
-    let ti = 0;
+    /* The herd goes into the same far-to-near queue as the trees.
+
+       It used to be painted in one lump after the first hedgerow, at a fixed
+       point in the ordering rather than at its own depth — so every boundary
+       drawn after that one was laid straight across whichever cow stood
+       nearer than it, and cut it in half. On a plane there is only one
+       correct order and it is by z; anything drawn out of that order will be
+       sliced by whatever comes later. */
+    const cowsByZ = (this.cattle || []).slice().sort((a, b) => b.z - a.z);
+    let ti = 0, ci = 0;
+    let hazed = false;
     for (let bi = 0; bi < this.bounds.length; bi++) {
       const b = this.bounds[bi];
       // the trees standing in this boundary, before the hedge that hides their feet
@@ -2485,17 +2497,25 @@ class Scene {
         this.smallTree(c, t.x, t.y, t.h, t.r, W, H,
           css(mix(this.tok.inkDeep, bot, 0.10 + t.z*0.20)));
       }
-      this.drawHedgerow(c, W, H, b.line, bot, b.z);
-      if (bi === 0) {
-        /* The haze goes down before the herd, not over it. Drawn behind it
-           the cattle came out as three pale smudges — the one thing in the
-           middle distance that is supposed to hold the eye, washed out by the
-           air in front of it. */
+      /* The haze goes down before the herd, not over it. Drawn behind it the
+         cattle came out as three pale smudges — the one thing in the middle
+         distance that is supposed to hold the eye, washed out by the air in
+         front of it. */
+      if (!hazed && cowsByZ.length && cowsByZ[0].z >= b.z - 0.001) {
         this.distanceHaze(c, W, H, this.horizonY - 0.02,
           this.planeY(0.62), 0.085*(1 - night*0.55));
-        this.drawCattle(c, W, H, null, bot);
+        hazed = true;
       }
+      while (ci < cowsByZ.length && cowsByZ[ci].z >= b.z - 0.001) {
+        this.drawCattle(c, W, H, null, bot, cowsByZ[ci++]);
+      }
+      this.drawHedgerow(c, W, H, b.line, bot, b.z);
     }
+    if (!hazed) {
+      this.distanceHaze(c, W, H, this.horizonY - 0.02,
+        this.planeY(0.62), 0.085*(1 - night*0.55));
+    }
+    while (ci < cowsByZ.length) this.drawCattle(c, W, H, null, bot, cowsByZ[ci++]);
     while (ti < treesByZ.length) {
       const t = treesByZ[ti++];
       this.smallTree(c, t.x, t.y, t.h, t.r, W, H,
