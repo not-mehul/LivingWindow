@@ -156,8 +156,14 @@ function findF0(mag, sr, N) {
     for (let m = 1; m <= 4; m++) {
       const kf = p/m;
       if (kf < 3) continue;
-      // the fundamental has to be there at all, or this is not its comb
-      if (m > 1 && bandE(mag, kf, 2) < bandE(mag, p, 2)*0.02) continue;
+      /* The fundamental has to be carrying real weight, not merely be
+         non-zero. At a two per cent threshold the estimator would happily
+         put f0 an octave below the truth, land on a bin holding nothing but
+         noise, and then report that every scrap of harmonic energy was
+         "above the fundamental" — which is why the first run of this came
+         back with a wood pigeon at 1.000 and a raven at 0.970. A harmonic
+         share that close to one is not a bird, it is a pitch error. */
+      if (m > 1 && bandE(mag, kf, 2) < bandE(mag, p, 2)*0.15) continue;
       let score = 0, used = 0;
       for (let h = 1; h <= 10; h++) {
         const k = kf*h;

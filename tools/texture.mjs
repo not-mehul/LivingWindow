@@ -33,7 +33,7 @@ for (const line of await p.evaluate(async () => {
      carrying it was dead code and the measurement below inlined a version
      with no threshold at all, so every centroid in this table was being
      dragged toward the middle of the spectrum by the analyser's own silence. */
-  const D = await import('/tools/lib/dsp.js?v=22');
+  const D = await import('/tools/lib/dsp.js?v=23');
   const out = [];
 
   const measure = async (label, node, ms) => {

@@ -926,6 +926,25 @@ recordist and low-passed by mp3 — so those harmonics were missing from the
 recording actually carries, there is now no reading rather than a zero, and
 the table prints each recording's bandwidth beside the pitch.
 
+Run against 127 verified recordings of the actual species, it then said one
+thing loudly and consistently. Across every bird whose pitch could be trusted,
+the real animal carried **three to eight times more of its energy above the
+fundamental** than this piece did — a blackbird 0.33 against our 0.08, a robin
+0.48 against 0.04, a kingfisher 0.68 against 0.06, a skylark 0.62 against
+0.10. The timbres had already been raised once, from bare sines to something
+with a second and third partial; that had not gone nearly far enough. Every
+tonal timbre is richer now, and since the amplitudes are pre-scaled to the rms
+of a unit sine, a richer voice is not a louder one — the energy moves out of
+the fundamental and into the partials, which is exactly where the difference
+was. The blackbird now reads 0.29 against the real 0.33.
+
+A harmonic share close to 1.0 is the other thing that run turned up, and it is
+not a bird: it means the bin the estimator called the fundamental holds
+nothing, so everything else counts as "above" it. That is a pitch error an
+octave down, and the estimator now requires a candidate fundamental to carry
+real weight rather than merely to be non-zero. Anything still above 0.92 is
+printed under a heading telling you to disregard it.
+
 Two things still need reading with care. An `f0` ratio within a hair of a
 whole octave is far more likely to be the estimator disagreeing with itself
 about which partial is the fundamental than a bird singing an octave away from

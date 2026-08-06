@@ -79,7 +79,8 @@ const TYPE = {
   lapwing: 'call', moorhen: 'call', mallard: 'call', littleegret: 'call',
   heron: 'call', buzzard: 'call', kestrel: 'call', swift: 'call',
   feralpigeon: 'call', rooster: 'call', pheasant: 'call', woodpecker: 'drumming',
-  owl: 'call', cuckoo: 'song', nightingale: 'song'
+  // the owl here hoots; its "kewick" is a different sound at twice the pitch
+  owl: 'song', cuckoo: 'song', nightingale: 'song'
 };
 
 async function fetchAll() {
@@ -261,8 +262,8 @@ async function compare() {
   await page.waitForTimeout(1000);
 
   const rows = await page.evaluate(async ([files, byFile]) => {
-    const D = await import('/tools/lib/dsp.js?v=22');
-    const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=22');
+    const D = await import('/tools/lib/dsp.js?v=23');
+    const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=23');
     const ALL = SPECIES.concat(Object.values(CRITTER_VOICES));
     const ac = window.__lw.audio.ac;
     const SR = 44100;
@@ -356,6 +357,12 @@ async function compare() {
       console.log(`    ${r.id.padEnd(14)} ours ${Math.round(r.oF)} Hz against `
         + `${Math.round(r.rF)} Hz  (×${ratio.toFixed(2)})`);
     }
+  }
+  const impossible = rows.filter(r => r.rH !== null && r.rH > 0.92);
+  if (impossible.length) {
+    console.log('\n  harmonic share above 0.92 means the fundamental bin holds'
+      + '\n  nothing — that is a pitch error, not a bird. Disregard:'
+      + '\n    ' + impossible.map(r => `${r.id} (${r.rH.toFixed(3)})`).join(', '));
   }
   const noH = rows.filter(r => r.rH === null);
   if (noH.length) {

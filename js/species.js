@@ -957,30 +957,42 @@ const AUDIBLE = 1e-5;
    and normalisation is turned off. Left to normalise itself a `PeriodicWave`
    is scaled to a *peak* of one, which would have made every bright voice
    quieter than the sine it replaced and moved the whole mix. */
+/* The amplitudes below were raised once already, from a bare sine to
+   something with a second and third partial in it. Then 127 verified
+   xeno-canto recordings of the actual species were measured the same way
+   (`tools/xenocanto.mjs`), and said it had not gone nearly far enough: across
+   every bird whose pitch could be trusted, the real animal carried three to
+   eight times more of its energy above the fundamental than this did — a
+   blackbird 0.33 against our 0.08, a robin 0.48 against 0.04, a kingfisher
+   0.68 against 0.06, a skylark 0.62 against 0.10.
+
+   The amplitudes are pre-scaled to the rms of a unit sine, so making a voice
+   richer does not make it louder; it only moves energy from the fundamental
+   into the partials, which is exactly what the difference was. */
 const TIMBRE = {
   // near-pure, a touch of body: a fluted thrush note, a cuckoo
-  flute:   { h: [1, 0.28, 0.11, 0.040, 0.015],             hold: 0.42, vib: 16, vibHz: 5.2,
+  flute:   { h: [1, 0.55, 0.30, 0.150, 0.070, 0.030],      hold: 0.42, vib: 16, vibHz: 5.2,
              bow: 0.26, snap: 0.34 },
   // thin and silvery — a robin, a blue tit
-  silver:  { h: [1, 0.22, 0.12, 0.060, 0.030, 0.014],      hold: 0.34, vib: 19, vibHz: 6.4,
+  silver:  { h: [1, 0.50, 0.28, 0.140, 0.070, 0.035],      hold: 0.34, vib: 19, vibHz: 6.4,
              bow: 0.30, snap: 0.42 },
   /* The cleanest thing here — an otter, a curlew's rising note. This one
      stays low on purpose: a whistle really is about as close to a sine as
      nature gets, and pushing partials into it to satisfy a number would make
      it the wrong bird. */
-  whistle: { h: [1, 0.18, 0.07, 0.025],                    hold: 0.46, vib: 12, vibHz: 4.6,
+  whistle: { h: [1, 0.30, 0.13, 0.050],                    hold: 0.46, vib: 12, vibHz: 4.6,
              bow: 0.22, snap: 0.30 },
   // the commonest passerine sound by far
-  reed:    { h: [1, 0.34, 0.16, 0.075, 0.035, 0.018],      hold: 0.30, vib: 21, vibHz: 6.0,
+  reed:    { h: [1, 0.55, 0.32, 0.170, 0.090, 0.045],      hold: 0.30, vib: 21, vibHz: 6.0,
              bow: 0.30, snap: 0.44 },
   // harsh and wheezy — a starling, a greenfinch's drawn-out note
   buzz:    { h: [1, 0.60, 0.42, 0.28, 0.19, 0.12, 0.08],   hold: 0.36, vib: 26, vibHz: 5.4,
              bow: 0.34, snap: 0.40 },
   // hollow, and mostly even partials: every pigeon and the owl
-  coo:     { h: [1, 0.30, 0.06, 0.020, 0.008],             hold: 0.52, vib: 14, vibHz: 4.2,
+  coo:     { h: [1, 0.52, 0.25, 0.100, 0.040],             hold: 0.52, vib: 14, vibHz: 4.2,
              bow: 0.20, snap: 0.24 },
   // nasal, with the energy up in the second and third — a mew, a meow
-  mew:     { h: [1, 0.45, 0.30, 0.10, 0.05],               hold: 0.38, vib: 24, vibHz: 5.8,
+  mew:     { h: [1, 0.62, 0.42, 0.20, 0.09],               hold: 0.38, vib: 24, vibHz: 5.8,
              bow: 0.38, snap: 0.30 }
 };
 const BUILTIN = { sine: 1, square: 1, sawtooth: 1, triangle: 1 };
