@@ -6,9 +6,9 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=23";
+import { mulberry32, REDUCED, state } from "./util.js?v=24";
 import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain,
-  gaitAt } from "./species.js?v=23";
+  gaitAt } from "./species.js?v=24";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
@@ -204,7 +204,12 @@ class AudioEngine {
        was still nearly an octave too bright: real rain measures a centroid
        around 3.7 kHz and this measured 6.5. Rain is a *wash* with grain in it,
        not a hiss with clicks in it. */
-    const aTop = 1 - Math.exp(-2*Math.PI*1500/fs);
+    /* Held against six real recordings this bed measured 4.7 kHz where rain
+       measures 3.7 — and, worse for a wood in the rain, it sat directly on top
+       of the leaf bed at 4.8 kHz. Two beds in the same octave are not two
+       sounds, they are one hiss. Rain goes below the leaves, where it belongs:
+       leaves are a dry rattle and rain is a wet wash. */
+    const aTop = 1 - Math.exp(-2*Math.PI*1050/fs);
     let low = 0, t1 = 0, t2 = 0, t3 = 0;
     const twoPiOverN = 2*Math.PI / N;
     for (let i = 0; i < M; i++) {
@@ -415,7 +420,15 @@ class AudioEngine {
     const rainSrc = ac.createBufferSource();
     rainSrc.buffer = this.makeRainLoop(11);
     rainSrc.loop = true;
-    rainSrc.connect(this.rainGain);
+    /* A roof over the whole bed, not just over the wash inside it. Darkening
+       the wash alone made things worse — it left the drops, whose short rings
+       are broadband, as the brightest thing in the bed, and the measured
+       centroid went *up*. The drops are what makes rain grain rather than
+       hiss, so they stay; they simply do not get to be the top of it. */
+    const rainRoof = ac.createBiquadFilter();
+    rainRoof.type = "lowpass"; rainRoof.frequency.value = 11000; rainRoof.Q.value = 0.6;
+    rainSrc.connect(rainRoof);
+    rainRoof.connect(this.rainGain);
     this.rainGain.connect(this.bedBus);
     rainSrc.start();
 
@@ -446,7 +459,12 @@ class AudioEngine {
     const tlp = ac.createBiquadFilter(); tlp.type = "lowpass"; tlp.frequency.value = 140;
     tsrc.connect(tlp); tlp.connect(this.trafficGain);
     const twash = ac.createBiquadFilter();
-    twash.type = "bandpass"; twash.frequency.value = 620; twash.Q.value = 0.45;
+    /* Tighter and lower than it was. At a Q of a half the skirt of this reached
+       far enough up to measure a centroid of 1.1 kHz — sitting in the same
+       octave as the wind bed, so a breezy city was one undifferentiated
+       mid-range hiss with no street in it. Tyre roar is lower and narrower
+       than that in life anyway. */
+    twash.type = "bandpass"; twash.frequency.value = 480; twash.Q.value = 0.85;
     const twg = ac.createGain(); twg.gain.value = 0.42;
     tsrc.connect(twash); twash.connect(twg); twg.connect(this.trafficGain);
     this.trafficGain.connect(this.bedBus);

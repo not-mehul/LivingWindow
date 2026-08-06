@@ -993,8 +993,58 @@ const TIMBRE = {
              bow: 0.20, snap: 0.24 },
   // nasal, with the energy up in the second and third — a mew, a meow
   mew:     { h: [1, 0.62, 0.42, 0.20, 0.09],               hold: 0.38, vib: 24, vibHz: 5.8,
-             bow: 0.38, snap: 0.30 }
+             bow: 0.38, snap: 0.30 },
+  /* And two for the mammals, which had been using a bare sawtooth. A sawtooth
+     is not wrong about a bark's *spectrum* — it is wrong about everything
+     else. A mammal's vocal folds do not vibrate evenly: the pitch shakes,
+     wanders and breaks, and it is that unsteadiness the ear reads as an
+     animal rather than an oscillator. These carry three times the waver of
+     any bird here, and it is fast. */
+  bark:    { h: [1, 0.78, 0.58, 0.40, 0.27, 0.17, 0.10],   hold: 0.22, vib: 62, vibHz: 13.0,
+             bow: 0.30, snap: 0.55 },
+  growl:   { h: [1, 0.85, 0.70, 0.55, 0.42, 0.30, 0.20, 0.13],
+             hold: 0.44, vib: 48, vibHz: 9.0, bow: 0.22, snap: 0.20 }
 };
+
+/* ---- and the throat it comes out of --------------------------------------
+
+   The one thing that separates a mammal's voice from a bird's is not its
+   pitch or its harmonics: it is that a mammal has a long resonant tract above
+   the larynx, and that tract has fixed resonances. They do not move when the
+   animal changes pitch. That is why a fox barking high and barking low still
+   sounds like a fox, and it is exactly what a bare sawtooth through a fixed
+   band-pass cannot produce — a band-pass has one hump and no character.
+
+   Two or three peaking filters in series, at frequencies that belong to the
+   animal rather than to the note. A big animal has low, closely spaced ones;
+   a small one has high, wide ones. */
+const FORMANT = {
+  fox:      [[ 640, 7, 10], [1580, 9, 7], [2950, 9, 4]],
+  deer:     [[ 480, 6, 11], [1250, 8, 6], [2400, 9, 3]],
+  cat:      [[ 860, 6, 10], [1900, 8, 8], [3300, 9, 5]],
+  badger:   [[ 380, 5, 11], [1020, 7, 6]],
+  otter:    [[2600, 8,  7], [4200, 9, 4]],
+  heron:    [[ 560, 6, 10], [1450, 8, 6], [2600, 9, 3]],
+  hedgehog: [[1400, 5,  8], [3000, 7, 5]],
+  squirrel: [[1600, 6,  8], [3400, 8, 5]]
+};
+
+/* Returns the node to sing *into*: a chain of peaking filters whose output is
+   already wired to `dest`. Two or three nodes for a whole call, and these are
+   the rarest voices in the piece. */
+function throat(ac, dest, id) {
+  const spec = FORMANT[id];
+  if (!spec) return dest;
+  let head = null, tail = null;
+  for (const [f, q, g] of spec) {
+    const b2 = ac.createBiquadFilter();
+    b2.type = "peaking"; b2.frequency.value = f; b2.Q.value = q; b2.gain.value = g;
+    if (tail) tail.connect(b2); else head = b2;
+    tail = b2;
+  }
+  tail.connect(dest);
+  return head;
+}
 const BUILTIN = { sine: 1, square: 1, sawtooth: 1, triangle: 1 };
 
 /* `PeriodicWave` belongs to the context that made it, and building one is not
@@ -1993,14 +2043,15 @@ const CRITTER_VOICES = {
     desc: "a hoarse bark, and sometimes the vixen's scream", tone: "amber", p: 0.45,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const v = throat(ac, dest, "fox");
       if (r() < 0.3) {                     // the scream, rare and eerie
-        note(ac, dest, t, 900 + r()*100, 1500, 0.55, 0.045, "sawtooth");
+        note(ac, v, t, 900 + r()*100, 1500, 0.55, 0.045, "growl");
         burst(ac, dest, t, 1400, 1, 0.5, 0.02);
         return 0.9;
       }
       const reps = 2 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 520 + r()*60, 310, 0.12, 0.05, "sawtooth");
+        note(ac, v, t, 520 + r()*60, 310, 0.12, 0.05, "bark");
         burst(ac, dest, t, 800, 1, 0.1, 0.03);
         t += 0.28 + r()*0.1;
       }
@@ -2013,7 +2064,7 @@ const CRITTER_VOICES = {
       const reps = 1 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
         burst(ac, dest, t, 500 + r()*100, 0.8, 0.18, 0.09);
-        note(ac, dest, t, 400, 250, 0.15, 0.045, "sawtooth");
+        note(ac, throat(ac, dest, "deer"), t, 400, 250, 0.15, 0.045, "bark");
         t += 0.5 + r()*0.3;
       }
       return t - t0 + 0.15;
@@ -2022,15 +2073,16 @@ const CRITTER_VOICES = {
     desc: "one unhurried meow across the rooftops", tone: "amber", p: 0.5,
     synth(ac, dest, t0, r) {
       const f = 480 + r()*80;
-      note(ac, dest, t0, f, f*1.9, 0.32, 0.035, "mew");
-      note(ac, dest, t0 + 0.3, f*1.9, f*0.9, 0.4, 0.032, "mew");
-      note(ac, dest, t0 + 0.02, f*2.1, f*3.2, 0.28, 0.012, "sawtooth");
+      const v = throat(ac, dest, "cat");
+      note(ac, v, t0, f, f*1.9, 0.32, 0.035, "mew");
+      note(ac, v, t0 + 0.3, f*1.9, f*0.9, 0.4, 0.032, "mew");
+      note(ac, v, t0 + 0.02, f*2.1, f*3.2, 0.28, 0.012, "growl");
       return 0.9;
     } },
   heron: { id: "heron", name: "Grey Heron", latin: "Ardea cinerea",
     desc: "a harsh “fraaank”, flung over its shoulder", tone: "sage", p: 0.5,
     synth(ac, dest, t0, r) {
-      note(ac, dest, t0, 340 + r()*40, 210, 0.5, 0.055, "sawtooth");
+      note(ac, throat(ac, dest, "heron"), t0, 340 + r()*40, 210, 0.5, 0.055, "bark");
       burst(ac, dest, t0, 800, 0.8, 0.4, 0.028);
       return 0.8;
     } },
@@ -2044,7 +2096,7 @@ const CRITTER_VOICES = {
         ps.push({ t, freq: 1400 + r()*300, dur: 0.04, peak: 0.05 });
         t += 0.11 + r()*0.04;
       }
-      pulseTrain(ac, dest, ps, 4);
+      pulseTrain(ac, throat(ac, dest, "squirrel"), ps, 4);
       return t - t0 + 0.1;
     } },
   otter: { id: "otter", name: "Eurasian Otter", latin: "Lutra lutra",
@@ -2053,7 +2105,7 @@ const CRITTER_VOICES = {
       let t = t0;
       const reps = 1 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 2800 + r()*300, 3600, 0.12, 0.04, "whistle");
+        note(ac, throat(ac, dest, "otter"), t, 2800 + r()*300, 3600, 0.12, 0.04, "whistle");
         t += 0.2 + r()*0.1;
       }
       return t - t0 + 0.1;
@@ -2068,7 +2120,7 @@ const CRITTER_VOICES = {
         ps.push({ t, freq: 300 + r()*150, dur: 0.06, peak: 0.03 });
         t += 0.14 + r()*0.1;
       }
-      pulseTrain(ac, dest, ps, 1);
+      pulseTrain(ac, throat(ac, dest, "hedgehog"), ps, 1);
       return t - t0 + 0.1;
     } },
   badger: { id: "badger", name: "European Badger", latin: "Meles meles",
@@ -2077,7 +2129,7 @@ const CRITTER_VOICES = {
       let t = t0;
       const reps = 2 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 240 + r()*40, 180, 0.22, 0.04, "sawtooth");
+        note(ac, throat(ac, dest, "badger"), t, 240 + r()*40, 180, 0.22, 0.04, "growl");
         burst(ac, dest, t, 350, 1, 0.2, 0.018);
         t += 0.3 + r()*0.12;
       }

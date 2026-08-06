@@ -977,6 +977,57 @@ curve before aiming it. `cancelScheduledValues` will not do it — a curve that
 *started* before now is not scheduled after now, so it survives the cancel and
 the throw happens anyway; it takes `cancelAndHoldAtTime`.
 
+### Beds that are two sounds rather than one
+
+A bed can be perfectly granular, perfectly weathered, and still contribute
+nothing but mush — because of where it sits rather than what it is. Two beds
+in the same octave are not two sounds, they are one hiss, and the texture
+bench measures each one alone so it could never say so.
+
+Two collisions were hiding in plain sight in that table:
+
+- **Rain at 4.7 kHz against leaves at 4.8 kHz.** A wood in the rain was one
+  undifferentiated seethe. Rain is also, separately, an octave brighter than
+  real rain measures. Both are fixed by the same move — a roof over the whole
+  bed rather than over the wash inside it. Darkening the wash alone had made
+  matters worse: it left the drops, whose short rings are broadband, as the
+  brightest thing in the bed, and the measured centroid went *up*. The drops
+  are what makes rain grain rather than hiss, so they stay; they simply do not
+  get to be the top of it. 3341 Hz now, against the world's 3717 and well
+  clear of the leaves.
+- **Traffic at 1.1 kHz against wind at 1.4 kHz.** A breezy city was one
+  mid-range wash with no street in it. The tyre-noise band had a Q of a half,
+  whose skirt reached an octave above where it was centred; tyre roar is lower
+  and narrower than that in life. 553 Hz now.
+
+### What a mammal has that a bird does not
+
+The mammals were the least examined voices here — xeno-canto holds birds,
+grasshoppers and bats, so the one comparison that works species by species
+cannot see them at all, and ESC-50 has only a cat. They were still bare
+sawtooths through a band-pass long after the birds had been rebuilt.
+
+A sawtooth is not wrong about a bark's spectrum. It is wrong about everything
+else, and the two things it misses are the two that matter:
+
+- **A throat.** The one feature that separates a mammal's voice from a bird's
+  is a long resonant tract above the larynx with *fixed* resonances — they do
+  not move when the animal changes pitch. That is why a fox barking high and
+  barking low both sound like a fox, and it is exactly what a band-pass cannot
+  do: a band-pass has one hump and no character. `FORMANT` gives each mammal
+  two or three peaking filters at frequencies belonging to the animal rather
+  than to the note, and `throat()` returns the node to sing into. Big animals
+  get low, closely spaced ones; small ones get high, wide ones.
+- **An unsteady larynx.** A mammal's vocal folds do not vibrate evenly: the
+  pitch shakes, wanders and breaks, and the ear reads that unsteadiness as an
+  animal rather than an oscillator. The `bark` and `growl` timbres carry three
+  times the waver of any bird here, and it is fast.
+
+The harmonic share moved the way a vocal tract moves it — deer 0.41 to 0.60,
+heron 0.34 to 0.79, badger 0.35 to 0.87 — which is what a real mammal reads,
+because in a real mammal most of the energy is in the formant region and not
+in the fundamental at all.
+
 ### Noise, and how it stops sounding like noise
 
 Nearly every bed here is filtered noise, and filtered noise is one small step
