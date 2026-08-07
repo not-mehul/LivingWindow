@@ -1065,58 +1065,162 @@ quadruped's quadratic is converted to its exact cubic equivalent (control at
 P + ⅔(Q − P)) and the upright pair written directly, so the bound is
 bit-for-bit what it was and only the rise is new.
 
-### The city, from a roof in it
+### The city, from a roof beside a street
 
-The city used to be an elevation: a row of buildings on a street, seen flat-on
-from somewhere unspecified, with the bottom twentieth of the frame given over
-to a pavement nothing could use. There was no vantage in it — no reason for
-the viewer to be where they were, and nowhere for anything to be.
+The city has been three things. It began as an elevation: a row of buildings
+on a street, seen flat-on from somewhere unspecified, with the bottom twentieth
+of the frame given over to a pavement nothing could use. Then it became a
+rooftop — the right decision, and the one that gave everything that walks a
+floor to walk on. But it was a rooftop with a *panorama* in front of it: a rank
+of slabs standing shoulder to shoulder along one flat line, evenly lit, with
+nothing to look at and nowhere for the eye to go.
 
-Now the frame *is* a rooftop. The floor is the roof you are standing on, it
-recedes to a parapet you could lean on, and the rest of the city stands around
-you: mostly taller than where you are, some of it lower. That one decision
-settles everything else. The cat has a floor to cross. Pigeons have somewhere
-to land. Birds perch on a parapet at your own eye height instead of on a
-roofline a street away. And the view has a reason: it is the place you climb
-to at the end of a long day.
-
-The construction is just the geometry of standing somewhere:
+What was missing was a hole in it. A city seen from above is not a wall of
+towers; it is a wall of towers with a bright slot cut down through it, and
+every good picture of one is composed around that slot. So the street comes
+first now and everything else is arranged around it.
 
 ```
-CITY_EYE      0.505   your own eye level — anything at your height is on it
-CITY_PARAPET  0.635   the wall round your roof: close, and so well below it
+CITY_EYE      0.478   your own eye level — anything at your height is on it
+CITY_PARAPET  0.860   where the near edge comes *closest*: the street's mouth
 ```
 
-Buildings taller than you rise above the eye line. Buildings shorter than you
-have their tops *below* it and are seen from above — which is what gives the
-city a floor as well as walls. Two thirds are tall, because that is what makes
-a place feel enclosed rather than panoramic. The near roof is a plane like
-every other ground in this piece, so everything that walks already knows how
-to stand on it.
+`CITY_PARAPET` is no longer a level line across the picture. It is the single
+nearest point of the near edge, and the edge climbs away from it up both sides
+of the street — a shallow V, thirty-eight hundredths of the frame at the left
+corner and thirty-four at the right, with the view down the middle of it. That
+is the whole composition, and it is the difference between standing behind a
+wall and standing at the *corner* of a roof. The floor is fourteen hundredths
+deep where the street opens and half the window deep at the two corners; the
+left arm carries a handrail and the right is a solid ledge you could put a cup
+on, so the two sides are not each other's mirror.
 
-What is up here is what makes it a place rather than a surface: a water tank
-on legs, a stair hut with the stairwell light behind its door, vents across
-the floor with one right at your feet, an aerial mast, and a string of bulbs
-along the parapet that nothing in the city put there — somebody who comes up
-here did. Every one of them is also a perch.
+The street itself is one perspective, and it is the same one every plane in
+this piece uses: how far down it a thing is gives its height on screen, its
+width and its size together, so a stall, a lamp and a person at the same
+distance cannot disagree with one another. What is down there is a market —
+awnings along both kerbs, sodium lamps on the near side of them, and people
+walking between. The people move at a constant rate *in the street*, not across
+the picture, so one at the far end creeps and the same one arriving at the near
+kerb is striding, and neither of those had to be asked for.
 
-And it is lit by advertising, because that is what lights a city at night.
-Three neon hues, tubes on the nearer half of the towers only — a legible sign
-a mile off is a sign painted on the sky — some of them buzzing on a failing
-choke, each throwing a wash onto the air and the wall it is bolted to. Lit
-windows are dealt out of the same grid the dark ones use, so a light is *in* a
-window rather than beside one, cool where somebody is still working and warm
-where somebody is at home. The tallest towers carry an aircraft beacon.
+Two mistakes are worth writing down because both look like arithmetic and are
+actually composition. The street's furniture was scattered evenly along the
+street, which with the far end six times off put nine stalls in ten into the
+top third of the slot and swept the near half clean; it is scattered evenly
+down the *picture* now, and the perspective is inverted to place it. And the
+people were sized as a fraction of the frame's height rather than of the road
+they stand in, which made everyone in the street a giant in a narrow window and
+a mouse in a wide one — the same street, the same people, two different cities.
 
-Three things had to be undone to get here. The two telegraph poles were street
-furniture rooted in the floor, and a street pole standing eight storeys up was
-the loudest thing wrong with the view; they are cables slung between the
-buildings now, passing over the parapet and away. The cat carried a block
-index because it walked the top edge of a building across the way — it is
-simply an animal on the ground now. And the roof needed a *surface*: felt in
-strips with the seams running away from you and grit on top, both on the
-plane, because without them the floor was forty per cent of the frame holding
-nothing and the eye had no way to read how far off the parapet was.
+Around the slot: the pair of buildings that lip it, which are what the frame is
+built on. The left goes up out of the top of the picture with a banner down its
+inner corner. The right is *lower than you*, so its roof is a floor of pipework
+laid out below your eye — pipe runs with elbows that turn down over the parapet
+and into the wall, plant boxes, and a hoarding hung flat on its face over the
+street. A building lower than the viewer, seen from above, is the single thing
+that most says you are up somewhere. Behind those, the rest of the city; behind
+that, the far rank, nine tenths of the way to the sky; and in it one landmark,
+because every real skyline has the building everybody names and without it a
+skyline is a bar chart.
+
+**What is fixed and what is drawn afresh.** The street's place in the frame,
+how wide its mouth is, where it runs away to, the footbridge across it and how
+far the ledge climbs on either side are all constants. A composition that is
+different every time is not a composition. What the seed decides is what
+*stands* in it: how many buildings, how tall, how wide, how they are shaded,
+how many windows are lit and when they change, how many hoardings and banners
+and what is on them. You do not get a different street; you get a different
+evening on it.
+
+**Signs, and why they are panels.** They used to be lengths of tube. A city's
+signs are not lengths of tube — they are panels: a tall narrow banner down a
+corner with marks on it, or a lit hoarding on struts with a picture. The marks
+are deliberately not letters. Anything legible at this size is either a word in
+a language the piece has no business choosing or a smear the eye keeps trying
+to read and cannot; a squiggle, a bar and a blob are what a sign at three
+hundred yards actually resolves to. Each panel is a board whether it is
+switched on or not, so by day the city is covered in unlit hoardings, which is
+also true.
+
+**A line round everything.** Every solid thing here is drawn and not merely
+filled — near lines heavier than far ones, scaled to the frame rather than left
+at a fixed pixel. This is the single thing that makes thirty overlapping
+rectangles read as a drawing of a city instead of as a stacked bar chart, and
+it is worth more than any amount of shading. Its companion is that no two
+buildings are the same colour: a shade either way, which is nothing on one wall
+and everything on thirty. The near ones only ever get the darker half of that
+swing, because paler *is* further here and a near building that comes out paler
+than the rank behind it reads as a hole in the city.
+
+**One warm thing.** A city is cold stone with hot light in the cracks, and if
+the stone is also warm there are no cracks. The street is the only warm thing
+in the frame and everything else is read against it — which is why the walls
+are a genuinely cool slate after dark and why the deck is the palest thing in
+the lower half of the picture. That last one is not a stylistic choice: a
+rooftop is a flat horizontal surface with the whole sky falling on it, standing
+among vertical ones that have only the narrow band of sky they happen to face.
+Painting the near ground dark, which is right for a hedge and right for a dune,
+made a rooftop look like a hole.
+
+**Its own palette, and its own sky.** Every other place in the piece is a warm
+etching: one brown ink, mixed with the sky at whatever ratio the distance calls
+for. The city has its own tokens because that will not do here — and its own
+sky in three bands rather than two, because a real sky at either end of the day
+is cool overhead, warm at the horizon and something else again in between. The
+pink between a dawn's violet and its gold is a band, not a crossing point. The
+third stop lands on the city's own eye line, so the warm strip sits behind the
+skyline instead of below the parapet where nothing would ever see it.
+
+Its walls also change colour with the hour rather than only in value. Mixing
+one grey with the sky gets a city right at midnight and exactly backwards at
+noon: a city at noon is warm brick and tan concrete against a cold blue sky,
+and the same city at midnight is cold slate against a warm-lit one. So there
+are four wall colours, blended over the turn the way the sky is. And what
+distance mixes them *toward* is not the colour of the sky sitting on the
+skyline but the colour of the air a third of the way up it — mixing toward the
+horizon band itself turned every distant tower the colour of the one bright
+stripe in the picture, and a night city came out teal from top to bottom.
+
+The city is also lit on its own clock. `nightness` answers a question about the
+sky; `cityLit` answers one about the city, and they are not the same question.
+A street lamp and a shop sign come on the moment the sun is off the buildings
+and stay on until well after it is back, so at dusk the signs are at full
+strength against a sky that still has colour in it and at dawn they are still
+burning while the horizon goes gold.
+
+**What is up here with you** is what makes it a place rather than a surface:
+a water tank on legs, a stair hut with the stairwell light behind its door,
+vents down both arms of the deck with one right at your feet, an aerial mast,
+and a string of bulbs following the ledge that nothing in the city put there —
+somebody who comes up here did. All of it is out on the arms, where the deck is
+deep; the middle of it is the strip between you and the mouth of the street,
+and a water tank standing in that strip stands in the one place the whole
+picture is looking. Every one of them is also a perch, and a spot on the ledge
+reads its distance back off the plane, so a pigeon out at the corner of the
+window is smaller than one at the street's mouth.
+
+Three things had to be undone along the way. The two telegraph poles were
+street furniture rooted in the floor, and a street pole standing eight storeys
+up was the loudest thing wrong with the view; they became cables, and the
+cables in turn were ruled from one edge of the window to the other at eye
+height, which put two hard horizontals straight through the skyline. A wire
+crosses the gap it has to cross: they span the canyon now and stop at the
+buildings either side of it. The cat carried a block index because it walked
+the top edge of a building across the way — it is simply an animal on the
+ground now. And a sign used to be painted after every wall in the frame, which
+put a distant building's banner flat on the face of the near slab standing in
+front of it. A sign belongs to a building; it is painted with it.
+
+The city is the most expensive place in the piece now — about 14 ms a frame at
+1920×1080 under a software rasterizer against the meadow's 12, for half the
+rasterization submissions it used to make. Most of what it costs is fill, and
+two of those bills were paid off rather than accepted: the atmosphere was a
+half-frame glow and a full-width screen-blended gradient over it, blending the
+best part of a million pixels a frame for two per cent of an alpha, and the
+buildings were painted a third of a window's height below the deck edge that
+covers them a moment later. `cityBlockFoot` finds how far down each one is
+actually visible, which is as far as it now goes.
 
 One note on looking at any of this. The sky is painted on a *second* canvas
 behind the scene one, so a probe that grabs `scene.ctx.canvas` gets a picture
@@ -1596,14 +1700,14 @@ meadow       0.52     1.035 … 0.645     4.0 ×
 forest       0.60     1.045 … 0.864     1.7 ×
 beach        0.53     1.030 … 0.821     1.7 ×
 wetland      0.57     1.030 … 0.675     4.4 ×
-city         0.80     1.030 … 0.916     2.0 ×
+city         0.48     1.070 … 0.864     1.7 ×
 ```
 
 The bands they replaced were 4.7%, 9.5%, 4.3% and 2.6% of frame height. The
 shallow ones are honest: a strand seen from a dune really is foreshortened, and
-a street from a first-floor window is a narrow strip. What matters is that a
-cat crossing the near kerb is now bigger than one at the far, and crosses
-faster.
+the ledge at the corner of a rooftop is a wedge, not a field. What matters is
+that a cat crossing the near edge is now bigger than one at the far, and
+crosses faster.
 
 Each place also had one thing standing on it that ignored depth entirely, and
 each is the same fix:
@@ -1647,8 +1751,10 @@ The city was where this showed. It had a horizon at 0.885, a pavement one
 twentieth of the frame deep, and a plane fitted into that: sixteen pixels of
 usable ground for everything that walks, with everything nearer than z ≈ 0.41
 drawn below the window. A quarter of the street's animals had never been
-visible. The street is deeper now — `CITY_GROUND`, one constant where there
-had been six copies of `0.95` — and the plane comes with it.
+visible. The ground is deeper now — one constant where there had been six
+copies of `0.95` — and the plane comes with it. It has since become the near
+edge of a rooftop, and then the *nearest point* of one: see "The city, from a
+roof beside a street" above for why that edge is a V and not a line.
 
 The road went dark at the same time and for the same reason. It had been mixed
 a tenth of the way toward the sky, which is exactly where the animal-colour

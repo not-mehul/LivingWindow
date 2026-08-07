@@ -51,15 +51,30 @@ const FRAG_SKY = `#version 300 es
 precision highp float;
 in float v_y;
 uniform vec3 u_top;
+uniform vec3 u_mid;
 uniform vec3 u_bot;
+uniform vec2 u_stops;
 out vec4 o;
 ${DITHER}
 void main() {
   /* v_y is 1 at the top of the screen, and the canvas gradient runs from its
-     top colour at y=0 down to its bottom colour at y=H. Interpolating the two
+     top colour at y=0 down to its bottom colour at y=H. Interpolating
      componentwise in sRGB is what a canvas linear gradient does, so this is
-     the same ramp and not merely a similar one. */
-  vec3 c = mix(u_bot, u_top, v_y);
+     the same ramp and not merely a similar one.
+
+     Three stops rather than two. A real sky at either end of the day is not a
+     ramp between two colours: it is cool overhead, warm at the horizon, and
+     something else again in between — the pink between a dawn's violet and its
+     gold is a band, not a crossing point. u_stops says where the middle
+     colour sits and where the bottom one has fully arrived, both as fractions
+     of the frame's height, so a scene can put its warm band exactly on its own
+     skyline. A caller with nothing to say in the middle passes the halfway
+     colour at 0.5, and the two segments below are then bit-for-bit the single
+     ramp this used to be. */
+  float y = 1.0 - v_y;
+  vec3 c = y < u_stops.x
+    ? mix(u_top, u_mid, y / max(1e-4, u_stops.x))
+    : mix(u_mid, u_bot, clamp((y - u_stops.x) / max(1e-4, u_stops.y - u_stops.x), 0.0, 1.0));
   /* Half a level, and the same offset for all three channels — the way Skia
      does it. Per-channel offsets would dither each one independently and speckle
      the sky with colour. */
@@ -189,7 +204,9 @@ class GLSky {
     this.skyProg = link(gl, VERT_SKY, FRAG_SKY);
     this.sprProg = link(gl, VERT_SPRITE, FRAG_SPRITE);
     this.uTop = gl.getUniformLocation(this.skyProg, "u_top");
+    this.uMid = gl.getUniformLocation(this.skyProg, "u_mid");
     this.uBot = gl.getUniformLocation(this.skyProg, "u_bot");
+    this.uStops = gl.getUniformLocation(this.skyProg, "u_stops");
     this.uRes = gl.getUniformLocation(this.sprProg, "u_res");
 
     this.quad = gl.createBuffer();
@@ -282,8 +299,8 @@ class GLSky {
     this.n++;
   }
 
-  sky(top, bot) {
-    this._top = top; this._bot = bot;
+  sky(top, mid, bot, stops) {
+    this._top = top; this._mid = mid; this._bot = bot; this._stops = stops;
   }
 
   glow(rgbStr, x, y, rx, ry, a) {
@@ -317,9 +334,11 @@ class GLSky {
 
     gl.disable(gl.BLEND);
     gl.useProgram(this.skyProg);
-    const t = this._top, b = this._bot;
+    const t = this._top, m = this._mid, b = this._bot, s = this._stops;
     gl.uniform3f(this.uTop, t[0]/255, t[1]/255, t[2]/255);
+    gl.uniform3f(this.uMid, m[0]/255, m[1]/255, m[2]/255);
     gl.uniform3f(this.uBot, b[0]/255, b[1]/255, b[2]/255);
+    gl.uniform2f(this.uStops, s[0], s[1]);
     gl.bindVertexArray(this.vaoSky);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 
@@ -348,14 +367,18 @@ class Canvas2DSky {
   get ok() { return true; }
   begin() { this.c = this.scene.ctx; this.W = this.scene.W; this.H = this.scene.H; }
 
-  sky(top, bot) {
+  sky(top, mid, bot, stops) {
     const c = this.c, s = this.scene;
     const key = (top[0]|0)+","+(top[1]|0)+","+(top[2]|0)+"|"
-              + (bot[0]|0)+","+(bot[1]|0)+","+(bot[2]|0)+"|"+(this.H|0);
+              + (mid[0]|0)+","+(mid[1]|0)+","+(mid[2]|0)+"|"
+              + (bot[0]|0)+","+(bot[1]|0)+","+(bot[2]|0)+"|"
+              + stops[0].toFixed(3)+","+stops[1].toFixed(3)+"|"+(this.H|0);
     if (key !== s._skyKey) {
       const g = c.createLinearGradient(0, 0, 0, this.H);
       g.addColorStop(0, `rgb(${top[0]|0},${top[1]|0},${top[2]|0})`);
-      g.addColorStop(1, `rgb(${bot[0]|0},${bot[1]|0},${bot[2]|0})`);
+      g.addColorStop(Math.min(0.999, stops[0]), `rgb(${mid[0]|0},${mid[1]|0},${mid[2]|0})`);
+      g.addColorStop(Math.min(1, stops[1]), `rgb(${bot[0]|0},${bot[1]|0},${bot[2]|0})`);
+      if (stops[1] < 1) g.addColorStop(1, `rgb(${bot[0]|0},${bot[1]|0},${bot[2]|0})`);
       s._skyGrad = g; s._skyKey = key;
     }
     c.fillStyle = s._skyGrad;
