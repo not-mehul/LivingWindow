@@ -6,9 +6,9 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=26";
+import { mulberry32, REDUCED, state } from "./util.js?v=27";
 import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain,
-  gaitAt } from "./species.js?v=26";
+  gaitAt } from "./species.js?v=27";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */
@@ -843,12 +843,13 @@ class AudioEngine {
     // against the mix stuttering when the land gets busy.
     if (this.activeVoices >= this.voiceCap()) return 0.5;
     opts = opts || {};
-    let x01, y01, depth, perchType = null;
+    let x01, y01, depth, perchType = null, perchObj = null;
     if (sp.layer === "perch" && this.scene.perches && this.scene.perches.length) {
       // The scene keeps track of who is standing where, so a new arrival takes
       // a free song post rather than landing on an occupant's head.
       const p = this.scene.pickPerch(r, opts);
       x01 = p.x; y01 = p.y; depth = p.depth; perchType = p.type || null;
+      perchObj = p;
     } else if (sp.layer === "air") {
       x01 = r(); y01 = 0.08 + r()*0.28; depth = 6 + r()*8;
     } else if (sp.layer === "far") {
@@ -893,7 +894,7 @@ class AudioEngine {
     this.once(() => { this.activeVoices = Math.max(0, this.activeVoices - 1); },
       (enter + dur + 0.3) * 1000);
     this.retire(pan, VOICE_LEAD + enter + dur + 2.5);
-    this.scene.spawnForCall(sp, x01, y01, depth, dur, enter, perchType);
+    this.scene.spawnForCall(sp, x01, y01, depth, dur, enter, perchType, perchObj);
     this.lastCallX = x01;
     const announce = () => {
       if (!this.running) return;

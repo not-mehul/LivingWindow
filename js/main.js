@@ -4,10 +4,10 @@
    and shutting the window), the turning of the hours, and the
    subtitles. Boots everything once the module loads.
    ============================================================ */
-import { state, sessionSerial, LOCATIONS, holdWeather, loadPrefs, savePrefs } from "./util.js?v=26";
-import { speciesIcon } from "./species.js?v=26";
-import { Scene } from "./scene.js?v=26";
-import { AudioEngine } from "./audio.js?v=26";
+import { state, sessionSerial, LOCATIONS, holdWeather, loadPrefs, savePrefs } from "./util.js?v=27";
+import { speciesIcon } from "./species.js?v=27";
+import { Scene } from "./scene.js?v=27";
+import { AudioEngine } from "./audio.js?v=27";
 
 /* Preferences come back before anything is wired, so every control below
    reads the value it is going to show rather than the default it was born

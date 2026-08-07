@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=26";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=26";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=26";
+} from "./util.js?v=27";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=27";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=27";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -502,14 +502,19 @@ class Scene {
       const nBranch = 4 + Math.floor(rng()*2);
       for (let k = 0; k < nBranch && tips.length; k++) {
         const tp = tips[Math.floor(rng()*rng()*tips.length)];   // biased to the crown
-        this.perches.push({ x: tp.x, y: tp.y, depth: 3 + rng()*2.5, type: "branch" });
+        // the field oak: the biggest limbs in the meadow
+        this.perches.push({ x: tp.x, y: tp.y, depth: 3 + rng()*2.5, type: "branch",
+          hostS: 0.10 + rng()*0.04 });
       }
       // the hedge top and a shrub or two also serve as song posts
       for (const p of this.hedge.posts) {
-        this.perches.push({ x: p.x, y: p.y, depth: 7 + rng()*3, type: "branch" });
+        // a hedge top is a springy twig, not a bough
+        this.perches.push({ x: p.x, y: p.y, depth: 7 + rng()*3, type: "branch",
+          hostS: 0.030 + rng()*0.016 });
       }
       for (const bu of this.shrubs.slice(0, 1 + Math.floor(rng()*2))) {
-        this.perches.push({ x: bu.x, y: bu.y - bu.r*1.5, depth: 7 + rng()*3, type: "ground" });
+        this.perches.push({ x: bu.x, y: bu.y - bu.r*1.5, depth: 7 + rng()*3,
+          type: "ground", hostS: bu.r*2.2 });
       }
       /* Ground perches are placed by depth now, and their `depth` — which is
          what the audio pans and filters by — is read off the same z, so a
@@ -758,6 +763,20 @@ class Scene {
         this.perches.push({ x: bb.x + bb.w*rng(), y: CITY_GROUND - (bb.h + 0.18), depth: 12 + rng()*4, type: "roof" });
       }
     }
+    this.dressPerches(rng);
+  }
+
+  /* Give every perch the two things its footing needs: a seed, so its branch
+     is its own and stays its own for the session, and the size of whatever it
+     grows out of, so the branch is proportional to the tree rather than to
+     the bird. `hostS` is a fraction of frame height; where a place has not
+     said, a sensible one is taken from the kind of perch it is. */
+  dressPerches(rng) {
+    const DEF = { branch: 0.075, reed: 0.030, ground: 0.045, post: 0.05, roof: 0.06 };
+    for (const p of (this.perches || [])) {
+      if (p.bseed === undefined) p.bseed = rng();
+      if (p.hostS === undefined) p.hostS = DEF[p.type] || 0.05;
+    }
   }
 
   makeRidge(rng, base, amp) {
@@ -960,7 +979,7 @@ class Scene {
   }
 
   /* A voice becomes a visible animal at its own coordinates. */
-  spawnForCall(sp, x01, y01, depth, dur, enter = 0, perchType = null) {
+  spawnForCall(sp, x01, y01, depth, dur, enter = 0, perchType = null, perch = null) {
     const id = sp.id;
     if (id === "cricket" || id === "curlew") return;   // heard from cover, never seen
     // A bird singing again from the post it already holds is the same bird:
@@ -1006,6 +1025,23 @@ class Scene {
       return;
     }
     const hs = Math.max(0.75, Math.min(1.6, this.H / 430));
+    /* Where this perch stands, on the same plane everything else stands on.
+
+       Every perch already carried a `depth` in one unit — the ground perches
+       are literally built as `2 + z*12` — but nothing had ever read it back.
+       Bird size came from `15.5 - depth*0.62`: a straight line in an ad-hoc
+       unit, unrelated to the `planeScale` that sizes every mammal in the
+       frame. The two systems disagreed, and measured against each other at
+       the near edge a blackbird came out 52 pixels tall against a rabbit's 45
+       and a fox's 43 — a songbird larger than the fox that eats it.
+
+       Read back as z it costs nothing and fixes three things at once: birds
+       fall off in perspective rather than in a straight line, they are in
+       proportion to the animals on the ground because they are scaled by the
+       same function, and a perch generated nearer really does carry a bigger
+       bird. */
+    const pz = this.perchZ(depth);
+    const pscale = this.plane ? this.planeScale(pz) : (1 - pz*0.55);
     // Every individual is a little different — size, plumpness, a rare crest,
     // its own idle rhythm — so no two callers feel stamped from one mould.
     const ivar = {
@@ -1020,8 +1056,12 @@ class Scene {
       rim: Math.random() < 0.5
     };
     const a = {
-      id, x: x01, y: y01, perchType,
-      s: Math.max(3.5, Math.min(16, 15.5 - depth*0.62)) * hs * ivar.scale,   // far = smaller, near = bigger
+      id, x: x01, y: y01, perchType, perch,
+      /* A blackbird is about two thirds the height of a rabbit, and both are
+         now drawn from the same plane. The floor keeps a bird at the far
+         hedge legible rather than strictly correct — two pixels is honest
+         perspective and an empty field. */
+      s: Math.max(3.4, this.H*0.0163 * pscale) * ivar.scale,
       t: 0, dur, alpha: 1, flip: x01 > 0.55, ivar,
       // Most callers say their piece and move on. About a third settle in:
       // they stay a good while, preening and looking about the place, and
@@ -1035,7 +1075,7 @@ class Scene {
       // that is actually drawn — a treetop or the ridge itself.
       const spot = this.farPerch(x01, id === "rooster");
       a.x = spot.x; a.y = spot.y;
-      a.s = Math.max(4.5, Math.min(11, 13 - depth*0.26)) * hs;
+      a.s = Math.max(4.0, this.H*0.0163 * (this.plane ? this.planeScale(0.94) : 0.25)) * hs;
       a.depthMix = 0.42;
       a.flip = spot.x > 0.5;
       a.ridgeY = spot.ridge;                       // set when it stands on a skyline
@@ -2132,6 +2172,14 @@ class Scene {
     if (!p) return 0.5;
     const s = Math.max(1e-4, y - p.horizon);
     return Math.max(0, Math.min(1, (p.near/s - 1)/(p.d - 1)));
+  }
+
+  /* A perch's depth, read back as a place on the plane. The ground perches
+     are built as `2 + z*12`, so that is the unit; the ones hung in trees and
+     hedges were given numbers by hand in the same range and mean the same
+     thing. */
+  perchZ(depth) {
+    return Math.max(0, Math.min(1, ((depth === undefined ? 6 : depth) - 2)/12));
   }
 
   groundDepth(z, bot) {
@@ -3805,7 +3853,7 @@ class Scene {
           // has been blown off it
           this.drawPerchFooting(c, (a.ground ? a.x : a.restX)*W + swayX,
             a.restY*H + swayY, a.s,
-            a.perchType, bot, a.alpha * landed * (1 - flyProg));
+            a.perchType, bot, a.alpha * landed * (1 - flyProg), a.perch);
           const hopG = a.gest === "hop"
             ? gaitPose("birdHop", a.gestT/a.gestDur).rise*a.s*0.22 : 0;
           const gk = a.gest ? Math.sin(Math.PI*Math.min(1, a.gestT/a.gestDur)) : 0;
@@ -3988,18 +4036,61 @@ class Scene {
   }
 
   /* A little something under the feet so no bird stands on empty air. */
-  drawPerchFooting(c, x, y, s, type, bot, alpha) {
+  /* What a bird is standing on.
+
+     Two things were wrong with this and they compounded. The branch was
+     scaled by `s` — the *bird's* size — so it grew and shrank with whatever
+     happened to land on it rather than belonging to the tree it grows from;
+     put a wren and a raven on the same twig and the twig changed size. And
+     there was exactly one branch: the same single quadratic, the same sweep,
+     the same lean, under every bird in every place for the whole session,
+     which is the sort of repetition the eye finds before it can say why.
+
+     So the size comes from the host — `hostS`, a fraction of frame height
+     recorded when the perch was built, falling back to the plane at the
+     perch's own depth — and the shape comes from a seed carried by the perch,
+     so each one is its own branch and stays its own branch. */
+  drawPerchFooting(c, x, y, s, type, bot, alpha, perch) {
     if (!type || type === "post" || type === "roof") return;   // already a solid edge
     c.save();
     c.globalAlpha = alpha;
     c.lineCap = "round";
     if (type === "branch") {
+      const p = perch || {};
+      /* The limb's own thickness, from the thing it grows out of. A hedge top
+         is a thin springy twig; a bough on the field oak is an arm. */
+      const host = (p.hostS !== undefined ? p.hostS : 0.055)
+        * this.H * (this.plane ? this.planeScale(this.perchZ(p.depth)) : 1);
+      const w = Math.max(1.2, host*0.085);
+      /* Six numbers off the perch's seed, so this branch is this branch every
+         frame and no two are alike: which way it runs, how far each way, how
+         much it droops, and whether it forks. */
+      const sd = p.bseed === undefined ? 0.5 : p.bseed;
+      const fr = (k) => { const v = Math.sin((sd + 1)*(k*12.9898 + 4.1414))*43758.5453;
+        return v - Math.floor(v); };
+      const dir = fr(1) < 0.5 ? -1 : 1;
+      const back = host*(0.9 + fr(2)*1.5);      // behind the feet
+      const fore = host*(0.7 + fr(3)*1.9);      // and on past them
+      const droop = host*(0.05 + fr(4)*0.30)*dir;
+      const lift = host*(0.04 + fr(5)*0.16);
       c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.06));
-      c.lineWidth = Math.max(1.4, s*0.17);
+      c.lineWidth = w;
       c.beginPath();
-      c.moveTo(x - s*1.4, y + s*0.20);
-      c.quadraticCurveTo(x - s*0.2, y + s*0.05, x + s*1.6, y - s*0.18);
+      c.moveTo(x - back*dir, y + lift + droop);
+      c.quadraticCurveTo(x - host*0.12*dir, y + host*0.03,
+        x + fore*dir, y - lift*1.4 + droop*0.4);
       c.stroke();
+      // a side twig on about half of them, thinner and going its own way
+      if (fr(6) < 0.55) {
+        c.lineWidth = Math.max(0.9, w*0.5);
+        const at = 0.25 + fr(7)*0.5;
+        const bx = x + fore*dir*at, by = y - lift*1.4*at + droop*0.4*at;
+        c.beginPath();
+        c.moveTo(bx, by);
+        c.quadraticCurveTo(bx + host*0.35*dir, by - host*(0.10 + fr(8)*0.30),
+          bx + host*(0.4 + fr(9)*0.7)*dir, by - host*(0.25 + fr(8)*0.55));
+        c.stroke();
+      }
     } else if (type === "reed") {
       c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.10));
       c.lineWidth = Math.max(1.2, s*0.11);
@@ -5967,9 +6058,11 @@ class Scene {
           // coming down nose-first.
           cr.timer -= dt;
           const fS = H*0.05*(cr.sz || 1)*D.scale;
-          const pose = { crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0 };
+          const pose = { crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0, bend: 0 };
           if (cr.mode === "trot") {
             cr.x += cr.dir*0.028*dt*D.speed; cr.lp += dt*7;
+            // even at the trot the back is not a plank
+            pose.bend = gaitPose("trot", cr.lp*TURN).rise*0.12;
             if (cr.timer <= 0) {
               const roll = Math.random();
               if (roll < 0.34 && this.t - this.lastPounce > 12) {
@@ -5994,22 +6087,37 @@ class Scene {
           } else if (cr.mode === "pounce") {
             cr.phase += dt;
             const u = cr.phase;
+            /* A mousing pounce is a spine before it is anything else: the
+               animal coils until its back is a hoop, releases into a straight
+               line at the top of the arc, and folds again to come down
+               nose-first. `bend` carries that; without it the same sequence
+               of rotations reads as a stick being flicked. */
             if (u < 0.26) {                       // coil: the hindquarters gather
+              const k = u/0.26;
               pose.crouch = 1;
-              pose.lift = Math.sin(u/0.26*Math.PI*0.5)*fS*0.10;
+              pose.lift = Math.sin(k*Math.PI*0.5)*fS*0.10;
+              pose.bend = 0.26 + k*0.60;          // the back rises into a hoop
             } else if (u < 0.98) {                // the leap itself
               const k = (u - 0.26)/0.72;
               pose.air = Math.min(1, k*4);
               pose.lift = Math.sin(k*Math.PI)*fS*1.55;
               pose.rot = -0.55 + k*1.85;          // nose up off the ground, down at the top
+              /* Released: through the first third the coil unwinds past
+                 straight into a hollow-backed reach, and it gathers again on
+                 the way down. */
+              pose.bend = k < 0.34 ? 1.0 - (k/0.34)*1.75
+                : -0.75 + ((k - 0.34)/0.66)*1.35;
               cr.x += cr.dir*0.02*dt;
             } else if (u < 1.34) {                // the plunge, forefeet and nose first
+              const k = (u - 0.98)/0.36;
               pose.rot = 1.30 - (u - 0.98)*1.9;
               pose.air = Math.max(0, 1 - (u - 0.98)*4);
               pose.crouch = 1;
+              pose.bend = 0.60 - k*0.45;          // absorbs the landing
             } else if (u < 2.1) {                 // nosing about in the grass
               pose.crouch = 1;
               pose.rot = 0.60 + Math.sin(u*9)*0.06;
+              pose.bend = 0.16 + Math.sin(u*7)*0.06;
             } else {
               cr.mode = "trot"; cr.timer = 1.6 + Math.random()*2;
             }
@@ -6504,7 +6612,7 @@ class Scene {
             this.paintFox(c, { x: p.x*W, y: YD.y*H, s: yS, dir: cr.dir,
               walking: cr.mode === "trot", lp: cr.lp + y.lag*4,
               look: 0, ears: 1, color: YD.col,
-              crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0 });
+              crouch: 0, lift: 0, rot: 0, air: 0, sniff: 0, bend: 0 });
           }
           break;
         }
@@ -6997,6 +7105,26 @@ class Scene {
   paintFox(c, o) {
     const s = o.s, t = o.t || 0;
     const air = o.air || 0, rot = o.rot || 0, crouch = o.crouch || 0;
+    /* The spine.
+
+       Everything about this animal used to be rigid: the body was one fixed
+       outline, `crouch` and `bounce` shifted it up and down as a block, and
+       `rot` turned the whole fox about a point. So a pounce — the one moment
+       where a fox is nothing but spine — was a stick rotating through the
+       air, which is exactly how it read.
+
+       `bend` is a curvature of the back: positive coils it, arching the
+       dorsal line up and tucking the belly, and negative hollows it into the
+       long reach of the stretch. It is applied as a displacement that is
+       greatest at the middle of the animal and falls to nothing at the
+       shoulder and the hip, because that is where a spine bends and where it
+       does not. Every point of the body, the tail root and the head reads it,
+       so the whole animal curves together rather than in pieces. */
+    const bend = o.bend || 0;
+    const arch = (x) => {
+      const u = x/(s*0.95);
+      return -bend*s*0.26*Math.max(0, 1 - u*u);
+    };
     c.save();
     c.translate(o.x, o.y);
     if (o.dir < 0) c.scale(-1, 1);
@@ -7039,27 +7167,36 @@ class Scene {
     const tsw = o.walking ? Math.sin(o.lp*0.5)*0.1 : Math.sin(t*1.2)*0.06;
     const tRise = air*s*0.26 + crouch*s*0.06;
     c.beginPath();
-    c.moveTo(-s*0.55, -s*0.56 - bounce - drop);
-    c.quadraticCurveTo(-s*1.15, -s*0.7 + tsw*s - tRise, -s*1.5, -s*0.55 + tsw*s*2 - tRise*1.4);
+    const tRoot = arch(-s*0.55);
+    c.moveTo(-s*0.55, -s*0.56 - bounce - drop + tRoot);
+    c.quadraticCurveTo(-s*1.15, -s*0.7 + tsw*s - tRise + tRoot*0.6,
+      -s*1.5, -s*0.55 + tsw*s*2 - tRise*1.4 + tRoot*0.55);
     c.quadraticCurveTo(-s*1.62, -s*0.48 + tsw*s*2 - tRise*1.4, -s*1.52, -s*0.38 + tsw*s*2 - tRise*1.3);
-    c.quadraticCurveTo(-s*1.05, -s*0.28 + tsw*s - tRise*0.8, -s*0.52, -s*0.42 - bounce - drop);
+    c.quadraticCurveTo(-s*1.05, -s*0.28 + tsw*s - tRise*0.8 + tRoot*0.55,
+      -s*0.52, -s*0.42 - bounce - drop + tRoot);
     c.closePath(); c.fill();
     // the white tag at the tip of the brush
     c.fillStyle = `rgba(${this.tok.foamRGB}, 0.55)`;
     c.beginPath();
-    c.ellipse(-s*1.5, -s*0.46 + tsw*s*2 - tRise*1.35, s*0.12, s*0.08, -0.2, 0, Math.PI*2);
+    c.ellipse(-s*1.5, -s*0.46 + tsw*s*2 - tRise*1.35 + tRoot*0.55, s*0.12, s*0.08, -0.2, 0, Math.PI*2);
     c.fill();
     c.fillStyle = o.color;
     // low sleek body with a deep chest
     c.beginPath();
-    c.moveTo(s*0.6, -s*0.72 - bounce - drop);
-    c.quadraticCurveTo(0, -s*0.85 - bounce - drop*0.6, -s*0.55, -s*0.72 - bounce);
-    c.quadraticCurveTo(-s*0.9, -s*0.6 - bounce, -s*0.8, -s*0.42 - bounce);
-    c.quadraticCurveTo(-s*0.3, -s*0.3 - bounce, s*0.4, -s*0.38 - bounce - drop);
-    c.quadraticCurveTo(s*0.75, -s*0.45 - bounce - drop, s*0.6, -s*0.72 - bounce - drop);
+    c.moveTo(s*0.6, -s*0.72 - bounce - drop + arch(s*0.6));
+    c.quadraticCurveTo(0, -s*0.85 - bounce - drop*0.6 + arch(0),
+      -s*0.55, -s*0.72 - bounce + arch(-s*0.55));
+    c.quadraticCurveTo(-s*0.9, -s*0.6 - bounce + arch(-s*0.9)*0.7,
+      -s*0.8, -s*0.42 - bounce + arch(-s*0.8)*0.55);
+    // the belly tucks up with the coil rather than following it down
+    c.quadraticCurveTo(-s*0.3, -s*0.3 - bounce + arch(-s*0.3)*0.55,
+      s*0.4, -s*0.38 - bounce - drop + arch(s*0.4)*0.55);
+    c.quadraticCurveTo(s*0.75, -s*0.45 - bounce - drop + arch(s*0.75)*0.7,
+      s*0.6, -s*0.72 - bounce - drop + arch(s*0.6));
     c.closePath(); c.fill();
     c.beginPath();
-    c.ellipse(s*0.5, -s*0.52 - bounce - drop, s*0.24, s*0.3, 0.2, 0, Math.PI*2); c.fill();
+    c.ellipse(s*0.5, -s*0.52 - bounce - drop + arch(s*0.5)*0.8,
+      s*0.24, s*0.3, 0.2 + bend*0.22, 0, Math.PI*2); c.fill();
     // Head — carried low, turning to listen when paused, right down to the
     // ground when following a scent, and pushed out in front on the leap so
     // the animal arrives nose-first.
@@ -7067,8 +7204,8 @@ class Scene {
     const reach = air*s*0.12;
     const hx = s*0.82 + lk*s*0.05 + reach + sniff*s*0.08 + (tb ? tb.nod*s*0.02 : 0);
     const hy = -s*0.72 - lk*s*0.10 - bounce - drop*0.8 + sniff*s*0.5
-             + (tb ? tb.nod*s*0.03 : 0);
-    this.limb(c, s*0.5, -s*0.6 - bounce - drop, hx, hy, s*0.3, s*0.2);
+             + (tb ? tb.nod*s*0.03 : 0) + arch(s*0.82) + bend*s*0.13;
+    this.limb(c, s*0.5, -s*0.6 - bounce - drop + arch(s*0.5), hx, hy, s*0.3, s*0.2);
     c.beginPath(); c.arc(hx, hy, s*0.21, 0, Math.PI*2); c.fill();
     // tapered snout
     c.beginPath();

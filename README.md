@@ -985,6 +985,64 @@ curve before aiming it. `cancelScheduledValues` will not do it — a curve that
 *started* before now is not scheduled after now, so it survives the cancel and
 the throw happens anyway; it takes `cancelAndHoldAtTime`.
 
+### Everything the same size as everything else
+
+A bird's size came from `15.5 - depth*0.62` — a straight line in a unit
+invented for perches — while every mammal in the frame was scaled by
+`planeScale(z)` off the ground plane. Two systems, never compared. Drawing
+each painter alone on a blank canvas and measuring the ink says what that cost:
+at the near edge a blackbird came out **52 pixels tall against a rabbit's 45
+and a fox's 43** — a songbird larger than the fox that eats it.
+
+The unit was already there and unread. Ground perches are literally built as
+`depth = 2 + z*12`, so `perchZ()` reads it back and birds are sized by the same
+`planeScale` as everything standing on the ground. Three things follow at once:
+the falloff is perspective rather than linear, birds are in proportion to the
+animals under them, and a perch generated nearer really does carry a bigger
+bird. Measured at matched depth, a bird is now 0.65 of a rabbit's height —
+which is about what a blackbird is against a rabbit.
+
+Below about eleven pixels `paintBird` has its own floor of minimum line widths
+and stops shrinking, so the ratio drifts at the far end of the field. At that
+size nothing is being judged for proportion.
+
+### What a bird is standing on
+
+The branch under a perched bird was scaled by `s` — the *bird's* size — so it
+grew and shrank with whatever landed on it rather than belonging to the tree it
+grew from; a wren and a raven on the same twig changed the twig. And there was
+exactly one branch: the same quadratic, the same sweep, the same lean, under
+every bird in every place for a whole session, which is the kind of repetition
+the eye finds long before it can say why.
+
+Perches now carry two things. `hostS` is the size of what the perch grows out
+of — the field oak's boughs are an arm's thickness, a hedge top is a springy
+twig — so the branch is proportional to its host. And `bseed` is a number
+drawn once at build time, from which the branch takes its direction, its reach
+either side of the feet, its droop, and whether it forks. Each one is its own
+branch and stays its own branch for the session.
+
+### A fox is a spine before it is anything else
+
+The pounce was a stick being flicked, and it could not have been anything else:
+the body was one fixed outline, `crouch` shifted it up and down as a block, and
+`rot` turned the whole animal about a point. There was nothing in it that bent.
+
+`bend` is a curvature of the back — positive coils it, arching the dorsal line
+and tucking the belly; negative hollows it into the long reach of the stretch.
+It is applied as a displacement greatest at the middle and falling to nothing
+at the shoulder and hip, because that is where a spine bends and where it does
+not, and the body outline, the tail root, the brush and the head all read it so
+the animal curves as one thing. The pounce drives it through the real sequence:
+coil to a hoop, unwind past straight into a hollow-backed reach at the top of
+the arc, gather again to come down nose-first, absorb on landing. Even the trot
+now has a little of it, because a trotting fox's back is not a plank either.
+
+The joins are what this cost the first attempt: the tail root and the neck were
+given fractions of the arch while the body took all of it, and the brush and
+head detached from the animal at full stretch. They take the same displacement
+as the part they grow from now.
+
 ### Beds that are two sounds rather than one
 
 A bed can be perfectly granular, perfectly weathered, and still contribute

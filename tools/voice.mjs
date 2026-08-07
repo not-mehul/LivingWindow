@@ -39,8 +39,8 @@ page.on('pageerror', e => errs.push(e.message));
 await page.goto(URL, { waitUntil: 'networkidle' });
 
 const rows = await page.evaluate(async (ONLY) => {
-  const D = await import('/tools/lib/dsp.js?v=26');
-  const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=26');
+  const D = await import('/tools/lib/dsp.js?v=27');
+  const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=27');
   // the mammals live in their own table and had gone unmeasured entirely
   const ALL = SPECIES.concat(Object.values(CRITTER_VOICES));
   const SR = 48000;
