@@ -17,7 +17,7 @@ await page.click('#beginBtn');
 await page.waitForTimeout(1500);
 const rows = await page.evaluate(async () => {
   const { audio, scene, state } = window.__lw;
-  const { SPECIES } = await import('/js/species.js?v=27');
+  const { SPECIES } = await import('/js/species.js?v=28');
   const ac = audio.ac;
   const an = ac.createAnalyser(); an.fftSize = 2048; an.smoothingTimeConstant = 0;
   audio.comp.connect(an);

@@ -1043,6 +1043,28 @@ given fractions of the arch while the body took all of it, and the brush and
 head detached from the animal at full stretch. They take the same displacement
 as the part they grow from now.
 
+### And a stoat stands up by sitting back
+
+The rearing pose was `rotate(-rear*1.28)` on the whole drawing, which is not
+what a stoat does and could not be made to look like it. Rotating about the
+feet swings the hind feet off the ground and up into the air; it carries the
+tail round with the body instead of letting it drop; and it keeps the spine
+the same rigid arc it had on all fours, only tilted. A plank being levered
+upright.
+
+What the animal does is sit *back*. The hind feet stay flat where they were
+and take the weight, the hips drop over them, the spine straightens into a
+long S — curving back off the haunches and forward again into the shoulders —
+the forelegs come up and dangle at the chest, and the tail curves down behind
+to the floor so the whole thing stands on a tripod. So none of it is a
+rotation now: every point is carried from its four-footed place to its upright
+one, and the parts that belong on the ground stay on the ground.
+
+The back is one cubic in both poses so the two can be crossfaded — the
+quadruped's quadratic is converted to its exact cubic equivalent (control at
+P + ⅔(Q − P)) and the upright pair written directly, so the bound is
+bit-for-bit what it was and only the rise is new.
+
 ### Beds that are two sounds rather than one
 
 A bed can be perfectly granular, perfectly weathered, and still contribute

@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=27";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=27";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=27";
+} from "./util.js?v=28";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=28";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=28";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -7868,44 +7868,98 @@ class Scene {
     if (o.dir < 0) c.scale(-1, 1);
     c.fillStyle = o.color; c.strokeStyle = o.color;
     c.lineCap = "round"; c.lineJoin = "round";
-    /* Standing up: the body pivots about the hind feet until it is upright,
-       and the same drawing serves — a long body, rotated. */
-    c.rotate(-rear*1.28);
-    const hipX = -s*1.5, shX = s*1.1;
-    // the back, drawn as one arch from hip to shoulder
-    const midY = -s*(0.62 + arch*0.52);
-    c.lineWidth = s*0.46;
+    /* Standing up.
+
+       This used to be `rotate(-rear*1.28)` on the whole drawing, which is not
+       what a stoat does and could not look like it. Rotating about the feet
+       swings the hind feet off the ground and up into the air; it carries the
+       tail round with the body instead of letting it drop; and it keeps the
+       spine the same rigid arc it had on all fours, only tilted. The result
+       was a plank being levered upright.
+
+       What the animal actually does is sit *back*: the hind feet stay flat
+       where they were and take the weight, the hips drop over them, the spine
+       straightens into a long S, the forelegs come up and dangle at the
+       chest, and the tail curves down behind to the floor so the whole thing
+       stands on a tripod. So none of this is a rotation — every point of the
+       animal is carried from its four-footed place to its upright one, and
+       the parts that stay on the ground stay on the ground. */
+    const lp = (a2, b2) => a2 + (b2 - a2)*rear;
+    const hipX = lp(-1.50, -1.28)*s, hipY = lp(-0.55, -0.40)*s;
+    const shX  = lp( 1.10, -0.96)*s, shY  = lp(-0.62, -2.56)*s;
+
+    /* The back. On all fours it is the arch the gait table asks for; upright
+       it is an S — curving back off the haunches and forward again into the
+       shoulders. Both are drawn as one cubic so the two can be crossfaded:
+       the quadruped's quadratic is converted to its exact cubic equivalent
+       (control at P + 2/3(Q - P)) and the upright pair is written directly. */
+    const qx = (hipX + shX)/2, qy = -s*(0.62 + arch*0.52)*1.55;
+    const c1x = lp(hipX + (qx - hipX)*2/3, hipX - s*0.42);
+    const c1y = lp(hipY + (qy - hipY)*2/3, hipY - s*1.05);
+    const c2x = lp(shX + (qx - shX)*2/3, shX - s*0.30);
+    const c2y = lp(shY + (qy - shY)*2/3, shY + s*1.00);
+    c.lineWidth = s*lp(0.46, 0.40);
     c.beginPath();
-    c.moveTo(hipX, -s*0.55);
-    c.quadraticCurveTo((hipX + shX)/2, midY*1.55, shX, -s*0.62);
+    c.moveTo(hipX, hipY);
+    c.bezierCurveTo(c1x, c1y, c2x, c2y, shX, shY);
     c.stroke();
+
     // legs — short enough to be almost an afterthought, which is the point
-    c.lineWidth = s*0.17;
     const fore = L ? L.fore : 0, hind = L ? L.hind : 0;
+    c.lineWidth = s*0.17;
+    /* The hind leg folds rather than swinging: on all fours it reaches, and
+       sitting back it goes hip → hock → foot with the foot flat on the
+       ground where it already was. */
+    const hkX = lp(hipX + hind*s*0.30, hipX - s*0.02);
+    const hkY = lp(-s*0.02 - Math.max(0, hind)*s*0.16, -s*0.30);
+    const hfX = lp(hipX + hind*s*0.60, hipX + s*0.30);
+    const hfY = lp(-s*0.02 - Math.max(0, hind)*s*0.30, 0);
     c.beginPath();
-    c.moveTo(shX - s*0.1, -s*0.5); c.lineTo(shX + fore*s*0.55, -s*0.02 - Math.max(0, fore)*s*0.28);
-    c.moveTo(hipX + s*0.1, -s*0.45); c.lineTo(hipX + hind*s*0.6, -s*0.02 - Math.max(0, hind)*s*0.3);
+    c.moveTo(hipX + s*0.10, hipY + s*0.10);
+    c.lineTo(hkX, hkY); c.lineTo(hfX, hfY);
     c.stroke();
-    // head: small, flat, carried out in front on a neck no thicker than it
+    // the forelegs tuck up under the chin and hang there
+    c.lineWidth = s*0.15;
+    const feX = lp(shX + fore*s*0.30, shX + s*0.34);
+    const feY = lp(-s*0.02 - Math.max(0, fore)*s*0.14, shY + s*0.62);
+    const ffX = lp(shX + fore*s*0.55, shX + s*0.30);
+    const ffY = lp(-s*0.02 - Math.max(0, fore)*s*0.28, shY + s*1.05);
+    c.beginPath();
+    c.moveTo(shX - s*0.10, shY + s*0.12);
+    c.lineTo(feX, feY); c.lineTo(ffX, ffY);
+    c.stroke();
+
+    /* Head: carried out in front on all fours, and straight up on top of the
+       column when the animal is standing, tipped a little forward to look. */
+    const hdX = lp(shX + s*0.85 + str*s*0.20, shX + s*0.46);
+    const hdY = lp(-s*0.62, shY - s*0.52);
     c.lineWidth = s*0.42;
     c.beginPath();
-    c.moveTo(shX, -s*0.66);
-    c.lineTo(shX + s*0.85 + str*s*0.2, -s*0.62 - rear*s*0.1);
+    c.moveTo(shX, shY - s*0.04);
+    c.lineTo(hdX, hdY);
     c.stroke();
+    const hcX = lp(shX + s*1.00 + str*s*0.20, shX + s*0.58);
+    const hcY = lp(-s*0.62, shY - s*0.66);
     c.beginPath();
-    c.arc(shX + s*1.0 + str*s*0.2, -s*0.62, s*0.26, 0, Math.PI*2);
+    c.arc(hcX, hcY, s*0.26, 0, Math.PI*2);
     c.fill();
-    // the tail — long, held out behind, and tipped black
+
+    /* The tail — long, held out behind on the move, and curved down to the
+       ground behind the haunches when the animal sits up, which is the third
+       leg of the tripod it is standing on. */
     const tw = L ? L.tail : Math.sin(o.t*2.2)*0.4;
+    const tcX = lp(hipX - s*0.90, hipX - s*1.00);
+    const tcY = lp(-s*0.55 - tw*s*0.50, -s*0.16);
+    const ttX = lp(hipX - s*1.70, hipX - s*1.55);
+    const ttY = lp(-s*0.35 - tw*s*0.85, -s*0.17);
     c.lineWidth = s*0.24;
     c.beginPath();
-    c.moveTo(hipX, -s*0.55);
-    c.quadraticCurveTo(hipX - s*0.9, -s*0.55 - tw*s*0.5,
-      hipX - s*1.7, -s*0.35 - tw*s*0.85);
+    c.moveTo(hipX, hipY);
+    c.quadraticCurveTo(tcX, tcY, ttX, ttY);
     c.stroke();
     c.fillStyle = this.tok ? css(this.tok.inkDeep) : o.color;
     c.beginPath();
-    c.arc(hipX - s*1.75, -s*0.34 - tw*s*0.88, s*0.2, 0, Math.PI*2);
+    c.arc(ttX - s*0.05, ttY + s*0.02, s*0.2, 0, Math.PI*2);
     c.fill();
     c.restore();
   }
