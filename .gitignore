@@ -14,3 +14,6 @@ Thumbs.db
 # Logs and local scratch
 *.log
 .cache/
+
+# reference recordings, fetched by tools/reference.mjs — never committed
+refaudio

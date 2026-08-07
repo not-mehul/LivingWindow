@@ -311,6 +311,24 @@ const GAIT = {
     ]
   },
 
+  /* A stoat's bound. Much the tightest of these: the animal is a tube, so the
+     back does nearly all the work, folding almost double at the gather and
+     straightening into a line at the stretch. It barely leaves the ground —
+     the arch is what carries it, not the height. */
+  weave: {
+    chan: ["rise", "stretch", "fore", "hind", "arch", "tilt", "tail"],
+    body: [
+      [0.00, 0.00, 0.00, -0.55, -1.00,  1.00,  0.20,  0.70],  // folded double
+      [0.10, 0.14, 0.55,  0.10, -0.15,  0.45,  0.30,  0.95],
+      [0.22, 0.42, 1.00,  0.80,  0.75, -0.55,  0.10,  0.30],  // straightens out flat
+      [0.36, 0.52, 1.00,  1.00,  1.00, -0.85, -0.06, -0.45],
+      [0.50, 0.46, 0.84,  1.00,  0.62, -0.70, -0.18, -0.85],
+      [0.64, 0.22, 0.38,  0.85, -0.10,  0.15, -0.14, -0.55],
+      [0.78, 0.04, 0.08,  0.40, -0.72,  0.80,  0.02,  0.15],
+      [0.90, 0.00, 0.00, -0.10, -0.96,  1.00,  0.14,  0.55]
+    ]
+  },
+
   /* ---- and the standing things, which are cycles too ---- */
 
   /* Grazing: a bite taken, then chewed — twice, three times — with the head
@@ -742,6 +760,24 @@ const GAIT = {
       [0.80, 0.00]
     ]
   },
+  /* A stroke of lightning, seen. It is never one flash: the channel is struck
+     several times in a tenth of a second or so, which is why it flickers, and
+     what is left afterwards is a much fainter glow in the cloud. */
+  strike: {
+    chan: ["lit"],
+    body: [
+      [0.00, 0.00],
+      [0.03, 1.00],              // the first return stroke
+      [0.09, 0.22],
+      [0.14, 0.86],              // and the second
+      [0.20, 0.16],
+      [0.26, 0.52],              // a third, weaker
+      [0.34, 0.10],
+      [0.50, 0.05],              // the cloud goes on glowing for a moment
+      [0.72, 0.02],
+      [0.90, 0.00]
+    ]
+  },
   /* A cloud does not cross the sky unchanged. It builds, is drawn out and
      flattened by the wind it is riding, and thins away again — slowly enough
      that you only notice having looked away and looked back. Never to nothing:
@@ -884,16 +920,283 @@ const COUNTERSING = {
   reedwarbler: 0.25, greenfinch: 0.2, collareddove: 0.2, woodpigeon: 0.18
 };
 
+/* An exponential ramp is not allowed to land on zero, and a peak that has been
+   multiplied by a mix group can be exactly that when the listener has pulled
+   the slider all the way down. Silence-in-all-but-name instead of a throw. */
+const AUDIBLE = 1e-5;
+
+/* ---- What a voice is made of ----------------------------------------------
+
+   For a long time every tonal voice here was one `OscillatorNode` of type
+   "sine". Rendered offline and taken apart (see `tools/voice.mjs`), twenty-six
+   of the fifty-two voices carried essentially nothing above the fundamental —
+   0.01 of their energy, which is the analysis window's own skirt and nothing
+   else. That is not what a bird is and it is the single sound everybody
+   recognises instantly as a synthesiser.
+
+   A bird is a whistle with a body behind it. Even the voices we call "pure" —
+   a blackbird's fluted note, a wood pigeon's coo — carry a second partial ten
+   to fifteen decibels down and a third below that, and it is those two that
+   make the difference between a flute and a test tone. The reedy majority of
+   passerines carry five or six.
+
+   So each timbre is written out as the amplitudes of its partials and
+   realised as a `PeriodicWave`. Three things come with it, because they are
+   properties of the same voice and there is no sense in setting them apart:
+
+     h      the partial amplitudes, fundamental first.
+     hold   how much of the note sits at full level before it decays. A sine
+            note here went straight from its peak into an exponential decay
+            lasting the rest of its length — every note a *ding*, with no
+            body. A whistled note holds.
+     vib    depth of the waver inside a held note, in cents, and `vibHz` its
+            rate. Nothing was ever held steady in a wood; several voices
+            measured a frequency deviation of exactly zero.
+
+   Amplitudes are pre-scaled so that every wave has the rms of a unit sine,
+   and normalisation is turned off. Left to normalise itself a `PeriodicWave`
+   is scaled to a *peak* of one, which would have made every bright voice
+   quieter than the sine it replaced and moved the whole mix. */
+/* The amplitudes below were raised once already, from a bare sine to
+   something with a second and third partial in it. Then 127 verified
+   xeno-canto recordings of the actual species were measured the same way
+   (`tools/xenocanto.mjs`), and said it had not gone nearly far enough: across
+   every bird whose pitch could be trusted, the real animal carried three to
+   eight times more of its energy above the fundamental than this did — a
+   blackbird 0.33 against our 0.08, a robin 0.48 against 0.04, a kingfisher
+   0.68 against 0.06, a skylark 0.62 against 0.10.
+
+   The amplitudes are pre-scaled to the rms of a unit sine, so making a voice
+   richer does not make it louder; it only moves energy from the fundamental
+   into the partials, which is exactly what the difference was. */
+const TIMBRE = {
+  // near-pure, a touch of body: a fluted thrush note, a cuckoo
+  flute:   { h: [1, 0.55, 0.30, 0.150, 0.070, 0.030],      hold: 0.42, vib: 16, vibHz: 5.2,
+             bow: 0.26, snap: 0.34 },
+  // thin and silvery — a robin, a blue tit
+  silver:  { h: [1, 0.50, 0.28, 0.140, 0.070, 0.035],      hold: 0.34, vib: 19, vibHz: 6.4,
+             bow: 0.30, snap: 0.42 },
+  /* The cleanest thing here — an otter, a curlew's rising note. This one
+     stays low on purpose: a whistle really is about as close to a sine as
+     nature gets, and pushing partials into it to satisfy a number would make
+     it the wrong bird. */
+  whistle: { h: [1, 0.30, 0.13, 0.050],                    hold: 0.46, vib: 12, vibHz: 4.6,
+             bow: 0.22, snap: 0.30 },
+  // the commonest passerine sound by far
+  reed:    { h: [1, 0.55, 0.32, 0.170, 0.090, 0.045],      hold: 0.30, vib: 21, vibHz: 6.0,
+             bow: 0.30, snap: 0.44 },
+  // harsh and wheezy — a starling, a greenfinch's drawn-out note
+  buzz:    { h: [1, 0.60, 0.42, 0.28, 0.19, 0.12, 0.08],   hold: 0.36, vib: 26, vibHz: 5.4,
+             bow: 0.34, snap: 0.40 },
+  // hollow, and mostly even partials: every pigeon and the owl
+  coo:     { h: [1, 0.52, 0.25, 0.100, 0.040],             hold: 0.52, vib: 14, vibHz: 4.2,
+             bow: 0.20, snap: 0.24 },
+  // nasal, with the energy up in the second and third — a mew, a meow
+  mew:     { h: [1, 0.62, 0.42, 0.20, 0.09],               hold: 0.38, vib: 24, vibHz: 5.8,
+             bow: 0.38, snap: 0.30 },
+  /* And two for the mammals, which had been using a bare sawtooth. A sawtooth
+     is not wrong about a bark's *spectrum* — it is wrong about everything
+     else. A mammal's vocal folds do not vibrate evenly: the pitch shakes,
+     wanders and breaks, and it is that unsteadiness the ear reads as an
+     animal rather than an oscillator. These carry three times the waver of
+     any bird here, and it is fast. */
+  bark:    { h: [1, 0.78, 0.58, 0.40, 0.27, 0.17, 0.10],   hold: 0.22, vib: 62, vibHz: 13.0,
+             bow: 0.30, snap: 0.55 },
+  growl:   { h: [1, 0.85, 0.70, 0.55, 0.42, 0.30, 0.20, 0.13],
+             hold: 0.44, vib: 48, vibHz: 9.0, bow: 0.22, snap: 0.20 }
+};
+
+/* ---- and the throat it comes out of --------------------------------------
+
+   The one thing that separates a mammal's voice from a bird's is not its
+   pitch or its harmonics: it is that a mammal has a long resonant tract above
+   the larynx, and that tract has fixed resonances. They do not move when the
+   animal changes pitch. That is why a fox barking high and barking low still
+   sounds like a fox, and it is exactly what a bare sawtooth through a fixed
+   band-pass cannot produce — a band-pass has one hump and no character.
+
+   Two or three peaking filters in series, at frequencies that belong to the
+   animal rather than to the note. A big animal has low, closely spaced ones;
+   a small one has high, wide ones. */
+const FORMANT = {
+  fox:      [[ 640, 7, 10], [1580, 9, 7], [2950, 9, 4]],
+  deer:     [[ 480, 6, 11], [1250, 8, 6], [2400, 9, 3]],
+  cat:      [[ 860, 6, 10], [1900, 8, 8], [3300, 9, 5]],
+  badger:   [[ 380, 5, 11], [1020, 7, 6]],
+  otter:    [[2600, 8,  7], [4200, 9, 4]],
+  heron:    [[ 560, 6, 10], [1450, 8, 6], [2600, 9, 3]],
+  hedgehog: [[1400, 5,  8], [3000, 7, 5]],
+  squirrel: [[1600, 6,  8], [3400, 8, 5]]
+};
+
+/* Returns the node to sing *into*: a chain of peaking filters whose output is
+   already wired to `dest`. Two or three nodes for a whole call, and these are
+   the rarest voices in the piece. */
+function throat(ac, dest, id) {
+  const spec = FORMANT[id];
+  if (!spec) return dest;
+  let head = null, tail = null;
+  for (const [f, q, g] of spec) {
+    const b2 = ac.createBiquadFilter();
+    b2.type = "peaking"; b2.frequency.value = f; b2.Q.value = q; b2.gain.value = g;
+    if (tail) tail.connect(b2); else head = b2;
+    tail = b2;
+  }
+  tail.connect(dest);
+  return head;
+}
+const BUILTIN = { sine: 1, square: 1, sawtooth: 1, triangle: 1 };
+
+/* `PeriodicWave` belongs to the context that made it, and building one is not
+   free, so they are made once per context and kept. A WeakMap because the
+   bestiary opens and closes contexts of its own and none of this should keep
+   one alive. */
+const _waves = new WeakMap();
+function timbreWave(ac, name) {
+  let byName = _waves.get(ac);
+  if (!byName) _waves.set(ac, byName = new Map());
+  let w = byName.get(name);
+  if (w) return w;
+  const h = TIMBRE[name].h;
+  let e = 0;
+  for (const a of h) e += a*a;
+  const k = 1/Math.sqrt(e);                    // the rms of a unit sine
+  const re = new Float32Array(h.length + 1);
+  const im = new Float32Array(h.length + 1);
+  for (let i = 0; i < h.length; i++) im[i + 1] = h[i]*k;
+  w = ac.createPeriodicWave(re, im, { disableNormalization: true });
+  byName.set(name, w);
+  return w;
+}
+
+/* One oscillator set to a named timbre — or to a built-in type, which the
+   rough voices still want: a fox's bark really is closer to a sawtooth than
+   to anything with a tidy harmonic series. */
+function voiceOsc(ac, type) {
+  const o = ac.createOscillator();
+  if (type && TIMBRE[type]) o.setPeriodicWave(timbreWave(ac, type));
+  else o.type = (type && BUILTIN[type]) ? type : "sine";
+  return o;
+}
+
+/* The waver inside a held note.
+
+   A clean low-frequency oscillator on the detune is the obvious way to do
+   this and it is the wrong sound: an even sinusoidal vibrato is an opera
+   singer or a theremin, not a bird. What a held animal tone actually does is
+   *wander* — a periodic waver with a slow random drift under it, neither of
+   them steady.
+
+   So the curve is written out and handed to the param directly. Two things
+   fall out of that: it costs no nodes at all, where an LFO and a depth gain
+   would have cost two per phrase; and the shape can be anything, so it is
+   half waver and half drift and no two phrases get the same one.
+
+   The depth comes up over the first third rather than being there from the
+   first sample, which is what vibrato does — a note starts straight and
+   develops. */
+function addVibrato(ac, o, t, end, cents, hz) {
+  const span = end - t;
+  if (!(cents > 0) || span <= 0.02) return;
+  const n = Math.max(6, Math.min(400, Math.round(span/0.012)));
+  const c = new Float32Array(n);
+  const ph = Math.random()*Math.PI*2;
+  const rate = hz*(0.85 + Math.random()*0.3);
+  let walk = (Math.random() - 0.5)*1.2;
+  for (let i = 0; i < n; i++) {
+    const u = i/(n - 1), tt = u*span;
+    walk = walk*0.86 + (Math.random() - 0.5)*0.5;   // a one-pole random drift
+    const rise = Math.min(1, tt/Math.max(0.04, Math.min(0.12, span*0.34)));
+    c[i] = cents*rise*(0.58*Math.sin(2*Math.PI*rate*tt + ph) + 0.42*walk);
+  }
+  c[n - 1] = 0;                                     // and leave the param where it began
+  o.detune.setValueCurveAtTime(c, t, span);
+}
+
+/* ---- the shape of a slide -------------------------------------------------
+
+   Held against real recordings (`tools/reference.mjs`), the loudest thing
+   wrong with these voices after the timbre was that their *pitch* went in
+   straight lines. Every note here glided from f0 to f1 down a single
+   exponential ramp; measured as scatter about its own trend — which is
+   exactly what a straight line has none of — the catalogue read 0.0 to 1.2%
+   where real crows, roosters, frogs and hens read 11 to 26%.
+
+   An animal does not slide evenly between two pitches. It snaps most of the
+   way in the first tenth of the note and then eases, and it does not arrive
+   in a straight line while it is doing it. So the glide is bowed: the
+   endpoints are exactly the ones the caller asked for, and the path between
+   them is not a line.
+
+   In log-frequency, so the bow is the same musical size wherever it is:
+
+       f(u) = f0 · (f1/f0)^g(u),   g(u) = u + bow·sin(πu) + snap·(√u − u)
+
+   `snap` front-loads the slide; `bow` bends the middle off the line. A note
+   that does not glide at all (f0 = f1) is untouched by both, which is right —
+   there is nothing to bend. */
+function pitchCurve(f0, f1, dur, bow, snap) {
+  const a = Math.max(40, f0), b = Math.max(40, f1);
+  const lr = Math.log(b/a);
+  const n = Math.max(4, Math.min(160, Math.round(dur/0.006)));
+  const c = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const u = i/(n - 1);
+    const g = u + bow*Math.sin(Math.PI*u) + snap*(Math.sqrt(u) - u);
+    c[i] = a*Math.exp(lr*g);
+  }
+  c[0] = a; c[n - 1] = b;
+  return c;
+}
+
+/* Lay a note's pitch on the oscillator: bowed where there is a glide to bow,
+   and the plain two-point ramp where there is not — a curve costs an array
+   and a straight note does not need one. */
+function layPitch(o, t, f0, f1, dur, T) {
+  const bow = T ? T.bow : 0.22, snap = T ? T.snap : 0.30;
+  const ratio = Math.max(f0, f1)/Math.max(40, Math.min(f0, f1));
+  if (ratio < 1.02 || dur < 0.02 || (!bow && !snap)) {
+    o.frequency.setValueAtTime(Math.max(40, f0), t);
+    o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+    return;
+  }
+  o.frequency.setValueCurveAtTime(pitchCurve(f0, f1, dur, bow, snap), t, dur);
+}
+
+/* The envelope of one note: up, held, and down — with a slight droop across
+   the hold, because a bird does not sustain a note at a dead level either.
+
+   What this replaced went from the peak straight into an exponential decay
+   lasting the whole rest of the note, so the measured attack was a fifth of
+   the measured decay on every voice in the catalogue and every note was a
+   struck thing rather than a sung one. */
+function shapeNote(g, t, dur, peak, hold, hit, release) {
+  const a = Math.min(0.018, dur*0.30);
+  const h = Math.max(0, Math.min(dur - a - 0.006, dur*(hold === undefined ? 0.40 : hold)));
+  if (hit === false) {
+    // tied: carry on from wherever the last segment left off
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak), t + Math.min(0.02, dur*0.4));
+  } else {
+    g.gain.setValueAtTime(AUDIBLE, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak), t + a);
+  }
+  g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak*0.82), t + a + h);
+  if (release === false) {
+    // and the next segment picks it up rather than starting again
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, peak*0.9), t + dur);
+  } else {
+    g.gain.exponentialRampToValueAtTime(AUDIBLE, t + dur);
+  }
+}
+
 /* Synth primitives — the building blocks of every voice. */
 function note(ac, dest, t, f0, f1, dur, peak, type) {
-  const o = ac.createOscillator();
-  o.type = type || "sine";
-  o.frequency.setValueAtTime(Math.max(40, f0), t);
-  o.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t + dur);
+  const T = TIMBRE[type];
+  const o = voiceOsc(ac, type);
+  layPitch(o, t, f0, f1, dur, T);
   const g = ac.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(peak, t + Math.min(0.02, dur*0.3));
-  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  shapeNote(g, t, dur, peak, T && T.hold);
+  if (T) addVibrato(ac, o, t, t + dur, T.vib, T.vibHz);
   o.connect(g); g.connect(dest);
   o.start(t); o.stop(t + dur + 0.05);
 }
@@ -910,6 +1213,7 @@ function sharedNoise(ac) {
   return _noiseBuf;
 }
 function burst(ac, dest, t, freq, q, dur, peak) {
+  peak = peak > AUDIBLE ? peak : AUDIBLE;
   const len = Math.max(0.05, dur + 0.05);
   const buf = sharedNoise(ac);
   const src = ac.createBufferSource();
@@ -939,23 +1243,33 @@ function burst(ac, dest, t, freq, q, dur, peak) {
    without doing the arithmetic. */
 function noteTrain(ac, dest, ns, type) {
   if (!ns.length) return;
-  const o = ac.createOscillator();
-  o.type = type || "sine";
+  const T = TIMBRE[type];
+  const o = voiceOsc(ac, type);
   const g = ac.createGain();
   const t0 = ns[0].t;
-  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.setValueAtTime(AUDIBLE, t0);
   o.connect(g); g.connect(dest);
   let end = t0;
   for (let i = 0; i < ns.length; i++) {
     const n = ns[i], next = ns[i + 1];
     const d = next ? Math.max(0.01, Math.min(n.dur, next.t - n.t - 0.004)) : n.dur;
-    o.frequency.setValueAtTime(Math.max(40, n.f0), n.t);
-    o.frequency.exponentialRampToValueAtTime(Math.max(40, n.f1), n.t + d);
-    g.gain.setValueAtTime(0.0001, n.t);
-    g.gain.exponentialRampToValueAtTime(n.peak, n.t + Math.min(0.02, d*0.3));
-    g.gain.exponentialRampToValueAtTime(0.0001, n.t + d);
+    layPitch(o, n.t, n.f0, n.f1, d, T);
+    /* Each note gets the timbre's own hold — but a note inside a fast run has
+       no room for one, and `shapeNote` gives it whatever is left. A trill
+       stays a trill. */
+    /* Tied segments. Real calls are not always a string of separate notes:
+       a cockerel's last syllable, a crow's caw, a frog's croak are each *one*
+       sustained sound with the pitch moving about inside it — and measured
+       against real recordings that was the loudest thing still missing. A
+       note marked `link` is not re-articulated; the one before it does not
+       release. So a gesture can be written as segments and still come out as
+       one note with a contour in it. */
+    shapeNote(g, n.t, d, n.peak, n.hold !== undefined ? n.hold : (T && T.hold),
+      !n.link, !(next && next.link));
     end = n.t + d;
   }
+  // one waver across the whole phrase, not one per note
+  if (T) addVibrato(ac, o, t0, end, T.vib, T.vibHz);
   o.start(t0); o.stop(end + 0.05);
 }
 
@@ -978,7 +1292,7 @@ function pulseTrain(ac, dest, ps, q) {
     const d = next ? Math.max(0.006, Math.min(p.dur, next.t - p.t - 0.002)) : p.dur;
     bp.frequency.setValueAtTime(p.freq, p.t);
     g.gain.setValueAtTime(0.0001, p.t);
-    g.gain.exponentialRampToValueAtTime(p.peak, p.t + Math.min(0.008, d*0.3));
+    g.gain.exponentialRampToValueAtTime(Math.max(AUDIBLE, p.peak), p.t + Math.min(0.008, d*0.3));
     g.gain.exponentialRampToValueAtTime(0.0001, p.t + d);
   }
   src.connect(bp); bp.connect(g); g.connect(dest);
@@ -992,7 +1306,7 @@ function pulseTrain(ac, dest, ps, q) {
 const SPECIES = [
   { id: "blackbird", name: "Eurasian Blackbird", latin: "Turdus merula",
     desc: "fluted, unhurried phrases from a high perch", tone: "amber", layer: "perch",
-    habitats: ["meadow","forest","city"], hw: { city: 0.6 },
+    alarm: 1.0, habitats: ["meadow","forest","city"], hw: { city: 0.6 },
     weights: { dawn: 0.95, day: 0.3, dusk: 0.8, night: 0.02 }, base: 15,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1007,12 +1321,12 @@ const SPECIES = [
         ns.push({ t, f0: 2800 + r()*800, f1: 3500 + r()*900, dur: 0.12, peak: 0.028 });
         t += 0.16;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "flute");
       return t - t0 + 0.2;
     } },
   { id: "greattit", name: "Great Tit", latin: "Parus major",
     desc: "the see-saw \u201cteacher, teacher\u201d song", tone: "sage", layer: "perch",
-    habitats: ["meadow","forest","city"],
+    alarm: 0.5, habitats: ["meadow","forest","city"],
     weights: { dawn: 0.7, day: 0.55, dusk: 0.25, night: 0 }, base: 18,
     synth(ac, dest, t0, r) {
       const reps = 3 + Math.floor(r()*3);
@@ -1024,12 +1338,12 @@ const SPECIES = [
         ns.push({ t: t + 0.115, f0: fb, f1: fb*0.94, dur: 0.10, peak: 0.042 });
         t += 0.285;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.1;
     } },
   { id: "wren", name: "Eurasian Wren", latin: "Troglodytes troglodytes",
     desc: "an astonishing loud trill from a tiny body", tone: "amber", layer: "perch",
-    habitats: ["meadow","forest","wetland"],
+    alarm: 0.8, habitats: ["meadow","forest","wetland"],
     weights: { dawn: 0.65, day: 0.45, dusk: 0.3, night: 0 }, base: 20,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1040,7 +1354,7 @@ const SPECIES = [
         ns.push({ t, f0: f, f1: f*0.94, dur: 0.03, peak: 0.032 });
         t += 0.033;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.1;
     } },
   { id: "chiffchaff", name: "Common Chiffchaff", latin: "Phylloscopus collybita",
@@ -1056,7 +1370,7 @@ const SPECIES = [
         ns.push({ t, f0: f, f1: f*0.93, dur: 0.10, peak: 0.038 });
         t += 0.235 + r()*0.05;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.1;
     } },
   { id: "woodpigeon", name: "Common Wood Pigeon", latin: "Columba palumbus",
@@ -1071,7 +1385,7 @@ const SPECIES = [
         ns.push({ t, f0: f + r()*14, f1: f*0.97, dur: d, peak: 0.055 });
         t += d + 0.06;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "coo");
       return t - t0 + 0.1;
     } },
   { id: "cuckoo", name: "Common Cuckoo", latin: "Cuculus canorus",
@@ -1087,12 +1401,12 @@ const SPECIES = [
         ns.push({ t: t + 0.42, f0: 592, f1: 578, dur: 0.26, peak: 0.05 });
         t += 1.1;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "flute");
       return t - t0;
     } },
   { id: "robin", name: "European Robin", latin: "Erithacus rubecula",
     desc: "a thin silver warble, wistful at the edges", tone: "sage", layer: "perch",
-    habitats: ["meadow","forest","city","wetland"],
+    alarm: 0.5, habitats: ["meadow","forest","city","wetland"],
     weights: { dawn: 0.7, day: 0.3, dusk: 0.75, night: 0.25 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1103,7 +1417,7 @@ const SPECIES = [
         ns.push({ t, f0: f, f1: f*(0.6 + r()*0.8), dur: 0.07 + r()*0.12, peak: 0.035 });
         t += 0.1 + r()*0.16;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "silver");
       return t - t0 + 0.15;
     } },
   { id: "skylark", name: "Eurasian Skylark", latin: "Alauda arvensis",
@@ -1119,7 +1433,7 @@ const SPECIES = [
         ns.push({ t, f0: f, f1: f*(0.85 + r()*0.3), dur: 0.05, peak: 0.02 });
         t += 0.055;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return dur + 0.1;
     } },
   { id: "woodpecker", name: "Great Spotted Woodpecker", latin: "Dendrocopos major",
@@ -1139,13 +1453,22 @@ const SPECIES = [
     } },
   { id: "crow", name: "Carrion Crow", latin: "Corvus corone",
     desc: "flat, unapologetic caws", tone: "amber", layer: "perch",
-    habitats: ["meadow","forest","beach","wetland","city"],
+    alarm: 0.7, habitats: ["meadow","forest","beach","wetland","city"],
     weights: { dawn: 0.35, day: 0.5, dusk: 0.3, night: 0 }, base: 25,
     synth(ac, dest, t0, r) {
       let t = t0;
       const reps = 2 + Math.floor(r()*3);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 560 + r()*60, 410, 0.24, 0.026, "sawtooth");
+        /* A caw rises into itself and cracks on the way down; drawn as one
+           glide from 560 to 410 it read as 0.8% of pitch movement against a
+           real crow's 16%. */
+        const f = 520 + r()*70;
+        noteTrain(ac, dest, [
+          { t,            f0: f,        f1: f*1.28, dur: 0.05, peak: 0.026 },
+          { t: t + 0.05,  f0: f*1.28,   f1: f*1.10, dur: 0.07, peak: 0.026, link: 1 },
+          { t: t + 0.12,  f0: f*1.14,   f1: f*0.86, dur: 0.07, peak: 0.024, link: 1 },
+          { t: t + 0.19,  f0: f*0.86,   f1: f*0.70, dur: 0.06, peak: 0.020, link: 1 }
+        ], "sawtooth");
         burst(ac, dest, t, 900, 0.8, 0.22, 0.02);
         t += 0.34 + r()*0.1;
       }
@@ -1164,7 +1487,7 @@ const SPECIES = [
         ns.push({ t, f0: 400 - i*20, f1: 380 - i*22, dur: 0.4, peak: 0.05 });
         t += 0.42;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "coo");
       return t - t0 + 0.3;
     } },
   { id: "cricket", name: "Field Cricket", latin: "Gryllus campestris",
@@ -1201,7 +1524,7 @@ const SPECIES = [
     } },
   { id: "gull", name: "Herring Gull", latin: "Larus argentatus",
     desc: "long keening cries over the water", tone: "amber", layer: "air",
-    habitats: ["beach","city"], hw: { city: 0.25 },
+    alarm: 0.6, habitats: ["beach","city"], hw: { city: 0.25 },
     weights: { dawn: 0.45, day: 0.65, dusk: 0.35, night: 0.03 }, base: 18,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1217,7 +1540,7 @@ const SPECIES = [
     } },
   { id: "curlew", name: "Eurasian Curlew", latin: "Numenius arquata",
     desc: "a rising cry that dissolves into bubbling", tone: "sage", layer: "far",
-    habitats: ["beach","wetland"],
+    alarm: 0.5, habitats: ["beach","wetland"],
     weights: { dawn: 0.55, day: 0.3, dusk: 0.5, night: 0.05 }, base: 30,
     synth(ac, dest, t0, r) {
       const ns = [{ t: t0, f0: 880, f1: 1750, dur: 0.7, peak: 0.045 }];
@@ -1227,12 +1550,12 @@ const SPECIES = [
         ns.push({ t, f0: f, f1: f*1.12, dur: 0.05, peak: 0.035 });
         t += 0.058;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "whistle");
       return t - t0 + 0.1;
     } },
   { id: "oystercatcher", name: "Eurasian Oystercatcher", latin: "Haematopus ostralegus",
     desc: "shrill piping, hurried and bright", tone: "amber", layer: "ground",
-    habitats: ["beach"],
+    alarm: 0.9, habitats: ["beach"],
     weights: { dawn: 0.55, day: 0.55, dusk: 0.3, night: 0.05 }, base: 22,
     synth(ac, dest, t0, r) {
       let t = t0, gap = 0.1;
@@ -1242,12 +1565,12 @@ const SPECIES = [
         ns.push({ t, f0: 2850 + r()*150, f1: 2600, dur: 0.07, peak: 0.04 });
         t += gap; gap *= 0.96;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.1;
     } },
   { id: "mallard", name: "Mallard", latin: "Anas platyrhynchos",
     desc: "a descending run of quacks, mostly laughter", tone: "amber", layer: "ground",
-    habitats: ["wetland"],
+    alarm: 0.5, habitats: ["wetland"],
     weights: { dawn: 0.5, day: 0.5, dusk: 0.45, night: 0.08 }, base: 20,
     synth(ac, dest, t0, r) {
       let t = t0, peak = 0.032;
@@ -1275,13 +1598,13 @@ const SPECIES = [
         else ns.push({ t, f0: f, f1: f*0.9, dur: 0.06, peak: 0.032 });
         t += 0.09 + r()*0.04;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       pulseTrain(ac, dest, ps, 6);
       return t - t0 + 0.1;
     } },
   { id: "sparrow", name: "House Sparrow", latin: "Passer domesticus",
     desc: "companionable cheeps from the gutters", tone: "amber", layer: "perch",
-    habitats: ["city","meadow"], hw: { meadow: 0.5 },
+    alarm: 0.4, habitats: ["city","meadow"], hw: { meadow: 0.5 },
     weights: { dawn: 0.55, day: 0.65, dusk: 0.35, night: 0 }, base: 14,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1292,7 +1615,7 @@ const SPECIES = [
         ns.push({ t, f0: f, f1: f*(0.85 + r()*0.25), dur: 0.08, peak: 0.038 });
         t += 0.16 + r()*0.14;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "buzz");
       return t - t0 + 0.1;
     } },
   { id: "feralpigeon", name: "Feral Pigeon", latin: "Columba livia domestica",
@@ -1306,7 +1629,7 @@ const SPECIES = [
         ns.push({ t, f0: 320 + r()*20, f1: 285, dur: 0.3, peak: 0.05 });
         t += 0.4;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "coo");
       return t - t0 + 0.1;
     } },
   { id: "swift", name: "Common Swift", latin: "Apus apus",
@@ -1317,15 +1640,15 @@ const SPECIES = [
       let t = t0;
       const reps = 2 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 6300 + r()*400, 4100, 0.7, 0.016);
-        note(ac, dest, t + 0.04, 6500 + r()*400, 4300, 0.66, 0.013);
+        note(ac, dest, t, 6300 + r()*400, 4100, 0.7, 0.016, "whistle");
+        note(ac, dest, t + 0.04, 6500 + r()*400, 4300, 0.66, 0.013, "whistle");
         t += 0.85;
       }
       return t - t0 + 0.1;
     } },
   { id: "magpie", name: "Eurasian Magpie", latin: "Pica pica",
     desc: "a dry machine-gun rattle of alarm", tone: "amber", layer: "perch",
-    habitats: ["city","forest"], hw: { forest: 0.4 },
+    alarm: 1.0, habitats: ["city","forest"], hw: { forest: 0.4 },
     weights: { dawn: 0.35, day: 0.5, dusk: 0.25, night: 0 }, base: 27,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1348,10 +1671,18 @@ const SPECIES = [
       bp.connect(dest);
       let t = t0;
       const ns = [];
-      ns.push({ t, f0: 620, f1: 660, dur: 0.18, peak: 0.05 }); t += 0.24;
-      ns.push({ t, f0: 750, f1: 780, dur: 0.16, peak: 0.05 }); t += 0.22;
-      ns.push({ t, f0: 900, f1: 930, dur: 0.3, peak: 0.06 }); t += 0.36;
-      ns.push({ t, f0: 830, f1: 560, dur: 0.55, peak: 0.05 }); t += 0.6;
+      /* er — er — ERRRR-rr. The first two syllables are separate; the third
+         and the long fourth are one continuous sound with a break in the
+         middle of it, which is the part that makes a cockerel a cockerel and
+         which four flat notes could not produce. Written as tied segments
+         with the pitch thrown about between them. */
+      ns.push({ t, f0: 600 + r()*50, f1: 680, dur: 0.17, peak: 0.05 }); t += 0.23;
+      ns.push({ t, f0: 730, f1: 800, dur: 0.15, peak: 0.05 }); t += 0.21;
+      ns.push({ t, f0: 820, f1: 1010, dur: 0.13, peak: 0.062 }); t += 0.13;
+      ns.push({ t, f0: 1010, f1: 980, dur: 0.15, peak: 0.062, link: 1 }); t += 0.15;
+      ns.push({ t, f0: 700, f1: 880, dur: 0.10, peak: 0.05,  link: 1 }); t += 0.10;
+      ns.push({ t, f0: 880, f1: 620, dur: 0.20, peak: 0.052, link: 1 }); t += 0.20;
+      ns.push({ t, f0: 640, f1: 470, dur: 0.30, peak: 0.042, link: 1 }); t += 0.42;
       noteTrain(ac, bp, ns, "sawtooth");
       return t - t0 + 0.2;
     } },
@@ -1373,12 +1704,12 @@ const SPECIES = [
         }
         t += 0.25 + r()*0.2;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "flute");
       return t - t0 + 0.2;
     } },
   { id: "chaffinch", name: "Common Chaffinch", latin: "Fringilla coelebs",
     desc: "a rattling run downhill with a flourish at the end", tone: "sage", layer: "perch",
-    habitats: ["forest","meadow","city"], hw: { city: 0.4 },
+    alarm: 0.45, habitats: ["forest","meadow","city"], hw: { city: 0.4 },
     weights: { dawn: 0.6, day: 0.6, dusk: 0.2, night: 0 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0, f = 3400 + r()*300, gap = 0.09;
@@ -1390,7 +1721,7 @@ const SPECIES = [
       }
       ns.push({ t, f0: 2000, f1: 2600, dur: 0.14, peak: 0.05 });
       ns.push({ t: t + 0.12, f0: 2500, f1: 1900, dur: 0.12, peak: 0.05 });
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.35;
     } },
   { id: "goldfinch", name: "European Goldfinch", latin: "Carduelis carduelis",
@@ -1409,7 +1740,7 @@ const SPECIES = [
         }
         t += 0.12 + r()*0.1;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "silver");
       return t - t0 + 0.1;
     } },
   { id: "bluetit", name: "Eurasian Blue Tit", latin: "Cyanistes caeruleus",
@@ -1429,7 +1760,7 @@ const SPECIES = [
         ns.push({ t, f0: 3000 + r()*200, f1: 2800, dur: 0.035, peak: 0.038 });
         t += 0.045;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "silver");
       return t - t0 + 0.1;
     } },
   { id: "dunnock", name: "Dunnock", latin: "Prunella modularis",
@@ -1445,12 +1776,12 @@ const SPECIES = [
         ns.push({ t, f0: f, f1: f*(0.88 + r()*0.2), dur: 0.05, peak: 0.035 });
         t += 0.065 + r()*0.02;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "silver");
       return t - t0 + 0.1;
     } },
   { id: "starling", name: "Common Starling", latin: "Sturnus vulgaris",
     desc: "whistles, clicks and borrowed noises", tone: "amber", layer: "perch",
-    habitats: ["city","meadow"], hw: { meadow: 0.5 },
+    alarm: 0.5, habitats: ["city","meadow"], hw: { meadow: 0.5 },
     weights: { dawn: 0.5, day: 0.6, dusk: 0.55, night: 0 }, base: 17,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1463,7 +1794,7 @@ const SPECIES = [
         t += 0.05 + r()*0.04;
       }
       if (r() < 0.7) { ns.push({ t, f0: 1800, f1: 3400, dur: 0.22, peak: 0.028 }); t += 0.3; }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "buzz");
       pulseTrain(ac, dest, ps, 8);
       return t - t0 + 0.1;
     } },
@@ -1486,7 +1817,7 @@ const SPECIES = [
         jug.push({ t, f0: 950 + r()*100, f1: 720, dur: 0.07, peak: 0.05 });
         t += 0.09;
       }
-      noteTrain(ac, dest, rise);
+      noteTrain(ac, dest, rise, "flute");
       noteTrain(ac, dest, jug, "sawtooth");
       return t - t0 + 0.15;
     } },
@@ -1504,7 +1835,7 @@ const SPECIES = [
         t += 0.09;
       }
       ns.push({ t, f0: f*1.35, f1: f*1.3, dur: 0.5, peak: 0.032 });
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.6;
     } },
   { id: "greenfinch", name: "European Greenfinch", latin: "Chloris chloris",
@@ -1523,13 +1854,13 @@ const SPECIES = [
           ns.push({ t, f0: 3300 + r()*200, f1: 3100, dur: 0.04, peak: 0.035 });
           t += 0.05;
         }
-        noteTrain(ac, dest, ns);
+        noteTrain(ac, dest, ns, "buzz");
       }
       return t - t0 + 0.1;
     } },
   { id: "jay", name: "Eurasian Jay", latin: "Garrulus glandarius",
     desc: "a ripping screech from inside the wood", tone: "amber", layer: "perch",
-    habitats: ["forest"],
+    alarm: 1.0, habitats: ["forest"],
     weights: { dawn: 0.35, day: 0.5, dusk: 0.25, night: 0 }, base: 26,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1543,7 +1874,7 @@ const SPECIES = [
     } },
   { id: "jackdaw", name: "Western Jackdaw", latin: "Coloeus monedula",
     desc: "a bright metallic “tchak!” off the chimneys", tone: "sage", layer: "perch",
-    habitats: ["city"],
+    alarm: 0.6, habitats: ["city"],
     weights: { dawn: 0.55, day: 0.6, dusk: 0.4, night: 0 }, base: 18,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1582,7 +1913,7 @@ const SPECIES = [
         ns.push({ t, f0: 440 + r()*15, f1: 425, dur: 0.4, peak: 0.055 }); t += 0.5;
         ns.push({ t, f0: 450 + r()*15, f1: 430, dur: 0.13, peak: 0.04 }); t += 0.45;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "coo");
       return t - t0 + 0.1;
     } },
   { id: "kingfisher", name: "Common Kingfisher", latin: "Alcedo atthis",
@@ -1597,12 +1928,12 @@ const SPECIES = [
         ns.push({ t, f0: 5200 + r()*400, f1: 6200, dur: 0.09, peak: 0.035 });
         t += 0.14 + r()*0.05;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.1;
     } },
   { id: "lapwing", name: "Northern Lapwing", latin: "Vanellus vanellus",
     desc: "a wheezy “pee-wit!” tumbling over the marsh", tone: "sage", layer: "ground",
-    habitats: ["wetland","meadow"], hw: { meadow: 0.5 },
+    alarm: 0.8, habitats: ["wetland","meadow"], hw: { meadow: 0.5 },
     weights: { dawn: 0.6, day: 0.45, dusk: 0.5, night: 0.1 }, base: 26,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1616,7 +1947,7 @@ const SPECIES = [
         ns.push({ t: t + 0.18, f0: 2600, f1: 1300, dur: 0.18, peak: 0.04 });
         t += 0.45;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.1;
     } },
   { id: "pheasant", name: "Common Pheasant", latin: "Phasianus colchicus",
@@ -1638,15 +1969,15 @@ const SPECIES = [
     } },
   { id: "moorhen", name: "Common Moorhen", latin: "Gallinula chloropus",
     desc: "one explosive bubbling note from the reeds", tone: "sage", layer: "ground",
-    habitats: ["wetland"],
+    alarm: 0.8, habitats: ["wetland"],
     weights: { dawn: 0.5, day: 0.5, dusk: 0.45, night: 0.15 }, base: 24,
     synth(ac, dest, t0, r) {
       let t = t0;
-      note(ac, dest, t, 500 + r()*80, 1400, 0.12, 0.06);
+      note(ac, dest, t, 500 + r()*80, 1400, 0.12, 0.06, "reed");
       burst(ac, dest, t + 0.02, 900, 2, 0.1, 0.03);
       t += 0.3;
       if (r() < 0.4) {
-        note(ac, dest, t, 550, 1200, 0.1, 0.045);
+        note(ac, dest, t, 550, 1200, 0.1, 0.045, "reed");
         t += 0.2;
       }
       return t - t0 + 0.1;
@@ -1662,7 +1993,7 @@ const SPECIES = [
     } },
   { id: "tern", name: "Common Tern", latin: "Sterna hirundo",
     desc: "a grating “kee-arr” over the surf", tone: "amber", layer: "air",
-    habitats: ["beach"],
+    alarm: 0.6, habitats: ["beach"],
     weights: { dawn: 0.45, day: 0.6, dusk: 0.3, night: 0 }, base: 24,
     synth(ac, dest, t0, r) {
       let t = t0;
@@ -1687,7 +2018,7 @@ const SPECIES = [
         ns.push({ t, f0: 2400 + r()*200, f1: 2000, dur: 0.07, peak: 0.04 });
         t += 0.12;
       }
-      noteTrain(ac, dest, ns);
+      noteTrain(ac, dest, ns, "reed");
       return t - t0 + 0.1;
     } },
   { id: "buzzard", name: "Common Buzzard", latin: "Buteo buteo",
@@ -1698,7 +2029,7 @@ const SPECIES = [
       noteTrain(ac, dest, [
         { t: t0, f0: 2600, f1: 3100, dur: 0.25, peak: 0.038 },
         { t: t0 + 0.28, f0: 3000, f1: 1400 + r()*200, dur: 0.9, peak: 0.04 }
-      ]);
+      ], "mew");
       return 1.4;
     } }
 ];
@@ -1712,14 +2043,15 @@ const CRITTER_VOICES = {
     desc: "a hoarse bark, and sometimes the vixen's scream", tone: "amber", p: 0.45,
     synth(ac, dest, t0, r) {
       let t = t0;
+      const v = throat(ac, dest, "fox");
       if (r() < 0.3) {                     // the scream, rare and eerie
-        note(ac, dest, t, 900 + r()*100, 1500, 0.55, 0.045, "sawtooth");
+        note(ac, v, t, 900 + r()*100, 1500, 0.55, 0.045, "growl");
         burst(ac, dest, t, 1400, 1, 0.5, 0.02);
         return 0.9;
       }
       const reps = 2 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 520 + r()*60, 310, 0.12, 0.05, "sawtooth");
+        note(ac, v, t, 520 + r()*60, 310, 0.12, 0.05, "bark");
         burst(ac, dest, t, 800, 1, 0.1, 0.03);
         t += 0.28 + r()*0.1;
       }
@@ -1732,7 +2064,7 @@ const CRITTER_VOICES = {
       const reps = 1 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
         burst(ac, dest, t, 500 + r()*100, 0.8, 0.18, 0.09);
-        note(ac, dest, t, 400, 250, 0.15, 0.045, "sawtooth");
+        note(ac, throat(ac, dest, "deer"), t, 400, 250, 0.15, 0.045, "bark");
         t += 0.5 + r()*0.3;
       }
       return t - t0 + 0.15;
@@ -1741,15 +2073,16 @@ const CRITTER_VOICES = {
     desc: "one unhurried meow across the rooftops", tone: "amber", p: 0.5,
     synth(ac, dest, t0, r) {
       const f = 480 + r()*80;
-      note(ac, dest, t0, f, f*1.9, 0.32, 0.035);
-      note(ac, dest, t0 + 0.3, f*1.9, f*0.9, 0.4, 0.032);
-      note(ac, dest, t0 + 0.02, f*2.1, f*3.2, 0.28, 0.012, "sawtooth");
+      const v = throat(ac, dest, "cat");
+      note(ac, v, t0, f, f*1.9, 0.32, 0.035, "mew");
+      note(ac, v, t0 + 0.3, f*1.9, f*0.9, 0.4, 0.032, "mew");
+      note(ac, v, t0 + 0.02, f*2.1, f*3.2, 0.28, 0.012, "growl");
       return 0.9;
     } },
   heron: { id: "heron", name: "Grey Heron", latin: "Ardea cinerea",
     desc: "a harsh “fraaank”, flung over its shoulder", tone: "sage", p: 0.5,
     synth(ac, dest, t0, r) {
-      note(ac, dest, t0, 340 + r()*40, 210, 0.5, 0.055, "sawtooth");
+      note(ac, throat(ac, dest, "heron"), t0, 340 + r()*40, 210, 0.5, 0.055, "bark");
       burst(ac, dest, t0, 800, 0.8, 0.4, 0.028);
       return 0.8;
     } },
@@ -1763,7 +2096,7 @@ const CRITTER_VOICES = {
         ps.push({ t, freq: 1400 + r()*300, dur: 0.04, peak: 0.05 });
         t += 0.11 + r()*0.04;
       }
-      pulseTrain(ac, dest, ps, 4);
+      pulseTrain(ac, throat(ac, dest, "squirrel"), ps, 4);
       return t - t0 + 0.1;
     } },
   otter: { id: "otter", name: "Eurasian Otter", latin: "Lutra lutra",
@@ -1772,7 +2105,7 @@ const CRITTER_VOICES = {
       let t = t0;
       const reps = 1 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 2800 + r()*300, 3600, 0.12, 0.04);
+        note(ac, throat(ac, dest, "otter"), t, 2800 + r()*300, 3600, 0.12, 0.04, "whistle");
         t += 0.2 + r()*0.1;
       }
       return t - t0 + 0.1;
@@ -1787,7 +2120,7 @@ const CRITTER_VOICES = {
         ps.push({ t, freq: 300 + r()*150, dur: 0.06, peak: 0.03 });
         t += 0.14 + r()*0.1;
       }
-      pulseTrain(ac, dest, ps, 1);
+      pulseTrain(ac, throat(ac, dest, "hedgehog"), ps, 1);
       return t - t0 + 0.1;
     } },
   badger: { id: "badger", name: "European Badger", latin: "Meles meles",
@@ -1796,7 +2129,7 @@ const CRITTER_VOICES = {
       let t = t0;
       const reps = 2 + Math.floor(r()*2);
       for (let i = 0; i < reps; i++) {
-        note(ac, dest, t, 240 + r()*40, 180, 0.22, 0.04, "sawtooth");
+        note(ac, throat(ac, dest, "badger"), t, 240 + r()*40, 180, 0.22, 0.04, "growl");
         burst(ac, dest, t, 350, 1, 0.2, 0.018);
         t += 0.3 + r()*0.12;
       }
@@ -1804,12 +2137,13 @@ const CRITTER_VOICES = {
     } }
 };
 
-/* Only what another module actually asks for. `ICONS`, `ICON_KEY`, `noteTrain`
-   and `pulseTrain` are the machinery behind `speciesIcon` and the synths and are
-   used here alone. */
+/* Only what another module actually asks for. `ICONS`, `ICON_KEY` and
+   `pulseTrain` are the machinery behind `speciesIcon` and the synths and are
+   used here alone; `noteTrain` also plays the city's melody line, which is a
+   phrase like any other and wants the same one-oscillator treatment. */
 export {
   speciesIcon, PSTYLE, ANIM, COUNTERSING,
   GAIT, gaitFoot, gaitPose, gaitAt,
-  note, burst,
+  note, burst, noteTrain,
   SPECIES, CRITTER_VOICES
 };

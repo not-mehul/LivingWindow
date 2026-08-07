@@ -13,11 +13,12 @@
    that kind appears. Then it is stepped for several hundred frames with both
    passes called in the order the frame calls them. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 
 const URL = (process.env.BENCH_URL || 'http://127.0.0.1:8123/') + '?perf=1';
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader']
+  ...chromiumPath(), args: ['--use-gl=swiftshader']
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 const pageErrors = [];
@@ -32,7 +33,8 @@ const results = await page.evaluate(() => {
   const out = [];
   const KINDS = ['butterfly', 'dragonfly', 'bat', 'deer', 'runner', 'cat', 'rabbit', 'fox',
                  'heron', 'porpoise', 'squirrel', 'litter', 'hare', 'hedgehog', 'badger',
-                 'otter', 'bee', 'skein'];
+                 'otter', 'bee', 'skein', 'turnstone', 'crab', 'seal',
+                 'shelldrop', 'pigeon', 'moth', 'stoat', 'bather', 'lizard', 'mob'];
   const PLACES = ['meadow', 'forest', 'beach', 'wetland', 'city'];
   const HOURS = ['dawn', 'day', 'dusk', 'night'];
   const PHASES = ['dawn', 'day', 'dusk', 'night'];
@@ -62,6 +64,11 @@ const results = await page.evaluate(() => {
         const hunted = (kind === 'litter') ? 'badger' : kind;
         let made = false;
         for (let i = 0; i < 3000 && !made; i++) {
+          /* A bather needs standing water to stand in, and standing water is
+             ninety seconds of soaking away from a dry field — far longer than
+             this loop runs. Only for that one kind, because half the others
+             will not come out in the wet at all. */
+          if (kind === 'bather') s.groundWet = 1;
           s.t += 5;                             // outrun the per-kind cooldowns
           for (const k of Object.keys(s)) if (/^last[A-Z]/.test(k)) s[k] = -999;
           s.spawnCritters(0.5);
@@ -101,6 +108,7 @@ const results = await page.evaluate(() => {
           if (!s.critters.length) break;
         }
       } else {
+        if (kind === 'bather') s.groundWet = 1;   // and it dries out mid-bath otherwise
         step(600);
       }
       out.push({ kind, status: saw ? 'ok' : 'unexercised', where: `${found.loc}/${found.hour}`,

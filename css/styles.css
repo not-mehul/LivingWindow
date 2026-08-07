@@ -48,6 +48,21 @@
   --scene-sky-night-top:#17130e;  --scene-sky-night-bot:#2b2318;
   --scene-ink:        #241d15;
   --scene-ink-deep:   #0f0c09;
+  /* Materials. Everything in the land used to be one ink mixed with the sky
+     at different ratios, so the whole landscape sat on a single hue and read
+     as a brown fog with shapes in it. These are the three things a landscape
+     is actually made of, kept close in value — this is still an etching, not
+     a photograph — but far enough apart in hue to tell a leaf from a bank
+     from a stone. */
+  --scene-leaf:       #27301b;   /* foliage: green, and the only green here */
+  /* The city after dark is the one place in this piece lit by something other
+     than the sky, and what lights it is advertising. Three signs' worth. */
+  --scene-neon-a:     #ff3d7f;   /* magenta */
+  --scene-neon-b:     #35e8f0;   /* cyan */
+  --scene-neon-c:     #ffb03a;   /* sodium amber */
+  --scene-glasslit:   #9fd8e6;   /* a window with someone still in it */
+  --scene-earth:      #3a2c1c;   /* bank, trunk, ploughed ground: warm */
+  --scene-stone:      #2c2b30;   /* rock, brick, shingle: cool and slightly violet */
   --scene-sun:        #f2c98c;
   --scene-moon:       #ece4d2;
   --scene-sea:        #46524a;
@@ -110,6 +125,13 @@
   --scene-sky-night-top:#1c1712;  --scene-sky-night-bot:#33291c;
   --scene-ink:        #2a2218;
   --scene-ink-deep:   #16110c;
+  --scene-leaf:       #303c23;
+  --scene-neon-a:     #ff5c93;
+  --scene-neon-b:     #57f0f7;
+  --scene-neon-c:     #ffc05e;
+  --scene-glasslit:   #b4e4ef;
+  --scene-earth:      #453422;
+  --scene-stone:      #343339;
   --scene-sun:        #eec482;
   --scene-moon:       #efe8d8;
   --scene-sea:        #4d5950;
@@ -652,6 +674,11 @@ input[type="range"]:focus-visible { outline: 2px solid var(--focus-ring); outlin
 /* the cycle speed means nothing while the hours are held still */
 .slider-row.disabled { opacity: 0.4; pointer-events: none; }
 
+/* The mix rows are a stack of named sliders, so their labels have to line up
+   with one another or the column reads as a jumble rather than a desk. */
+.control-group .slider-row + .slider-row { margin-top: 0.15rem; }
+.control-group .slider-row > .slider-label { width: 7.5rem; }
+
 .switch-row {
   display: flex; align-items: center; justify-content: space-between;
   gap: 1rem; padding: 0.45rem 0;
@@ -725,4 +752,16 @@ footer .term { font-style: italic; color: var(--text-dim); }
 @media (prefers-reduced-motion: reduce) {
   .begin-card { animation: none; }
   * { transition-duration: 0.01s !important; }
+}
+
+/* The shortcuts, on the card you see before anything starts — small, quiet,
+   and the only place they are written down. */
+.begin-keys {
+  margin: 0.85rem 0 0;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  line-height: 1.7;
+  color: var(--text-faint, var(--text-muted));
+  opacity: 0.72;
 }

@@ -3,6 +3,7 @@
    instrumented identically. Reports frame time and rasterization submissions
    per frame, per location. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 
 const URL_BASE = process.env.BENCH_URL || 'http://127.0.0.1:8123/';
 const LABEL = process.argv[2] || 'run';
@@ -70,12 +71,15 @@ const stats = (a) => {
 };
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium',
-  args: ['--autoplay-policy=no-user-gesture-required', '--enable-gpu', '--use-gl=swiftshader']
+  ...chromiumPath(), args: ['--autoplay-policy=no-user-gesture-required', '--enable-gpu', '--use-gl=swiftshader']
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
 await page.addInitScript(initScript);
-await page.goto(URL_BASE, { waitUntil: 'networkidle' });
+/* `?hook=1`, not `?perf=1`: the hook alone, without the on-screen readout,
+   which would wrap every drawing call a second time and paint a panel over
+   the very thing being measured. */
+await page.goto(URL_BASE + (URL_BASE.includes('?') ? '&' : '?') + 'hook=1',
+  { waitUntil: 'networkidle' });
 
 // Stand in for fullscreen: the canvas is height:min(56vh,520px) inside an
 // 880px container until the window-frame goes :fullscreen. It is the big
@@ -89,14 +93,27 @@ await page.addStyleTag({ content: `
 await page.click('#beginBtn');
 await page.waitForTimeout(1200);
 
-// Hold the hour still — a drifting sky misses the gradient cache every frame
-// and adds variance that has nothing to do with what is being compared.
-await page.click('#settingsBtn');
-await page.waitForTimeout(300);
-if (await page.getAttribute('#timeFlowSwitch', 'aria-checked') === 'true') {
-  await page.click('#timeFlowSwitch');
-}
-await page.click('#settingsClose');
+/* Hold the hour and the weather still. A turning hour misses the sky's
+   gradient cache every frame; a sky that comes over mid-run measures rain
+   against a figure taken in sunshine. Both add variance that has nothing to
+   do with what is being compared.
+
+   Set through the hook rather than through the switches: the settings card
+   scrolls, the style override above stretches .container over the whole
+   viewport and takes the pointer events the switch wanted, and a forced
+   click at a stale coordinate lands on the casement and shuts the window.
+   The hour is pinned as well as stopped. Freezing it wherever it happened to
+   be leaves each run measuring a different sky, a different number of lit
+   windows and a different cast — which showed up as a two-hundred-op swing
+   in the city between runs that changed nothing. */
+await page.evaluate(() => {
+  const { state, scene } = window.__lw;
+  state.timeFlow = false;
+  state.weatherFlow = false;
+  state.time = 'day';
+  state.weather = 'clear';
+  scene.timeMix = { dawn: 0, day: 1, dusk: 0, night: 0 };
+});
 await page.waitForTimeout(400);
 
 const results = {};

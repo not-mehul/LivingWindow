@@ -6,9 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=12";
-import { SPECIES, PSTYLE, ANIM, gaitPose, gaitAt, CRITTER_VOICES, speciesIcon } from "./species.js?v=12";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=12";
+import { Scene } from "./scene.js?v=31";
+import { SPECIES, PSTYLE, ANIM, gaitPose, gaitAt, CRITTER_VOICES, speciesIcon } from "./species.js?v=31";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=31";
 
 /* The gaits are written around a stride of 1 and the cards keep their phases in
    radians, as the scene does; this is the one conversion between the two. */
@@ -675,6 +675,150 @@ const CRITTERS = [
       groundBand(c, W, H, P, gy);
       scene.paintBee(c, W*0.5 + Math.sin(tm*0.8)*30, H*0.6 + Math.sin(tm*2.1)*14 + Math.sin(tm*14)*2,
         7, tm, P.col);
+    } },
+  /* ---- and the ones the wood, the shore and the street gained later ---- */
+  { id: "turnstone", name: "Ruddy Turnstone", latin: "Arenaria interpres",
+    desc: "heaves weed and shingle over to see what is beneath", sky: "day",
+    modes: ["work", "step"], where: [{ h: "beach", w: 1 }],
+    when: { dawn: 0.6, day: 0.8, dusk: 0.5, night: 0 },
+    appears: "Works the strand line in a tight party through the daylight.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.8;
+      sandBand(c, W, H, P, gy);
+      const heave = mode === "work" ? Math.max(0, Math.sin(tm*3.4)) : 0;
+      for (const [dx, ph] of [[-46, 0.7], [0, 0], [44, 1.9]]) {
+        c.save();
+        c.translate(W*0.5 + dx, gy); c.scale(3, 3);
+        scene.paintTurnstone(c, 1, mode === "step", tm*13 + ph,
+          mode === "work" ? Math.max(0, Math.sin(tm*3.4 + ph)) : 0, P.col);
+        c.restore();
+      }
+      void heave;
+    } },
+  { id: "crab", name: "Shore Crab", latin: "Carcinus maenas",
+    desc: "the only thing here that does not face where it is going", sky: "day",
+    modes: ["scuttle", "still"], where: [{ h: "beach", w: 1 }],
+    when: { dawn: 0.5, day: 0.7, dusk: 0.5, night: 0.3 },
+    appears: "Crosses the wet sand sideways, in bursts, freezing between them.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.8;
+      sandBand(c, W, H, P, gy);
+      c.save();
+      c.translate(W*0.5 + Math.sin(tm*0.6)*26, gy); c.scale(3.4, 3.4);
+      scene.paintCrab(c, 1, mode === "scuttle", tm*22,
+        mode === "still" ? 1 : 0, P.col);
+      c.restore();
+    } },
+  { id: "seal", name: "Grey Seal", latin: "Halichoerus grypus",
+    desc: "up beyond the surf for a long look, and gone", sky: "day",
+    modes: ["up"], where: [{ h: "beach", w: 1 }],
+    when: { dawn: 0.4, day: 0.6, dusk: 0.4, night: 0.1 },
+    appears: "Surfaces outside the breakers on a calm day, and does not return.",
+    draw(c, W, H, tm, mode, P) {
+      const wy = H*0.62;
+      waterBand(c, W, H, P, wy);
+      scene.paintSeal(c, W*0.5, wy + 26, 22, 1,
+        0.55 + 0.45*Math.sin(tm*0.7), Math.sin(tm*0.55)*0.9, P.col, P.rim || P.col);
+    } },
+  { id: "shelldrop", name: "Herring Gull, with a shell", latin: "Larus argentatus",
+    desc: "carries it up, lets go, and follows it down", sky: "day",
+    modes: ["climb", "pick"], where: [{ h: "beach", w: 1 }],
+    when: { dawn: 0.4, day: 0.8, dusk: 0.4, night: 0 },
+    appears: "Breaks a shell on the hard sand by dropping it from a height.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.82;
+      sandBand(c, W, H, P, gy);
+      const climb = mode === "climb";
+      const gyy = climb ? H*0.30 : gy - 5;
+      c.fillStyle = P.col;
+      c.beginPath();
+      c.ellipse(W*0.5 + 16, climb ? H*0.34 : gy - 2, 5, 3.4, 0.3, 0, Math.PI*2);
+      c.fill();
+      scene.paintGullFlight(c, W*0.5, gyy, 13, 1, climb ? tm*5 : 0, P.col);
+    } },
+  { id: "pigeon", name: "Feral Pigeon, on the pavement", latin: "Columba livia",
+    desc: "the head is held still, then snapped forward", sky: "day",
+    modes: ["peck", "walk", "fly"], where: [{ h: "city", w: 1 }],
+    when: { dawn: 0.6, day: 0.9, dusk: 0.6, night: 0.1 },
+    appears: "Works the pavement in a loose scatter, and goes up as one.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.84;
+      groundBand(c, W, H, P, gy);
+      if (mode === "fly") {
+        for (const [dx, dy, ph] of [[-52, 10, 0], [0, -14, 1.2], [50, 4, 2.3]]) {
+          scene.paintPigeonFlight(c, W*0.5 + dx, H*0.45 + dy, 13, 1, tm*17 + ph, P.col);
+        }
+        return;
+      }
+      for (const [dx, ph] of [[-50, 0.9], [4, 0], [48, 2.1]]) {
+        c.save();
+        c.translate(W*0.5 + dx, gy); c.scale(2.7, 2.7);
+        scene.paintPigeon(c, dx < 0 ? 1 : -1, mode === "walk", tm*10 + ph, tm*5 + ph, P.col);
+        c.restore();
+      }
+    } },
+  { id: "moth", name: "Moth, at a lit window", latin: "Noctuidae",
+    desc: "not flight so much as failure to leave", sky: "night",
+    modes: ["blunder"], where: [{ h: "city", w: 1 }],
+    when: { dawn: 0.1, day: 0, dusk: 0.4, night: 1 },
+    appears: "Fastened to one lit window after dark; gone when the light is.",
+    draw(c, W, H, tm, mode, P) {
+      // the window it cannot leave
+      c.fillStyle = `rgba(${scene.tok.fireflyRGB}, 0.5)`;
+      c.fillRect(W*0.5 - 15, H*0.42 - 20, 30, 40);
+      for (let k = 0; k < 3; k++) {
+        const a = tm*(1.3 + k*0.4) + k*2.1;
+        scene.paintMoth(c, W*0.5 + Math.cos(a)*(20 + k*9),
+          H*0.42 + Math.sin(a*1.3)*(15 + k*6), 5, tm*40 + k, 1);
+      }
+    } },
+  { id: "stoat", name: "Stoat", latin: "Mustela erminea", 
+    desc: "a tube of an animal; the back does all the work", sky: "day",
+    modes: ["bound", "rear"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 }],
+    when: { dawn: 0.7, day: 0.7, dusk: 0.6, night: 0.2 },
+    appears: "Crosses a hedge line in tight arched bounds, then stands up to look.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.82;
+      groundBand(c, W, H, P, gy);
+      const leap = mode === "bound" ? gaitPose("weave", tm*1.4) : null;
+      const rise = leap ? Math.max(0, leap.rise) : 0;
+      scene.paintStoat(c, { x: W*0.5, y: gy - rise*10, s: 17, dir: 1,
+        leap, rear: mode === "rear" ? 1 : 0, color: P.col, t: tm });
+    } },
+  { id: "bather", name: "Bathing bird", latin: "Turdus / Passer",
+    desc: "the only thing here that throws anything", sky: "day",
+    modes: ["dip", "shake"], where: [{ h: "meadow", w: 1 }, { h: "forest", w: 1 },
+      { h: "city", w: 1 }],
+    when: { dawn: 0.5, day: 0.8, dusk: 0.4, night: 0 },
+    appears: "Only where the rain has left standing water to stand in.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.8;
+      groundBand(c, W, H, P, gy);
+      // the puddle it is standing in
+      c.fillStyle = `rgba(${scene.tok.foamRGB}, 0.16)`;
+      c.beginPath(); c.ellipse(W*0.5, gy + 4, 52, 11, 0, 0, Math.PI*2); c.fill();
+      c.save();
+      c.translate(W*0.5, gy + 2); c.scale(3.2, 3.2);
+      scene.paintBather(c, 1, mode, tm*(mode === "shake" ? 26 : 7),
+        mode === "shake" ? 1 : Math.max(0, Math.sin(tm*7.5)),
+        P.col, `rgba(${scene.tok.foamRGB}, 1)`);
+      c.restore();
+    } },
+  { id: "lizard", name: "Common Lizard", latin: "Zootoca vivipara",
+    desc: "comes out for the light, not the hour", sky: "day",
+    modes: ["bask", "pushup", "dart"], where: [{ h: "meadow", w: 1 },
+      { h: "beach", w: 1 }],
+    when: { dawn: 0.1, day: 1, dusk: 0.2, night: 0 },
+    appears: "Only when the sun is actually on the ground — an overcast noon gets none.",
+    draw(c, W, H, tm, mode, P) {
+      const gy = H*0.82;
+      groundBand(c, W, H, P, gy);
+      c.save();
+      c.translate(W*0.5 + (mode === "dart" ? Math.sin(tm*2)*30 : 0), gy);
+      c.scale(4, 4);
+      scene.paintLizard(c, 1, mode === "dart", tm*30,
+        mode === "pushup" ? Math.max(0, Math.sin(tm*11)) : 0, P.col);
+      c.restore();
     } }
 ];
 for (const cr of CRITTERS) {

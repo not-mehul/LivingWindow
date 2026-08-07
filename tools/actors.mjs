@@ -13,6 +13,7 @@
    entry point the audio engine uses, and then stepped long enough to enter,
    settle, sing, fidget, forage and leave. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 import { writeFileSync } from 'fs';
 
 const URL = (process.env.BENCH_URL || 'http://127.0.0.1:8123/') + '?perf=1';
@@ -25,7 +26,7 @@ const URL = (process.env.BENCH_URL || 'http://127.0.0.1:8123/') + '?perf=1';
 const LOG = process.argv[2] || null;
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader']
+  ...chromiumPath(), args: ['--use-gl=swiftshader']
 });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
 // Seeded, because an actor's build — its scale, its plumpness, which way it

@@ -23,6 +23,7 @@
    figure is a median over dozens of lines rather than one, because a single
    column that happens to pass behind a cloud will say whatever it likes. */
 import { chromium } from 'playwright';
+import { chromiumPath } from './lib/browser.mjs';
 
 const URL = (process.env.BENCH_URL || 'http://127.0.0.1:8123/') + '?perf=1';
 const PLACES = ['meadow', 'forest', 'beach', 'wetland', 'city'];
@@ -171,7 +172,7 @@ async function measure(browser, nogl) {
 }
 
 const browser = await chromium.launch({
-  executablePath: '/opt/pw-browsers/chromium', args: ['--use-gl=swiftshader']
+  ...chromiumPath(), args: ['--use-gl=swiftshader']
 });
 const gl = await measure(browser, false);
 const c2d = await measure(browser, true);
