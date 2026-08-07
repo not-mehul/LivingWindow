@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=28";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=28";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=28";
+} from "./util.js?v=29";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=29";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=29";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -504,17 +504,17 @@ class Scene {
         const tp = tips[Math.floor(rng()*rng()*tips.length)];   // biased to the crown
         // the field oak: the biggest limbs in the meadow
         this.perches.push({ x: tp.x, y: tp.y, depth: 3 + rng()*2.5, type: "branch",
-          hostS: 0.10 + rng()*0.04 });
+          hostW: 1.35 + rng()*0.35 });
       }
       // the hedge top and a shrub or two also serve as song posts
       for (const p of this.hedge.posts) {
         // a hedge top is a springy twig, not a bough
         this.perches.push({ x: p.x, y: p.y, depth: 7 + rng()*3, type: "branch",
-          hostS: 0.030 + rng()*0.016 });
+          hostW: 0.55 + rng()*0.25 });
       }
       for (const bu of this.shrubs.slice(0, 1 + Math.floor(rng()*2))) {
         this.perches.push({ x: bu.x, y: bu.y - bu.r*1.5, depth: 7 + rng()*3,
-          type: "ground", hostS: bu.r*2.2 });
+          type: "ground", hostW: 0.8 + rng()*0.3 });
       }
       /* Ground perches are placed by depth now, and their `depth` — which is
          what the audio pans and filters by — is read off the same z, so a
@@ -768,14 +768,13 @@ class Scene {
 
   /* Give every perch the two things its footing needs: a seed, so its branch
      is its own and stays its own for the session, and the size of whatever it
-     grows out of, so the branch is proportional to the tree rather than to
-     the bird. `hostS` is a fraction of frame height; where a place has not
-     said, a sensible one is taken from the kind of perch it is. */
+     grows out of. `hostW` is a *weight* rather than a size — the reach of a
+     branch comes from the bird standing on it, and this is what makes an oak
+     bough heavy and a hedge top a wisp. */
   dressPerches(rng) {
-    const DEF = { branch: 0.075, reed: 0.030, ground: 0.045, post: 0.05, roof: 0.06 };
     for (const p of (this.perches || [])) {
       if (p.bseed === undefined) p.bseed = rng();
-      if (p.hostS === undefined) p.hostS = DEF[p.type] || 0.05;
+      if (p.hostW === undefined) p.hostW = 1;
     }
   }
 
@@ -4057,11 +4056,24 @@ class Scene {
     c.lineCap = "round";
     if (type === "branch") {
       const p = perch || {};
-      /* The limb's own thickness, from the thing it grows out of. A hedge top
-         is a thin springy twig; a bough on the field oak is an arm. */
-      const host = (p.hostS !== undefined ? p.hostS : 0.055)
-        * this.H * (this.plane ? this.planeScale(this.perchZ(p.depth)) : 1);
-      const w = Math.max(1.2, host*0.085);
+      /* How much branch, and how heavy.
+
+         The first attempt at this took the size entirely from the host — a
+         fraction of frame height for the tree — and so lost the bird
+         completely: the field oak's limb came out ninety to two hundred and
+         forty pixels under a bird drawn twenty-two tall, four to eleven times
+         the animal standing on it, while the hedge's twig was barely wider
+         than the sparrow. Neither was proportional to anything a viewer can
+         see.
+
+         A perching bird sits on as much twig as it needs, so the *reach* is
+         the bird's own size — which is now plane-correct, so the branch
+         inherits the perspective for free. What the host gives is character:
+         `hostW` is a relative weight, not a size, and it makes a bough on the
+         oak heavy and a hedge top a springy wisp. */
+      const hostW = p.hostW !== undefined ? p.hostW : 1;
+      const host = s;
+      const w = Math.max(1.0, s*(0.10 + 0.05*hostW)*hostW);
       /* Six numbers off the perch's seed, so this branch is this branch every
          frame and no two are alike: which way it runs, how far each way, how
          much it droops, and whether it forks. */
@@ -4069,10 +4081,13 @@ class Scene {
       const fr = (k) => { const v = Math.sin((sd + 1)*(k*12.9898 + 4.1414))*43758.5453;
         return v - Math.floor(v); };
       const dir = fr(1) < 0.5 ? -1 : 1;
-      const back = host*(0.9 + fr(2)*1.5);      // behind the feet
-      const fore = host*(0.7 + fr(3)*1.9);      // and on past them
-      const droop = host*(0.05 + fr(4)*0.30)*dir;
-      const lift = host*(0.04 + fr(5)*0.16);
+      /* Far enough either side that the bird is standing on a branch rather
+         than balanced on a stub: a perched bird is about three and a half of
+         these units wide, so the limb has to beat that. */
+      const back = host*(1.7 + fr(2)*1.2);      // behind the feet
+      const fore = host*(1.6 + fr(3)*1.6);      // and on past them
+      const droop = host*(0.05 + fr(4)*0.26)*dir;
+      const lift = host*(0.04 + fr(5)*0.14);
       c.strokeStyle = css(mix(this.tok.inkDeep, bot, 0.06));
       c.lineWidth = w;
       c.beginPath();
@@ -4082,7 +4097,7 @@ class Scene {
       c.stroke();
       // a side twig on about half of them, thinner and going its own way
       if (fr(6) < 0.55) {
-        c.lineWidth = Math.max(0.9, w*0.5);
+        c.lineWidth = Math.max(0.8, w*0.5);
         const at = 0.25 + fr(7)*0.5;
         const bx = x + fore*dir*at, by = y - lift*1.4*at + droop*0.4*at;
         c.beginPath();
