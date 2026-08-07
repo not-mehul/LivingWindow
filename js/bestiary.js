@@ -6,9 +6,9 @@
    demand, each voice on a button, and field notes on when
    (hour weights) and where (habitats) it appears.
    ============================================================ */
-import { Scene } from "./scene.js?v=31";
-import { SPECIES, PSTYLE, ANIM, gaitPose, gaitAt, CRITTER_VOICES, speciesIcon } from "./species.js?v=31";
-import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=31";
+import { Scene } from "./scene.js?v=32";
+import { SPECIES, PSTYLE, ANIM, gaitPose, gaitAt, CRITTER_VOICES, speciesIcon } from "./species.js?v=32";
+import { mulberry32, parseColor, css, mix, themeVar, REDUCED } from "./util.js?v=32";
 
 /* The gaits are written around a stride of 1 and the cards keep their phases in
    radians, as the scene does; this is the one conversion between the two. */
