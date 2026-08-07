@@ -55,6 +55,12 @@
      a photograph — but far enough apart in hue to tell a leaf from a bank
      from a stone. */
   --scene-leaf:       #27301b;   /* foliage: green, and the only green here */
+  /* The city after dark is the one place in this piece lit by something other
+     than the sky, and what lights it is advertising. Three signs' worth. */
+  --scene-neon-a:     #ff3d7f;   /* magenta */
+  --scene-neon-b:     #35e8f0;   /* cyan */
+  --scene-neon-c:     #ffb03a;   /* sodium amber */
+  --scene-glasslit:   #9fd8e6;   /* a window with someone still in it */
   --scene-earth:      #3a2c1c;   /* bank, trunk, ploughed ground: warm */
   --scene-stone:      #2c2b30;   /* rock, brick, shingle: cool and slightly violet */
   --scene-sun:        #f2c98c;
@@ -120,6 +126,10 @@
   --scene-ink:        #2a2218;
   --scene-ink-deep:   #16110c;
   --scene-leaf:       #303c23;
+  --scene-neon-a:     #ff5c93;
+  --scene-neon-b:     #57f0f7;
+  --scene-neon-c:     #ffc05e;
+  --scene-glasslit:   #b4e4ef;
   --scene-earth:      #453422;
   --scene-stone:      #343339;
   --scene-sun:        #eec482;

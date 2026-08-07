@@ -1065,6 +1065,65 @@ quadruped's quadratic is converted to its exact cubic equivalent (control at
 P + ⅔(Q − P)) and the upright pair written directly, so the bound is
 bit-for-bit what it was and only the rise is new.
 
+### The city, from a roof in it
+
+The city used to be an elevation: a row of buildings on a street, seen flat-on
+from somewhere unspecified, with the bottom twentieth of the frame given over
+to a pavement nothing could use. There was no vantage in it — no reason for
+the viewer to be where they were, and nowhere for anything to be.
+
+Now the frame *is* a rooftop. The floor is the roof you are standing on, it
+recedes to a parapet you could lean on, and the rest of the city stands around
+you: mostly taller than where you are, some of it lower. That one decision
+settles everything else. The cat has a floor to cross. Pigeons have somewhere
+to land. Birds perch on a parapet at your own eye height instead of on a
+roofline a street away. And the view has a reason: it is the place you climb
+to at the end of a long day.
+
+The construction is just the geometry of standing somewhere:
+
+```
+CITY_EYE      0.505   your own eye level — anything at your height is on it
+CITY_PARAPET  0.635   the wall round your roof: close, and so well below it
+```
+
+Buildings taller than you rise above the eye line. Buildings shorter than you
+have their tops *below* it and are seen from above — which is what gives the
+city a floor as well as walls. Two thirds are tall, because that is what makes
+a place feel enclosed rather than panoramic. The near roof is a plane like
+every other ground in this piece, so everything that walks already knows how
+to stand on it.
+
+What is up here is what makes it a place rather than a surface: a water tank
+on legs, a stair hut with the stairwell light behind its door, vents across
+the floor with one right at your feet, an aerial mast, and a string of bulbs
+along the parapet that nothing in the city put there — somebody who comes up
+here did. Every one of them is also a perch.
+
+And it is lit by advertising, because that is what lights a city at night.
+Three neon hues, tubes on the nearer half of the towers only — a legible sign
+a mile off is a sign painted on the sky — some of them buzzing on a failing
+choke, each throwing a wash onto the air and the wall it is bolted to. Lit
+windows are dealt out of the same grid the dark ones use, so a light is *in* a
+window rather than beside one, cool where somebody is still working and warm
+where somebody is at home. The tallest towers carry an aircraft beacon.
+
+Three things had to be undone to get here. The two telegraph poles were street
+furniture rooted in the floor, and a street pole standing eight storeys up was
+the loudest thing wrong with the view; they are cables slung between the
+buildings now, passing over the parapet and away. The cat carried a block
+index because it walked the top edge of a building across the way — it is
+simply an animal on the ground now. And the roof needed a *surface*: felt in
+strips with the seams running away from you and grit on top, both on the
+plane, because without them the floor was forty per cent of the frame holding
+nothing and the eye had no way to read how far off the parapet was.
+
+One note on looking at any of this. The sky is painted on a *second* canvas
+behind the scene one, so a probe that grabs `scene.ctx.canvas` gets a picture
+with no sky in it — which is what every render in this repo's development did
+for a long while, and why several of them look oddly pale at the top.
+Screenshot the stage element instead.
+
 ### Three materials instead of one ink
 
 Every solid thing in the land was `mix(ink, skyBottom, k)` — one dark warm
