@@ -1065,6 +1065,49 @@ quadruped's quadratic is converted to its exact cubic equivalent (control at
 P + ⅔(Q − P)) and the upright pair written directly, so the bound is
 bit-for-bit what it was and only the rise is new.
 
+### Three materials instead of one ink
+
+Every solid thing in the land was `mix(ink, skyBottom, k)` — one dark warm
+brown, mixed with the sky at whatever ratio the distance called for. That is a
+single hue for the entire world: grass standing on ground was the same colour
+as the ground, a tree was the same colour as the hill behind it, and the whole
+picture collapsed into a brown fog with shapes in it.
+
+A landscape reads because its materials are different substances, so there are
+three now, kept close in value — this is still an etching — but far enough
+apart in hue to tell one from another:
+
+```
+--scene-leaf    #27301b   foliage: green, and the only green here
+--scene-earth   #3a2c1c   bank, trunk, ploughed ground: warm
+--scene-stone   #2c2b30   rock, brick, shingle: cool, slightly violet
+```
+
+The ground plane is earth washing to the sky at distance, its tonal patches
+are leaf, the grass and undergrowth are leaf, and the crowns are leaf. What
+distance does is unchanged — the far end still washes toward the sky, because
+that is what air does — but the *hue* of the thing being washed now differs
+from the hue of what stands on it, and the frame acquires depth it could not
+have had before.
+
+One consequence had to be paid for. Foliage that is no longer near-black does
+not recede on its own: at the old wash of a tenth, distant crowns came out
+pale, saturated and pasted onto the haze. A far tree is very nearly sky, so
+the wash runs to nearly half at the back of the field.
+
+### Bushier
+
+`smallTree` was three circles — a big one with a smaller one either side —
+which is a lollipop with two ears, and every tree in every place had the same
+three. A crown is many masses of leaf at many sizes with a broken edge. Nine
+lobes now, placed on a seed taken from the tree's own position so each tree
+keeps its shape all session and no two are alike.
+
+They go into *one* path and one fill. An `arc` following a previous subpath
+draws a line to it, so each lobe opens with a `moveTo` — and a crown of nine
+masses then costs exactly what a crown of one did. Measured before and after,
+the ops per frame did not move.
+
 ### Beds that are two sounds rather than one
 
 A bed can be perfectly granular, perfectly weathered, and still contribute

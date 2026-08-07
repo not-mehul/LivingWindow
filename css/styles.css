@@ -48,6 +48,15 @@
   --scene-sky-night-top:#17130e;  --scene-sky-night-bot:#2b2318;
   --scene-ink:        #241d15;
   --scene-ink-deep:   #0f0c09;
+  /* Materials. Everything in the land used to be one ink mixed with the sky
+     at different ratios, so the whole landscape sat on a single hue and read
+     as a brown fog with shapes in it. These are the three things a landscape
+     is actually made of, kept close in value — this is still an etching, not
+     a photograph — but far enough apart in hue to tell a leaf from a bank
+     from a stone. */
+  --scene-leaf:       #27301b;   /* foliage: green, and the only green here */
+  --scene-earth:      #3a2c1c;   /* bank, trunk, ploughed ground: warm */
+  --scene-stone:      #2c2b30;   /* rock, brick, shingle: cool and slightly violet */
   --scene-sun:        #f2c98c;
   --scene-moon:       #ece4d2;
   --scene-sea:        #46524a;
@@ -110,6 +119,9 @@
   --scene-sky-night-top:#1c1712;  --scene-sky-night-bot:#33291c;
   --scene-ink:        #2a2218;
   --scene-ink-deep:   #16110c;
+  --scene-leaf:       #303c23;
+  --scene-earth:      #453422;
+  --scene-stone:      #343339;
   --scene-sun:        #eec482;
   --scene-moon:       #efe8d8;
   --scene-sea:        #4d5950;

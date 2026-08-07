@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=29";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=29";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=29";
+} from "./util.js?v=30";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=30";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=30";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -113,6 +113,9 @@ class Scene {
       },
       ink: parseColor(themeVar("--scene-ink")),
       inkDeep: parseColor(themeVar("--scene-ink-deep")),
+      leaf: parseColor(themeVar("--scene-leaf")),
+      earth: parseColor(themeVar("--scene-earth")),
+      stone: parseColor(themeVar("--scene-stone")),
       sun: parseColor(themeVar("--scene-sun")),
       moon: parseColor(themeVar("--scene-moon")),
       sea: parseColor(themeVar("--scene-sea")),
@@ -1643,14 +1646,44 @@ class Scene {
   }
 
   /* A small distant tree — trunk plus a clump of canopy. */
+  /* A tree at a distance.
+
+     This was three circles — a big one with a smaller one either side — which
+     is a lollipop with two ears, and every tree in every place had the same
+     three. A crown is many masses of leaf at many sizes, lit and shaded in
+     clumps, with a broken edge; three circles cannot suggest that however
+     they are arranged.
+
+     Nine lobes now, placed round the crown on a seed taken from the tree's
+     own position so each tree keeps its own shape all session and no two are
+     alike. They go into *one* path and one fill — an `arc` after a previous
+     subpath would draw a line to it, so each is opened with a `moveTo` — so a
+     crown of nine masses costs exactly what a crown of one did. */
   smallTree(c, x, yBase, h, r, W, H, color) {
     const px = x*W, py = yBase*H, rr = r*Math.min(W, H), hh = h*H;
     c.fillStyle = color; c.strokeStyle = color; c.lineCap = "round";
     c.lineWidth = Math.max(1, rr*0.34);
     c.beginPath(); c.moveTo(px, py); c.lineTo(px, py - hh*0.72); c.stroke();
-    c.beginPath(); c.arc(px, py - hh, rr, 0, Math.PI*2); c.fill();
-    c.beginPath(); c.arc(px - rr*0.72, py - hh*0.82, rr*0.68, 0, Math.PI*2); c.fill();
-    c.beginPath(); c.arc(px + rr*0.72, py - hh*0.86, rr*0.68, 0, Math.PI*2); c.fill();
+    // a stable seed from where the tree stands
+    const hs = (k) => { const v = Math.sin((x*127.1 + h*311.7 + k*74.7))*43758.5453;
+      return v - Math.floor(v); };
+    const cy = py - hh;
+    c.beginPath();
+    c.moveTo(px + rr, cy); c.arc(px, cy, rr, 0, Math.PI*2);
+    const N = 8;
+    for (let i = 0; i < N; i++) {
+      /* Round the crown, but weighted to the upper half and pulled in a
+         little at the bottom, because that is where a canopy is full and
+         where it thins into the branches. */
+      const a2 = Math.PI*(1.06 + (i + 0.5)/N*0.88) + (hs(i) - 0.5)*0.42;
+      const rad = rr*(0.80 + hs(i + 40)*0.34);
+      const lr = rr*(0.42 + hs(i + 80)*0.30);
+      const lx = px + Math.cos(a2)*rad;
+      const ly = cy + Math.sin(a2)*rad*0.82;
+      c.moveTo(lx + lr, ly);
+      c.arc(lx, ly, lr, 0, Math.PI*2);
+    }
+    c.fill();
   }
 
   /* A low shrub — a rough dome with a broken, twiggy edge. Drawn as one
@@ -1663,12 +1696,17 @@ class Scene {
     const n = 14;
     for (let i = 0; i <= n; i++) {
       const u = i/n, ang = Math.PI*(1 + u);                 // over the top, left to right
-      const rag = 1 + 0.22*Math.sin(u*11 + seed*7) + 0.13*Math.sin(u*23 + seed*3);
-      const bx = px + Math.cos(ang)*rr*1.15;
-      const byy = py + Math.sin(ang)*rr*0.9*rag;
+      /* Three scales of raggedness rather than two: the big lobes of the
+         bush, the sprays inside them, and the twigs breaking the outline.
+         Two frequencies gave a dome with a wobble; a bush is lumpy at every
+         size you look at it. */
+      const rag = 1 + 0.26*Math.sin(u*7 + seed*7) + 0.17*Math.sin(u*17 + seed*3)
+        + 0.09*Math.sin(u*37 + seed*11);
+      const bx = px + Math.cos(ang)*rr*1.22*(1 + 0.07*Math.sin(u*13 + seed*5));
+      const byy = py + Math.sin(ang)*rr*1.02*rag;
       if (i === 0) c.moveTo(bx, byy); else c.lineTo(bx, byy);
     }
-    c.lineTo(px + rr*1.15, py);
+    c.lineTo(px + rr*1.22, py);
     c.closePath(); c.fill();
   }
 
@@ -2542,7 +2580,7 @@ class Scene {
       while (ti < treesByZ.length && treesByZ[ti].z >= b.z - 0.001) {
         const t = treesByZ[ti++];
         this.smallTree(c, t.x, t.y, t.h, t.r, W, H,
-          css(mix(this.tok.inkDeep, bot, 0.10 + t.z*0.20)));
+          css(mix(this.tok.leaf, bot, 0.14 + t.z*0.46)));
       }
       /* The haze goes down before the herd, not over it. Drawn behind it the
          cattle came out as three pale smudges — the one thing in the middle
@@ -2566,7 +2604,7 @@ class Scene {
     while (ti < treesByZ.length) {
       const t = treesByZ[ti++];
       this.smallTree(c, t.x, t.y, t.h, t.r, W, H,
-        css(mix(this.tok.inkDeep, bot, 0.10 + t.z*0.20)));
+        css(mix(this.tok.leaf, bot, 0.14 + t.z*0.46)));
     }
 
     const shrubCol = css(mix(this.tok.inkDeep, bot, 0.15));
@@ -2624,17 +2662,24 @@ class Scene {
     const y0 = Math.round(hy) - 1, h = Math.max(1, H - y0);
     const q = (v) => Math.round(v/6);
     const key = `${W}|${H}|${h}|${q(bot[0])},${q(bot[1])},${q(bot[2])}|`
-      + `${q(this.tok.ink[0])},${q(this.tok.inkDeep[0])}`;
+      + `${q(this.tok.earth[0])},${q(this.tok.leaf[1])}`;
     if (this._planeKey === key && this._planeCv) return this._planeCv;
     const cv = this._planeCv && this._planeCv.width === W && this._planeCv.height === h
       ? this._planeCv : Object.assign(document.createElement("canvas"), { width: W, height: h });
     const g2 = cv.getContext("2d");
     g2.clearRect(0, 0, W, h);
     const g = g2.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, css(mix(this.tok.ink, bot, 0.50)));
-    g.addColorStop(0.16, css(mix(this.tok.ink, bot, 0.34)));
-    g.addColorStop(0.46, css(mix(this.tok.inkDeep, bot, 0.19)));
-    g.addColorStop(1, css(mix(this.tok.inkDeep, bot, 0.06)));
+    /* The field is earth, and earth is warm. It used to be the same ink that
+       every leaf and every animal was drawn in, so grass standing on ground
+       was one colour on itself and the whole picture collapsed onto a single
+       hue. The far end still washes toward the sky, because that is what
+       distance does; what differs now is the *hue* of the thing being washed
+       and the hue of what stands on it. */
+    const far = mix(this.tok.earth, this.tok.stone, 0.30);
+    g.addColorStop(0, css(mix(far, bot, 0.52)));
+    g.addColorStop(0.16, css(mix(far, bot, 0.36)));
+    g.addColorStop(0.46, css(mix(this.tok.earth, bot, 0.20)));
+    g.addColorStop(1, css(mix(this.tok.earth, bot, 0.05)));
     g2.fillStyle = g;
     g2.fillRect(0, 0, W, h);
     /* The field's own patchwork goes on here rather than in the frame: it is
@@ -2643,7 +2688,7 @@ class Scene {
        the kind of overdraw that costs a millisecond and is invisible. */
     for (const pa of (this.patches || [])) {
       g2.globalAlpha = 0.055*pa.k*(0.4 + (1 - pa.z)*0.6);
-      g2.fillStyle = pa.tone > 0 ? css(this.tok.ink) : css(bot);
+      g2.fillStyle = pa.tone > 0 ? css(this.tok.leaf) : css(bot);
       g2.beginPath();
       g2.ellipse(pa.x*W, pa.y*H - y0, pa.w*W, Math.max(1, pa.h*H), 0, 0, Math.PI*2);
       g2.fill();
@@ -2672,7 +2717,7 @@ class Scene {
                    [0.28, -0.01, 0, 1.6]];
     c.lineCap = "round";
     for (const [zHi, zLo, pale, pen] of bands) {
-      c.strokeStyle = css(mix(this.tok.inkDeep, bot, tint + pale));
+      c.strokeStyle = css(mix(this.tok.leaf, bot, tint + pale));
       c.lineWidth = pen;
       let any = false;
       c.beginPath();
@@ -2704,17 +2749,24 @@ class Scene {
     const y0 = Math.round(hy) - 1, h = Math.max(1, H - y0);
     const q = (v) => Math.round(v/6);
     const key = `${W}|${H}|${h}|${q(bot[0])},${q(bot[1])},${q(bot[2])}|`
-      + `${q(this.tok.ink[0])},${q(this.tok.inkDeep[0])}`;
+      + `${q(this.tok.earth[0])},${q(this.tok.leaf[1])}`;
     if (this._planeKey === key && this._planeCv) return this._planeCv;
     const cv = this._planeCv && this._planeCv.width === W && this._planeCv.height === h
       ? this._planeCv : Object.assign(document.createElement("canvas"), { width: W, height: h });
     const g2 = cv.getContext("2d");
     g2.clearRect(0, 0, W, h);
     const g = g2.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, css(mix(this.tok.ink, bot, 0.50)));
-    g.addColorStop(0.16, css(mix(this.tok.ink, bot, 0.34)));
-    g.addColorStop(0.46, css(mix(this.tok.inkDeep, bot, 0.19)));
-    g.addColorStop(1, css(mix(this.tok.inkDeep, bot, 0.06)));
+    /* The field is earth, and earth is warm. It used to be the same ink that
+       every leaf and every animal was drawn in, so grass standing on ground
+       was one colour on itself and the whole picture collapsed onto a single
+       hue. The far end still washes toward the sky, because that is what
+       distance does; what differs now is the *hue* of the thing being washed
+       and the hue of what stands on it. */
+    const far = mix(this.tok.earth, this.tok.stone, 0.30);
+    g.addColorStop(0, css(mix(far, bot, 0.52)));
+    g.addColorStop(0.16, css(mix(far, bot, 0.36)));
+    g.addColorStop(0.46, css(mix(this.tok.earth, bot, 0.20)));
+    g.addColorStop(1, css(mix(this.tok.earth, bot, 0.05)));
     g2.fillStyle = g;
     g2.fillRect(0, 0, W, h);
     /* The field's own patchwork goes on here rather than in the frame: it is
@@ -2723,7 +2775,7 @@ class Scene {
        the kind of overdraw that costs a millisecond and is invisible. */
     for (const pa of (this.patches || [])) {
       g2.globalAlpha = 0.055*pa.k*(0.4 + (1 - pa.z)*0.6);
-      g2.fillStyle = pa.tone > 0 ? css(this.tok.ink) : css(bot);
+      g2.fillStyle = pa.tone > 0 ? css(this.tok.leaf) : css(bot);
       g2.beginPath();
       g2.ellipse(pa.x*W, pa.y*H - y0, pa.w*W, Math.max(1, pa.h*H), 0, 0, Math.PI*2);
       g2.fill();

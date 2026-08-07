@@ -84,7 +84,7 @@ await page.waitForTimeout(1200);
 
 /* ---- the world ---------------------------------------------------------- */
 const real = await page.evaluate(async ([list, beds]) => {
-  const D = await import('/tools/lib/dsp.js?v=29');
+  const D = await import('/tools/lib/dsp.js?v=30');
   // decoded on the live context: an OfflineAudioContext will refuse this
   const ac = window.__lw.audio.ac;
   const out = {};
@@ -106,8 +106,8 @@ const real = await page.evaluate(async ([list, beds]) => {
    recorded off their own live taps into a buffer and then measured by the
    very same function that measured the files. */
 const mine = await page.evaluate(async () => {
-  const D = await import('/tools/lib/dsp.js?v=29');
-  const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=29');
+  const D = await import('/tools/lib/dsp.js?v=30');
+  const { SPECIES, CRITTER_VOICES } = await import('/js/species.js?v=30');
   const { audio, scene, state } = window.__lw;
   const ALL = SPECIES.concat(Object.values(CRITTER_VOICES));
   const sleep = ms => new Promise(r => setTimeout(r, ms));
