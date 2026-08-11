@@ -1098,18 +1098,37 @@ first now and everything else is arranged around it.
 
 ```
 CITY_EYE      0.478   your own eye level — anything at your height is on it
-CITY_PARAPET  0.860   where the near edge comes *closest*: the street's mouth
+CITY_PARAPET  0.800   where the deck stops and the parapet wall starts
+CITY_WALL_RUNS        three runs of wall, at three heights
 ```
 
-`CITY_PARAPET` is no longer a level line across the picture. It is the single
-nearest point of the near edge, and the edge climbs away from it up both sides
-of the street — a shallow V, thirty-eight hundredths of the frame at the left
-corner and thirty-four at the right, with the view down the middle of it. That
-is the whole composition, and it is the difference between standing behind a
-wall and standing at the *corner* of a roof. The floor is fourteen hundredths
-deep where the street opens and half the window deep at the two corners; the
-left arm carries a handrail and the right is a solid ledge you could put a cup
-on, so the two sides are not each other's mirror.
+**The near edge was a shape that could not be built.** For a long time
+`CITY_PARAPET` was the single nearest point of the near edge, and the edge
+climbed away from it up both sides of the street — a shallow V with the view
+down the middle. It was the strongest thing in the composition and it was
+impossible.
+
+A straight edge in the world does one of two things on a picture. If it runs
+away from you it converges on the vanishing point; if it lies across you it
+stays level. Those two arms did neither: they *diverged* from the point the
+street ran to, which is a thing no wall can do at any angle from any viewpoint.
+That is why the near ground never read as a roof however carefully it was
+detailed — the eye had already worked out that the floor it was standing on was
+not a shape. It also made the roof enormous. The arms reached eye level at the
+corners of the frame, and a floor whose far edge is at the horizon is a floor
+several hundred yards deep.
+
+The wall you are behind is the front of the building, and the front of the
+building lies across you, so it is level. It steps twice — the two ends of the
+building stand higher than the middle, which is what parapets actually do and
+what stops a level wall reading as a bar ruled across the picture. The stretch
+you can see the city over is the low run in the middle, which is also where the
+handrail is, because a rail goes where a parapet is too low to lean on safely
+and nowhere else.
+
+What is left is a roof about a fifth of the frame deep, which is what a roof
+looks like from a roof, and a great deal more city than the wedges used to
+leave room for.
 
 The street itself is one perspective, and it is the same one every plane in
 this piece uses: how far down it a thing is gives its height on screen, its
@@ -1141,8 +1160,8 @@ because every real skyline has the building everybody names and without it a
 skyline is a bar chart.
 
 **What is fixed and what is drawn afresh.** The street's place in the frame,
-how wide its mouth is, where it runs away to, the footbridge across it and how
-far the ledge climbs on either side are all constants. A composition that is
+how wide its mouth is, where it runs away to and the footbridge across it are
+all constants — as, now, is every building in the view (see above). A composition that is
 different every time is not a composition. What the seed decides is what
 *stands* in it: how many buildings, how tall, how wide, how they are shaded,
 how many windows are lit and when they change, how many hoardings and banners
@@ -1205,16 +1224,39 @@ and stay on until well after it is back, so at dusk the signs are at full
 strength against a sky that still has colour in it and at dawn they are still
 burning while the horizon goes gold.
 
-**What is up here with you** is what makes it a place rather than a surface:
-a water tank on legs, a stair hut with the stairwell light behind its door,
-vents down both arms of the deck with one right at your feet, an aerial mast,
-and a string of bulbs following the ledge that nothing in the city put there —
-somebody who comes up here did. All of it is out on the arms, where the deck is
-deep; the middle of it is the strip between you and the mouth of the street,
-and a water tank standing in that strip stands in the one place the whole
-picture is looking. Every one of them is also a perch, and a spot on the ledge
-reads its distance back off the plane, so a pigeon out at the corner of the
-window is smaller than one at the street's mouth.
+**What is up here with you.** A roof reads as real when its plant is a *system*
+and not a scatter of boxes, so nothing on this one is standing anywhere a
+builder would not have put it. There is one way up and it is the stair
+bulkhead, which is the only object on the roof with a door in it and therefore
+the only one that gives the deck a human scale to measure against. The two
+condensers stand on housekeeping pads, because nothing heavy is ever allowed to
+sit on a roof covering, and a duct on sleepers runs between them. The vent
+stacks come up in a group, because the risers under them are in one wall, and
+each has the flashing collar round its foot that a pipe coming out of a flat
+surface always has. There is a water tank on a braced frame with a ladder up
+it, a dish, a hatch standing open the way every roof hatch is left standing
+open, and a string of bulbs along the wall that nothing in the city put there —
+somebody who comes up here did.
+
+The covering itself is the other half of it. A flat roof is not a slab you
+could park on: it is bitumen sheet laid in metre rolls running down the fall,
+lapped at every course, dressed up the parapet at its edges and held down with
+gravel ballast. All four of those leave a mark, and between them they are what
+tells the eye it is a roof rather than a terrace or a car park. Then the water:
+it is laid to a fall toward a drain, and where the fall is not quite true it
+stands and leaves a ring. Ponding is the single most convincing thing on any
+real roof and it costs three ellipses.
+
+One thing is placed for the picture rather than for the building — a large duct
+close enough to be cut off by the bottom of the window. Without it the deck was
+a band of objects at much the same size, and a band of objects at the same size
+is a backdrop: the eye has nothing to measure the near end against and the floor
+collapses to a strip. One big near object does more for the depth of a roof
+than everything standing behind it put together, and it is what every
+photograph taken from a roof has in the corner of it.
+
+Every one of these is also a perch, and each reads its distance back off the
+plane, so a pigeon on the bulkhead is a different size from one on the wall.
 
 Three things had to be undone along the way. The two telegraph poles were
 street furniture rooted in the floor, and a street pole standing eight storeys
@@ -1228,15 +1270,10 @@ ground now. And a sign used to be painted after every wall in the frame, which
 put a distant building's banner flat on the face of the near slab standing in
 front of it. A sign belongs to a building; it is painted with it.
 
-The city is the most expensive place in the piece now — about 14 ms a frame at
-1920×1080 under a software rasterizer against the meadow's 12, for half the
-rasterization submissions it used to make. Most of what it costs is fill, and
-two of those bills were paid off rather than accepted: the atmosphere was a
-half-frame glow and a full-width screen-blended gradient over it, blending the
-best part of a million pixels a frame for two per cent of an alpha, and the
-buildings were painted a third of a window's height below the deck edge that
-covers them a moment later. `cityBlockFoot` finds how far down each one is
-actually visible, which is as far as it now goes.
+What the city costs, and what was done about it, is its own section above —
+short version: it was the most expensive place in the piece by a factor of
+four, the cost was overdraw rather than submissions, and the composition being
+written down is what made it possible to stop paying for it twice a frame.
 
 One note on looking at any of this. The sky is painted on a *second* canvas
 behind the scene one, so a probe that grabs `scene.ctx.canvas` gets a picture

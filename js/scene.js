@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=33";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=33";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=33";
+} from "./util.js?v=34";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=34";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=34";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -46,8 +46,20 @@ const FOOT = [0, 0];
    shallow in the middle. Which is what standing at the corner of a roof beside
    a street looks like, and it is the whole composition. */
 const CITY_EYE = 0.478;
-const CITY_PARAPET = 0.860;
+const CITY_PARAPET = 0.800;
 const CITY_GROUND = CITY_PARAPET;
+
+/* How high the parapet wall stands off the deck, and how high it stands where
+   the roof steps up. A parapet is a *wall*, not the line where the floor stops:
+   from the roof side you see its inner face, its coping, and the flashing where
+   the roof covering turns up it. Those three bands are between you and the
+   drop, and without them a roof reads as an infinity pool. */
+const CITY_WALL_RUNS = [
+  { x0: -0.05, x1: 0.152, h: 0.086 },
+  { x0: 0.152, x1: 0.734, h: 0.055 },
+  { x0: 0.734, x1: 1.05,  h: 0.094 }
+];
+const CITY_WALL = CITY_WALL_RUNS[1].h;   // the run most of the frame is behind
 
 /* Where the sky's second and third colours arrive, as fractions of the frame.
    The city puts its horizon band on its own eye line, so the warm strip at the
@@ -177,22 +189,47 @@ const CITY_LANDMARK = { x: 0.672, w: 0.038, h: 0.360 };
    can stand, which is why they are placed and not scattered: the tank sits
    out on the left arm where the deck is deep, the stair hut on the right, and
    there is a vent near enough to your feet to measure the rest against. */
-/* The deck is a plane, and on this plane `z` below about 0.4 is off the bottom
-   of the window — the near edge of the world sits at 1.07 and the frame stops
-   at 1. Anything placed nearer than that is drawn half out of the picture, so
-   the band worth standing something in is 0.45 to 0.95 and no wider.
+/* What is up here with you.
 
-   Sparse, and deliberately. A roof you are standing on is mostly empty — that
-   is what a roof *is* — and the clutter belongs across the street where you
-   look down on it. Four things and a mast is a place; a field of boxes is a
-   plant room. */
+   The deck plane runs from `z` about a seventh at your feet to 1 at the wall,
+   and that whole band is now on the screen — so this is placed across it and
+   not crammed into the near strip.
+
+   A roof reads as real when its plant is a *system* rather than a scatter of
+   boxes. There is one way up here and it is the bulkhead; the two condensers
+   sit on housekeeping pads and are joined by a duct on sleepers; the stacks
+   come up in a group because the risers below them are in one wall; the dish
+   points the way every dish in the city points. Nothing here is standing
+   somewhere a builder would not have put it, which is most of what tells you a
+   roof was drawn by somebody who has been on one.
+
+   `d` is how far a thing runs back into the picture, in the same plane units
+   as `z`; `w` and `h` are across and up, as fractions of the frame. */
 const CITY_ROOFKIT = [
-  { kind: "tank", x: 0.104, z: 0.870, r: 0.030 },
-  { kind: "hut",  x: 0.888, z: 0.790, w: 0.074, h: 0.062 },
-  { kind: "vent", x: 0.238, z: 0.560, w: 0.030, h: 0.024 },
-  { kind: "vent", x: 0.735, z: 0.610, w: 0.026, h: 0.021 },
-  { kind: "duct", x: 0.610, z: 0.760, w: 0.090, h: 0.026 },
-  { kind: "mast", x: 0.812, z: 0.905, h: 0.150 }
+  // the way you got up here, and the reason there is a door in the sky
+  { kind: "bulkhead", x: 0.862, z: 0.760, w: 0.088, d: 0.120, h: 0.072 },
+  // the tank, on its braced frame, with the ladder somebody has to climb
+  { kind: "tank",     x: 0.108, z: 0.700, r: 0.030 },
+  // two condensers on their pads, and the duct that joins them
+  { kind: "unit",     x: 0.318, z: 0.440, w: 0.078, d: 0.075, h: 0.034 },
+  { kind: "unit",     x: 0.646, z: 0.395, w: 0.068, d: 0.068, h: 0.030 },
+  { kind: "duct",     x: 0.482, z: 0.415, w: 0.250, d: 0.030, h: 0.017 },
+  // the stacks, in a group, because the risers under them are in one wall
+  { kind: "stack",    x: 0.196, z: 0.300, h: 0.034 },
+  { kind: "stack",    x: 0.222, z: 0.318, h: 0.026 },
+  { kind: "stack",    x: 0.716, z: 0.640, h: 0.028 },
+  // and the television
+  { kind: "dish",     x: 0.930, z: 0.330, r: 0.028 },
+  /* And one thing close enough to be cut by the bottom of the window.
+
+     Without it the deck was a band of objects all at much the same size, and a
+     band of objects all the same size is a *backdrop* — the eye has nothing to
+     measure the near end against and the floor collapses to a strip. One large
+     near object, half out of the frame, does more for the depth of this roof
+     than everything standing behind it put together, and it is what every
+     photograph taken from a roof has in the corner of it. */
+  { kind: "duct",     x: 0.135, z: 0.175, w: 0.300, d: 0.045, h: 0.030 },
+  { kind: "hatch",    x: 0.430, z: 0.200, w: 0.086, d: 0.055, h: 0.013 }
 ];
 
 /* Where the birds go.
@@ -208,18 +245,18 @@ const CITY_ROOFKIT = [
 
    Anything landing here lands where it was meant to, every session. */
 const CITY_PERCHES = [
-  { x: 0.070, on: "parapet", hostW: 0.9 },
-  { x: 0.183, on: "parapet", hostW: 0.9 },
-  { x: 0.286, on: "parapet", hostW: 1.0 },
-  { x: 0.560, on: "parapet", hostW: 1.0 },
-  { x: 0.690, on: "parapet", hostW: 0.9 },
-  { x: 0.842, on: "parapet", hostW: 0.9 },
-  { x: 0.952, on: "parapet", hostW: 0.8 },
-  { x: 0.104, on: "kit", kit: 0, hostW: 1.1 },
-  { x: 0.888, on: "kit", kit: 1, hostW: 1.1 },
-  { x: 0.238, on: "kit", kit: 2, hostW: 1.0 },
-  { x: 0.735, on: "kit", kit: 3, hostW: 1.0 },
-  { x: 0.812, on: "kit", kit: 5, type: "post" },
+  { x: 0.062, on: "parapet", hostW: 0.9 },
+  { x: 0.196, on: "parapet", hostW: 0.9 },
+  { x: 0.352, on: "parapet", hostW: 1.0 },
+  { x: 0.470, on: "parapet", hostW: 1.0 },
+  { x: 0.606, on: "parapet", hostW: 0.9 },
+  { x: 0.802, on: "parapet", hostW: 0.9 },
+  { x: 0.944, on: "parapet", hostW: 0.8 },
+  { x: 0.862, on: "kit", kit: 0, hostW: 1.1 },
+  { x: 0.108, on: "kit", kit: 1, hostW: 1.1 },
+  { x: 0.318, on: "kit", kit: 2, hostW: 1.0 },
+  { x: 0.646, on: "kit", kit: 3, hostW: 1.0 },
+  { x: 0.930, on: "kit", kit: 8, type: "post" },
   { x: 0.610, on: "block", block: "lipR", u: 0.34, type: "roof" },
   { x: 0.700, on: "block", block: "lipR", u: 0.77, type: "roof" },
   { x: 0.648, on: "block", block: 11, u: 0.42, type: "roof" }
@@ -1004,20 +1041,7 @@ class Scene {
         x: 0.420, hw: 0.116,
         vx: 0.398, vy: CITY_EYE + 0.020,
         d: 5.6,
-        /* How far the ledge climbs away on each side of the street. The left
-           is the raised walk with the handrail and goes higher; the right is
-           the solid ledge you are leaning on and stays nearer, so the two
-           sides of the window are not each other's mirror. */
-        liftL: 0.376,
-        liftR: 0.336
       };
-      /* Each arm of the parapet runs from the street's lip to the edge of the
-         frame and reaches its full height exactly there. Fixing the run
-         instead let it top out short of the edge, and the last stretch came
-         out flat — which read as a rounded hill with a ledge on top of it
-         rather than as a straight run of wall climbing away from you. */
-      canyon.riseL = Math.max(0.06, canyon.x - canyon.hw*1.05);
-      canyon.riseR = Math.max(0.06, 1 - canyon.x - canyon.hw*1.05);
       this.canyon = canyon;
 
       /* What is down there. Stalls under awnings along both kerbs, lamps on
@@ -1209,20 +1233,30 @@ class Scene {
       this.roofKit = CITY_ROOFKIT.map(k =>
         Object.assign({}, k, { ph: rng()*Math.PI*2 }));
 
-      // the roofing itself: felt laid in strips, with the seams showing
+      /* The covering: bitumen sheet, laid in rolls about a metre wide running
+         down the fall. Sixteen of them across the frame is roughly a roll a
+         metre, which is what the real thing measures. */
       this.roofSeams = [];
-      for (let i = 0; i < 9; i++) this.roofSeams.push(0.035 + i*0.112);
-      /* Grit, spread along the *depth* rather than evenly through 0..1. The
-         deck runs on past the end of the animals' plane and up both sides of
-         the street, so a uniform draw put every grain of it in the near strip
-         at the bottom of the window and left the two wedges bare. Log-spaced
-         is what perspective actually does to anything scattered evenly on a
-         floor: crowded at the far end, open at your feet. */
+      for (let i = 0; i < 17; i++) this.roofSeams.push(-0.02 + i*0.0635);
+      /* Ballast, over the whole of the deck plane. The deck now begins at
+         `z` a seventh and ends at the parapet, so this is the range that
+         matters and there is no longer anything beyond it to cover. */
       this.roofGrit = [];
-      for (let i = 0; i < 220; i++) {
-        this.roofGrit.push({ x: rng(), z: 0.10*Math.exp(rng()*5.2),
+      for (let i = 0; i < 260; i++) {
+        this.roofGrit.push({ x: rng(), z: 0.14 + rng()*0.88,
           k: 0.4 + rng()*0.6 });
       }
+      /* Where the water goes, and where it fails to. The drain sits at the low
+         point; the ponds are the places the fall is not quite true, which on a
+         roof of this age is most of it. Fixed, because a stain does not move
+         between one evening and the next — only how wet it is does. */
+      this.roofDrain = { x: 0.523, z: 0.305 };
+      this.roofPonds = [
+        { x: 0.523, z: 0.315, r: 0.085 },
+        { x: 0.235, z: 0.470, r: 0.062 },
+        { x: 0.760, z: 0.560, r: 0.055 },
+        { x: 0.400, z: 0.740, r: 0.048 }
+      ];
       /* A string of bulbs, and a handrail. The bulbs are the comfortable
          part — nothing in the city put them there, somebody who comes up here
          did. The rail runs along the left arm of the parapet only, where the
@@ -1233,7 +1267,12 @@ class Scene {
       for (let i = 0; i < 11; i++) {
         this.roofLights.push({ u: 0.02 + i*0.0295, ph: rng()*Math.PI*2 });
       }
-      this.roofRail = { x0: -0.02, x1: canyon.x - canyon.hw*1.1, posts: 7 };
+      /* A guardrail, and only along one run of the wall. The parapet is low
+         where the roof steps, and a low parapet is exactly where somebody
+         bolts a rail — so it stands on the stretch that needs it and stops
+         where the wall comes up to full height, which is what a real one
+         does. A rail all the way round would fence the view off. */
+      this.roofRail = { x0: 0.162, x1: 0.352, posts: 5 };
 
       /* ---- and where the birds go --------------------------------------
 
@@ -1251,11 +1290,7 @@ class Scene {
         } else if (P.on === "kit") {
           const k = this.roofKit[P.kit];
           if (!k) continue;
-          const sc = this.planeScale(k.z);
-          const rise = k.kind === "tank" ? k.r*1.9
-            : k.kind === "mast" ? k.h*1.9
-            : (k.h || 0.03)*1.8;
-          y = this.planeY(k.z) - rise*sc;
+          y = this.planeY(k.z) - this.kitRise(k)*this.planeScale(k.z);
           depth = 2 + k.z*12;
         } else {
           const b = typeof P.block === "string" ? byRole[P.block] : towers[P.block];
@@ -4184,7 +4219,16 @@ class Scene {
        lit rectangles into a place with weather in it. The street is the source
        — the glow gathers over the canyon and thins away from it. */
     if (lum > 0.12 && cn) {
-      c.save(); c.globalCompositeOperation = "screen";
+      c.save();
+      /* Above the wall and no lower. The glow is centred on the street's mouth
+         and reaches a sixth of the frame either way, which put a soft bright
+         pool on the deck at your feet — light from a street you cannot even
+         see over the parapet, landing on the floor behind it. What spills over
+         a parapet lands on the *wall*, and the wall is where this stops. */
+      c.beginPath();
+      c.rect(0, 0, W, this.cityParapetTop(cn.x)*H);
+      c.clip();
+      c.globalCompositeOperation = "screen";
       this.drawGlow(c, cy.lampRGB, cn.x*W, par - H*0.02,
         W*0.20, H*0.17, 0.16*lum);
       c.restore();
@@ -5189,23 +5233,29 @@ class Scene {
 
   /* ---- The roof you are standing on --------------------------------------
 
-     The wall round it is not a level line. The roof runs back beside the
-     street, so its edge climbs away from you on both sides of the canyon and
-     comes closest right where the street opens — a shallow V with the view
-     down the middle of it. That is the strongest thing in the composition this
-     view is drawn from, and it is what stops the near edge reading as a bar
-     ruled across the picture. */
+     The near edge used to be a shallow V: closest where the street opened and
+     climbing away to both corners of the frame. It was the strongest thing in
+     the composition and it could not be built.
+
+     A straight edge in the world does one of two things on a picture. If it
+     runs away from you it converges on the vanishing point; if it lies across
+     you it stays level. Those arms did neither — they *diverged* from the point
+     the street ran to, which is a thing no wall can do at any angle from any
+     viewpoint. That is why it never read as a parapet however carefully it was
+     drawn: the eye had already worked out it was impossible.
+
+     The wall you are behind is the front of the building, and the front of the
+     building lies across you. So it is level, and it steps once where the roof
+     changes height — which is what parapets actually do, and what stops a level
+     wall being a bar ruled across the picture. The rest of the work of breaking
+     that line is done by what stands on the roof, which is where it belongs.
+
+     `CITY_PARAPET` is now the line where the deck stops and the wall starts.
+     What this returns is the *top* of the wall — what a bird stands on, and
+     what the buildings beyond are hidden behind. */
   cityParapetTop(x) {
-    const cn = this.canyon;
-    if (!cn) return CITY_PARAPET;
-    const d = Math.abs(x - cn.x) - cn.hw*1.05;
-    if (d <= 0) return CITY_PARAPET;
-    const left = x < cn.x;
-    const k = Math.min(1, d/(left ? cn.riseL : cn.riseR));
-    /* Straight, with the corner at the street's lip taken off. A wall runs in
-       straight lines; only the join needs rounding. */
-    const e = k < 0.18 ? k*k/0.36 + k*0.5 : k;
-    return CITY_PARAPET - e*(left ? cn.liftL : cn.liftR);
+    for (const r of CITY_WALL_RUNS) if (x < r.x1) return CITY_PARAPET - r.h;
+    return CITY_PARAPET - CITY_WALL;
   }
 
   /* A box standing on the deck, drawn as a box.
@@ -5259,193 +5309,190 @@ class Scene {
   drawCityRoof(c, W, H, par, bot, lum, phase) {
     const cy = this.tok.city;
     const fc = this._cityFc;
-    if (phase === 1) { this.drawRoofLights(c, W, H, lum); return; }
     const mn = Math.min(W, H);
+    if (phase === 1) { this.drawRoofLights(c, W, H, lum); return; }
+
     /* The deck is the *palest* thing in the lower half of the frame, and that
        is not a stylistic choice — it is a flat horizontal surface with the
        whole sky falling on it, standing among vertical ones that have only the
-       narrow band of sky they happen to face. Painting the near ground dark,
-       which is right for a hedge and right for a dune, made a rooftop look like
-       a hole. It goes the other way: sky-washed, and a shade cooler at your
-       feet where the parapet keeps the low light off it. */
-    /* And it is *concrete*, which the buildings around it are not. The deck
-       used to be the city's own wall colour washed toward the sky, which made
-       a third of the frame the same warm tan as everything standing on the far
-       side of the street — one substance, edge to edge, and the near ground
-       therefore read as more sky rather than as something you are standing on.
-       Taking it toward stone costs nothing and puts a cool plane under a warm
-       city, which is both what a roof is and what the picture needed. */
-    const slab = mix(fc, this.tok.stone, 0.30);
-    const roofFar = mix(slab, bot, 0.34);
+       narrow band of sky they happen to face.
+
+       And it is *concrete and bitumen*, which the buildings around it are not.
+       Taking it toward stone puts a cool plane under a warm city, which is both
+       what a roof is and what the picture needed. */
+    const slab = mix(fc, this.tok.stone, 0.46);
+    const roofFar = mix(slab, bot, 0.30);
     const roofNear = mix(mix(slab, bot, 0.16), cy.ink, 0.16);
     const ledge = mix(slab, bot, 0.26);
+    const deckTop = CITY_PARAPET*H;
 
-    /* The deck, drawn as one shape from its V-shaped far edge down to the
-       bottom of the window. There is no wall standing on a level line any
-       more: the *edge itself* is the V, and everything below it is floor. */
-    const pts = [];
-    const N = 32;
-    for (let i = 0; i <= N; i++) {
-      const x = i/N;
-      pts.push([x*W, this.cityParapetTop(x)*H]);
-    }
-    const rg = c.createLinearGradient(0, par - (par - CITY_EYE*H)*0.55, 0, H);
-    rg.addColorStop(0, css(mix(roofFar, cy.ink, 0.24)));
-    rg.addColorStop(0.30, css(roofFar));
-    rg.addColorStop(0.66, css(mix(roofFar, roofNear, 0.55)));
+    /* ---- the covering ---------------------------------------------------
+
+       A flat roof is not a slab of concrete you could park on. It is a
+       membrane — bitumen sheet lapped in rolls — laid to a fall, dressed up
+       the parapet at its edges, and ballasted. Every one of those four facts
+       leaves a mark you can see from up here, and between them they are what
+       tells the eye it is looking at a roof rather than at a terrace or a
+       car park or the lid of something. */
+    const rg = c.createLinearGradient(0, deckTop, 0, H);
+    rg.addColorStop(0, css(mix(roofFar, cy.ink, 0.10)));
+    rg.addColorStop(0.34, css(roofFar));
     rg.addColorStop(1, css(roofNear));
     c.fillStyle = rg;
-    c.beginPath();
-    c.moveTo(0, H + 2);
-    for (const p of pts) c.lineTo(p[0], p[1]);
-    c.lineTo(W, H + 2);
-    c.closePath(); c.fill();
+    c.fillRect(0, deckTop, W, H - deckTop);
 
-    /* ---- what the deck is actually made of ------------------------------
-
-       A third of the window is this floor, and until it had a surface it was a
-       third of the window holding nothing: a flat wash with four grey boxes
-       standing on it. Concrete laid in bays, with the joints between them
-       running away to the same point everything else here runs to, is what
-       gives the eye something to measure the distance against — and it is the
-       one thing in the frame that reports how big you are. */
     c.save();
+    c.beginPath(); c.rect(0, deckTop, W, H - deckTop); c.clip();
+
+    /* The rolls. A membrane comes off a roll a metre wide and is laid in
+       strips running down the fall, each lapped over the one beside it — so
+       what you see is a set of lines running away from you, converging like
+       everything else here, with a slightly darker seam at each lap. */
+    const drain = this.roofDrain || { x: 0.52, z: 0.30 };
+    c.strokeStyle = css(mix(roofNear, cy.ink, 0.24));
+    c.lineWidth = Math.max(1, mn*0.0013);
     c.beginPath();
-    c.moveTo(0, H + 2);
-    for (const p of pts) c.lineTo(p[0], p[1]);
-    c.lineTo(W, H + 2);
-    c.closePath();
-    c.clip();
-
-    /* The bays: joints running away from you, and the laps across them.
-
-       The laps used to be drawn at ten even steps of `z` between 0 and 1,
-       which is the whole of the plane the *animals* walk on — and that plane
-       only reaches from the bottom of the window up to the mouth of the
-       street. Everything above that, which is the two great wedges of deck
-       running away up either side of the canyon and is most of the floor in
-       the frame, got nothing at all and stayed a bare wash.
-
-       The plane's formula does not stop at 1; it only asymptotes to eye level,
-       which is exactly where a floor ought to vanish. So the laps go on out
-       past it, at a spacing that widens the way perspective says it should,
-       and the wedges get a floor. */
-    if (this.roofSeams) {
-      c.strokeStyle = css(mix(roofNear, cy.ink, 0.30));
-      c.lineWidth = Math.max(1, mn*0.0014);
-      c.beginPath();
-      for (const u of this.roofSeams) {
-        const vx = CITY_VP.x + (u - CITY_VP.x)*0.14;
-        c.moveTo(u*W, H + 2); c.lineTo(vx*W, CITY_VP.y*H);
-      }
-      c.stroke();
-      c.strokeStyle = css(mix(roofNear, cy.ink, 0.18));
-      c.lineWidth = Math.max(0.8, mn*0.0011);
-      c.beginPath();
-      for (let z = 0.10; z < 26; z *= 1.42) {
-        const y = this.planeY(z)*H;
-        c.moveTo(0, y); c.lineTo(W, y);
-      }
-      c.stroke();
-
-      /* Streaks. Rain runs off a flat roof the way the fall takes it and
-         leaves the dirt behind in long soft smears, always in the same
-         places — and they are what stops a large pale surface reading as
-         paper. Broad, faint, and along the fall rather than across it. */
-      c.save();
-      c.globalAlpha = 0.16;
-      c.strokeStyle = css(mix(roofNear, cy.ink, 0.34));
-      c.lineCap = "round";
-      for (const s of [[0.16, 0.5], [0.34, 0.8], [0.58, 0.6], [0.78, 0.9], [0.92, 0.45]]) {
-        const u = s[0];
-        c.lineWidth = mn*0.010*s[1];
-        const vx = CITY_VP.x + (u - CITY_VP.x)*0.14;
-        c.beginPath();
-        c.moveTo(u*W, H + 2);
-        c.lineTo(vx*W + (u - 0.5)*W*0.02, CITY_VP.y*H + H*0.10);
-        c.stroke();
-      }
-      c.restore();
+    for (const u of this.roofSeams) {
+      /* Straight at the point, and not a fraction of the way to it. Held
+         back, the laps fanned out from the bottom of the frame like boards on
+         a stage — a set of lines that converge on nothing is the one thing
+         perspective never produces, and the eye reads it as a fan rather than
+         as a floor. The clip cuts them at the parapet, where the roof stops. */
+      c.moveTo(u*W, H + 2); c.lineTo(CITY_VP.x*W, CITY_VP.y*H);
     }
-
-    /* Stains. A flat roof is never clean — it holds water where it does not
-       drain, and the marks of that are broad, soft and always in the same
-       places. Three of them, laid on the plane, and they do more for the
-       surface than the joints do. */
-    const stain = css(mix(roofNear, cy.ink, 0.10));
-    for (const st of [[0.24, 0.30, 0.18], [0.68, 0.18, 0.13],
-                      [0.46, 0.70, 0.11], [0.86, 1.60, 0.14], [0.12, 2.40, 0.12]]) {
-      const y = this.planeY(st[1])*H, sc = this.planeScale(st[1]);
-      c.globalAlpha = 0.30;
-      c.fillStyle = stain;
-      c.beginPath();
-      c.ellipse(st[0]*W, y, st[2]*W*sc*2.2, st[2]*H*sc*0.75, 0, 0, Math.PI*2);
-      c.fill();
+    c.stroke();
+    /* The laps across them, at every course. These are the *joins*, so they
+       are fainter than the seams and there are more of them. */
+    c.strokeStyle = css(mix(roofNear, cy.ink, 0.13));
+    c.lineWidth = Math.max(0.8, mn*0.0009);
+    c.beginPath();
+    for (let z = 0.14; z < 1.02; z *= 1.28) {
+      const y = this.planeY(z)*H;
+      if (y < deckTop) break;
+      c.moveTo(0, y); c.lineTo(W, y);
     }
-    c.globalAlpha = 1;
+    c.stroke();
 
-    // and the grit on top of it, thinning with distance as everything does
+    /* Ballast. Half a roof is loose gravel holding the membrane down, and it
+       stops in a ragged line where somebody swept it back to get at
+       something. Laid on the plane, so it thins with distance. */
     if (this.roofGrit) {
-      c.fillStyle = css(mix(roofNear, cy.ink, 0.22));
+      c.fillStyle = css(mix(roofNear, cy.ink, 0.20));
       c.beginPath();
       for (const g of this.roofGrit) {
         const y = this.planeY(g.z)*H;
-        if (y <= this.cityParapetTop(g.x)*H + 2) continue;
-        const r = Math.max(0.5, this.planeScale(g.z)*2.1*g.k);
+        if (y < deckTop) continue;
+        const r = Math.max(0.5, this.planeScale(g.z)*2.0*g.k);
         c.rect(g.x*W, y, r, r);
       }
       c.fill();
     }
+
+    /* The fall, and the water that finds it. A flat roof is not flat: it is
+       laid to a fall toward its drains, and where the fall is not quite true
+       the water stands and leaves a ring. This is the single most convincing
+       thing on any real roof and it costs three ellipses. */
+    const dy = this.planeY(drain.z)*H, ds = this.planeScale(drain.z);
+    for (const p of (this.roofPonds || [])) {
+      const py = this.planeY(p.z)*H, ps = this.planeScale(p.z);
+      if (py < deckTop) continue;
+      c.globalAlpha = 0.24;
+      c.fillStyle = css(mix(roofNear, cy.ink, 0.24));
+      c.beginPath();
+      c.ellipse(p.x*W, py, p.r*W*ps, p.r*H*ps*0.34, 0, 0, Math.PI*2);
+      c.fill();
+      // the tide line a pond leaves when it dries back
+      c.globalAlpha = 0.16;
+      c.strokeStyle = css(mix(roofNear, cy.ink, 0.34));
+      c.lineWidth = Math.max(0.7, mn*0.0011);
+      c.beginPath();
+      c.ellipse(p.x*W, py, p.r*W*ps*0.72, p.r*H*ps*0.25, 0, 0, Math.PI*2);
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+
+    /* The drain itself: a dome strainer sitting in the low point, with the
+       membrane dished into it. Every drop off this roof goes through here. */
+    if (dy > deckTop) {
+      const dr = Math.max(2.2, mn*0.0085*ds);
+      c.globalAlpha = 0.30;
+      c.fillStyle = css(mix(roofNear, cy.ink, 0.30));
+      c.beginPath(); c.ellipse(drain.x*W, dy, dr*3.4, dr*1.2, 0, 0, Math.PI*2); c.fill();
+      c.globalAlpha = 1;
+      c.fillStyle = css(mix(roofNear, cy.ink, 0.44));
+      c.beginPath(); c.ellipse(drain.x*W, dy, dr, dr*0.42, 0, 0, Math.PI*2); c.fill();
+      c.strokeStyle = css(mix(cy.ink, bot, 0.10));
+      c.lineWidth = Math.max(0.7, mn*0.0012);
+      c.beginPath(); c.ellipse(drain.x*W, dy, dr, dr*0.42, 0, 0, Math.PI*2); c.stroke();
+      // the bars of the strainer
+      c.beginPath();
+      for (let i = -1; i <= 1; i++) {
+        c.moveTo(drain.x*W + i*dr*0.5, dy - dr*0.36);
+        c.lineTo(drain.x*W + i*dr*0.5, dy + dr*0.36);
+      }
+      c.stroke();
+    }
     c.restore();
 
-    /* ---- the coping along the edge --------------------------------------
+    /* ---- the parapet ----------------------------------------------------
 
-       The wall you are leaning on, seen from above and from inside: a flat top
-       with a lit outer lip, and a line under it. This is the one edge in the
-       picture that is properly lit, and it is what the whole near half of the
-       frame is hung on. */
-    const cope = Math.max(3, H*0.016);
-    c.save();
-    c.beginPath();
-    c.moveTo(0, 0); c.lineTo(W, 0);
-    for (let i = N; i >= 0; i--) c.lineTo(pts[i][0], pts[i][1] + cope);
-    c.closePath();
-    c.clip();
-    // the top of the wall, which takes the sky
-    c.fillStyle = css(mix(ledge, this.tok.moon, 0.16));
-    c.beginPath();
-    c.moveTo(0, pts[0][1] - cope*0.5);
-    for (const p of pts) c.lineTo(p[0], p[1]);
-    c.lineTo(W, pts[N][1] + cope);
-    for (let i = N; i >= 0; i--) c.lineTo(pts[i][0], pts[i][1] + cope);
-    c.closePath(); c.fill();
-    c.restore();
+       Three bands, and they have to be in this order because that is the order
+       they are built in: the flashing where the covering turns up the wall, the
+       inner face of the wall above it, and the coping over the top. */
+    // the upstand: the covering dressed up the wall, and darker for being turned
+    const up = Math.max(2, H*0.011);
+    c.fillStyle = css(mix(roofNear, cy.ink, 0.30));
+    c.fillRect(0, deckTop - up, W, up);
 
-    c.strokeStyle = css(mix(ledge, bot, 0.30));
-    c.lineWidth = Math.max(2, H*0.0055);
-    c.beginPath();
-    for (let i = 0; i <= N; i++) {
-      const p = pts[i];
-      if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]);
+    /* Three runs of wall at three heights, with a square return between them.
+
+       A parapet that is one height for the whole width of the picture is
+       correct and still reads as a bar ruled across it. Real ones step,
+       because the roof behind them steps and because the ends of a building
+       are usually built up — so the two ends stand higher than the middle, and
+       the middle is the stretch you can see the city over. That is the same
+       job the old V was doing, done by something that can actually be built. */
+    const cope = Math.max(2.5, H*0.011);
+    const face = css(mix(ledge, cy.ink, 0.22));
+    const cap = css(mix(ledge, this.tok.moon, 0.20));
+    const ret = css(mix(ledge, cy.ink, 0.34));
+    for (const r of CITY_WALL_RUNS) {
+      const x0 = Math.max(0, r.x0*W), x1 = Math.min(W, r.x1*W);
+      if (x1 <= x0) continue;
+      const top = (CITY_PARAPET - r.h)*H;
+      c.fillStyle = face;
+      c.fillRect(x0, top, x1 - x0, deckTop - top);
+      c.fillStyle = cap;
+      c.fillRect(x0, top, x1 - x0, cope);
     }
-    c.stroke();
-    // the shadow the coping throws back onto the deck behind it
-    c.strokeStyle = `rgba(0,0,0,0.10)`;
-    c.lineWidth = Math.max(2, H*0.010);
-    c.beginPath();
-    for (let i = 0; i <= N; i++) {
-      const p = pts[i];
-      if (i === 0) c.moveTo(p[0], p[1] + cope*1.1); else c.lineTo(p[0], p[1] + cope*1.1);
+    // the returns, which are the ends of the taller runs seen edge-on
+    c.fillStyle = ret;
+    for (let i = 1; i < CITY_WALL_RUNS.length; i++) {
+      const a = CITY_WALL_RUNS[i - 1], b2 = CITY_WALL_RUNS[i];
+      const tall = a.h > b2.h ? a : b2;
+      const top = (CITY_PARAPET - tall.h)*H;
+      c.fillRect(a.x1*W - (a.h > b2.h ? Math.max(2, mn*0.004) : 0), top,
+        Math.max(2, mn*0.004), deckTop - top);
     }
-    c.stroke();
+
     c.strokeStyle = css(mix(cy.ink, bot, 0.06));
-    c.lineWidth = Math.max(1.4, mn*0.0034);
+    c.lineWidth = Math.max(1.3, mn*0.0030);
+    c.lineJoin = "miter";
     c.beginPath();
-    for (let i = 0; i <= N; i++) {
-      const p = pts[i];
-      if (i === 0) c.moveTo(p[0], p[1]); else c.lineTo(p[0], p[1]);
+    let px = 0;
+    for (const r of CITY_WALL_RUNS) {
+      const x0 = Math.max(0, r.x0*W), x1 = Math.min(W, r.x1*W);
+      if (x1 <= x0) continue;
+      const top = (CITY_PARAPET - r.h)*H + 0.5;
+      if (px === 0) c.moveTo(x0, top); else c.lineTo(x0, top);
+      c.lineTo(x1, top);
+      px = 1;
+      c.moveTo(x0, top + cope); c.lineTo(x1, top + cope);
     }
     c.stroke();
+    // the shadow the wall throws back across the deck at its foot
+    c.fillStyle = "rgba(0,0,0,0.10)";
+    c.fillRect(0, deckTop, W, Math.max(2, H*0.016));
 
     // what is up here with you
     this.drawRoofKit(c, W, H, bot, lum);
@@ -5517,12 +5564,29 @@ class Scene {
     }
   }
 
-  /* The tank, the stair hut, the vents, the duct runs and the mast — the
-     furniture of a roof, each standing on the plane at its own depth like
-     everything else that stands on ground in this piece. */
+  /* How high a thing on the roof stands, in frame units. One place, so a bird
+     landing on the tank lands on the top of the tank and not somewhere near
+     it — the painter and the perch have to agree, and the only way to be sure
+     they do is for both to ask the same question here. */
+  kitRise(k) {
+    switch (k.kind) {
+      case "tank":     return k.r*4.6;
+      case "bulkhead": return k.h*1.9;
+      case "dish":     return k.r*3.4;
+      case "stack":    return k.h*1.9;
+      default:         return (k.h || 0.03)*1.9;
+    }
+  }
+
+  /* The plant: the bulkhead, the tank, the condensers, the duct that joins
+     them, the stacks and the dish. Each stands on the plane at its own depth
+     like everything else that stands on ground in this piece, and each is
+     drawn as a box rather than as a rectangle, because you are above all of it
+     and looking down at a rectangle tells you nothing. */
   drawRoofKit(c, W, H, bot, lum) {
     if (!this.roofKit) return;
     const cy = this.tok.city;
+    const mn = Math.min(W, H);
     const kit = this.roofKit.slice().sort((a, b) => b.z - a.z);
     for (const k of kit) {
       const y = this.planeY(k.z)*H, sc = this.planeScale(k.z);
@@ -5531,117 +5595,210 @@ class Scene {
          What separates it is that the city is behind you as well as in front:
          each object takes a lit edge off the glow, which is the only reason
          any of this reads at night. */
-      const base = mix(mix(this._cityFc, bot, 0.24), cy.ink, 0.18 + (1 - k.z)*0.18);
+      const base = mix(mix(this._cityFc, bot, 0.24), cy.ink, 0.16 + (1 - k.z)*0.08);
       const faces = {
         front: css(base),
-        side: css(mix(base, cy.ink, 0.20)),
+        side: css(mix(base, cy.ink, 0.22)),
         top: css(mix(mix(base, bot, 0.22),
           lum > 0.4 ? cy.lamp : this.tok.moon, 0.10 + lum*0.26)),
         line: css(mix(cy.ink, bot, 0.05))
       };
-      if (k.kind === "vent") {
-        const b = this.roofBox(c, k.x, k.z, k.w, k.w*0.62, k.h, faces);
-        /* A cowl on top, turned whichever way the wind last left it. This is
-           the one bit of a roof that anybody who has been on one remembers. */
-        c.fillStyle = faces.top; c.strokeStyle = faces.line;
-        c.lineWidth = Math.max(0.8, 1.3*sc);
-        const cw = (b.fR - b.fL)*0.34, cy0 = b.yF - b.rise;
+      const line = faces.line;
+      const lw = Math.max(0.8, mn*0.0024*sc);
+
+      if (k.kind === "unit") {
+        /* A condenser, standing on a housekeeping pad. The pad is the thing
+           that makes it plant and not furniture: nothing on a roof is allowed
+           to sit on the membrane, so everything heavy stands on a plinth with
+           its own flashing round it. */
+        const pw = k.w*W*sc*1.22, pd = Math.max(2, k.d*H*sc*0.5);
+        c.fillStyle = css(mix(base, cy.ink, 0.30));
+        c.fillRect(x - pw/2, y - pd, pw, pd);
+        c.strokeStyle = line; c.lineWidth = lw*0.7;
+        c.strokeRect(x - pw/2, y - pd, pw, pd);
+        const b = this.roofBox(c, k.x, k.z, k.w, k.d, k.h, faces);
+        // the fan grille in its lid, which is what a condenser is for
+        const cxm = (b.fL + b.fR)/2, rw = (b.fR - b.fL)*0.30;
+        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.6);
         c.beginPath();
-        c.ellipse((b.fL + b.fR)/2, cy0 - cw*0.5, cw, cw*0.45, 0, 0, Math.PI*2);
-        c.fill(); c.stroke();
+        c.ellipse(cxm, b.yF - b.rise - (b.yF - b.rise)*0 - Math.max(1, k.d*H*sc*0.18),
+          rw, rw*0.34, 0, 0, Math.PI*2);
+        c.stroke();
+        // and the louvred face down its front
+        c.beginPath();
+        for (let i = 1; i < 5; i++) {
+          const ly = b.yF - b.rise*(i/5);
+          c.moveTo(b.fL + (b.fR - b.fL)*0.10, ly);
+          c.lineTo(b.fR - (b.fR - b.fL)*0.10, ly);
+        }
+        c.stroke();
       } else if (k.kind === "duct") {
-        /* A run of trunking on feet — the thing that actually covers a roof,
-           and the one shape up here that is *long*, which is what breaks a
-           field of upright boxes. */
-        const b = this.roofBox(c, k.x, k.z, k.w, k.w*0.28, k.h, faces);
-        c.strokeStyle = faces.line;
-        c.lineWidth = Math.max(0.8, 1.4*sc);
+        /* Trunking on sleepers, running between the two units. The one long
+           shape up here, which is what breaks a field of upright boxes. */
+        const b = this.roofBox(c, k.x, k.z, k.w, k.d, k.h, faces);
+        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.6);
         c.beginPath();
-        for (let i = 1; i < 4; i++) {
-          const fx = b.fL + (b.fR - b.fL)*i/4;
+        // the flanged joints every few feet
+        for (let i = 1; i < 6; i++) {
+          const fx = b.fL + (b.fR - b.fL)*i/6;
           c.moveTo(fx, b.yF - b.rise); c.lineTo(fx, b.yF);
         }
         c.stroke();
-        // the feet it stands on, which is what keeps it off the felt
-        c.lineWidth = Math.max(1, 2.2*sc);
+        // the sleepers it rides on, which keep it off the covering
+        c.lineWidth = Math.max(1, 2.4*sc); c.lineCap = "butt";
+        c.strokeStyle = css(mix(base, cy.ink, 0.34));
         c.beginPath();
-        for (const u of [0.15, 0.5, 0.85]) {
+        for (const u of [0.12, 0.38, 0.64, 0.9]) {
           const fx = b.fL + (b.fR - b.fL)*u;
-          c.moveTo(fx, b.yF); c.lineTo(fx, b.yF + b.rise*0.22);
+          c.moveTo(fx, b.yF); c.lineTo(fx, b.yF + b.rise*0.30);
         }
         c.stroke();
+      } else if (k.kind === "stack") {
+        /* A vent stack: a pipe, and the flashing collar round its foot. The
+           collar is the detail — a pipe coming straight out of a flat surface
+           with nothing round it is a pipe drawn by somebody guessing. */
+        const h = k.h*H*sc*1.25, r = Math.max(1.4, mn*0.0052*sc);
+        c.fillStyle = css(mix(base, cy.ink, 0.26));
+        c.beginPath(); c.ellipse(x, y, r*2.6, r*1.0, 0, 0, Math.PI*2); c.fill();
+        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.6);
+        c.beginPath(); c.ellipse(x, y, r*2.6, r*1.0, 0, 0, Math.PI*2); c.stroke();
+        c.fillStyle = faces.front;
+        c.fillRect(x - r, y - h, r*2, h);
+        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.7);
+        c.strokeRect(x - r, y - h, r*2, h);
+        // the cowl over its mouth
+        c.fillStyle = faces.top;
+        c.beginPath(); c.ellipse(x, y - h, r*1.5, r*0.6, 0, 0, Math.PI*2); c.fill();
+        c.strokeStyle = line;
+        c.beginPath(); c.ellipse(x, y - h, r*1.5, r*0.6, 0, 0, Math.PI*2); c.stroke();
+      } else if (k.kind === "dish") {
+        const r = k.r*mn*sc*1.5, h = r*2.0;
+        this.contactShadow(c, x, y, r*0.7, 0.16);
+        c.strokeStyle = faces.front; c.lineCap = "round";
+        c.lineWidth = Math.max(1, 2.2*sc);
+        c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - h); c.stroke();
+        // the tripod foot, ballasted with blocks like every roof dish
+        c.lineWidth = Math.max(0.8, 1.5*sc);
+        c.beginPath();
+        for (const sgn of [-1, 1]) {
+          c.moveTo(x, y - h*0.34); c.lineTo(x + sgn*r*0.7, y);
+        }
+        c.stroke();
+        /* The face. A dish seen from behind and to one side is a full
+           ellipse turned out of the picture plane, not a slice of one — an
+           arc gave a crescent, which is a moon and not an aerial. */
+        c.fillStyle = faces.front;
+        c.beginPath();
+        c.ellipse(x + r*0.16, y - h, r*0.62, r, -0.42, 0, Math.PI*2);
+        c.fill();
+        c.strokeStyle = line; c.lineWidth = Math.max(0.7, lw*0.7);
+        c.beginPath();
+        c.ellipse(x + r*0.16, y - h, r*0.62, r, -0.42, 0, Math.PI*2);
+        c.stroke();
+        // the shaded inside of it, which is what says it is a bowl
+        c.fillStyle = css(mix(base, cy.ink, 0.24));
+        c.beginPath();
+        c.ellipse(x + r*0.16, y - h, r*0.40, r*0.80, -0.42, 0, Math.PI*2);
+        c.fill();
+        // the arm out to the horn at its focus
+        c.strokeStyle = faces.front; c.lineWidth = Math.max(0.8, 1.4*sc);
+        c.beginPath(); c.moveTo(x + r*0.2, y - h); c.lineTo(x - r*0.5, y - h*0.82); c.stroke();
       } else if (k.kind === "tank") {
-        const r = k.r*Math.min(W, H)*sc*2.4, h = r*1.6;
+        const r = k.r*mn*sc*2.2, h = r*1.7, legs = r*1.15;
         this.contactShadow(c, x, y, r*0.9, 0.18);
         c.fillStyle = faces.front; c.strokeStyle = faces.front;
-        c.lineWidth = Math.max(1, r*0.13); c.lineCap = "round";
+        c.lineWidth = Math.max(1, r*0.12); c.lineCap = "round";
         c.beginPath();
-        for (const s of [-1, 1]) {
-          c.moveTo(x + s*r*0.62, y); c.lineTo(x + s*r*0.52, y - h*0.55);
+        for (const sgn of [-1, 1]) {
+          c.moveTo(x + sgn*r*0.72, y); c.lineTo(x + sgn*r*0.56, y - legs);
         }
         c.stroke();
-        // a cross-brace between the legs, which every one of these has
-        c.lineWidth = Math.max(0.8, r*0.07);
+        // the cross-bracing, which every one of these frames has
+        c.lineWidth = Math.max(0.7, r*0.06);
         c.beginPath();
-        c.moveTo(x - r*0.60, y - h*0.10); c.lineTo(x + r*0.53, y - h*0.42);
-        c.moveTo(x + r*0.60, y - h*0.10); c.lineTo(x - r*0.53, y - h*0.42);
+        c.moveTo(x - r*0.70, y - legs*0.12); c.lineTo(x + r*0.57, y - legs*0.86);
+        c.moveTo(x + r*0.70, y - legs*0.12); c.lineTo(x - r*0.57, y - legs*0.86);
+        c.moveTo(x - r*0.63, y - legs*0.52); c.lineTo(x + r*0.63, y - legs*0.52);
         c.stroke();
+        // the barrel: staves, two hoops, a conical cap, and a ladder up it
+        const ty = y - legs - h;
         c.fillStyle = faces.front;
-        c.fillRect(x - r, y - h*0.55 - h, r*2, h);
-        // the staves, and the two hoops round them
+        c.fillRect(x - r, ty, r*2, h);
         c.strokeStyle = css(mix(this._cityFc, cy.ink, 0.34));
-        c.lineWidth = Math.max(0.6, r*0.05);
+        c.lineWidth = Math.max(0.5, r*0.045);
         c.beginPath();
         for (let i = 1; i < 6; i++) {
           const sx = x - r + (r*2)*i/6;
-          c.moveTo(sx, y - h*0.55 - h); c.lineTo(sx, y - h*0.55);
+          c.moveTo(sx, ty); c.lineTo(sx, ty + h);
         }
-        for (const v of [0.30, 0.72]) {
-          c.moveTo(x - r, y - h*0.55 - h*(1 - v)); c.lineTo(x + r, y - h*0.55 - h*(1 - v));
+        for (const v of [0.26, 0.74]) {
+          c.moveTo(x - r, ty + h*v); c.lineTo(x + r, ty + h*v);
         }
         c.stroke();
         c.fillStyle = faces.top;
-        c.beginPath(); c.ellipse(x, y - h*0.55 - h, r, r*0.30, 0, 0, Math.PI*2); c.fill();
-        c.strokeStyle = faces.line; c.lineWidth = Math.max(0.9, 1.5*sc);
-        c.beginPath(); c.ellipse(x, y - h*0.55 - h, r, r*0.30, 0, 0, Math.PI*2); c.stroke();
-        c.beginPath(); c.rect(x - r, y - h*0.55 - h, r*2, h); c.stroke();
-        // the conical cap every water tank on every roof has
-        c.fillStyle = faces.top;
         c.beginPath();
-        c.moveTo(x - r*0.9, y - h*0.55 - h - r*0.06);
-        c.lineTo(x, y - h*0.55 - h - r*0.62);
-        c.lineTo(x + r*0.9, y - h*0.55 - h - r*0.06);
-        c.closePath(); c.fill(); c.stroke();
-      } else if (k.kind === "hut") {
-        const b = this.roofBox(c, k.x, k.z, k.w, k.w*0.78, k.h, faces);
-        // a doorway with the stairwell light behind it
-        const dw = (b.fR - b.fL)*0.26;
+        c.moveTo(x - r*0.98, ty + r*0.04);
+        c.lineTo(x, ty - r*0.60);
+        c.lineTo(x + r*0.98, ty + r*0.04);
+        c.closePath(); c.fill();
+        c.strokeStyle = line; c.lineWidth = Math.max(0.8, lw*0.8);
+        c.stroke();
+        c.beginPath(); c.rect(x - r, ty, r*2, h); c.stroke();
+        // the ladder, because somebody has to get to the top of it
+        c.strokeStyle = css(mix(base, cy.ink, 0.40));
+        c.lineWidth = Math.max(0.5, r*0.05);
+        c.beginPath();
+        c.moveTo(x + r*0.52, y); c.lineTo(x + r*0.52, ty);
+        c.moveTo(x + r*0.76, y); c.lineTo(x + r*0.76, ty);
+        for (let i = 1; i < 8; i++) {
+          const ry = y - (y - ty)*i/8;
+          c.moveTo(x + r*0.52, ry); c.lineTo(x + r*0.76, ry);
+        }
+        c.stroke();
+      } else if (k.kind === "hatch") {
+        /* A roof hatch: a kerb with a lid hinged back off it, standing open
+           the way every one of them is left standing open. The lid is the
+           only thing on this roof that is not square to it. */
+        const b = this.roofBox(c, k.x, k.z, k.w, k.d, k.h, faces);
+        const un = b.fR - b.fL;
+        c.save();
+        c.translate(b.fL, b.yF - b.rise);
+        c.transform(1, 0, -0.30, 1, 0, 0);
+        c.fillStyle = css(mix(base, cy.ink, 0.10));
+        c.fillRect(0, -un*0.26, un, un*0.26);
+        c.strokeStyle = line; c.lineWidth = Math.max(0.7, lw*0.7);
+        c.strokeRect(0, -un*0.26, un, un*0.26);
+        c.restore();
+        // the dark of the shaft under it
+        c.fillStyle = css(mix(cy.ink, bot, 0.12));
+        c.fillRect(b.fL + un*0.10, b.yF - b.rise - Math.max(1, un*0.05),
+          un*0.80, Math.max(1.5, un*0.10));
+      } else if (k.kind === "bulkhead") {
+        /* The stair bulkhead — the way you got up here. It is the only thing
+           on the roof with a *door*, and the door is what gives the whole deck
+           a human scale to be measured against. */
+        const b = this.roofBox(c, k.x, k.z, k.w, k.d, k.h, faces);
+        const un = b.fR - b.fL;
+        const dw = un*0.30, dh = b.rise*0.66;
+        const dx = (b.fL + b.fR)/2 - dw/2, dy = b.yF - dh;
         if (lum > 0.1) {
           const f = cy.lamp;
-          c.fillStyle = `rgba(${f[0]|0},${f[1]|0},${f[2]|0},${0.50*lum})`;
+          c.fillStyle = `rgba(${f[0]|0},${f[1]|0},${f[2]|0},${0.46*lum})`;
         } else {
-          c.fillStyle = css(mix(this._cityFc, cy.ink, 0.62));
+          c.fillStyle = css(mix(this._cityFc, cy.ink, 0.60));
         }
-        c.fillRect((b.fL + b.fR)/2 - dw/2, b.yF - b.rise*0.62, dw, b.rise*0.62);
-        c.strokeStyle = faces.line; c.lineWidth = Math.max(0.8, 1.2*sc);
-        c.strokeRect((b.fL + b.fR)/2 - dw/2, b.yF - b.rise*0.62, dw, b.rise*0.62);
-      } else if (k.kind === "mast") {
-        const h = k.h*H*sc*2.5;
-        c.strokeStyle = faces.front;
-        c.lineWidth = Math.max(1, 2.4*sc); c.lineCap = "round";
-        c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - h); c.stroke();
-        // guys, which is what a mast on a roof actually stands up by
-        c.lineWidth = Math.max(0.6, 1.0*sc);
-        c.beginPath();
-        for (const s of [-1, 1]) {
-          c.moveTo(x, y - h*0.86); c.lineTo(x + s*h*0.30, y);
-        }
-        c.stroke();
-        c.lineWidth = Math.max(0.8, 1.3*sc);
-        for (let i = 1; i <= 3; i++) {
-          const yy = y - h*(0.45 + i*0.16), aw = h*0.10*(1 - i*0.12);
-          c.beginPath(); c.moveTo(x - aw, yy); c.lineTo(x + aw, yy); c.stroke();
-        }
+        c.fillRect(dx, dy, dw, dh);
+        c.strokeStyle = line; c.lineWidth = Math.max(0.7, lw*0.7);
+        c.strokeRect(dx, dy, dw, dh);
+        // the threshold step, and the overhang above the door
+        c.fillStyle = css(mix(base, cy.ink, 0.30));
+        c.fillRect(dx - dw*0.16, b.yF, dw*1.32, Math.max(1.2, b.rise*0.07));
+        c.fillStyle = faces.top;
+        c.fillRect(dx - dw*0.20, dy - Math.max(1.2, b.rise*0.06),
+          dw*1.40, Math.max(1.2, b.rise*0.06));
+        c.strokeStyle = line;
+        c.strokeRect(dx - dw*0.20, dy - Math.max(1.2, b.rise*0.06),
+          dw*1.40, Math.max(1.2, b.rise*0.06));
       }
     }
   }

@@ -89,7 +89,20 @@ for (const place of places) {
     const file = `${OUT}/${place}-${hour}-${weather}.png`;
     /* The stack and not the page: the sky is one canvas and the land is
        another laid over it, and only their common parent is the picture. */
-    await (await page.$('.scene-stack')).screenshot({ path: file });
+    const el = await page.$('.scene-stack');
+    /* SHOT_CLIP=x,y,w,h — as fractions of the frame — for when the question is
+       about one corner of a place and a whole 1600-pixel view of it answers
+       the question at a twentieth of the size. */
+    let opts = { path: file };
+    if (process.env.SHOT_CLIP) {
+      const box = await el.boundingBox();
+      const [cx, cyy, cw, ch] = process.env.SHOT_CLIP.split(',').map(Number);
+      opts.clip = { x: box.x + cx*box.width, y: box.y + cyy*box.height,
+        width: cw*box.width, height: ch*box.height };
+      await page.screenshot(opts);
+    } else {
+      await el.screenshot(opts);
+    }
     console.error(`  ${file}`);
   }
 }
