@@ -2,6 +2,11 @@
 # symlink to a global install, which is how tools/ finds Playwright.
 node_modules/
 node_modules
+# …and the lock that goes with them. The piece has no dependencies; the only
+# thing package.json declares is Playwright, for the benches in tools/, and
+# pinning a bench's dependency tree into the repo would be pinning the wrong
+# thing entirely.
+package-lock.json
 
 # Editor / OS cruft
 .DS_Store
@@ -17,3 +22,6 @@ Thumbs.db
 
 # reference recordings, fetched by tools/reference.mjs — never committed
 refaudio
+
+# pictures taken by tools/shot.mjs — a bench output, not part of the piece
+shots/

@@ -16,6 +16,7 @@
     "soak": "node tools/soak.mjs",
     "weather": "node tools/weather.mjs",
     "gradient": "node tools/gradient.mjs",
+    "shot": "node tools/shot.mjs",
     "reference": "node tools/reference.mjs",
     "xenocanto": "node tools/xenocanto.mjs"
   },

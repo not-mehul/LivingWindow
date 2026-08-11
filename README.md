@@ -139,7 +139,7 @@ and shuts the window.
 
 ### The bench, and the trajectory recorder
 
-`tools/` holds twelve harnesses, and shared machinery in `tools/lib/`. None is
+`tools/` holds thirteen harnesses, and shared machinery in `tools/lib/`. None is
 part of the piece — the piece itself has no dependencies and no build step —
 but they drive a headless Chromium, so they need one installed, and they talk
 to a static server on port 8123:
@@ -168,6 +168,22 @@ node tools/xenocanto.mjs             # …and against the actual species, one by
 node tools/texture.mjs               # which beds are still static
 node tools/soak.mjs                  # ninety busy seconds: leaks, growth, clipping
 node tools/gradient.mjs              # banding: the GPU held to what the canvas managed
+node tools/shot.mjs [place] [hour]   # pictures of it, for the questions that are not numbers
+```
+
+`shot.mjs` is the odd one out: every other harness here measures a number, and
+this one takes a photograph. Some questions about a place — whether it looks
+like anywhere, whether a change to the drawing helped or quietly made it
+worse — cannot be answered by a number at all, and before this there was no way
+to ask them except by opening a browser and looking, which meant art-direction
+work was the one part of the piece that could not be checked the way everything
+else here is. It pins the hour, the weather and the seed through the hook for
+exactly the reason `bench.mjs` does, so two shots of the same place under two
+builds differ by the build and by nothing else:
+
+```bash
+SHOT_DIR=shots/before node tools/shot.mjs city    # …change something…
+SHOT_DIR=shots/after  node tools/shot.mjs city
 ```
 
 `bench.mjs` reports the time a frame really takes — it hands the page a
@@ -1228,6 +1244,147 @@ with no sky in it — which is what every render in this repo's development did
 for a long while, and why several of them look oddly pale at the top.
 Screenshot the stage element instead.
 
+### The city is written down
+
+Every other place here grows from the seed. Where the trees stand, how the
+hedges run, which way the shore lies — all of it is redrawn from a fresh number
+each session, and for a field that is exactly right, because a field is a
+texture and any acre of it is as good as any other.
+
+It is not right for a city. A city view is *composed*: the street goes there,
+the near slab holds this edge, the eye is led down that slot. A composition
+that is rolled again from scratch every session is not a composition — it is
+twenty arrangements of the same parts, and the good one is an accident that
+happens once and is never seen again. The generator was already fighting this:
+two of its towers were placed by hand as "the pair that lip the street", two
+more were nailed to the edges of the frame, and the landmark on the skyline
+carried a comment saying it was drawn rather than generated *because a skyline
+needs one shape the eye can hold on to*. That argument was right, and it was
+being applied to exactly one building.
+
+So the frame is written down. `CITY_BLOCKS`, `CITY_SKYLINE`, `CITY_ROOFKIT` and
+`CITY_PERCHES` are the whole of it: where every mass sits, how deep it is, what
+it is built of, and where a bird can land. None of it moves between sessions.
+
+What the seed still does is *dress* it. Every field in a block is one of two
+kinds, and the two used to come off the same stream:
+
+```
+composition (written down)          dressing (still the seed's)
+  x, w, z, top — where a mass is      which windows are burning, and when
+  which blocks lip the street         what is printed on the hoardings
+  the skyline's silhouette            which way a vent is pointed
+  where the perches are               how the smoke goes, where a beacon is
+```
+
+Which is how a real view works, and it is a better fit for the piece than the
+roll it replaced. This is a *window*. Windows have fixed views; what is living
+about them is the light, the hour, the weather and the company. You do not get
+a different street — you get a different evening on it, and the same pigeon
+comes back to the same rail.
+
+That last part is not a small thing. A perch used to be wherever the generator
+happened to leave a flat surface, so the cast of a session landed in a
+different set of places every time and the frame could never be composed around
+any of them. They are chosen now: the near rail where a pigeon is close enough
+to read, the two arms of the parapet, the kit on the deck, three roofs across
+the street at their own depths.
+
+### A building is a box
+
+Every block was one rectangle, filled flat, with a pale strip down its left
+edge standing in for a lit corner. Twenty of those is not a city; it is a bar
+chart with windows on it, and no amount of texture on the face was going to fix
+it, because what was missing was not detail. It was the third dimension.
+
+A block is drawn now as what it is: a front face, one side of it, and — if its
+roof is below your eye — the roof itself, all three running to the same
+vanishing point the street runs to. Which side you see follows from where the
+block sits: one to the left of the point shows its right flank, one to the
+right shows its left, one straddling it shows neither, exactly as a real row
+does. Whether that flank is the lit side or the shadowed one is not a matter of
+taste either — `updateLight` has known where the sun is since the sky was
+drawn, and the flank reads it.
+
+Three materials, because a facade is not a grid of holes, it is a substance,
+and the three are told apart at a glance long before any one window can be made
+out:
+
+```
+brick     warm, small punched openings, a course line at every floor
+concrete  pale bands of spandrel with a darker glazing ribbon between
+glass     a curtain wall — mullions the height of the building, and the sky
+          in it rather than a colour of its own
+```
+
+How much of any of that is drawn is decided by how big the building lands on
+the screen and not by how far off it is supposed to be — those are the same
+question and only one of them can be measured. Under about four pixels a bay
+there is nothing to draw but a tint; over about nine there is a frame, a
+mullion and a sill worth having.
+
+### What a frame in the city actually costs
+
+Measured, the city cost **34.8 ms a frame against a budget of 16.7**, and better
+than twice what any other place here costs. The first thing tried was the
+obvious one: the concrete facades were emitting two `fillRect`s per floor per
+building, which on a forty-storey slab is eighty rasterizations on its own.
+Batching them into one path each took the submissions from **874 to 462** and
+moved the clock **not at all**.
+
+Which is the whole diagnosis, and it is exactly the distinction `?perf=1` is
+there to make. A frame in this city is not made of submissions, it is made of
+*fill rate*: twenty large opaque faces, each painted over the top of the one
+behind it, with a facade over each of those again. No amount of batching
+touches overdraw.
+
+What touches it is not painting it again. The composition is written down now,
+so the only things in the frame that differ between one sixtieth of a second
+and the next are the lights, the people down in the street, and the smoke.
+Everything else — every wall, every window grid, the whole floor, the whole far
+rank — is the same picture it was a moment ago and can simply be kept.
+
+It is kept as **two** layers rather than one, because the things that move have
+to go *between* them:
+
+```
+  blit   the far rank, and the buildings behind the street
+  draw   the lights burning in them, their signs, the smoke
+  blit   the street, the two blocks that lip it, and the roof you stand on
+  draw   the people, the lamps, the bulbs along the parapet
+```
+
+Anything the near layer covers is thereby covered, which pays for itself twice:
+a light in a far tower that falls where the street is gets painted over by the
+street, exactly as it would have been had the whole thing been drawn in order.
+Within a layer there is no such protection, so the bake also works out once —
+and never again until it is rebuilt — which windows have a nearer building
+standing in front of them.
+
+The layers are rebuilt when the size changes, when the land is reseeded, when
+the theme changes, and on a coarse step of the light. Built at device
+resolution, not layout resolution: this city is nothing but lines, and a layer
+blitted back up from the logical size would arrive a pixel and a half thick.
+
+```
+                before    batched     baked
+city            34.8 ms   35.4 ms     5.9 ms
+ops per frame       874       462        74
+```
+
+Read those the way `bench.mjs` means them: a software rasterizer, 1920×1080,
+and the hour pinned to day — which is the cheapest hour the city has, because
+nothing is lit and no glow is blitted. A night frame costs more. What does not
+change with the hour is the shape of the win, because what was removed was the
+overdraw and the overdraw is the same at midnight.
+
+From four times the cost of the meadow to below it — and the point of that is
+not the number. It is that detail in a baked layer is very nearly free, so what
+the city can afford to *be* is now a different question entirely. The plant on
+the roofs you look down on, the streaking on the deck, the grain in the far
+rank and the gradient seating every building in its own depth all went in
+*after* this, and together they cost less than a millisecond.
+
 ### Three materials instead of one ink
 
 Every solid thing in the land was `mix(ink, skyBottom, k)` — one dark warm
@@ -1901,8 +2058,10 @@ rates, so a card and the window show the same stride.
 ## Design notes
 
 - **Generative.** Every voice is built from oscillators and filtered noise via the
-  Web Audio API — nothing is sampled. A session's seed drives both the landscape
-  and its cast.
+  Web Audio API — nothing is sampled. A session's seed drives the landscape and
+  its cast. The city is the one exception and deliberately so: its composition is
+  written down (see above) and the seed dresses it rather than building it,
+  because a view worth looking out of is composed and not rolled.
 - **Faithful.** Each place keeps its own company; a species only sings where it
   would actually live (see `habitats` / `hw` in `species.js`). The same applies to
   behaviour: the fox's mousing pounce, the heron's strike, the squirrel caching a
