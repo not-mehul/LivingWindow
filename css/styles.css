@@ -61,6 +61,36 @@
   --scene-neon-b:     #35e8f0;   /* cyan */
   --scene-neon-c:     #ffb03a;   /* sodium amber */
   --scene-glasslit:   #9fd8e6;   /* a window with someone still in it */
+
+  /* ---- The city keeps its own palette ---------------------------------
+     Every other place here is a warm etching: one brown ink, mixed with the
+     sky. A city is not that. It is cold stone and hot advertising, and the
+     two only read against each other if the stone is genuinely cool and the
+     light is genuinely hot — a slate wall beside a sodium street, not two
+     browns a shade apart.
+     So the city gets its own sky as well as its own materials, in three
+     bands rather than two: what is overhead, what is halfway down, and the
+     colour sitting on the skyline itself. */
+  --city-sky-dawn-top:  #7a86c9; --city-sky-dawn-mid:  #de9ea6; --city-sky-dawn-bot:  #f8c273;
+  --city-sky-day-top:   #4ec4f2; --city-sky-day-mid:   #a9dcef; --city-sky-day-bot:   #e9e6d3;
+  --city-sky-dusk-top:  #38295a; --city-sky-dusk-mid:  #6b4c7c; --city-sky-dusk-bot:  #ba7350;
+  --city-sky-night-top: #0e1b33; --city-sky-night-mid: #14304a; --city-sky-night-bot: #1d616b;
+  /* A wall, before the sky has had it — and it is a different wall at every
+     hour, which is the one thing mixing a single stone with the sky cannot
+     give you. A city at noon is warm brick and tan concrete against a cold
+     blue sky; the same city at midnight is cold slate against a warm-lit one.
+     Mixing one grey with the sky gets the value right and the hue exactly
+     backwards, twice a day. */
+  --city-face-dawn:   #b0948e;
+  --city-face-day:    #b99a76;
+  --city-face-dusk:   #6e6577;
+  --city-face-night:  #33455e;
+  --city-ink:         #101a28;   /* the line drawn round everything */
+  --city-glass:       #7fb4cf;   /* daylight standing in a window */
+  --city-lamp:        #ffb45e;   /* sodium: the street, and the warm windows */
+  --city-neon-a:      #4fe0e6;   /* cyan */
+  --city-neon-b:      #a37cea;   /* violet */
+  --city-neon-c:      #f472a8;   /* magenta */
   --scene-earth:      #3a2c1c;   /* bank, trunk, ploughed ground: warm */
   --scene-stone:      #2c2b30;   /* rock, brick, shingle: cool and slightly violet */
   --scene-sun:        #f2c98c;
@@ -130,6 +160,21 @@
   --scene-neon-b:     #57f0f7;
   --scene-neon-c:     #ffc05e;
   --scene-glasslit:   #b4e4ef;
+
+  --city-sky-dawn-top:  #8894d3; --city-sky-dawn-mid:  #e5a9b1; --city-sky-dawn-bot:  #fbcb81;
+  --city-sky-day-top:   #5ccbf5; --city-sky-day-mid:   #b2e2f3; --city-sky-day-bot:   #efecdb;
+  --city-sky-dusk-top:  #423066; --city-sky-dusk-mid:  #77568a; --city-sky-dusk-bot:  #c67d58;
+  --city-sky-night-top: #12213c; --city-sky-night-mid: #183753; --city-sky-night-bot: #226c77;
+  --city-face-dawn:   #bda19a;
+  --city-face-day:    #c5a681;
+  --city-face-dusk:   #7a7083;
+  --city-face-night:  #3b4f6b;
+  --city-ink:         #162334;
+  --city-glass:       #8ec0da;
+  --city-lamp:        #ffc078;
+  --city-neon-a:      #63e8ee;
+  --city-neon-b:      #b28ff0;
+  --city-neon-c:      #f889b7;
   --scene-earth:      #453422;
   --scene-stone:      #343339;
   --scene-sun:        #eec482;
