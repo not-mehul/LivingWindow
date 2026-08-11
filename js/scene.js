@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=34";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=34";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=34";
+} from "./util.js?v=35";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=35";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=35";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -46,7 +46,7 @@ const FOOT = [0, 0];
    shallow in the middle. Which is what standing at the corner of a roof beside
    a street looks like, and it is the whole composition. */
 const CITY_EYE = 0.478;
-const CITY_PARAPET = 0.800;
+const CITY_PARAPET = 0.782;
 const CITY_GROUND = CITY_PARAPET;
 
 /* How high the parapet wall stands off the deck, and how high it stands where
@@ -143,7 +143,7 @@ const CITY_BLOCKS = [
   { x: -0.078, w: 0.180, z: 0.062, top: 0.040, mat: "concrete", role: "edgeL" },
   /* The brown slab that lips the street on the left. Its right-hand face is
      the street's left wall, so its edge is exactly the canyon's lip. */
-  { x: 0.100, w: 0.204, z: 0.118, top: 0.132, mat: "brick", role: "lipL" },
+  { x: 0.100, w: 0.190, z: 0.118, top: 0.132, mat: "brick", role: "lipL" },
   /* And the one on the right, which is *lower than you are* — so its roof is
      a floor of pipework and hoardings laid out below your eye, and it is the
      single thing in the frame that most says you are up somewhere.
@@ -153,7 +153,7 @@ const CITY_BLOCKS = [
      line a hand's breadth under your eye you are not looking *down* on
      anything, you are looking along it, and the whole floor comes out five
      pixels deep and holds nothing. */
-  { x: 0.536, w: 0.212, z: 0.086, top: 0.622, k: 0.34, mat: "concrete", role: "lipR" },
+  { x: 0.550, w: 0.200, z: 0.086, top: 0.622, k: 0.34, mat: "concrete", role: "lipR" },
   { x: 0.902, w: 0.196, z: 0.096, top: 0.108, mat: "brick", role: "edgeR" }
 ];
 
@@ -207,19 +207,19 @@ const CITY_LANDMARK = { x: 0.672, w: 0.038, h: 0.360 };
    as `z`; `w` and `h` are across and up, as fractions of the frame. */
 const CITY_ROOFKIT = [
   // the way you got up here, and the reason there is a door in the sky
-  { kind: "bulkhead", x: 0.862, z: 0.760, w: 0.088, d: 0.120, h: 0.072 },
+  { kind: "bulkhead", x: 0.862, z: 0.760, w: 0.0748, d: 0.102, h: 0.0612 },
   // the tank, on its braced frame, with the ladder somebody has to climb
-  { kind: "tank",     x: 0.108, z: 0.700, r: 0.030 },
+  { kind: "tank",     x: 0.108, z: 0.700, r: 0.0255 },
   // two condensers on their pads, and the duct that joins them
-  { kind: "unit",     x: 0.318, z: 0.440, w: 0.078, d: 0.075, h: 0.034 },
-  { kind: "unit",     x: 0.646, z: 0.395, w: 0.068, d: 0.068, h: 0.030 },
-  { kind: "duct",     x: 0.482, z: 0.415, w: 0.250, d: 0.030, h: 0.017 },
+  { kind: "unit",     x: 0.318, z: 0.440, w: 0.0663, d: 0.0638, h: 0.0289 },
+  { kind: "unit",     x: 0.646, z: 0.395, w: 0.0578, d: 0.0578, h: 0.0255 },
+  { kind: "duct",     x: 0.482, z: 0.415, w: 0.2125, d: 0.0255, h: 0.0145 },
   // the stacks, in a group, because the risers under them are in one wall
-  { kind: "stack",    x: 0.196, z: 0.300, h: 0.034 },
-  { kind: "stack",    x: 0.222, z: 0.318, h: 0.026 },
-  { kind: "stack",    x: 0.716, z: 0.640, h: 0.028 },
+  { kind: "stack",    x: 0.196, z: 0.300, h: 0.0289 },
+  { kind: "stack",    x: 0.222, z: 0.318, h: 0.0221 },
+  { kind: "stack",    x: 0.716, z: 0.640, h: 0.0238 },
   // and the television
-  { kind: "dish",     x: 0.930, z: 0.330, r: 0.028 },
+  { kind: "dish",     x: 0.930, z: 0.330, r: 0.0238 },
   /* And one thing close enough to be cut by the bottom of the window.
 
      Without it the deck was a band of objects all at much the same size, and a
@@ -228,8 +228,8 @@ const CITY_ROOFKIT = [
      near object, half out of the frame, does more for the depth of this roof
      than everything standing behind it put together, and it is what every
      photograph taken from a roof has in the corner of it. */
-  { kind: "duct",     x: 0.135, z: 0.175, w: 0.300, d: 0.045, h: 0.030 },
-  { kind: "hatch",    x: 0.430, z: 0.200, w: 0.086, d: 0.055, h: 0.013 }
+  { kind: "duct",     x: 0.135, z: 0.175, w: 0.255, d: 0.0382, h: 0.0255 },
+  { kind: "hatch",    x: 0.430, z: 0.200, w: 0.0731, d: 0.0467, h: 0.011 }
 ];
 
 /* Where the birds go.
@@ -1023,7 +1023,14 @@ class Scene {
          you rise above it; buildings shorter than you show their roofs below
          it. `CITY_PARAPET` is the near edge of the world and the far edge of
          the floor. */
-      this.plane = this.makePlane(CITY_EYE, 1.07, CITY_PARAPET + 0.004);
+      /* The fourth argument is the scale at your feet, and it is the whole of
+         how *near* this roof feels. Left at the default the deck ran from 1.25
+         at the bottom of the window to 0.69 at the wall — so everything
+         standing on it, and everything landing on it, was drawn at two thirds
+         size at the far edge, and a pigeon on the parapet came out the size of
+         a sparrow. The roof is a fifth of the frame deep; it should read as
+         something you could walk across in a few strides, not as a field. */
+      this.plane = this.makePlane(CITY_EYE, 1.07, CITY_PARAPET + 0.004, 1.85);
 
       /* The street. `x` is where its mouth sits, `hw` how wide that mouth is,
          `vx`/`vy` the point it runs away to — offset from the mouth, because a
@@ -1038,9 +1045,15 @@ class Scene {
          and what is on the hoardings. Which is how a real view works. You do
          not get a different street; you get a different evening on it. */
       const canyon = {
-        x: 0.420, hw: 0.116,
+        /* A little wider, and a little less steeply foreshortened, than it
+           was. The parapet now cuts the near mouth off at the wall — which is
+           right, and is what looking over a wall does — but between that and
+           the old depth ratio the street had become a slot with the whole of
+           its detail crammed into the top third of it. There is a market down
+           there; it is worth being able to see it. */
+        x: 0.420, hw: 0.130,
         vx: 0.398, vy: CITY_EYE + 0.020,
-        d: 5.6,
+        d: 5.0,
       };
       this.canyon = canyon;
 
@@ -1063,22 +1076,84 @@ class Scene {
       for (let i = 0; i < 11 + Math.floor(rng()*5); i++) {
         canyon.stalls.push({ u: atDepth(0.02 + rng()*0.96),
           side: rng() < 0.5 ? -1 : 1,
-          w: 0.46 + rng()*0.30, h: 0.52 + rng()*0.30,
-          hue: Math.floor(rng()*3), lit: rng() < 0.72, ph: rng()*Math.PI*2 });
+          w: 0.30 + rng()*0.16, h: 0.44 + rng()*0.20,
+          hue: Math.floor(rng()*3), lit: rng() < 0.72, ph: rng()*Math.PI*2,
+          // what is on the trestle, and the awning's own stripe
+          goods: 2 + Math.floor(rng()*3), stripe: rng() < 0.55 });
       }
       // far to near, once, so a near awning overlaps the one behind it
       canyon.stalls.sort((a, b) => b.u - a.u);
+
+      /* The shopfronts. A canyon wall with nothing at the bottom of it is a
+         corridor; what makes it a street is that the ground floor is *glass* —
+         lit, signed, and a different thing every twenty feet. These run down
+         both walls, each one a lit window with a fascia over it. */
+      canyon.fronts = [];
+      for (let i = 0; i < 16; i++) {
+        canyon.fronts.push({ u: atDepth(0.015 + i*0.062 + rng()*0.03),
+          side: i % 2 ? -1 : 1,
+          w: 0.30 + rng()*0.22, lit: rng() < 0.78,
+          hue: Math.floor(rng()*3), sign: rng() < 0.5, ph: rng()*Math.PI*2 });
+      }
+      canyon.fronts.sort((a, b) => b.u - a.u);
+
+      /* Vehicles. Two parked at the kerb and one working its way up the
+         street — a market street is still a street, and the one thing that
+         says so at a glance is something with wheels on it. */
+      canyon.cars = [
+        { u: atDepth(0.10), side: -1, sz: 1.00, kind: "van", moving: false },
+        { u: atDepth(0.34), side: 1, sz: 0.86, kind: "car", moving: false },
+        { u: atDepth(0.62), side: -1, sz: 0.92, kind: "car", moving: true,
+          sp: 0.020, dir: -1 }
+      ];
+
+      /* Bollards down the kerb, a bin, and a couple of young trees in
+         gratings. Street furniture is most of what fills the gap between the
+         kerb and the shopfront, and without it a pavement is a grey band. */
+      canyon.props = [];
+      for (let i = 0; i < 14; i++) {
+        canyon.props.push({ u: atDepth(0.02 + i*0.070 + rng()*0.03),
+          side: rng() < 0.5 ? -1 : 1,
+          kind: rng() < 0.66 ? "bollard" : (rng() < 0.5 ? "bin" : "tree"),
+          ph: rng()*Math.PI*2 });
+      }
+      canyon.props.sort((a, b) => b.u - a.u);
+
+      // a crossing, where the street is wide enough for it still to read
+      canyon.crossing = atDepth(0.20);
+
       canyon.lamps = [];
       for (let i = 0; i < 4; i++) {
         canyon.lamps.push({ u: atDepth(0.10 + i*0.26 + rng()*0.10),
           side: rng() < 0.5 ? -1 : 1, ph: rng()*Math.PI*2 });
       }
+      /* The people. Each carries enough to be drawn as somebody rather than as
+         a mark: how tall, how broad, which way, how fast, and whether they are
+         carrying anything. `stride` is set from the speed, so a figure's legs
+         and the ground it covers agree — which is the one thing the eye checks
+         without being asked. */
       canyon.walkers = [];
-      for (let i = 0; i < 18; i++) {
-        canyon.walkers.push({ u: atDepth(rng()), off: (rng() - 0.5)*1.35,
-          dir: rng() < 0.5 ? -1 : 1, sp: 0.016 + rng()*0.022,
-          ph: rng()*Math.PI*2, sz: 0.82 + rng()*0.42 });
+      for (let i = 0; i < 26; i++) {
+        const sp = 0.016 + rng()*0.024;
+        canyon.walkers.push({ u: atDepth(rng()), off: (rng() - 0.5)*1.30,
+          dir: rng() < 0.5 ? -1 : 1, sp,
+          ph: rng()*Math.PI*2, sz: 0.84 + rng()*0.34,
+          build: 0.86 + rng()*0.30,
+          tone: rng(), bag: rng() < 0.30, hat: rng() < 0.16,
+          stride: sp*54 });
       }
+      /* And a few standing still — at a stall, or talking. A street where
+         every single person is walking reads as a conveyor. */
+      for (let i = 0; i < 6; i++) {
+        canyon.walkers.push({ u: atDepth(0.03 + rng()*0.5),
+          off: (rng() - 0.5)*1.40,
+          dir: rng() < 0.5 ? -1 : 1, sp: 0,
+          ph: rng()*Math.PI*2, sz: 0.86 + rng()*0.30,
+          build: 0.88 + rng()*0.26,
+          tone: rng(), bag: rng() < 0.4, hat: rng() < 0.14,
+          stride: 0, still: true });
+      }
+
       // and a footbridge over it, which is what closes the slot off halfway up
       canyon.bridge = { u: 0.46, h: 0.62, rails: true };
 
@@ -3766,6 +3841,7 @@ class Scene {
     const cn = this.canyon;
     if (!cn) return;
     for (const p of cn.walkers) {
+      if (p.still) continue;             // the ones stopped at a stall stay stopped
       /* At a constant rate in `u`, which is a distance along the street and
          not a distance across the picture — so a figure at the far end creeps
          and the same figure arriving at the near kerb is striding, and neither
@@ -3773,9 +3849,20 @@ class Scene {
       p.u += p.dir*p.sp*dt;
       if (p.u > 1.02) { p.u = 1.02; p.dir = -1; }
       else if (p.u < -0.02) { p.u = -0.02; p.dir = 1; }
+      /* The gait. Distance covered and not time elapsed, so the legs of a
+         figure at the far end turn over slowly and the same figure at the near
+         kerb is striding — which is the one thing the eye checks about a
+         walking figure without ever being asked to. */
+      p.gait = (p.gait || 0) + p.sp*dt*p.stride;
       // and they drift across the width of it as they go
       p.off += Math.sin(this.t*0.3 + p.ph)*dt*0.10;
       if (p.off > 1.4) p.off = 1.4; else if (p.off < -1.4) p.off = -1.4;
+    }
+    for (const v of (cn.cars || [])) {
+      if (!v.moving) continue;
+      v.u += v.dir*v.sp*dt;
+      if (v.u > 1.02) v.u = -0.01;
+      else if (v.u < -0.02) v.u = 1.01;
     }
   }
 
@@ -4716,7 +4803,28 @@ class Scene {
     c.lineTo(fx + fhw, fy); c.lineTo(fx - fhw, fy);
     c.closePath();
     c.clip();
+    /* And not below the wall you are looking over.
+
+       The street's near mouth is at the deck's own line, which is a parapet's
+       height *below* the top of the wall — so the nearest stretch of it is
+       behind that wall and cannot be seen, which is true of every street
+       looked at over every parapet. The static half of the street is painted
+       into the near layer and the wall goes down over it a moment later, so it
+       was never a problem there; the moving half is drawn after that layer has
+       been blitted and had no such protection. Two figures at the near kerb
+       were walking straight up the wall and out onto the roof. */
+    const cut = this.cityParapetTop(this.canyon.x)*H;
+    c.beginPath();
+    c.rect(0, 0, W, cut);
+    c.clip();
   }
+
+  /* Where a point across the street lands, for a lateral `s` running -1 at the
+     left wall to +1 at the right. Everything down there is placed in `u` and
+     `s` and nothing is placed in pixels, so a kerb, a bollard, a wheel and a
+     pair of feet at the same distance cannot disagree about where the street
+     is. */
+  canyonX(a, s, W) { return (a.cx + s*a.hw)*W; }
 
   drawCanyon(c, W, H, bot, lum, phase) {
     const cn = this.canyon;
@@ -4742,8 +4850,7 @@ class Scene {
        It is a street at every hour, not only after dark. At noon a canyon is
        still the warmest thing in a cool frame: the sun cannot get down into it,
        so the tarmac is in shadow, but the shadow is a warm one bounced off the
-       walls either side. The ramp is the same shape all day; `lum` only decides
-       how much of it is sodium and how much is daylight. */
+       walls either side. */
     const road = mix(this._cityFc, bot, 0.26);
     const g = c.createLinearGradient(0, fy, 0, ny);
     g.addColorStop(0, css(mix(road, cy.ink, 0.34 + 0.36*lum)));
@@ -4756,30 +4863,93 @@ class Scene {
     c.closePath();
     c.fill();
 
+    c.save();
+    c.clip();
+
     /* The two walls running away down it, seen almost edge-on: narrow slivers
        inside the slot, the left one in shadow and the right one taking the
        light, so the street has a side the sun was last on. */
-    c.save();
-    c.clip();
-    for (const s of [-1, 1]) {
+    const KERB = 0.62;                 // where the pavement gives way to the road
+    for (const sgn of [-1, 1]) {
       c.fillStyle = css(mix(mix(this._cityFc, bot, 0.14), cy.ink,
-        s < 0 ? 0.56 : 0.36));
+        sgn < 0 ? 0.56 : 0.36));
       c.beginPath();
-      c.moveTo(nx + s*nhw, ny);
-      c.lineTo(nx + s*nhw*0.62, ny);
-      c.lineTo(fx + s*fhw*0.55, fy);
-      c.lineTo(fx + s*fhw, fy);
+      c.moveTo(nx + sgn*nhw, ny);
+      c.lineTo(this.canyonX(near, sgn*0.86, W), ny);
+      c.lineTo(this.canyonX(far, sgn*0.86, W), fy);
+      c.lineTo(fx + sgn*fhw, fy);
       c.closePath(); c.fill();
     }
 
-    // the kerbs, the one line that says this is a street and not a corridor
-    c.strokeStyle = `rgba(${cy.lampRGB},${0.10 + 0.16*lum})`;
-    c.lineWidth = 1;
-    c.beginPath();
-    for (const s of [-1, 1]) {
-      c.moveTo(nx + s*nhw*0.60, ny); c.lineTo(fx + s*fhw*0.55, fy);
+    /* ---- the pavements -------------------------------------------------
+
+       A canyon with a single flat floor is a corridor. What makes it a street
+       is that the floor is in three parts at two levels — a walk either side,
+       a kerb, and the carriageway between — and the kerb is the line that says
+       so. It is also where every other thing down there is placed from: a
+       bollard stands on it, a stall backs onto it, a van parks against it and
+       a figure crosses it. */
+    const walk = mix(mix(this._cityFc, bot, 0.20), this.tok.moon, 0.10);
+    for (const sgn of [-1, 1]) {
+      c.fillStyle = css(mix(walk, cy.ink, sgn < 0 ? 0.34 : 0.24));
+      c.beginPath();
+      c.moveTo(this.canyonX(near, sgn*0.86, W), ny);
+      c.lineTo(this.canyonX(near, sgn*KERB, W), ny);
+      c.lineTo(this.canyonX(far, sgn*KERB, W), fy);
+      c.lineTo(this.canyonX(far, sgn*0.86, W), fy);
+      c.closePath(); c.fill();
+      // the kerb's own face, a pale line the whole length of the street
+      c.strokeStyle = css(mix(walk, this.tok.moon, 0.24));
+      c.lineWidth = Math.max(1, nhw*0.035);
+      c.beginPath();
+      c.moveTo(this.canyonX(near, sgn*KERB, W), ny);
+      c.lineTo(this.canyonX(far, sgn*KERB, W), fy);
+      c.stroke();
+      c.strokeStyle = css(mix(cy.ink, road, 0.30));
+      c.lineWidth = Math.max(0.7, nhw*0.016);
+      c.beginPath();
+      c.moveTo(this.canyonX(near, sgn*KERB, W), ny);
+      c.lineTo(this.canyonX(far, sgn*KERB, W), fy);
+      c.stroke();
     }
-    c.stroke();
+
+    /* ---- what is painted on the road ------------------------------------
+
+       A centre line in dashes, and a crossing. Both are laid out along `u`, so
+       the dashes shorten and crowd toward the far end exactly as the real ones
+       do — and that convergence is worth more for the depth of the street than
+       anything standing in it. */
+    const paint = this.tok.moon;
+    const paintRGB = `${paint[0]|0},${paint[1]|0},${paint[2]|0}`;
+    c.fillStyle = `rgba(${paintRGB},${0.20 + 0.16*lum})`;
+    c.beginPath();
+    for (let i = 0; i < 22; i++) {
+      const u0 = i/22, u1 = u0 + 0.026;
+      if (u0 > 0.94) break;
+      const a0 = this.canyonAt(u0), a1 = this.canyonAt(u1);
+      const w0 = Math.max(0.4, a0.hw*W*0.018), w1 = Math.max(0.3, a1.hw*W*0.018);
+      c.moveTo(a0.cx*W - w0, a0.y*H); c.lineTo(a0.cx*W + w0, a0.y*H);
+      c.lineTo(a1.cx*W + w1, a1.y*H); c.lineTo(a1.cx*W - w1, a1.y*H);
+      c.closePath();
+    }
+    c.fill();
+
+    // the crossing: bars across the carriageway, foreshortened with it
+    if (cn.crossing !== undefined) {
+      const cu = cn.crossing;
+      c.fillStyle = `rgba(${paintRGB},${0.26 + 0.14*lum})`;
+      c.beginPath();
+      for (let i = -3; i <= 3; i++) {
+        const s0 = i*0.16 - 0.055, s1 = i*0.16 + 0.055;
+        const a0 = this.canyonAt(cu), a1 = this.canyonAt(Math.min(1, cu + 0.055));
+        c.moveTo(this.canyonX(a0, s0, W), a0.y*H);
+        c.lineTo(this.canyonX(a0, s1, W), a0.y*H);
+        c.lineTo(this.canyonX(a1, s1, W), a1.y*H);
+        c.lineTo(this.canyonX(a1, s0, W), a1.y*H);
+        c.closePath();
+      }
+      c.fill();
+    }
 
     this.drawCanyonKit(c, W, H, lum, 0);
     c.restore();
@@ -4788,44 +4958,161 @@ class Scene {
     this.drawCanyonBridge(c, W, H, bot, lum);
   }
 
-  /* Stalls, lamps and people, all of them placed by how far down the street
-     they are and drawn far to near. Kept inside one clip and one sort, because
-     forty small objects is forty rasterizations however they are arranged and
-     the only way to keep that honest is to give each of them very few. */
+  /* Shopfronts, stalls, furniture, traffic and people — all of them placed by
+     how far down the street they are and drawn far to near, because on a floor
+     that is the only order there is. */
   drawCanyonKit(c, W, H, lum, phase) {
     const cn = this.canyon, cy = this.tok.city;
     const dark = css(mix(cy.ink, cy.lamp, 0.10));
+    const cloth = css(mix(mix(cy.ink, this._cityFc, 0.30), cy.lamp, 0.10));
+    const KERB = 0.62;
 
-    // the awnings first: they are behind the people and in front of the walls
-    if (phase !== 1) for (const st of cn.stalls) {
-      const a = this.canyonAt(st.u);
-      const x = (a.cx + st.side*a.hw*0.72)*W, y = a.y*H;
-      const un = this.canyonUnit(a, W);
-      const w = un*st.w, h = un*st.h*0.58;
-      if (w < 1.2) continue;
-      // the stall under it, and the light inside the stall
-      c.fillStyle = dark;
-      c.fillRect(x - w*0.5, y - h*0.72, w, h*0.72);
-      if (st.lit && lum > 0.05) {
-        const col = cy.lamp;
-        c.fillStyle = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${0.34*lum})`;
-        c.fillRect(x - w*0.36, y - h*0.60, w*0.72, h*0.34);
+    if (phase !== 1) {
+      /* ---- the shopfronts ----------------------------------------------
+
+         The ground floor of a street is glass, and lit, and a different thing
+         every twenty feet. Painted first because everything else down there
+         stands in front of them. */
+      for (const f of cn.fronts) {
+        const a = this.canyonAt(f.u);
+        const un = this.canyonUnit(a, W);
+        if (un < 6) continue;
+        const x = this.canyonX(a, f.side*0.80, W), y = a.y*H;
+        const w = un*f.w, h = un*0.62;
+        // the window, with whatever is burning behind it
+        const on = f.lit && lum > 0.03;
+        if (on) {
+          const col = f.hue === 0 ? cy.lamp : this.tok.glassLit;
+          c.fillStyle = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${0.30 + 0.42*lum})`;
+        } else {
+          c.fillStyle = css(mix(cy.ink, this._cityFc, 0.22));
+        }
+        c.fillRect(x - w*0.5, y - h, w, h*0.80);
+        // the fascia over it, which is where a shop puts its name
+        c.fillStyle = css(mix(this._cityFc, cy.ink, 0.44));
+        c.fillRect(x - w*0.56, y - h*1.16, w*1.12, h*0.24);
+        if (f.sign && un > 14) {
+          const col = cy.neon[f.hue];
+          const a2 = lum*(0.85 + 0.15*Math.sin(this.t*0.8 + f.ph));
+          c.fillStyle = `rgba(${cy.neonRGB[f.hue]},${0.25 + 0.55*a2})`;
+          c.fillRect(x - w*0.34, y - h*1.10, w*0.68, h*0.11);
+        }
+        // the stall-board and the step at its door
+        c.fillStyle = css(mix(cy.ink, this._cityFc, 0.10));
+        c.fillRect(x - w*0.5, y - h*0.20, w, h*0.20);
       }
-      /* The awning: a canted roof over the front of it. This is the one shape
-         that says market rather than alley, so it is the brightest thing down
-         there after the lamps — a pale sheet with the stall's light under it. */
-      c.fillStyle = css(mix(mix(this._cityFc, cy.lamp, 0.30 + 0.34*lum),
-        this.tok.moon, 0.30));
-      c.beginPath();
-      c.moveTo(x - w*0.66, y - h*0.72);
-      c.lineTo(x + w*0.66, y - h*0.72);
-      c.lineTo(x + w*0.46, y - h*1.06);
-      c.lineTo(x - w*0.46, y - h*1.06);
-      c.closePath(); c.fill();
-      if (w > 5) {
-        // and the scallops along the front edge of it
-        c.fillStyle = dark;
-        c.fillRect(x - w*0.66, y - h*0.72, w*1.32, Math.max(0.7, h*0.06));
+
+      /* ---- the market ----------------------------------------------------
+
+         A stall is a trestle with goods on it and a canopy over that, held up
+         on four poles. Drawn as one pale sheet it was a shape that said
+         "awning" and nothing else; what makes it a market is being able to see
+         that somebody is standing behind a table under it. */
+      for (const st of cn.stalls) {
+        const a = this.canyonAt(st.u);
+        const un = this.canyonUnit(a, W);
+        const x = this.canyonX(a, st.side*0.72, W), y = a.y*H;
+        const w = un*st.w, h = un*st.h*0.58;
+        if (w < 1.2) continue;
+        // the poles, which is what a canopy is standing on
+        if (w > 4) {
+          c.strokeStyle = dark; c.lineWidth = Math.max(0.6, w*0.035);
+          c.beginPath();
+          for (const sgn of [-1, 1]) {
+            c.moveTo(x + sgn*w*0.58, y);
+            c.lineTo(x + sgn*w*0.50, y - h*1.06);
+          }
+          c.stroke();
+        }
+        // the trestle, and the goods heaped on it
+        c.fillStyle = cloth;
+        c.fillRect(x - w*0.5, y - h*0.62, w, h*0.62);
+        if (st.lit && lum > 0.05) {
+          const col = cy.lamp;
+          c.fillStyle = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${0.34*lum})`;
+          c.fillRect(x - w*0.42, y - h*0.56, w*0.84, h*0.22);
+        }
+        if (w > 7) {
+          /* What is on the table, as a heap rather than as a row of spots. A
+             stall at this distance is a shape with a bright ridge along the
+             top of it; picking out individual apples put a line of pale holes
+             through the trestle and read as damage. */
+          c.fillStyle = css(mix(this._cityFc, cy.lamp, 0.34 + 0.26*lum));
+          c.beginPath();
+          c.moveTo(x - w*0.40, y - h*0.62);
+          for (let i = 0; i <= st.goods; i++) {
+            const gx = x - w*0.40 + w*0.80*i/st.goods;
+            c.quadraticCurveTo(gx + w*0.40/st.goods, y - h*0.74,
+              gx + w*0.80/st.goods, y - h*0.62);
+          }
+          c.closePath(); c.fill();
+        }
+        /* The canopy: a canted sheet over the front of it. This is the one
+           shape that says market rather than alley, so it is the brightest
+           thing down there after the lamps. */
+        c.fillStyle = css(mix(mix(this._cityFc, cy.lamp, 0.30 + 0.34*lum),
+          this.tok.moon, 0.30));
+        c.beginPath();
+        c.moveTo(x - w*0.66, y - h*0.98);
+        c.lineTo(x + w*0.66, y - h*0.98);
+        c.lineTo(x + w*0.46, y - h*1.30);
+        c.lineTo(x - w*0.46, y - h*1.30);
+        c.closePath(); c.fill();
+        if (w > 5) {
+          // the valance along its front edge, and the stripe up the sheet
+          c.fillStyle = dark;
+          c.fillRect(x - w*0.66, y - h*0.98, w*1.32, Math.max(0.7, h*0.07));
+          if (st.stripe && w > 9) {
+            c.fillStyle = css(mix(mix(cy.neon[st.hue], this._cityFc, 0.52),
+              this.tok.moon, 0.34));
+            c.beginPath();
+            for (let i = -1; i <= 1; i++) {
+              c.moveTo(x + i*w*0.30 - w*0.05, y - h*0.98);
+              c.lineTo(x + i*w*0.30 + w*0.05, y - h*0.98);
+              c.lineTo(x + i*w*0.30 + w*0.035, y - h*1.30);
+              c.lineTo(x + i*w*0.30 - w*0.035, y - h*1.30);
+              c.closePath();
+            }
+            c.fill();
+          }
+        }
+      }
+
+      /* ---- what stands on the pavement ---------------------------------- */
+      for (const pr of cn.props) {
+        const a = this.canyonAt(pr.u);
+        const un = this.canyonUnit(a, W);
+        if (un < 5) continue;
+        const x = this.canyonX(a, pr.side*(KERB - 0.06), W), y = a.y*H;
+        c.fillStyle = dark; c.strokeStyle = dark;
+        if (pr.kind === "bollard") {
+          const h = un*0.11, w = Math.max(0.7, un*0.028);
+          c.fillRect(x - w/2, y - h, w, h);
+          c.beginPath(); c.ellipse(x, y - h, w*0.7, w*0.5, 0, 0, Math.PI*2); c.fill();
+        } else if (pr.kind === "bin") {
+          const h = un*0.14, w = un*0.070;
+          c.fillRect(x - w/2, y - h, w, h);
+          c.fillStyle = css(mix(cy.ink, this._cityFc, 0.24));
+          c.fillRect(x - w*0.60, y - h - Math.max(0.8, h*0.10), w*1.2, Math.max(0.8, h*0.10));
+        } else {
+          // a young tree in a grating, which is what a council plants
+          const h = un*0.40;
+          c.lineWidth = Math.max(0.7, un*0.020); c.lineCap = "round";
+          c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - h*0.55); c.stroke();
+          c.fillStyle = css(mix(mix(cy.ink, this.tok.leaf, 0.62), this._cityFc, 0.16));
+          c.beginPath();
+          c.ellipse(x, y - h*0.74, un*0.055, un*0.080, 0, 0, Math.PI*2);
+          c.fill();
+        }
+      }
+
+      /* ---- the traffic ---------------------------------------------------
+
+         Parked hard against the kerb, which is where the width of a street is
+         actually spent, and one working its way up the middle. A market street
+         is still a street; something with wheels on it is what says so. */
+      for (const v of (cn.cars || [])) {
+        if (!v.moving) this.paintCanyonCar(c, W, H, v, lum);
       }
     }
 
@@ -4834,60 +5121,225 @@ class Scene {
        are painted in different passes. */
     for (const L of cn.lamps) {
       const a = this.canyonAt(L.u);
-      const x = (a.cx + L.side*a.hw*0.52)*W, y = a.y*H;
+      const x = this.canyonX(a, L.side*(KERB - 0.02), W), y = a.y*H;
       const h = this.canyonUnit(a, W)*0.95;
       if (h < 3) continue;
       if (phase !== 1) {
         c.strokeStyle = dark; c.lineWidth = Math.max(0.8, a.f*2.2); c.lineCap = "round";
-        c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - h); c.stroke();
+        c.beginPath();
+        c.moveTo(x, y); c.lineTo(x, y - h);
+        // the swan neck that leans the lamp out over the road
+        c.lineTo(x - L.side*h*0.16, y - h*1.03);
+        c.stroke();
+        c.fillStyle = dark;
+        c.beginPath();
+        c.ellipse(x - L.side*h*0.17, y - h*1.03, Math.max(0.8, h*0.055),
+          Math.max(0.5, h*0.028), 0, 0, Math.PI*2);
+        c.fill();
       }
       if (phase !== 0 && lum > 0.04) {
         const fl = 0.9 + 0.1*Math.sin(this.t*0.7 + L.ph);
-        this.drawGlow(c, cy.lampRGB, x, y - h*0.62, h*0.95, h*1.15, 0.40*lum*fl);
+        this.drawGlow(c, cy.lampRGB, x - L.side*h*0.17, y - h*1.0,
+          h*0.95, h*1.15, 0.40*lum*fl);
       }
     }
     if (phase === 0) return;
 
-    /* People. Two marks each — a body and a head — because at this size that
-       is all that survives, and because a street with forty legs in it costs
-       more than the whole of the rest of the city put together. */
-    c.fillStyle = dark;
-    c.beginPath();
-    for (const p of cn.walkers) {
-      const a = this.canyonAt(p.u);
-      const x = (a.cx + p.off*a.hw*0.72)*W, y = a.y*H;
-      const h = this.canyonUnit(a, W)*0.20*p.sz;
-      if (h < 1.4) continue;
-      const bob = Math.sin(this.t*3.4 + p.ph)*h*0.045;
-      const bw = Math.max(0.8, h*0.30);
-      c.rect(x - bw*0.5, y - h + bob, bw, h*0.72);
-      c.rect(x - bw*0.34, y - h*1.18 + bob, bw*0.68, h*0.26);
+    /* Everything that moves down there, in one far-to-near queue — the moving
+       traffic and the people, sorted together, because a figure walking in
+       front of a van has to be drawn in front of it. */
+    const moving = [];
+    for (const v of (cn.cars || [])) if (v.moving) moving.push(v);
+    for (const p of cn.walkers) moving.push(p);
+    moving.sort((a, b) => b.u - a.u);
+    for (const m of moving) {
+      if (m.kind) this.paintCanyonCar(c, W, H, m, lum);
+      else this.paintWalker(c, W, H, m, lum);
     }
-    c.fill();
   }
 
+  /* One vehicle, seen down a street from eight storeys up: a body, a roof, a
+     windscreen and the two wheels on the side you can see. At the far end it
+     is four pixels of dark and none of that survives, so it stops being drawn
+     as anything but a block. */
+  paintCanyonCar(c, W, H, v, lum) {
+    const cn = this.canyon, cy = this.tok.city;
+    const a = this.canyonAt(v.u);
+    const un = this.canyonUnit(a, W);
+    const s = v.side*(v.moving ? 0.30 : 0.50);
+    const x = this.canyonX(a, s, W), y = a.y*H;
+    const L = un*(v.kind === "van" ? 0.46 : 0.40)*v.sz;
+    const h = un*(v.kind === "van" ? 0.24 : 0.16)*v.sz;
+    if (L < 2) return;
+    const body = css(mix(cy.ink, this._cityFc, 0.16 + (v.sz - 0.86)*0.5));
+    this.contactShadow(c, x, y, L*0.5, 0.24);
+    c.fillStyle = body;
+    c.fillRect(x - L/2, y - h, L, h);
+    if (L > 7) {
+      // the cab, set back on a car and square on a van
+      c.fillStyle = css(mix(body, cy.ink, 0.22));
+      const cw = v.kind === "van" ? L*0.34 : L*0.52;
+      c.fillRect(x - cw/2 - (v.kind === "van" ? L*0.20 : 0), y - h*1.55, cw, h*0.58);
+      // glass, which after dark is the only bright thing on a car
+      c.fillStyle = `rgba(${this.tok.glassLit[0]|0},${this.tok.glassLit[1]|0},${this.tok.glassLit[2]|0},${0.20 + 0.24*(1 - lum)})`;
+      c.fillRect(x - cw/2 - (v.kind === "van" ? L*0.20 : 0) + L*0.03,
+        y - h*1.50, cw - L*0.06, h*0.42);
+      // wheels
+      c.fillStyle = css(mix(cy.ink, this._cityFc, 0.04));
+      const wr = Math.max(0.7, h*0.20);
+      for (const u of [-0.30, 0.30]) {
+        c.beginPath(); c.ellipse(x + L*u, y, wr, wr*0.7, 0, 0, Math.PI*2); c.fill();
+      }
+      // and the lamps at whichever end it is pointed
+      if (lum > 0.10) {
+        const lit = v.dir < 0 ? -1 : 1;
+        this.drawGlow(c, cy.lampRGB, x + lit*L*0.5, y - h*0.55, L*0.34, h*0.9, 0.5*lum);
+        this.drawGlow(c, "255,80,60", x - lit*L*0.5, y - h*0.55, L*0.22, h*0.6, 0.4*lum);
+      }
+    }
+  }
+
+  /* One person.
+
+     They used to be two marks — a body and a head — on the argument that
+     nothing else survives at this size. That is true at the far end of the
+     street and false at the near end, where a figure is thirty pixels tall and
+     two stacked rectangles read as a bollard rather than as somebody walking.
+     So it is drawn at whatever size it lands at: a block far off, a figure
+     with legs near to, and the legs turn over at a rate set by the ground
+     covered rather than by the clock — a figure whose feet slide is the one
+     mistake in an animated crowd that everybody sees and nobody can name. */
+  paintWalker(c, W, H, p, lum) {
+    const cy = this.tok.city;
+    const a = this.canyonAt(p.u);
+    const un = this.canyonUnit(a, W);
+    const x = this.canyonX(a, p.off*0.72, W), y = a.y*H;
+    const h = un*0.21*p.sz;
+    if (h < 1.2) return;
+    /* Not one dark: a crowd in a single tone is a stencil. Three tones over
+       the ink, drawn from the figure's own number so it keeps its coat all
+       session. */
+    const tone = css(mix(cy.ink, this._cityFc, 0.03 + p.tone*0.34));
+    /* Shoulders about a quarter of the height, which is what a person
+       measures. At three tenths — which is what this was — a figure comes out
+       as wide as a postbox, and a street of them reads as a row of chess
+       pieces however well their legs are moving. */
+    const bw = Math.max(0.8, h*0.23*p.build);
+
+    if (h < 5) {
+      // far off: the two marks, which is all there is to see
+      c.fillStyle = tone;
+      c.fillRect(x - bw*0.5, y - h, bw, h*0.74);
+      c.fillRect(x - bw*0.34, y - h*1.18, bw*0.68, h*0.26);
+      return;
+    }
+
+    const g = p.gait || 0;
+    const swing = p.still ? 0 : Math.sin(g);
+    const bob = p.still ? 0 : Math.abs(Math.cos(g))*h*0.030;
+    const top = y - h - bob;
+    this.contactShadow(c, x, y, bw*0.8, 0.22);
+
+    /* The proportions are a person's and not a snowman's: the head an eighth
+       of the height, the shoulders at a fifth down, the hips at the middle,
+       and therefore half of the whole figure being leg. Getting that split
+       wrong is what makes a small figure read as a bollard — far more than any
+       amount of detail on it, none of which is visible anyway. */
+    const hipY = top + h*0.50, shoulderY = top + h*0.20, headR = h*0.062;
+
+    c.strokeStyle = tone; c.lineCap = "round"; c.lineJoin = "round";
+    // legs: one forward, one back, and the ground stays where it is
+    c.lineWidth = Math.max(0.8, bw*0.34);
+    c.beginPath();
+    c.moveTo(x, hipY); c.lineTo(x + swing*h*0.19, y);
+    c.moveTo(x, hipY); c.lineTo(x - swing*h*0.19, y);
+    c.stroke();
+    // the arm you can see, swinging against the leg on the same side
+    c.lineWidth = Math.max(0.6, bw*0.24);
+    c.beginPath();
+    c.moveTo(x, shoulderY + h*0.03);
+    c.lineTo(x - swing*h*0.13, hipY - h*0.02);
+    c.stroke();
+    // the trunk, tapering to the shoulders the way a coat does
+    c.fillStyle = tone;
+    c.beginPath();
+    c.moveTo(x - bw*0.42, shoulderY);
+    c.lineTo(x + bw*0.42, shoulderY);
+    c.lineTo(x + bw*0.50, hipY);
+    c.lineTo(x - bw*0.50, hipY);
+    c.closePath(); c.fill();
+    // neck and head
+    c.beginPath();
+    c.ellipse(x, top + h*0.085, headR*0.86, headR, 0, 0, Math.PI*2);
+    c.fill();
+    if (p.hat && h > 10) {
+      c.fillRect(x - headR*1.4, top + h*0.030, headR*2.8, Math.max(0.8, h*0.024));
+    }
+    // and whatever they are carrying, which hangs and does not swing
+    if (p.bag && h > 9) {
+      c.fillStyle = css(mix(cy.ink, this._cityFc, 0.20));
+      c.fillRect(x + bw*0.44, hipY - h*0.10, bw*0.36, h*0.16);
+    }
+  }
+
+  /* The bridge over the street.
+
+     It was a slab: one thin rectangle a half wider than the canyon at each
+     end, floating clear of both buildings with nothing holding it up and a
+     handrail on top. Widening the street made it worse, because the overhang
+     is a fraction of the street's width and it grew with it — a shelf ruled
+     across the picture in front of everything.
+
+     It is an enclosed link between two buildings, which is what a thing at
+     that height over a street actually is. It lands *on* the walls rather than
+     floating past them, it has a depth you can see the underside of, and it is
+     glazed, because the whole point of one is that people cross it in the
+     warm. */
   drawCanyonBridge(c, W, H, bot, lum) {
     const cn = this.canyon, br = cn.bridge, cy = this.tok.city;
     const a = this.canyonAt(br.u);
-    const y = a.y*H - a.hw*H*br.h*2.4;
-    const x0 = (a.cx - a.hw*1.55)*W, x1 = (a.cx + a.hw*1.55)*W;
-    const th = Math.max(1.6, a.hw*H*0.24);
-    c.fillStyle = css(mix(this._cityFc, cy.ink, 0.50));
-    c.fillRect(x0, y, x1 - x0, th);
-    c.strokeStyle = css(this._cityInk(0.4));
-    c.lineWidth = 1;
-    c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, th);
-    if (br.rails) {
-      // the handrail, and the posts under it: a bridge people cross
-      c.strokeStyle = css(mix(this._cityFc, cy.ink, 0.28));
+    const un = this.canyonUnit(a, W);
+    const y = a.y*H - un*br.h*2.4;
+    // just far enough past the lip to bed into the wall either side
+    const x0 = this.canyonX(a, -1.06, W), x1 = this.canyonX(a, 1.06, W);
+    const th = Math.max(2.4, un*0.42);
+    if (x1 - x0 < 4) return;
+
+    const body = mix(this._cityFc, cy.ink, 0.42);
+    // the soffit: the underside, which is the face you are looking up at
+    c.fillStyle = css(mix(body, cy.ink, 0.30));
+    c.fillRect(x0, y + th*0.80, x1 - x0, th*0.26);
+    // the body of it
+    c.fillStyle = css(body);
+    c.fillRect(x0, y, x1 - x0, th*0.80);
+    // the glazing, one continuous band the whole way across
+    const gl = this.tok.glassLit;
+    c.fillStyle = lum > 0.10
+      ? `rgba(${gl[0]|0},${gl[1]|0},${gl[2]|0},${0.18 + 0.34*lum})`
+      : css(mix(mix(cy.glass, this._cityAir, 0.30), cy.ink, 0.26));
+    c.fillRect(x0 + th*0.10, y + th*0.20, x1 - x0 - th*0.20, th*0.44);
+    // the mullions between the panes
+    if (x1 - x0 > 24) {
+      c.strokeStyle = css(mix(body, cy.ink, 0.24));
+      c.lineWidth = Math.max(0.6, th*0.055);
       c.beginPath();
-      c.moveTo(x0, y - th*1.5); c.lineTo(x1, y - th*1.5);
-      for (let i = 0; i <= 6; i++) {
-        const px = x0 + (x1 - x0)*i/6;
-        c.moveTo(px, y); c.lineTo(px, y - th*1.5);
+      const n = Math.max(3, Math.round((x1 - x0)/Math.max(6, th*0.9)));
+      for (let i = 1; i < n; i++) {
+        const mx = x0 + (x1 - x0)*i/n;
+        c.moveTo(mx, y + th*0.20); c.lineTo(mx, y + th*0.64);
       }
       c.stroke();
     }
+    // the parapet along its top, and the line round the whole of it
+    c.fillStyle = css(mix(body, this.tok.moon, 0.14));
+    c.fillRect(x0, y, x1 - x0, Math.max(1, th*0.14));
+    c.strokeStyle = css(this._cityInk(0.34));
+    c.lineWidth = Math.max(0.8, Math.min(W, H)*0.0016);
+    c.lineJoin = "miter";
+    c.strokeRect(x0 + 0.5, y + 0.5, x1 - x0 - 1, th*0.80);
+    // and the shadow it throws down the far wall of the street
+    c.fillStyle = "rgba(0,0,0,0.14)";
+    c.fillRect(x0, y + th*1.06, x1 - x0, th*0.30);
   }
 
   /* The windows that are burning, dealt out of the same grid the dark ones are

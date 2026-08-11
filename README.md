@@ -1148,6 +1148,66 @@ people were sized as a fraction of the frame's height rather than of the road
 they stand in, which made everyone in the street a giant in a narrow window and
 a mouse in a wide one — the same street, the same people, two different cities.
 
+**What is actually down there.** A slot with a gradient in it and some marks
+moving about is a *diagram* of a street. What makes it a street is that its
+floor is in three parts at two levels — a walk either side, a kerb, and the
+carriageway between — and the kerb is the line that says so. It is also what
+everything else is placed from: a bollard stands on it, a stall backs onto it,
+a van parks against it, a figure crosses it. Above that, the ground floor of
+both walls is glass: lit shopfronts with a fascia over each and a sign on some
+of them, a different thing every twenty feet, because a canyon wall with
+nothing at the bottom of it is a corridor rather than a street.
+
+The road carries a centre line in dashes and a crossing, both laid out along
+`u` rather than across the picture — so the dashes shorten and crowd toward the
+far end exactly as real ones do, and that convergence is worth more for the
+depth of the street than anything standing in it. There is traffic: two parked
+hard against the kerb, which is where the width of a street is actually spent,
+and one working its way up the middle. A market street is still a street, and
+something with wheels on it is what says so at a glance.
+
+A stall is a trestle with goods heaped on it and a canopy over that on four
+poles. Drawn as a single pale sheet it was a shape that said "awning" and
+nothing else; what makes it a market is being able to see that somebody is
+standing behind a table under it. The goods are a heap and not a row of
+individual apples — picking those out put a line of pale holes through the
+trestle and read as damage.
+
+**The people are people.** They used to be two marks, a body and a head, on the
+argument that nothing else survives at that size. That is true at the far end
+of the street and false at the near end, where a figure is thirty pixels tall
+and two stacked rectangles read as a bollard. They are drawn at whatever size
+they land at: a block far off, a figure with legs near to.
+
+Three things make a small figure read as a person, and none of them is detail.
+The first is proportion — head an eighth of the height, shoulders a fifth down,
+hips at the middle, so half the whole figure is leg. The trunk used to be three
+tenths of the height wide, which is as broad as a postbox, and a street of
+those reads as a row of chess pieces however well their legs are moving. The
+second is that the legs turn over at a rate set by the *ground covered* and not
+by the clock: a figure whose feet slide is the one mistake in an animated crowd
+that everybody sees and nobody can name. The third is that they are not all one
+colour, and not all moving — a crowd in a single tone is a stencil, and a
+street where every last person is walking is a conveyor, so some of them are
+standing at a stall.
+
+**The bridge over the street** was a slab: one thin rectangle half again wider
+than the canyon at each end, floating clear of both buildings with nothing
+holding it up. It is an enclosed glazed link now, which is what a thing at that
+height over a street actually is — it lands *on* the walls rather than floating
+past them, it has an underside you are looking up at, and it throws a shadow
+down the far wall.
+
+**How near the roof is** is one number, and it is the fourth argument to
+`makePlane`. Left at its default the deck ran from a scale of 1.25 at the bottom
+of the window to 0.69 at the wall — so everything standing on it and everything
+*landing* on it was drawn at two thirds size at the far edge, and a pigeon on
+the parapet came out the size of a sparrow. The roof is a fifth of the frame
+deep; it should read as something you could cross in a few strides. Raising
+that term brings the whole deck forward together — the plant, the cast, and
+their shadows, all by the same amount, because all three read the same
+function.
+
 Around the slot: the pair of buildings that lip it, which are what the frame is
 built on. The left goes up out of the top of the picture with a banner down its
 inner corner. The right is *lower than you*, so its roof is a floor of pipework
