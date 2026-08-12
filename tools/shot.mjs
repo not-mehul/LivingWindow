@@ -50,6 +50,13 @@ const browser = await chromium.launch({
   args: ['--autoplay-policy=no-user-gesture-required', '--enable-gpu', '--use-gl=swiftshader']
 });
 const page = await browser.newPage({ viewport: { width: W, height: H } });
+/* A throw inside the render loop stops the loop, and the canvas then keeps
+   whatever was last on it — so the harness cheerfully writes out a PNG of an
+   empty sky and says nothing. That is the worst possible failure for a tool
+   whose whole job is to be looked at, and it cost a full cycle of wondering
+   why the city had vanished. Now it says so, and exits non-zero. */
+let broke = null;
+page.on('pageerror', (e) => { if (!broke) broke = e; });
 await page.goto(`${URL_BASE}${URL_BASE.includes('?') ? '&' : '?'}hook=1`,
   { waitUntil: 'networkidle' });
 
@@ -108,3 +115,7 @@ for (const place of places) {
 }
 
 await browser.close();
+if (broke) {
+  console.error(`\n  ! the page threw — the shots above are of a stopped frame:\n    ${broke.message}`);
+  process.exit(1);
+}

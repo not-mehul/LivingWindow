@@ -1149,29 +1149,32 @@ they stand in, which made everyone in the street a giant in a narrow window and
 a mouse in a wide one — the same street, the same people, two different cities.
 
 **What is actually down there.** A slot with a gradient in it and some marks
-moving about is a *diagram* of a street. What makes it a street is that its
-floor is in three parts at two levels — a walk either side, a kerb, and the
-carriageway between — and the kerb is the line that says so. It is also what
-everything else is placed from: a bollard stands on it, a stall backs onto it,
-a van parks against it, a figure crosses it. Above that, the ground floor of
-both walls is glass: lit shopfronts with a fascia over each and a sign on some
-of them, a different thing every twenty feet, because a canyon wall with
-nothing at the bottom of it is a corridor rather than a street.
+moving about is a *diagram* of a street. This one is a **way** rather than a
+road — too narrow for anything with wheels, paved from wall to wall, and the
+only things that come down it are on foot, which is also why the market is
+allowed to stand in the middle of it. There was traffic for a while, and it is
+gone: a parked van and a car working up the middle, which read as a street but
+made it the wrong kind of street.
 
-The road carries a centre line in dashes and a crossing, both laid out along
-`u` rather than across the picture — so the dashes shorten and crowd toward the
-far end exactly as real ones do, and that convergence is worth more for the
-depth of the street than anything standing in it. There is traffic: two parked
-hard against the kerb, which is where the width of a street is actually spent,
-and one working its way up the middle. A market street is still a street, and
-something with wheels on it is what says so at a glance.
+So the floor is one surface, and what gives it depth is the courses across it,
+laid out along `u` so they crowd toward the far end exactly as real setts do —
+worth more for the depth of the street than anything standing on it. Against
+each wall is a band of different paving where the gullies and gratings go, and
+down the middle a runnel, which is how a street with no gutters gets rid of its
+rain and is the one line in the floor that runs *away* from you rather than
+across.
 
-A stall is a trestle with goods heaped on it and a canopy over that on four
-poles. Drawn as a single pale sheet it was a shape that said "awning" and
-nothing else; what makes it a market is being able to see that somebody is
-standing behind a table under it. The goods are a heap and not a row of
-individual apples — picking those out put a line of pale holes through the
-trestle and read as damage.
+**And it keeps the market's hours.** The shops here are shut by daylight —
+rollers down, corrugations across them, the box the shutter winds into above —
+and the stalls are not out at all: what is left in the morning is a trestle
+folded against the wall under a sheet, which is a low pale wedge and takes four
+lines. At dusk the whole of it opens: the shopfronts light, the canopies go up,
+the lamps come on under them, and the vendors appear behind the tables. It is
+the largest thing the hour does to this place and it costs one branch.
+
+Drawing the whole market and turning its lights off would have been easier and
+much worse — a night market standing empty in the sun is a stranger sight than
+either state on its own.
 
 **The people are people.** They used to be two marks, a body and a head, on the
 argument that nothing else survives at that size. That is true at the far end
@@ -1198,7 +1201,7 @@ everything a person is.
 rate in one direction for ever is a conveyor with figures on it. What makes a
 crowd read as a crowd is that its members are each in the middle of
 *something*, and that those somethings are different lengths and interrupt each
-other. Five states, and no more — this is a hundred yards off and eight storeys
+other. Four states, and no more — this is a hundred yards off and eight storeys
 down, and anything finer is invisible:
 
 ```
@@ -1206,7 +1209,6 @@ walk    their own pace, going somewhere
 hurry   twice that, leaning into it, for a while
 browse  stopped at a stall, turned toward the trestle
 talk    stopped in a pair, turned to face each other
-yield   out of the road, because something is coming
 ```
 
 `talk` takes two and both have to agree to it, so it looks for somebody nearby
@@ -1214,16 +1216,36 @@ who is only walking and stops them both, stands them a comfortable distance
 apart facing each other, and offsets their gestures by half a cycle so one
 talks while the other listens. A figure standing alone gesturing at nothing is
 worse than no conversation at all. `browse` picks whichever stall is actually
-nearest, so somebody stopped is stopped at a *thing* rather than at an empty
-stretch of kerb. And there are vendors behind the lit stalls who never go
-anywhere and never stop selling, because somebody is always being sold
-something.
+nearest — and only when the market is open, because somebody gesturing at a
+folded sheet in the morning is worse than somebody simply walking past it.
 
-`yield` is the one that is not chosen — it is imposed, and it interrupts
-whatever was happening. People ahead of the car clear out well before it
-arrives and the ones it has passed step back almost at once, which turns a set
-of individual decisions into a wave going down the street. A crowd doing one
-thing together is the single clearest sign that they are all in the same world.
+There was a fifth. `yield` took everybody near the moving car out of the road
+at once, and a crowd doing one thing together is the clearest sign they are all
+in the same world — but the car is gone, and a behaviour with nothing to
+trigger it is not a behaviour. Browsing is what the crowd does together now.
+
+**And they walk rather than skate.** The gait used to advance with `p.sp*dt` —
+speed along the *street* — and the street is in perspective, so the same speed
+is a crawl at the far end and a stride at the near one while the legs turned
+over at one rate throughout. That is skating: feet going round at one rate over
+ground going past at another. Worse, both feet moved on a sine, so neither was
+ever *planted*: a real foot spends most of its cycle on the ground travelling
+backward relative to the body at exactly the speed the body goes forward, which
+on screen means it does not move at all.
+
+So the legs are given the distance the figure actually covered across the
+picture — measured, not derived, because between the perspective, the drift
+across the width and somebody easing into a stall there is no closed form worth
+trusting. A foot runs linearly from +A to −A through its stance and swings back
+faster, with a lift only while it is off the ground. `WALK_A` and `WALK_D` (how
+far a foot travels, and the share of the cycle it spends down — a little under
+two thirds, which is why a walk has a double-support phase and a run does not)
+live in one place, because the painter and the update have to agree about them
+to the letter and a walk where they disagree even slightly is a walk on ice.
+
+Measured on the running piece: a body moving 0.51 px a frame carries a planted
+foot 0.013 px with it. Standing still measures zero travel and therefore zero
+gait, which is also right — a figure at a stall does not paddle.
 
 Two things had to be got right for any of it to work. The crowd decides things
 as it goes, and deciding them off `Math.random` would draw from the same stream
