@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=35";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=35";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=35";
+} from "./util.js?v=36";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=36";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=36";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -207,7 +207,7 @@ const CITY_LANDMARK = { x: 0.672, w: 0.038, h: 0.360 };
    as `z`; `w` and `h` are across and up, as fractions of the frame. */
 const CITY_ROOFKIT = [
   // the way you got up here, and the reason there is a door in the sky
-  { kind: "bulkhead", x: 0.862, z: 0.760, w: 0.0748, d: 0.102, h: 0.0612 },
+  { kind: "bulkhead", x: 0.862, z: 0.760, w: 0.0585, d: 0.088, h: 0.0850 },
   // the tank, on its braced frame, with the ladder somebody has to climb
   { kind: "tank",     x: 0.108, z: 0.700, r: 0.0255 },
   // two condensers on their pads, and the duct that joins them
@@ -219,7 +219,7 @@ const CITY_ROOFKIT = [
   { kind: "stack",    x: 0.222, z: 0.318, h: 0.0221 },
   { kind: "stack",    x: 0.716, z: 0.640, h: 0.0238 },
   // and the television
-  { kind: "dish",     x: 0.930, z: 0.330, r: 0.0238 },
+  { kind: "dish",     x: 0.938, z: 0.300, r: 0.0170 },
   /* And one thing close enough to be cut by the bottom of the window.
 
      Without it the deck was a band of objects all at much the same size, and a
@@ -5171,31 +5171,87 @@ class Scene {
     const L = un*(v.kind === "van" ? 0.46 : 0.40)*v.sz;
     const h = un*(v.kind === "van" ? 0.24 : 0.16)*v.sz;
     if (L < 2) return;
-    const body = css(mix(cy.ink, this._cityFc, 0.16 + (v.sz - 0.86)*0.5));
-    this.contactShadow(c, x, y, L*0.5, 0.24);
-    c.fillStyle = body;
-    c.fillRect(x - L/2, y - h, L, h);
-    if (L > 7) {
-      // the cab, set back on a car and square on a van
-      c.fillStyle = css(mix(body, cy.ink, 0.22));
-      const cw = v.kind === "van" ? L*0.34 : L*0.52;
-      c.fillRect(x - cw/2 - (v.kind === "van" ? L*0.20 : 0), y - h*1.55, cw, h*0.58);
-      // glass, which after dark is the only bright thing on a car
-      c.fillStyle = `rgba(${this.tok.glassLit[0]|0},${this.tok.glassLit[1]|0},${this.tok.glassLit[2]|0},${0.20 + 0.24*(1 - lum)})`;
-      c.fillRect(x - cw/2 - (v.kind === "van" ? L*0.20 : 0) + L*0.03,
-        y - h*1.50, cw - L*0.06, h*0.42);
-      // wheels
-      c.fillStyle = css(mix(cy.ink, this._cityFc, 0.04));
-      const wr = Math.max(0.7, h*0.20);
-      for (const u of [-0.30, 0.30]) {
-        c.beginPath(); c.ellipse(x + L*u, y, wr, wr*0.7, 0, 0, Math.PI*2); c.fill();
+    const body = mix(cy.ink, this._cityFc, 0.16 + (v.sz - 0.86)*0.5);
+    this.contactShadow(c, x, y, L*0.5, 0.26);
+
+    if (L < 9) {
+      // far up the street there is a shape and a shadow and nothing else
+      c.fillStyle = css(body);
+      c.fillRect(x - L/2, y - h, L, h);
+      return;
+    }
+
+    /* A vehicle in profile is a *silhouette* before it is anything else, and
+       the silhouette is the whole of what tells a van from a car at forty
+       yards. Two rectangles stacked gave neither: a bonnet that starts at the
+       roofline is a shape no car has ever had. So each is one path — a car
+       with a bonnet, a raked screen, a roof and a boot; a van with a low nose
+       and a high box behind it. */
+    const nose = v.dir < 0 ? -1 : 1;    // whichever end it is pointed
+    const fx = (u) => x + nose*L*(u - 0.5);
+    c.fillStyle = this.faceRamp(c, x - L/2, y - h*2, x + L/2, y, css(body), 0.14);
+    c.beginPath();
+    if (v.kind === "van") {
+      c.moveTo(fx(0.00), y);
+      c.lineTo(fx(0.00), y - h*1.02);      // the back doors, square to the road
+      c.lineTo(fx(0.70), y - h*1.02);
+      c.lineTo(fx(0.74), y - h*0.62);      // and the step down to the cab
+      c.lineTo(fx(0.94), y - h*0.56);
+      c.lineTo(fx(1.00), y - h*0.30);
+      c.lineTo(fx(1.00), y);
+    } else {
+      c.moveTo(fx(0.00), y);
+      c.lineTo(fx(0.02), y - h*0.46);      // boot
+      c.lineTo(fx(0.28), y - h*0.54);
+      c.lineTo(fx(0.40), y - h*1.00);      // the rear screen, raked
+      c.lineTo(fx(0.66), y - h*1.02);      // roof
+      c.lineTo(fx(0.80), y - h*0.56);      // windscreen
+      c.lineTo(fx(0.98), y - h*0.46);      // bonnet
+      c.lineTo(fx(1.00), y - h*0.18);
+      c.lineTo(fx(1.00), y);
+    }
+    c.closePath(); c.fill();
+    c.strokeStyle = css(this._cityInk(0.30));
+    c.lineWidth = Math.max(0.5, Math.min(W, H)*0.0012);
+    c.lineJoin = "round"; c.stroke();
+
+    // glass, which after dark is the only bright thing on a vehicle
+    const gl = this.tok.glassLit;
+    c.fillStyle = `rgba(${gl[0]|0},${gl[1]|0},${gl[2]|0},${0.18 + 0.26*(1 - lum)})`;
+    if (v.kind === "van") {
+      c.fillRect(fx(nose > 0 ? 0.78 : 0.90), y - h*0.54, L*0.11, h*0.20);
+    } else {
+      c.beginPath();
+      c.moveTo(fx(0.43), y - h*0.94);
+      c.lineTo(fx(0.64), y - h*0.95);
+      c.lineTo(fx(0.75), y - h*0.60);
+      c.lineTo(fx(0.42), y - h*0.60);
+      c.closePath(); c.fill();
+      if (L > 20) {
+        // the pillar between the two side windows
+        c.fillStyle = css(body);
+        c.fillRect(fx(0.55), y - h*0.95, Math.max(0.6, L*0.014), h*0.35);
       }
-      // and the lamps at whichever end it is pointed
-      if (lum > 0.10) {
-        const lit = v.dir < 0 ? -1 : 1;
-        this.drawGlow(c, cy.lampRGB, x + lit*L*0.5, y - h*0.55, L*0.34, h*0.9, 0.5*lum);
-        this.drawGlow(c, "255,80,60", x - lit*L*0.5, y - h*0.55, L*0.22, h*0.6, 0.4*lum);
+    }
+
+    /* Wheels sit *in* arches. A wheel drawn on the outside of a body is a
+       trolley; the arch — a bite taken out of the shell above it — is what
+       makes it a vehicle, and it costs one dark ellipse apiece under the
+       tyre. */
+    const wr = Math.max(0.8, h*0.26);
+    for (const u of [0.20, 0.80]) {
+      c.fillStyle = css(mix(cy.ink, this._cityFc, 0.02));
+      c.beginPath(); c.ellipse(fx(u), y - wr*0.45, wr, wr*0.95, 0, 0, Math.PI*2); c.fill();
+      if (L > 18) {
+        c.fillStyle = css(mix(cy.ink, this._cityFc, 0.30));
+        c.beginPath(); c.ellipse(fx(u), y - wr*0.45, wr*0.42, wr*0.42, 0, 0, Math.PI*2); c.fill();
       }
+    }
+
+    // and the lamps at whichever end it is pointed
+    if (lum > 0.10) {
+      this.drawGlow(c, cy.lampRGB, fx(1.0), y - h*0.32, L*0.30, h*0.7, 0.55*lum);
+      this.drawGlow(c, "255,80,60", fx(0.0), y - h*0.40, L*0.20, h*0.5, 0.42*lum);
     }
   }
 
@@ -5456,10 +5512,14 @@ class Scene {
       const [bx0, by0] = this.roofPt(F, d.u, Math.min(1, v + 0.34));
       const [bx1] = this.roofPt(F, d.u + d.w, Math.min(1, v + 0.34));
       const rise = d.h*un*0.60;
-      c.fillStyle = css(mix(col, cy.ink, 0.26));
+      // the same ramp across each face the plant on your own roof gets, for
+      // the same reason: a flat fill is a cutout and a roof of them is a collage
+      c.fillStyle = this.faceRamp(c, fx0, fy0 - rise, fx1, fy0,
+        css(mix(col, cy.ink, 0.26)), 0.14);
       c.fillRect(fx0, fy0 - rise, fx1 - fx0, rise);
       // the lid, which is the face turned toward you
-      c.fillStyle = css(mix(mix(col, this._cityAir, 0.24), this.tok.moon, 0.12));
+      c.fillStyle = this.faceRamp(c, fx0, by0 - rise, fx1, fy0 - rise,
+        css(mix(mix(col, this._cityAir, 0.24), this.tok.moon, 0.12)), 0.10);
       this.poly(c, [[fx0, fy0 - rise], [fx1, fy0 - rise],
                     [bx1, by0 - rise], [bx0, by0 - rise]]);
       c.fill();
@@ -5721,6 +5781,62 @@ class Scene {
 
      `x`,`z` place its near-bottom corner on the plane, `w` its width and `d`
      how far back it goes, both in plane units, and `h` its height. */
+  /* A ramp across a face, from the base colour lifted at one end to the same
+     colour dropped at the other. `k` is how far, and its sign says which way —
+     positive lifts the side the light is on. Handed the light's own position,
+     so every surface in the frame agrees about where the sun is. */
+  faceRamp(c, x0, y0, x1, y1, col, k) {
+    const rgb = parseColor(col);
+    const lit = this._lit || { x: 0.5, str: 1 };
+    const s = (lit.x > 0.5 ? 1 : -1) * k * (0.45 + lit.str*0.55);
+    const g = c.createLinearGradient(x0, y0, x1, y1);
+    const hi = css(mix(rgb, this.tok.moon, Math.max(0, s)));
+    const lo = css(mix(rgb, this.tok.city.ink, Math.max(0, -s) + 0.06));
+    g.addColorStop(0, s > 0 ? hi : lo);
+    g.addColorStop(1, s > 0 ? lo : hi);
+    return g;
+  }
+
+  /* A standing cylinder, drawn as one.
+
+     Every round thing up here was a rectangle with lines ruled down it — the
+     tank, the stacks, the bollards — and a rectangle is what a cylinder looks
+     like only if it is unlit. What makes a barrel a barrel is that the light
+     wraps round it: bright a third of the way from the lit side, falling off to
+     both edges, and never flat anywhere. Three stops do it, and the top and
+     bottom of it are ellipses rather than lines because a cylinder's ends are
+     circles seen from above. */
+  cylinder(c, x, yBase, r, h, col, line, capTop) {
+    const rgb = parseColor(col);
+    const lit = this._lit || { x: 0.5, str: 1 };
+    const from = lit.x > 0.5 ? 1 : -1;
+    const g = c.createLinearGradient(x - r, 0, x + r, 0);
+    const edge = css(mix(rgb, this.tok.city.ink, 0.30));
+    const mid = css(mix(rgb, this.tok.moon, 0.16*(0.4 + lit.str*0.6)));
+    g.addColorStop(0, from > 0 ? edge : mid);
+    g.addColorStop(from > 0 ? 0.62 : 0.38, from > 0 ? mid : mid);
+    g.addColorStop(1, from > 0 ? css(mix(rgb, this.tok.city.ink, 0.16)) : edge);
+    c.fillStyle = g;
+    c.fillRect(x - r, yBase - h, r*2, h);
+    // the foot, which is an ellipse and not a line — you are above it
+    c.beginPath();
+    c.ellipse(x, yBase, r, r*0.30, 0, 0, Math.PI);
+    c.fill();
+    if (capTop) {
+      c.fillStyle = css(mix(rgb, this.tok.moon, 0.22));
+      c.beginPath(); c.ellipse(x, yBase - h, r, r*0.30, 0, 0, Math.PI*2); c.fill();
+    }
+    if (line) {
+      c.strokeStyle = line;
+      c.beginPath();
+      c.moveTo(x - r, yBase - h); c.lineTo(x - r, yBase);
+      c.moveTo(x + r, yBase - h); c.lineTo(x + r, yBase);
+      c.ellipse(x, yBase, r, r*0.30, 0, 0, Math.PI);
+      if (capTop) { c.moveTo(x + r, yBase - h); c.ellipse(x, yBase - h, r, r*0.30, 0, 0, Math.PI*2); }
+      c.stroke();
+    }
+  }
+
   roofBox(c, x, z, w, d, h, faces) {
     const W = this.W, H = this.H;
     const sc = this.planeScale(z);
@@ -5745,10 +5861,23 @@ class Scene {
     else if (fL > vx) side = [[fL, yF - rise], [bL, yB - rise], [bL, yB], [fL, yF]];
 
     this.contactShadow(c, cxF, yF, hw*0.85, 0.20);
-    c.fillStyle = faces.front;
+    /* Every face gets a ramp across it rather than one flat colour.
+
+       A flat fill is not what a surface looks like; it is what a *cutout* looks
+       like, and a roof full of cutouts is what this plant was. Light falls off
+       across a face — a little, and always in the same direction — and that
+       fall-off is nearly the whole difference between a box and a rectangle. It
+       costs one gradient a face and it is worth more than any amount of line
+       work laid on top. */
+    c.fillStyle = this.faceRamp(c, fL, yF - rise, fR, yF, faces.front, 0.16);
     c.fillRect(fL, yF - rise, fR - fL, rise);
-    if (side) { c.fillStyle = faces.side; this.poly(c, side); c.fill(); }
-    c.fillStyle = faces.top; this.poly(c, top); c.fill();
+    if (side) {
+      c.fillStyle = this.faceRamp(c, Math.min(fL, bL), yB - rise,
+        Math.max(fR, bR), yB, faces.side, -0.12);
+      this.poly(c, side); c.fill();
+    }
+    c.fillStyle = this.faceRamp(c, fL, yB - rise, fR, yF - rise, faces.top, 0.10);
+    this.poly(c, top); c.fill();
     c.strokeStyle = faces.line;
     c.lineWidth = Math.max(0.9, Math.min(W, H)*0.0026*sc*2.2);
     c.lineJoin = "round";
@@ -6059,152 +6188,260 @@ class Scene {
       const lw = Math.max(0.8, mn*0.0024*sc);
 
       if (k.kind === "unit") {
-        /* A condenser, standing on a housekeeping pad. The pad is the thing
-           that makes it plant and not furniture: nothing on a roof is allowed
-           to sit on the membrane, so everything heavy stands on a plinth with
-           its own flashing round it. */
-        const pw = k.w*W*sc*1.22, pd = Math.max(2, k.d*H*sc*0.5);
-        c.fillStyle = css(mix(base, cy.ink, 0.30));
+        /* A packaged condenser, which is a *machine* and not a crate: it
+           stands on a skid, the skid stands on a housekeeping pad, its flanks
+           are coil — close-set vertical fins, which is what you actually see
+           of one — and the fan is sunk into the lid behind a ring guard. Every
+           one of those is visible from above at this size, and together they
+           are the difference between plant and packaging. */
+        const pw = k.w*W*sc*1.24, pd = Math.max(2, k.d*H*sc*0.55);
+        c.fillStyle = css(mix(base, cy.ink, 0.32));
         c.fillRect(x - pw/2, y - pd, pw, pd);
-        c.strokeStyle = line; c.lineWidth = lw*0.7;
+        c.strokeStyle = line; c.lineWidth = lw*0.6;
         c.strokeRect(x - pw/2, y - pd, pw, pd);
         const b = this.roofBox(c, k.x, k.z, k.w, k.d, k.h, faces);
-        // the fan grille in its lid, which is what a condenser is for
-        const cxm = (b.fL + b.fR)/2, rw = (b.fR - b.fL)*0.30;
-        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.6);
-        c.beginPath();
-        c.ellipse(cxm, b.yF - b.rise - (b.yF - b.rise)*0 - Math.max(1, k.d*H*sc*0.18),
-          rw, rw*0.34, 0, 0, Math.PI*2);
-        c.stroke();
-        // and the louvred face down its front
-        c.beginPath();
-        for (let i = 1; i < 5; i++) {
-          const ly = b.yF - b.rise*(i/5);
-          c.moveTo(b.fL + (b.fR - b.fL)*0.10, ly);
-          c.lineTo(b.fR - (b.fR - b.fL)*0.10, ly);
+        const un = b.fR - b.fL, topY = b.yF - b.rise;
+        const deep = Math.max(2, k.d*H*sc*0.62);
+        if (un > 10) {
+          // the coil: fins, close together, and only on the face you can see
+          c.strokeStyle = css(mix(base, cy.ink, 0.34));
+          c.lineWidth = Math.max(0.4, un*0.010);
+          c.beginPath();
+          const nf = Math.max(4, Math.round(un/Math.max(2.4, un*0.055)));
+          for (let i = 1; i < nf; i++) {
+            const fx = b.fL + un*i/nf;
+            c.moveTo(fx, topY + b.rise*0.16); c.lineTo(fx, b.yF - b.rise*0.14);
+          }
+          c.stroke();
+          // the frame round the coil, and the skid it all sits on
+          c.strokeStyle = line; c.lineWidth = lw*0.55;
+          c.strokeRect(b.fL + un*0.04, topY + b.rise*0.12,
+            un*0.92, b.rise*0.74);
+          c.fillStyle = css(mix(base, cy.ink, 0.42));
+          c.fillRect(b.fL, b.yF - b.rise*0.10, un, b.rise*0.10);
+          /* The fan, sunk into the lid. Drawn on the *top* face, so its guard
+             is an ellipse squashed the way the lid is — a circle on the lid of
+             a box you are looking down at is a circle seen at that angle and
+             nothing else says "above" so cheaply. */
+          const fcx = (b.fL + b.fR)/2, fcy = topY - deep*0.42;
+          const fr = un*0.28;
+          c.fillStyle = css(mix(base, cy.ink, 0.36));
+          c.beginPath(); c.ellipse(fcx, fcy, fr, fr*0.42, 0, 0, Math.PI*2); c.fill();
+          c.strokeStyle = line; c.lineWidth = lw*0.6;
+          c.beginPath(); c.ellipse(fcx, fcy, fr, fr*0.42, 0, 0, Math.PI*2); c.stroke();
+          if (un > 22) {
+            // the ring guard over it, and the blades under that
+            c.strokeStyle = css(mix(base, this.tok.moon, 0.20));
+            c.lineWidth = Math.max(0.4, un*0.008);
+            c.beginPath();
+            for (const rr of [0.42, 0.72]) {
+              c.ellipse(fcx, fcy, fr*rr, fr*rr*0.42, 0, 0, Math.PI*2);
+            }
+            for (let i = 0; i < 4; i++) {
+              const th = i*Math.PI/4;
+              c.moveTo(fcx - Math.cos(th)*fr, fcy - Math.sin(th)*fr*0.42);
+              c.lineTo(fcx + Math.cos(th)*fr, fcy + Math.sin(th)*fr*0.42);
+            }
+            c.stroke();
+            // and the access panel, with the handle somebody turns
+            c.strokeStyle = line; c.lineWidth = lw*0.5;
+            c.strokeRect(b.fR - un*0.30, topY + b.rise*0.24, un*0.22, b.rise*0.48);
+            c.fillStyle = css(mix(base, this.tok.moon, 0.18));
+            c.fillRect(b.fR - un*0.14, topY + b.rise*0.44, un*0.05, b.rise*0.12);
+          }
         }
-        c.stroke();
       } else if (k.kind === "duct") {
         /* Trunking on sleepers, running between the two units. The one long
            shape up here, which is what breaks a field of upright boxes. */
         const b = this.roofBox(c, k.x, k.z, k.w, k.d, k.h, faces);
+        const un = b.fR - b.fL;
         c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.6);
         c.beginPath();
-        // the flanged joints every few feet
+        // the flanged joints every few feet, which is how trunking is made
         for (let i = 1; i < 6; i++) {
-          const fx = b.fL + (b.fR - b.fL)*i/6;
+          const fx = b.fL + un*i/6;
           c.moveTo(fx, b.yF - b.rise); c.lineTo(fx, b.yF);
         }
         c.stroke();
+        if (un > 30) {
+          // the flange itself has a thickness, and it stands proud of the duct
+          c.fillStyle = css(mix(base, this.tok.moon, 0.10));
+          c.beginPath();
+          for (let i = 1; i < 6; i++) {
+            c.rect(b.fL + un*i/6 - un*0.006, b.yF - b.rise*1.06,
+              un*0.012, b.rise*1.06);
+          }
+          c.fill();
+        }
         // the sleepers it rides on, which keep it off the covering
         c.lineWidth = Math.max(1, 2.4*sc); c.lineCap = "butt";
         c.strokeStyle = css(mix(base, cy.ink, 0.34));
         c.beginPath();
         for (const u of [0.12, 0.38, 0.64, 0.9]) {
-          const fx = b.fL + (b.fR - b.fL)*u;
+          const fx = b.fL + un*u;
           c.moveTo(fx, b.yF); c.lineTo(fx, b.yF + b.rise*0.30);
         }
         c.stroke();
       } else if (k.kind === "stack") {
-        /* A vent stack: a pipe, and the flashing collar round its foot. The
-           collar is the detail — a pipe coming straight out of a flat surface
-           with nothing round it is a pipe drawn by somebody guessing. */
+        /* A vent stack: a pipe with the light wrapping round it, the flashing
+           collar at its foot, and a bend and a cowl at the head. A flat-topped
+           rectangle is a paint tube. */
         const h = k.h*H*sc*1.25, r = Math.max(1.4, mn*0.0052*sc);
-        c.fillStyle = css(mix(base, cy.ink, 0.26));
-        c.beginPath(); c.ellipse(x, y, r*2.6, r*1.0, 0, 0, Math.PI*2); c.fill();
-        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.6);
-        c.beginPath(); c.ellipse(x, y, r*2.6, r*1.0, 0, 0, Math.PI*2); c.stroke();
-        c.fillStyle = faces.front;
-        c.fillRect(x - r, y - h, r*2, h);
-        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.7);
-        c.strokeRect(x - r, y - h, r*2, h);
-        // the cowl over its mouth
-        c.fillStyle = faces.top;
-        c.beginPath(); c.ellipse(x, y - h, r*1.5, r*0.6, 0, 0, Math.PI*2); c.fill();
-        c.strokeStyle = line;
-        c.beginPath(); c.ellipse(x, y - h, r*1.5, r*0.6, 0, 0, Math.PI*2); c.stroke();
+        // the collar — a pipe out of a flat surface always has one
+        c.fillStyle = css(mix(base, cy.ink, 0.28));
+        c.beginPath(); c.ellipse(x, y, r*2.7, r*1.05, 0, 0, Math.PI*2); c.fill();
+        c.strokeStyle = line; c.lineWidth = Math.max(0.5, lw*0.55);
+        c.beginPath(); c.ellipse(x, y, r*2.7, r*1.05, 0, 0, Math.PI*2); c.stroke();
+        this.cylinder(c, x, y - r*0.4, r, h, css(base), line, false);
+        if (h > 8) {
+          // the goose-neck at the head, turned over so rain cannot go down it
+          c.strokeStyle = css(mix(base, cy.ink, 0.18));
+          c.lineWidth = r*2; c.lineCap = "round"; c.lineJoin = "round";
+          c.beginPath();
+          c.moveTo(x, y - r*0.4 - h);
+          c.quadraticCurveTo(x, y - r*0.4 - h - r*2.0, x + r*2.2, y - r*0.4 - h - r*1.4);
+          c.stroke();
+          c.strokeStyle = css(mix(base, this.tok.moon, 0.20));
+          c.lineWidth = Math.max(0.4, r*0.5);
+          c.beginPath();
+          c.moveTo(x - r*0.4, y - r*0.4 - h);
+          c.quadraticCurveTo(x - r*0.4, y - r*0.4 - h - r*1.7, x + r*2.0, y - r*0.4 - h - r*1.8);
+          c.stroke();
+        } else {
+          c.fillStyle = css(mix(base, this.tok.moon, 0.22));
+          c.beginPath(); c.ellipse(x, y - r*0.4 - h, r*1.4, r*0.55, 0, 0, Math.PI*2); c.fill();
+        }
       } else if (k.kind === "dish") {
-        const r = k.r*mn*sc*1.5, h = r*2.0;
+        /* An offset dish on a ballasted foot: the bowl turned out of the
+           picture plane, a rim round it, the arm out to the horn at its focus,
+           and the horn itself. Drawn as a slice of an ellipse it was a
+           crescent, which is a moon; drawn as a flat disc it is a mirror. */
+        const r = k.r*mn*sc*1.05, h = r*2.4;
         this.contactShadow(c, x, y, r*0.7, 0.16);
-        c.strokeStyle = faces.front; c.lineCap = "round";
-        c.lineWidth = Math.max(1, 2.2*sc);
+        c.strokeStyle = css(mix(base, cy.ink, 0.10)); c.lineCap = "round";
+        c.lineWidth = Math.max(1, 2.4*sc);
         c.beginPath(); c.moveTo(x, y); c.lineTo(x, y - h); c.stroke();
-        // the tripod foot, ballasted with blocks like every roof dish
+        // the ballast blocks the foot is weighted down with
+        c.fillStyle = css(mix(base, cy.ink, 0.30));
+        for (const sgn of [-1, 1]) {
+          c.fillRect(x + sgn*r*0.30 - r*0.24, y - r*0.20, r*0.48, r*0.20);
+        }
         c.lineWidth = Math.max(0.8, 1.5*sc);
         c.beginPath();
-        for (const sgn of [-1, 1]) {
-          c.moveTo(x, y - h*0.34); c.lineTo(x + sgn*r*0.7, y);
-        }
+        for (const sgn of [-1, 1]) { c.moveTo(x, y - h*0.34); c.lineTo(x + sgn*r*0.62, y - r*0.16); }
         c.stroke();
-        /* The face. A dish seen from behind and to one side is a full
-           ellipse turned out of the picture plane, not a slice of one — an
-           arc gave a crescent, which is a moon and not an aerial. */
-        c.fillStyle = faces.front;
+        const dx = x + r*0.16, dy = y - h;
+        // the back of the bowl, which is the side turned toward you
+        const gb = c.createLinearGradient(dx - r*0.62, dy, dx + r*0.62, dy);
+        gb.addColorStop(0, css(mix(base, this.tok.moon, 0.14)));
+        gb.addColorStop(1, css(mix(base, cy.ink, 0.26)));
+        c.fillStyle = gb;
+        c.beginPath(); c.ellipse(dx, dy, r*0.62, r, -0.42, 0, Math.PI*2); c.fill();
+        // the rim, standing proud of it
+        c.strokeStyle = line; c.lineWidth = Math.max(0.6, lw*0.7);
+        c.beginPath(); c.ellipse(dx, dy, r*0.62, r, -0.42, 0, Math.PI*2); c.stroke();
+        c.strokeStyle = css(mix(base, this.tok.moon, 0.24));
+        c.lineWidth = Math.max(0.4, lw*0.4);
+        c.beginPath(); c.ellipse(dx, dy, r*0.50, r*0.82, -0.42, 0, Math.PI*2); c.stroke();
+        // the hub the bowl is bolted to, on the back where you can see it
+        c.fillStyle = css(mix(base, cy.ink, 0.30));
+        c.beginPath(); c.ellipse(dx, dy, r*0.20, r*0.30, -0.42, 0, Math.PI*2); c.fill();
+        c.strokeStyle = line; c.lineWidth = Math.max(0.4, lw*0.5);
+        c.beginPath(); c.ellipse(dx, dy, r*0.20, r*0.30, -0.42, 0, Math.PI*2); c.stroke();
+        // the arm out to the horn, and the horn
+        c.strokeStyle = css(mix(base, cy.ink, 0.16));
+        c.lineWidth = Math.max(0.7, 1.5*sc);
         c.beginPath();
-        c.ellipse(x + r*0.16, y - h, r*0.62, r, -0.42, 0, Math.PI*2);
+        c.moveTo(dx, dy + r*0.40); c.lineTo(dx - r*0.70, dy - r*0.24); c.stroke();
+        c.fillStyle = css(mix(base, cy.ink, 0.20));
+        c.beginPath();
+        c.ellipse(dx - r*0.74, dy - r*0.28, r*0.16, r*0.11, -0.42, 0, Math.PI*2);
         c.fill();
-        c.strokeStyle = line; c.lineWidth = Math.max(0.7, lw*0.7);
-        c.beginPath();
-        c.ellipse(x + r*0.16, y - h, r*0.62, r, -0.42, 0, Math.PI*2);
-        c.stroke();
-        // the shaded inside of it, which is what says it is a bowl
-        c.fillStyle = css(mix(base, cy.ink, 0.24));
-        c.beginPath();
-        c.ellipse(x + r*0.16, y - h, r*0.40, r*0.80, -0.42, 0, Math.PI*2);
-        c.fill();
-        // the arm out to the horn at its focus
-        c.strokeStyle = faces.front; c.lineWidth = Math.max(0.8, 1.4*sc);
-        c.beginPath(); c.moveTo(x + r*0.2, y - h); c.lineTo(x - r*0.5, y - h*0.82); c.stroke();
       } else if (k.kind === "tank") {
+        /* The tank. A barrel is a cylinder, and a cylinder drawn as a
+           rectangle with lines ruled down it is a crate — which is what this
+           was. The light wraps round the staves, the hoops follow that curve
+           rather than crossing it flat, the bottom of it is an ellipse because
+           you are above it, and the cap is a cone with a curved eave and a
+           finial on the top. The ladder stands off the side rather than lying
+           on it. */
         const r = k.r*mn*sc*2.2, h = r*1.7, legs = r*1.15;
         this.contactShadow(c, x, y, r*0.9, 0.18);
-        c.fillStyle = faces.front; c.strokeStyle = faces.front;
-        c.lineWidth = Math.max(1, r*0.12); c.lineCap = "round";
+        const steel = css(mix(base, cy.ink, 0.06));
+        c.strokeStyle = steel; c.lineWidth = Math.max(1, r*0.12); c.lineCap = "round";
         c.beginPath();
         for (const sgn of [-1, 1]) {
           c.moveTo(x + sgn*r*0.72, y); c.lineTo(x + sgn*r*0.56, y - legs);
         }
         c.stroke();
-        // the cross-bracing, which every one of these frames has
         c.lineWidth = Math.max(0.7, r*0.06);
         c.beginPath();
         c.moveTo(x - r*0.70, y - legs*0.12); c.lineTo(x + r*0.57, y - legs*0.86);
         c.moveTo(x + r*0.70, y - legs*0.12); c.lineTo(x - r*0.57, y - legs*0.86);
         c.moveTo(x - r*0.63, y - legs*0.52); c.lineTo(x + r*0.63, y - legs*0.52);
         c.stroke();
-        // the barrel: staves, two hoops, a conical cap, and a ladder up it
+
         const ty = y - legs - h;
-        c.fillStyle = faces.front;
-        c.fillRect(x - r, ty, r*2, h);
-        c.strokeStyle = css(mix(this._cityFc, cy.ink, 0.34));
-        c.lineWidth = Math.max(0.5, r*0.045);
-        c.beginPath();
-        for (let i = 1; i < 6; i++) {
-          const sx = x - r + (r*2)*i/6;
-          c.moveTo(sx, ty); c.lineTo(sx, ty + h);
+        this.cylinder(c, x, ty + h, r, h, css(base), null, false);
+        if (r > 5) {
+          /* The staves, curving with the barrel — spaced by the *sine* of the
+             angle round it, so they crowd at the edges the way the boards of a
+             real tank do, instead of standing at even intervals like a fence. */
+          c.strokeStyle = css(mix(base, cy.ink, 0.30));
+          c.lineWidth = Math.max(0.4, r*0.035);
+          c.beginPath();
+          for (let i = 1; i < 9; i++) {
+            const sx = x + Math.sin(-Math.PI/2 + Math.PI*i/9)*r;
+            c.moveTo(sx, ty); c.lineTo(sx, ty + h);
+          }
+          c.stroke();
+          // the hoops, which are ellipses because they go round the back
+          /* One path per hoop. Two arcs in a single path are joined by a
+             straight line from the end of the first to the start of the
+             second, and that line ran diagonally across the barrel — a strap
+             nobody put there, at an angle nothing else in the frame was at. */
+          c.strokeStyle = css(mix(base, cy.ink, 0.40));
+          c.lineWidth = Math.max(0.5, r*0.055);
+          for (const v of [0.24, 0.70]) {
+            c.beginPath();
+            c.ellipse(x, ty + h*v, r, r*0.28, 0, 0.12, Math.PI - 0.12);
+            c.stroke();
+          }
         }
-        for (const v of [0.26, 0.74]) {
-          c.moveTo(x - r, ty + h*v); c.lineTo(x + r, ty + h*v);
-        }
-        c.stroke();
-        c.fillStyle = faces.top;
+        // the conical cap: a curved eave, and the finial every one of them has
+        c.fillStyle = this.faceRamp(c, x - r, ty, x + r, ty, css(base), 0.20);
         c.beginPath();
-        c.moveTo(x - r*0.98, ty + r*0.04);
-        c.lineTo(x, ty - r*0.60);
-        c.lineTo(x + r*0.98, ty + r*0.04);
+        c.moveTo(x - r*1.06, ty + r*0.10);
+        c.quadraticCurveTo(x - r*0.52, ty + r*0.22, x, ty - r*0.66);
+        c.quadraticCurveTo(x + r*0.52, ty + r*0.22, x + r*1.06, ty + r*0.10);
+        c.quadraticCurveTo(x, ty + r*0.40, x - r*1.06, ty + r*0.10);
         c.closePath(); c.fill();
         c.strokeStyle = line; c.lineWidth = Math.max(0.8, lw*0.8);
         c.stroke();
-        c.beginPath(); c.rect(x - r, ty, r*2, h); c.stroke();
-        // the ladder, because somebody has to get to the top of it
-        c.strokeStyle = css(mix(base, cy.ink, 0.40));
+        if (r > 6) {
+          c.strokeStyle = css(mix(base, cy.ink, 0.24));
+          c.lineWidth = Math.max(0.4, r*0.04);
+          c.beginPath();
+          c.moveTo(x, ty - r*0.62); c.lineTo(x, ty - r*0.92);
+          c.stroke();
+          c.fillStyle = css(mix(base, this.tok.moon, 0.20));
+          c.beginPath(); c.ellipse(x, ty - r*0.94, r*0.10, r*0.07, 0, 0, Math.PI*2); c.fill();
+        }
+        // the ladder, standing off the side on its own brackets
+        c.strokeStyle = css(mix(base, cy.ink, 0.44));
         c.lineWidth = Math.max(0.5, r*0.05);
+        const lx = x + r*1.10;
         c.beginPath();
-        c.moveTo(x + r*0.52, y); c.lineTo(x + r*0.52, ty);
-        c.moveTo(x + r*0.76, y); c.lineTo(x + r*0.76, ty);
-        for (let i = 1; i < 8; i++) {
-          const ry = y - (y - ty)*i/8;
-          c.moveTo(x + r*0.52, ry); c.lineTo(x + r*0.76, ry);
+        c.moveTo(lx, y); c.lineTo(lx, ty + h*0.05);
+        c.moveTo(lx + r*0.20, y); c.lineTo(lx + r*0.20, ty + h*0.05);
+        for (let i = 1; i < 9; i++) {
+          const ry = y - (y - ty)*i/9;
+          c.moveTo(lx, ry); c.lineTo(lx + r*0.20, ry);
+        }
+        // and the brackets tying it back to the barrel
+        for (const v of [0.30, 0.78]) {
+          const by2 = ty + h*v;
+          c.moveTo(x + r*0.94, by2); c.lineTo(lx, by2);
         }
         c.stroke();
       } else if (k.kind === "hatch") {
@@ -6216,19 +6453,30 @@ class Scene {
         c.save();
         c.translate(b.fL, b.yF - b.rise);
         c.transform(1, 0, -0.30, 1, 0, 0);
-        c.fillStyle = css(mix(base, cy.ink, 0.10));
+        c.fillStyle = this.faceRamp(c, 0, -un*0.26, un, 0,
+          css(mix(base, cy.ink, 0.10)), 0.14);
         c.fillRect(0, -un*0.26, un, un*0.26);
         c.strokeStyle = line; c.lineWidth = Math.max(0.7, lw*0.7);
         c.strokeRect(0, -un*0.26, un, un*0.26);
         c.restore();
-        // the dark of the shaft under it
+        // the dark of the shaft under it, and the grab rail beside it
         c.fillStyle = css(mix(cy.ink, bot, 0.12));
         c.fillRect(b.fL + un*0.10, b.yF - b.rise - Math.max(1, un*0.05),
           un*0.80, Math.max(1.5, un*0.10));
+        if (un > 26) {
+          c.strokeStyle = css(mix(base, this.tok.moon, 0.16));
+          c.lineWidth = Math.max(0.5, lw*0.5); c.lineCap = "round";
+          c.beginPath();
+          c.moveTo(b.fR + un*0.04, b.yF); c.lineTo(b.fR + un*0.04, b.yF - b.rise*2.6);
+          c.lineTo(b.fR - un*0.16, b.yF - b.rise*2.6);
+          c.stroke();
+        }
       } else if (k.kind === "bulkhead") {
         /* The stair bulkhead — the way you got up here. It is the only thing
            on the roof with a *door*, and the door is what gives the whole deck
-           a human scale to be measured against. */
+           a human scale to be measured against. So it gets the things a door
+           has: a hood over it to keep the rain off whoever is unlocking it, a
+           threshold to step over, and a handle on the side it opens from. */
         const b = this.roofBox(c, k.x, k.z, k.w, k.d, k.h, faces);
         const un = b.fR - b.fL;
         const dw = un*0.30, dh = b.rise*0.66;
@@ -6237,20 +6485,41 @@ class Scene {
           const f = cy.lamp;
           c.fillStyle = `rgba(${f[0]|0},${f[1]|0},${f[2]|0},${0.46*lum})`;
         } else {
-          c.fillStyle = css(mix(this._cityFc, cy.ink, 0.60));
+          c.fillStyle = css(mix(this._cityFc, cy.ink, 0.62));
         }
         c.fillRect(dx, dy, dw, dh);
         c.strokeStyle = line; c.lineWidth = Math.max(0.7, lw*0.7);
         c.strokeRect(dx, dy, dw, dh);
-        // the threshold step, and the overhang above the door
+        if (un > 24) {
+          // the handle, on the side it swings from
+          c.fillStyle = css(mix(base, this.tok.moon, 0.24));
+          c.fillRect(dx + dw*0.78, dy + dh*0.46, dw*0.10, dh*0.14);
+        }
+        // the threshold step
         c.fillStyle = css(mix(base, cy.ink, 0.30));
         c.fillRect(dx - dw*0.16, b.yF, dw*1.32, Math.max(1.2, b.rise*0.07));
-        c.fillStyle = faces.top;
-        c.fillRect(dx - dw*0.20, dy - Math.max(1.2, b.rise*0.06),
-          dw*1.40, Math.max(1.2, b.rise*0.06));
-        c.strokeStyle = line;
-        c.strokeRect(dx - dw*0.20, dy - Math.max(1.2, b.rise*0.06),
-          dw*1.40, Math.max(1.2, b.rise*0.06));
+        /* The hood: a small canted roof over the door on two brackets, which
+           is what every roof door in every city has and what stops the
+           bulkhead reading as a shipping container with a slot in it. */
+        const hy = dy - b.rise*0.05;
+        c.fillStyle = css(mix(base, this.tok.moon, 0.18));
+        c.beginPath();
+        c.moveTo(dx - dw*0.28, hy);
+        c.lineTo(dx + dw*1.28, hy);
+        c.lineTo(dx + dw*1.16, hy - b.rise*0.13);
+        c.lineTo(dx - dw*0.16, hy - b.rise*0.13);
+        c.closePath(); c.fill();
+        c.strokeStyle = line; c.stroke();
+        if (un > 20) {
+          c.strokeStyle = css(mix(base, cy.ink, 0.30));
+          c.lineWidth = Math.max(0.5, lw*0.5);
+          c.beginPath();
+          for (const sgn of [-0.16, 1.16]) {
+            c.moveTo(dx + dw*sgn, hy);
+            c.lineTo(dx + dw*(sgn < 0.5 ? 0.02 : 0.98), hy + b.rise*0.16);
+          }
+          c.stroke();
+        }
       }
     }
   }

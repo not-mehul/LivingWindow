@@ -1420,6 +1420,54 @@ question and only one of them can be measured. Under about four pixels a bay
 there is nothing to draw but a tint; over about nine there is a frame, a
 mullion and a sill worth having.
 
+### A flat fill is a cutout
+
+Everything standing in this city was one colour per face. The tank was a
+rectangle with lines ruled down it, the condensers were crates, the vent stacks
+were paint tubes and the vehicles were two boxes stacked. More outline on any
+of them would not have helped, because what was missing was not detail.
+
+A flat fill is not what a surface looks like. It is what a *cutout* looks like,
+and a roof full of cutouts is a collage. Light falls off across a face — a
+little, and always in the same direction — and that fall-off is nearly the
+whole difference between a box and a rectangle. `faceRamp` puts one gradient on
+each face, keyed on `updateLight`'s own idea of where the sun is, so every
+surface in the frame agrees about it. It costs one gradient a face and it is
+worth more than any amount of line work laid over the top.
+
+Round things needed more than a ramp. `cylinder` draws a standing cylinder as
+one: the light wraps round it, bright a third of the way from the lit side and
+falling to both edges, and its foot is an *ellipse* rather than a line, because
+you are above it and the end of a cylinder is a circle. Once that existed the
+tank could be a tank — staves spaced by the sine of the angle round the barrel
+so they crowd at the edges the way real boards do, hoops that are arcs going
+round the back rather than straight lines crossing the front, a cone with a
+curved eave and a finial, and the ladder standing off on its own brackets
+instead of lying flat on the side.
+
+The rest followed from asking what each thing actually is:
+
+- A **condenser** is a machine, not a crate. It stands on a skid, the skid
+  stands on a housekeeping pad because nothing heavy sits on a roof covering,
+  its flanks are close-set coil fins, and the fan is sunk into the lid behind a
+  ring guard — drawn on the *top* face, so its guard is an ellipse squashed the
+  way the lid is. Nothing else says "seen from above" so cheaply.
+- A **vent stack** has a flashing collar at its foot and a goose-neck at its
+  head, turned over so rain cannot go down it.
+- A **bulkhead** has a hood over the door on two brackets, a threshold to step
+  over, and a handle on the side it opens from.
+- A **vehicle** is a silhouette before it is anything else, and the silhouette
+  is the whole of what tells a van from a car at forty yards. A bonnet that
+  starts at the roofline is a shape no car has ever had. Each is one path now —
+  car with a raked screen and a boot, van with a low nose and a high box — and
+  the wheels sit *in* arches, because a wheel drawn outside a body is a trolley.
+
+One bug worth writing down, because it is the kind that only ever appears in a
+finished drawing. Two arcs in a single path are joined by a straight line from
+the end of the first to the start of the second — so the tank's two hoops came
+with a strap running diagonally across the barrel, at an angle nothing else in
+the frame was at. One path per hoop.
+
 ### What a frame in the city actually costs
 
 Measured, the city cost **34.8 ms a frame against a budget of 16.7**, and better
