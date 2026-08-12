@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=36";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=36";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=36";
+} from "./util.js?v=37";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=37";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=37";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -1127,31 +1127,58 @@ class Scene {
         canyon.lamps.push({ u: atDepth(0.10 + i*0.26 + rng()*0.10),
           side: rng() < 0.5 ? -1 : 1, ph: rng()*Math.PI*2 });
       }
-      /* The people. Each carries enough to be drawn as somebody rather than as
-         a mark: how tall, how broad, which way, how fast, and whether they are
-         carrying anything. `stride` is set from the speed, so a figure's legs
-         and the ground it covers agree — which is the one thing the eye checks
-         without being asked. */
+      /* The people.
+
+         Each carries enough to be drawn as somebody and to *behave* like
+         somebody: how tall, how broad, which way, how fast, what they are
+         carrying, and — the part that matters most — their own random stream.
+
+         That last one is not a nicety. The crowd decides things as it goes:
+         when to hurry, when to stop at a stall, who to talk to. Deciding those
+         off `Math.random` would draw from the same stream the critters spawn
+         from, in an order that changes with the traffic, and the README's
+         warning about that is not theoretical — it would mean the same seed
+         grew a different set of animals depending on when somebody down in the
+         street happened to stop for a chat. So every walker carries its own
+         generator, seeded once from the land's seed, and the shared stream is
+         left alone. */
       canyon.walkers = [];
-      for (let i = 0; i < 26; i++) {
-        const sp = 0.016 + rng()*0.024;
-        canyon.walkers.push({ u: atDepth(rng()), off: (rng() - 0.5)*1.30,
-          dir: rng() < 0.5 ? -1 : 1, sp,
+      const nWalk = 30;
+      for (let i = 0; i < nWalk; i++) {
+        const sp = 0.015 + rng()*0.020;
+        canyon.walkers.push({
+          u: atDepth(rng()), off: (rng() - 0.5)*1.30,
+          dir: rng() < 0.5 ? -1 : 1,
+          sp0: sp, sp, stride: sp*54,
           ph: rng()*Math.PI*2, sz: 0.84 + rng()*0.34,
-          build: 0.86 + rng()*0.30,
-          tone: rng(), bag: rng() < 0.30, hat: rng() < 0.16,
-          stride: sp*54 });
+          build: 0.84 + rng()*0.34,
+          tone: rng(), bag: rng() < 0.28, hat: rng() < 0.15,
+          coat: rng() < 0.45,
+          gait: rng()*Math.PI*2, gest: rng()*Math.PI*2,
+          mode: "walk", modeT: 1 + rng()*7, lean: 0,
+          /* The person they are talking to, as an *index* and not as the
+             object. A pair pointing at each other is a cycle, and the
+             trajectory recorder JSON-stringifies every argument handed to
+             every painter — so an object reference here would not be a
+             wasteful field, it would be a crash in a bench. */
+          mate: -1,
+          rng: mulberry32((rng()*4294967295) >>> 0)
+        });
       }
-      /* And a few standing still — at a stall, or talking. A street where
-         every single person is walking reads as a conveyor. */
-      for (let i = 0; i < 6; i++) {
-        canyon.walkers.push({ u: atDepth(0.03 + rng()*0.5),
-          off: (rng() - 0.5)*1.40,
-          dir: rng() < 0.5 ? -1 : 1, sp: 0,
-          ph: rng()*Math.PI*2, sz: 0.86 + rng()*0.30,
-          build: 0.88 + rng()*0.26,
-          tone: rng(), bag: rng() < 0.4, hat: rng() < 0.14,
-          stride: 0, still: true });
+
+      /* And the vendors, one behind each stall that has its lights on. They do
+         not walk anywhere — a vendor who wanders off is not a vendor — but
+         they are the busiest figures down there, because somebody is always
+         being sold something. */
+      canyon.vendors = [];
+      for (let i = 0; i < canyon.stalls.length; i++) {
+        const st = canyon.stalls[i];
+        if (!st.lit) continue;
+        canyon.vendors.push({ stall: i, u: st.u, side: st.side,
+          sz: 0.88 + rng()*0.24, build: 0.90 + rng()*0.30,
+          tone: rng(), hat: rng() < 0.30, coat: false,
+          gest: rng()*Math.PI*2, gestRate: 0.8 + rng()*0.9,
+          ph: rng()*Math.PI*2, vendor: true });
       }
 
       // and a footbridge over it, which is what closes the slot off halfway up
@@ -3840,30 +3867,170 @@ class Scene {
   updateCityStreet(dt) {
     const cn = this.canyon;
     if (!cn) return;
-    for (const p of cn.walkers) {
-      if (p.still) continue;             // the ones stopped at a stall stay stopped
-      /* At a constant rate in `u`, which is a distance along the street and
-         not a distance across the picture — so a figure at the far end creeps
-         and the same figure arriving at the near kerb is striding, and neither
-         of those had to be asked for. */
-      p.u += p.dir*p.sp*dt;
-      if (p.u > 1.02) { p.u = 1.02; p.dir = -1; }
-      else if (p.u < -0.02) { p.u = -0.02; p.dir = 1; }
-      /* The gait. Distance covered and not time elapsed, so the legs of a
-         figure at the far end turn over slowly and the same figure at the near
-         kerb is striding — which is the one thing the eye checks about a
-         walking figure without ever being asked to. */
-      p.gait = (p.gait || 0) + p.sp*dt*p.stride;
-      // and they drift across the width of it as they go
-      p.off += Math.sin(this.t*0.3 + p.ph)*dt*0.10;
-      if (p.off > 1.4) p.off = 1.4; else if (p.off < -1.4) p.off = -1.4;
-    }
     for (const v of (cn.cars || [])) {
       if (!v.moving) continue;
       v.u += v.dir*v.sp*dt;
       if (v.u > 1.02) v.u = -0.01;
       else if (v.u < -0.02) v.u = 1.01;
     }
+    this.updateCrowd(dt);
+  }
+
+  /* ---- what the crowd is doing -------------------------------------------
+
+     A street where everybody moves at their own fixed rate in one direction
+     for ever is a conveyor with figures on it. What makes a crowd read as a
+     crowd is that its members are each in the middle of *something*, and that
+     those somethings are different lengths and interrupt each other.
+
+     Five things, then, and no more — this is a hundred yards away and eight
+     storeys down, and any state finer than these is invisible:
+
+       walk    the default: their own pace, going somewhere
+       hurry   twice that, leaning into it, for a while
+       browse  stopped at a stall, turned toward it
+       talk    stopped in a pair, turned to face each other
+       yield   out of the road, because something is coming
+
+     `yield` is not chosen; it is imposed, and it interrupts whatever was
+     happening. That is the one behaviour here that is *shared* — everybody
+     near the car does it at once, and a crowd doing one thing together is the
+     single clearest sign that they are all in the same world. */
+  updateCrowd(dt) {
+    const cn = this.canyon;
+    const W = cn.walkers;
+    if (!W) return;
+    // whichever vehicle is actually moving; the parked ones threaten nobody
+    let car = null;
+    for (const v of (cn.cars || [])) if (v.moving) { car = v; break; }
+    const KERB = 0.86;              // the kerb, in the walkers' own lateral unit
+
+    for (let i = 0; i < W.length; i++) {
+      const p = W[i];
+
+      /* Something is coming. Step out of the road and wait — and go on
+         waiting a moment after it has passed, because nobody steps back off a
+         kerb the instant a bumper clears them. */
+      if (car) {
+        /* `du` is how far the car is *up the street* from them; multiplied by
+           the way it is going, a negative product means it is coming at them.
+           People ahead of it clear out well before it arrives and the ones it
+           has already passed step back almost at once, which is what turns a
+           set of individual decisions into a wave going down the street. */
+        const du = car.u - p.u;
+        const ahead = du*car.dir < 0.02;
+        const range = ahead ? 0.22 : 0.07;
+        if (Math.abs(du) < range && Math.abs(p.off) < KERB + 0.12) {
+          if (p.mode !== "yield") { p.wasMode = p.mode; p.mode = "yield"; }
+          p.yieldT = 0.8;
+        }
+      }
+      if (p.mode === "yield") {
+        const target = (p.off >= 0 ? 1 : -1)*(KERB + 0.26);
+        p.off += (target - p.off)*Math.min(1, dt*3.0);
+        p.gait += dt*1.6;                          // shifting about on the spot
+        p.lean += (0 - p.lean)*Math.min(1, dt*3);
+        if ((p.yieldT -= dt) <= 0) {
+          p.mode = p.wasMode === "yield" ? "walk" : (p.wasMode || "walk");
+          p.modeT = 2 + p.rng()*5;
+        }
+        continue;
+      }
+
+      if ((p.modeT -= dt) <= 0) this.pickCrowdMode(p, W, i);
+
+      if (p.mode === "browse" || p.mode === "talk") {
+        // standing: no ground covered, so no stride — only a shift of weight
+        p.gait += dt*0.9;
+        p.gest += dt*(p.mode === "talk" ? 1.5 : 0.9);
+        p.off += (p.target - p.off)*Math.min(1, dt*1.4);
+        p.lean += ((p.mode === "browse" ? 0.05 : 0) - p.lean)*Math.min(1, dt*2);
+        continue;
+      }
+
+      const rush = p.mode === "hurry";
+      p.sp = p.sp0*(rush ? 2.1 : 1);
+      p.lean += ((rush ? 0.13 : 0) - p.lean)*Math.min(1, dt*2);
+      /* At a constant rate in `u`, which is a distance along the street and
+         not a distance across the picture — so a figure at the far end creeps
+         and the same figure arriving at the near kerb is striding. */
+      p.u += p.dir*p.sp*dt;
+      if (p.u > 1.02) { p.u = 1.02; p.dir = -1; }
+      else if (p.u < -0.02) { p.u = -0.02; p.dir = 1; }
+      /* The gait turns over with ground covered and not with the clock, so a
+         figure whose feet slide never happens — which is the one mistake in an
+         animated crowd everybody sees and nobody can name. */
+      p.gait += p.sp*dt*p.stride;
+      // and they drift across the width of it as they go
+      p.off += Math.sin(this.t*0.3 + p.ph)*dt*0.10;
+      if (p.off > 1.30) p.off = 1.30; else if (p.off < -1.30) p.off = -1.30;
+    }
+
+    // the vendors, who never go anywhere and never stop selling
+    for (const v of (cn.vendors || [])) v.gest += dt*v.gestRate;
+  }
+
+  /* What somebody does next. Drawn from the walker's own generator, so the
+     shared random stream — which the animals spawn from — is never touched. */
+  pickCrowdMode(p, W, i) {
+    // leaving a conversation lets the other person go too
+    if (p.mate >= 0) { const o = W[p.mate]; if (o) o.mate = -1; p.mate = -1; }
+    const r = p.rng();
+    if (r < 0.46) {
+      p.mode = "walk";
+      p.sp0 = p.sp0*(0.9 + p.rng()*0.2);
+      p.modeT = 5 + p.rng()*11;
+    } else if (r < 0.63) {
+      p.mode = "hurry";
+      p.modeT = 3 + p.rng()*6;
+    } else if (r < 0.82) {
+      /* Stopping at a stall. Which stall is whichever is nearest along the
+         street — so somebody browsing is standing at a thing that is there,
+         rather than facing an empty stretch of kerb. */
+      const st = this.nearestStall(p.u);
+      if (st) {
+        p.mode = "browse";
+        p.target = st.side*1.02;
+        p.dir = st.side;                // turned toward the trestle
+        p.modeT = 6 + p.rng()*12;
+      } else { p.mode = "walk"; p.modeT = 6; }
+    } else {
+      /* Talking. It takes two, and both have to agree to it — so this looks
+         for somebody close by who is only walking, and stops them both. A
+         figure standing alone gesturing at nothing is worse than no
+         conversation at all. */
+      let mate = null, mateIdx = -1;
+      for (let j = 0; j < W.length; j++) {
+        const q = W[j];
+        if (j === i || q.mate >= 0 || q.mode !== "walk") continue;
+        if (Math.abs(q.u - p.u) < 0.035 && Math.abs(q.off - p.off) < 0.60) {
+          mate = q; mateIdx = j; break;
+        }
+      }
+      if (mate) {
+        const t = 7 + p.rng()*13;
+        p.mode = mate.mode = "talk";
+        p.modeT = mate.modeT = t;
+        p.mate = mateIdx; mate.mate = i;
+        // stood a comfortable distance apart, and turned to face each other
+        const mid = (p.off + mate.off)/2;
+        p.target = mid - 0.26; mate.target = mid + 0.26;
+        p.dir = 1; mate.dir = -1;
+        // one talks while the other listens, so the gestures alternate
+        mate.gest = p.gest + Math.PI;
+      } else { p.mode = "walk"; p.modeT = 6 + p.rng()*8; }
+    }
+  }
+
+  nearestStall(u) {
+    const st = this.canyon.stalls;
+    if (!st || !st.length) return null;
+    let best = null, bd = 0.06;
+    for (const s of st) {
+      const d = Math.abs(s.u - u);
+      if (d < bd) { bd = d; best = s; }
+    }
+    return best;
   }
 
   /* The sand the sea has just been over. It runs up the beach behind each
@@ -5151,6 +5318,7 @@ class Scene {
     const moving = [];
     for (const v of (cn.cars || [])) if (v.moving) moving.push(v);
     for (const p of cn.walkers) moving.push(p);
+    for (const v of (cn.vendors || [])) moving.push(v);
     moving.sort((a, b) => b.u - a.u);
     for (const m of moving) {
       if (m.kind) this.paintCanyonCar(c, W, H, m, lum);
@@ -5257,100 +5425,128 @@ class Scene {
 
   /* One person.
 
-     They used to be two marks — a body and a head — on the argument that
-     nothing else survives at this size. That is true at the far end of the
-     street and false at the near end, where a figure is thirty pixels tall and
-     two stacked rectangles read as a bollard rather than as somebody walking.
-     So it is drawn at whatever size it lands at: a block far off, a figure
-     with legs near to, and the legs turn over at a rate set by the ground
-     covered rather than by the clock — a figure whose feet slide is the one
-     mistake in an animated crowd that everybody sees and nobody can name. */
+     They were built out of strokes — a line for each leg, a line for the arm,
+     a rectangle for the trunk — and a stroked line has no mass. Whatever you
+     do to a stick figure it stays a stick figure, and thirty of them is a
+     diagram.
+
+     So nothing here is stroked. The trunk is a coat: a closed silhouette,
+     domed at the shoulders and swinging a little wider at the hem, which is
+     the shape a person makes when you are too far away to see a person. The
+     limbs are *tapered filled* shapes rather than lines — the same `limb` the
+     animals in this piece are built from — so they have a thickness that runs
+     out toward the hand and the foot. And the whole figure takes one gradient
+     across it, lit from wherever the sun is, because a flat silhouette is a
+     paper cut-out and this is the one thing in the frame there are thirty of.
+
+     None of that is articulation. There are no joints, no IK and no per-limb
+     behaviour; it is a blob with a weight to it, which at eight storeys is
+     everything a person is. */
   paintWalker(c, W, H, p, lum) {
     const cy = this.tok.city;
     const a = this.canyonAt(p.u);
     const un = this.canyonUnit(a, W);
-    const x = this.canyonX(a, p.off*0.72, W), y = a.y*H;
-    const h = un*0.21*p.sz;
+    const x = this.canyonX(a, (p.vendor ? p.side*0.72 : p.off*0.72), W);
+    const y = p.vendor ? a.y*H - un*0.10 : a.y*H;
+    const h = un*(p.vendor ? 0.19 : 0.21)*p.sz;
     if (h < 1.2) return;
-    /* Not one dark: a crowd in a single tone is a stencil. Three tones over
-       the ink, drawn from the figure's own number so it keeps its coat all
-       session. */
-    const tone = css(mix(cy.ink, this._cityFc, 0.03 + p.tone*0.34));
-    /* Shoulders about a quarter of the height, which is what a person
-       measures. At three tenths — which is what this was — a figure comes out
-       as wide as a postbox, and a street of them reads as a row of chess
-       pieces however well their legs are moving. */
-    const bw = Math.max(0.8, h*0.23*p.build);
 
-    if (h < 5) {
-      // far off: the two marks, which is all there is to see
-      c.fillStyle = tone;
-      c.fillRect(x - bw*0.5, y - h, bw, h*0.74);
-      c.fillRect(x - bw*0.34, y - h*1.18, bw*0.68, h*0.26);
+    /* Not one dark: a crowd in a single tone is a stencil. And not one flat
+       tone either — the same ramp every other solid thing in this city gets,
+       so a figure has a lit side and a shadowed one. */
+    /* The range matters more than the hue. A crowd mixed across a third of
+       the way to the wall colour is thirty near-identical darks; across two
+       thirds it has somebody in a pale coat in it, which is what an eye
+       actually picks out of a crowd first. */
+    const baseCol = mix(cy.ink, this._cityFc, 0.02 + p.tone*p.tone*0.62);
+    const bw = Math.max(0.8, h*0.27*p.build);
+
+    if (h < 4.5) {
+      // far off, a person is a mark with a head on it and nothing else
+      c.fillStyle = css(baseCol);
+      c.beginPath();
+      c.ellipse(x, y - h*0.42, bw*0.52, h*0.42, 0, 0, Math.PI*2);
+      c.ellipse(x, y - h*0.92, bw*0.34, h*0.11, 0, 0, Math.PI*2);
+      c.fill();
       return;
     }
 
-    const g = p.gait || 0;
-    const swing = p.still ? 0 : Math.sin(g);
-    const bob = p.still ? 0 : Math.abs(Math.cos(g))*h*0.030;
+    const lit = this._lit || { x: 0.5, str: 1 };
+    const from = lit.x > 0.5 ? 1 : -1;
+    const g = c.createLinearGradient(x - bw, 0, x + bw, 0);
+    const hi = css(mix(baseCol, this.tok.moon, 0.16*(0.4 + lit.str*0.6)));
+    const lo = css(mix(baseCol, cy.ink, 0.26));
+    g.addColorStop(0, from > 0 ? lo : hi);
+    g.addColorStop(1, from > 0 ? hi : lo);
+
+    const walking = !p.vendor && p.mode !== "browse" && p.mode !== "talk"
+      && p.mode !== "yield";
+    const swing = walking ? Math.sin(p.gait) : Math.sin(p.gait)*0.16;
+    const bob = walking ? Math.abs(Math.cos(p.gait))*h*0.030 : 0;
+    /* Gesturing: a lift of the near arm and a small rock of the whole figure.
+       A vendor does it constantly, somebody in a conversation does it in turn
+       with whoever they are talking to, and everybody else does not. */
+    const talky = p.vendor || p.mode === "talk";
+    const gest = talky ? Math.max(0, Math.sin(p.gest)) : 0;
+
+    this.contactShadow(c, x, y, bw*0.85, 0.22);
+
+    c.save();
+    /* The lean. Somebody hurrying is tipped into it, somebody at a stall is
+       tipped over the trestle, and both turn about the feet because that is
+       where a person's weight is. */
+    if (p.lean) { c.translate(x, y); c.rotate(p.lean*(p.dir || 1)); c.translate(-x, -y); }
+
     const top = y - h - bob;
-    this.contactShadow(c, x, y, bw*0.8, 0.22);
+    const shY = top + h*0.20, hipY = top + h*0.52, hemY = top + h*0.62;
+    const headR = h*0.062;
+    c.fillStyle = g;
 
-    /* The proportions are a person's and not a snowman's: the head an eighth
-       of the height, the shoulders at a fifth down, the hips at the middle,
-       and therefore half of the whole figure being leg. Getting that split
-       wrong is what makes a small figure read as a bollard — far more than any
-       amount of detail on it, none of which is visible anyway. */
-    const hipY = top + h*0.50, shoulderY = top + h*0.20, headR = h*0.062;
+    // the legs, behind the coat, tapering to the foot
+    this.limb(c, x - bw*0.14, hipY, x + swing*h*0.17, y, bw*0.32, bw*0.19);
+    this.limb(c, x + bw*0.14, hipY, x - swing*h*0.17, y, bw*0.32, bw*0.19);
 
-    c.strokeStyle = tone; c.lineCap = "round"; c.lineJoin = "round";
-    // legs: one forward, one back, and the ground stays where it is
-    c.lineWidth = Math.max(0.8, bw*0.34);
+    /* The coat. Domed at the shoulders, a little wider at the hem, and closed
+       — one silhouette rather than a stack of parts, so there is no seam
+       anywhere in it for the eye to catch on. */
+    const flare = p.coat ? 0.60 : 0.50;
     c.beginPath();
-    c.moveTo(x, hipY); c.lineTo(x + swing*h*0.19, y);
-    c.moveTo(x, hipY); c.lineTo(x - swing*h*0.19, y);
-    c.stroke();
-    // the arm you can see, swinging against the leg on the same side
-    c.lineWidth = Math.max(0.6, bw*0.24);
-    c.beginPath();
-    c.moveTo(x, shoulderY + h*0.03);
-    c.lineTo(x - swing*h*0.13, hipY - h*0.02);
-    c.stroke();
-    // the trunk, tapering to the shoulders the way a coat does
-    c.fillStyle = tone;
-    c.beginPath();
-    c.moveTo(x - bw*0.42, shoulderY);
-    c.lineTo(x + bw*0.42, shoulderY);
-    c.lineTo(x + bw*0.50, hipY);
-    c.lineTo(x - bw*0.50, hipY);
+    c.moveTo(x - bw*0.46, shY);
+    c.quadraticCurveTo(x - bw*(flare + 0.06), top + h*0.40, x - bw*flare, hemY);
+    c.quadraticCurveTo(x, hemY + h*0.03, x + bw*flare, hemY);
+    c.quadraticCurveTo(x + bw*(flare + 0.06), top + h*0.40, x + bw*0.46, shY);
+    c.quadraticCurveTo(x, top + h*0.125, x - bw*0.46, shY);
     c.closePath(); c.fill();
-    // neck and head
+
+    // the arm on the side you can see, swinging against the near leg
+    const armX = talky ? (0.34 + gest*0.30)*(p.dir || 1) : -swing*0.30;
+    const armY = talky ? hipY - h*(0.06 + gest*0.20) : hipY + h*0.01;
+    this.limb(c, x + bw*0.34*(p.dir || 1), shY + h*0.03,
+      x + armX*bw*1.5, armY, bw*0.26, bw*0.16);
+
+    // head, set on the shoulders and turned very slightly the way they face
     c.beginPath();
-    c.ellipse(x, top + h*0.085, headR*0.86, headR, 0, 0, Math.PI*2);
+    c.ellipse(x + (p.dir || 1)*headR*0.16, top + h*0.085,
+      headR*0.92, headR*1.06, 0, 0, Math.PI*2);
     c.fill();
     if (p.hat && h > 10) {
-      c.fillRect(x - headR*1.4, top + h*0.030, headR*2.8, Math.max(0.8, h*0.024));
+      c.fillStyle = css(mix(baseCol, cy.ink, 0.22));
+      c.beginPath();
+      c.ellipse(x + (p.dir || 1)*headR*0.16, top + h*0.045, headR*1.5, headR*0.42,
+        0, 0, Math.PI*2);
+      c.fill();
     }
     // and whatever they are carrying, which hangs and does not swing
     if (p.bag && h > 9) {
       c.fillStyle = css(mix(cy.ink, this._cityFc, 0.20));
-      c.fillRect(x + bw*0.44, hipY - h*0.10, bw*0.36, h*0.16);
+      c.beginPath();
+      c.ellipse(x - bw*0.56*(p.dir || 1), hipY - h*0.01, bw*0.24, h*0.075,
+        0, 0, Math.PI*2);
+      c.fill();
     }
+    c.restore();
   }
 
-  /* The bridge over the street.
-
-     It was a slab: one thin rectangle a half wider than the canyon at each
-     end, floating clear of both buildings with nothing holding it up and a
-     handrail on top. Widening the street made it worse, because the overhang
-     is a fraction of the street's width and it grew with it — a shelf ruled
-     across the picture in front of everything.
-
-     It is an enclosed link between two buildings, which is what a thing at
-     that height over a street actually is. It lands *on* the walls rather than
-     floating past them, it has a depth you can see the underside of, and it is
-     glazed, because the whole point of one is that people cross it in the
-     warm. */
   drawCanyonBridge(c, W, H, bot, lum) {
     const cn = this.canyon, br = cn.bridge, cy = this.tok.city;
     const a = this.canyonAt(br.u);

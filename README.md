@@ -1176,20 +1176,65 @@ trestle and read as damage.
 **The people are people.** They used to be two marks, a body and a head, on the
 argument that nothing else survives at that size. That is true at the far end
 of the street and false at the near end, where a figure is thirty pixels tall
-and two stacked rectangles read as a bollard. They are drawn at whatever size
-they land at: a block far off, a figure with legs near to.
+and two stacked rectangles read as a bollard.
 
-Three things make a small figure read as a person, and none of them is detail.
-The first is proportion — head an eighth of the height, shoulders a fifth down,
-hips at the middle, so half the whole figure is leg. The trunk used to be three
-tenths of the height wide, which is as broad as a postbox, and a street of
-those reads as a row of chess pieces however well their legs are moving. The
-second is that the legs turn over at a rate set by the *ground covered* and not
-by the clock: a figure whose feet slide is the one mistake in an animated crowd
-that everybody sees and nobody can name. The third is that they are not all one
-colour, and not all moving — a crowd in a single tone is a stencil, and a
-street where every last person is walking is a conveyor, so some of them are
-standing at a stall.
+Then they were built out of *strokes* — a line for each leg, a line for the
+arm, a rectangle for the trunk — and a stroked line has no mass. Whatever you
+do to a stick figure it stays a stick figure, and thirty of them is a diagram.
+So nothing about a figure is stroked now. The trunk is a coat: one closed
+silhouette, domed at the shoulders and swinging wider at the hem, which is the
+shape a person makes when you are too far off to see a person. The limbs are
+tapered *filled* shapes — the same `limb` every animal in this piece is built
+from — so they thicken toward the body and run out toward the hand and the
+foot. And the whole figure takes one gradient across it, lit from wherever the
+sun is, because a flat silhouette is a paper cut-out and this is the one thing
+in the frame there are thirty of.
+
+None of that is articulation. There are no joints, no IK and no per-limb
+behaviour. It is a blob with a weight to it, which at eight storeys is
+everything a person is.
+
+**What the crowd is doing.** A street where everybody moves at their own fixed
+rate in one direction for ever is a conveyor with figures on it. What makes a
+crowd read as a crowd is that its members are each in the middle of
+*something*, and that those somethings are different lengths and interrupt each
+other. Five states, and no more — this is a hundred yards off and eight storeys
+down, and anything finer is invisible:
+
+```
+walk    their own pace, going somewhere
+hurry   twice that, leaning into it, for a while
+browse  stopped at a stall, turned toward the trestle
+talk    stopped in a pair, turned to face each other
+yield   out of the road, because something is coming
+```
+
+`talk` takes two and both have to agree to it, so it looks for somebody nearby
+who is only walking and stops them both, stands them a comfortable distance
+apart facing each other, and offsets their gestures by half a cycle so one
+talks while the other listens. A figure standing alone gesturing at nothing is
+worse than no conversation at all. `browse` picks whichever stall is actually
+nearest, so somebody stopped is stopped at a *thing* rather than at an empty
+stretch of kerb. And there are vendors behind the lit stalls who never go
+anywhere and never stop selling, because somebody is always being sold
+something.
+
+`yield` is the one that is not chosen — it is imposed, and it interrupts
+whatever was happening. People ahead of the car clear out well before it
+arrives and the ones it has passed step back almost at once, which turns a set
+of individual decisions into a wave going down the street. A crowd doing one
+thing together is the single clearest sign that they are all in the same world.
+
+Two things had to be got right for any of it to work. The crowd decides things
+as it goes, and deciding them off `Math.random` would draw from the same stream
+the animals spawn from, in an order that changes with the traffic — so the same
+seed would grow a different set of animals depending on when somebody down in
+the street happened to stop for a chat. Every walker carries its own generator
+instead. And the person somebody is talking to is stored as an *index* rather
+than as the object: a pair pointing at each other is a cycle, and
+`trajectory.mjs` JSON-stringifies every argument handed to every painter, so an
+object reference there would not have been a wasteful field. It would have been
+a crash in a bench.
 
 **The bridge over the street** was a slab: one thin rectangle half again wider
 than the canyon at each end, floating clear of both buildings with nothing
