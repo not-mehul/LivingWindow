@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=38";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=38";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=38";
+} from "./util.js?v=39";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=39";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=39";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -273,11 +273,24 @@ const CITY_PERCHES = [
   { x: 0.108, on: "kit", kit: 1, hostW: 1.1 },
   { x: 0.318, on: "kit", kit: 2, hostW: 1.0 },
   { x: 0.646, on: "kit", kit: 3, hostW: 1.0 },
-  { x: 0.930, on: "kit", kit: 8, type: "post" },
-  { x: 0.610, on: "block", block: "lipR", u: 0.34, type: "roof" },
-  { x: 0.700, on: "block", block: "lipR", u: 0.77, type: "roof" },
-  { x: 0.648, on: "block", block: 11, u: 0.42, type: "roof" }
+  { x: 0.930, on: "kit", kit: 8, type: "post" }
 ];
+
+/* There used to be three more, on the roofs of the buildings across the way,
+   and they were wrong twice over.
+
+   Wrong to look at: those roofs are a street's width off and more, and a bird
+   standing on one is a speck against a wall of windows — the eye never finds
+   it, so the whole point of putting a singer where it can be seen is lost.
+
+   And wrong to *measure*. A perch's depth is `2 + z*12`, where `z` is a place
+   on the deck plane you are standing on. A building's `z` is a different
+   quantity in a different space — how far back the block sits among the other
+   blocks — and feeding one into the other put a bird on the near-right roof at
+   depth 3.6 against a bird on your own parapet at 14. Which is to say: the
+   further off it stood, the *bigger* it came out, by nearly a factor of two.
+   Every perch here now takes its depth from the one plane, which is the only
+   way the sizes can be made to agree. */
 
 /* The wind field: how many springs across the frame, how fast the gusts come
    round, and how much of one is in the air at once (1 puts a whole gust across
@@ -1404,10 +1417,7 @@ class Scene {
           y = this.planeY(k.z) - this.kitRise(k)*this.planeScale(k.z);
           depth = 2 + k.z*12;
         } else {
-          const b = typeof P.block === "string" ? byRole[P.block] : towers[P.block];
-          if (!b) continue;
-          y = b.topY - 0.002;
-          depth = 2 + Math.min(0.99, b.z + 0.05)*12;
+          continue;        // nothing perches off the deck plane any more
         }
         this.perches.push({ x: P.x, y, depth,
           type: P.type || "ground", hostW: P.hostW || 1 });
@@ -5052,16 +5062,32 @@ class Scene {
        across it. They are laid out along `u`, so they crowd toward the far end
        exactly as real setts do, and that convergence is worth more than
        anything standing on the street. */
-    const paveLine = css(mix(mix(this._cityFc, bot, 0.20), cy.ink, 0.30));
+    /* Faint, and crossed by joints. At full strength and running unbroken from
+       wall to wall these read as *steps* — a flight of stairs going up the
+       middle of the picture, which is what any set of strong parallel
+       horizontals converging on a point will always read as. What stops it is
+       the vertical joints between them, staggered course to course the way
+       flags are actually laid: the eye then has cells rather than lines, and a
+       cell is a floor. */
+    const paveLine = css(mix(mix(this._cityFc, bot, 0.20), cy.ink, 0.14));
     c.strokeStyle = paveLine;
-    c.lineWidth = Math.max(0.5, nhw*0.012);
+    c.lineWidth = Math.max(0.4, nhw*0.007);
     c.beginPath();
-    for (let i = 1; i < 30; i++) {
-      const uu = i/30;
+    for (let i = 1; i < 26; i++) {
+      const uu = i/26;
       const aa = this.canyonAt(uu);
-      if (aa.hw*W < 2) break;
+      if (aa.hw*W < 2.5) break;
       c.moveTo(this.canyonX(aa, -1, W), aa.y*H);
       c.lineTo(this.canyonX(aa, 1, W), aa.y*H);
+      // the joints across this course, offset by a half on the odd ones
+      const a2 = this.canyonAt((i + 1)/26);
+      if (aa.hw*W < 6) continue;
+      for (let k = -3; k <= 3; k++) {
+        const sx = k*0.28 + (i % 2 ? 0.14 : 0);
+        if (Math.abs(sx) > 0.98) continue;
+        c.moveTo(this.canyonX(aa, sx, W), aa.y*H);
+        c.lineTo(this.canyonX(a2, sx, W), a2.y*H);
+      }
     }
     c.stroke();
 
@@ -5474,9 +5500,51 @@ class Scene {
     const headR = h*0.062;
     c.fillStyle = g;
 
-    // the legs, behind the coat, tapering to the foot
-    this.limb(c, x - bw*0.14, hipY, x + fdir*footA, y - liftA, bw*0.32, bw*0.19);
-    this.limb(c, x + bw*0.14, hipY, x + fdir*footB, y - liftB, bw*0.32, bw*0.19);
+    /* ---- the legs -------------------------------------------------------
+
+       Straight hip-to-foot limbs read as a pair of scissors: the one thing a
+       leg does that a scissor blade does not is *bend*, and at the size these
+       land at the knee is the only joint worth having. A leg is nearly
+       straight through its stance, taking the weight, and folds hard through
+       its swing to get the foot past the ground — which is also why a walking
+       figure's silhouette changes shape at all rather than merely shearing.
+
+       The knee leads forward, so the bend is against the direction of travel
+       in `leg`'s own sign convention. `bend` is a fraction of the hip-to-foot
+       line, so it stays right at every size without being told the scale. */
+    const knee = (phi) => {
+      const t = ((phi % TAU) + TAU) % TAU;
+      if (t < TAU*WALK_D) {
+        // stance: a soft flex just after the foot lands, then straightening
+        return 0.06*Math.sin(Math.PI*(t/(TAU*WALK_D)));
+      }
+      // swing: folded hard, deepest as it passes under the body
+      return 0.34*Math.sin(Math.PI*(t - TAU*WALK_D)/(TAU*(1 - WALK_D)));
+    };
+    const detail = h > 10;
+    const hipL = x - bw*0.14, hipR = x + bw*0.14;
+    if (detail && walking) {
+      this.leg(c, hipL, hipY, x + fdir*footA, y - liftA,
+        -fdir*knee(p.gait), bw*0.32, bw*0.17);
+      this.leg(c, hipR, hipY, x + fdir*footB, y - liftB,
+        -fdir*knee(p.gait + Math.PI), bw*0.32, bw*0.17);
+      /* And a foot on the end of each. Two pixels of wedge, and without them a
+         leg stops in mid-air at the ankle — which at this size is the last
+         thing anybody notices and the first thing that looks wrong. */
+      for (const [fx, fl] of [[footA, liftA], [footB, liftB]]) {
+        const px = x + fdir*fx, py = y - fl;
+        c.beginPath();
+        c.moveTo(px - fdir*bw*0.10, py);
+        c.lineTo(px + fdir*bw*0.26, py - (fl > 0.01 ? h*0.012 : 0));
+        c.lineTo(px + fdir*bw*0.26, py + h*0.018);
+        c.lineTo(px - fdir*bw*0.10, py + h*0.018);
+        c.closePath(); c.fill();
+      }
+    } else {
+      // far off, or standing: straight is all that survives, and costs half
+      this.limb(c, hipL, hipY, x + fdir*footA, y - liftA, bw*0.32, bw*0.19);
+      this.limb(c, hipR, hipY, x + fdir*footB, y - liftB, bw*0.32, bw*0.19);
+    }
 
     /* The coat. Domed at the shoulders, a little wider at the hem, and closed
        — one silhouette rather than a stack of parts, so there is no seam
@@ -5494,7 +5562,16 @@ class Scene {
     const armX = talky ? x + fdir*bw*(0.50 + gest*0.45)
                        : x - fdir*footB*0.55;
     const armY = talky ? hipY - h*(0.06 + gest*0.20) : hipY + h*0.01;
-    this.limb(c, x + bw*0.34*fdir, shY + h*0.03, armX, armY, bw*0.26, bw*0.16);
+    /* The arm gets an elbow for the same reason the leg gets a knee, and it
+       bends the other way — backward against the swing, and hard when the hand
+       comes up to gesture. */
+    if (detail) {
+      const el = talky ? 0.30 + gest*0.16 : 0.10 + Math.abs(footB/A)*0.12;
+      this.leg(c, x + bw*0.34*fdir, shY + h*0.03, armX, armY,
+        fdir*el, bw*0.26, bw*0.14);
+    } else {
+      this.limb(c, x + bw*0.34*fdir, shY + h*0.03, armX, armY, bw*0.26, bw*0.16);
+    }
 
     // head, set on the shoulders and turned very slightly the way they face
     c.beginPath();

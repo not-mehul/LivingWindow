@@ -1158,7 +1158,11 @@ made it the wrong kind of street.
 
 So the floor is one surface, and what gives it depth is the courses across it,
 laid out along `u` so they crowd toward the far end exactly as real setts do —
-worth more for the depth of the street than anything standing on it. Against
+worth more for the depth of the street than anything standing on it. They are
+faint, and crossed by joints staggered course to course the way flags are
+actually laid: at full strength and running unbroken from wall to wall they
+read as *steps*, because any set of strong parallel horizontals converging on a
+point always will. Break them into cells and a cell is a floor. Against
 each wall is a band of different paving where the gullies and gratings go, and
 down the middle a runnel, which is how a street with no gutters gets rid of its
 rain and is the one line in the floor that runs *away* from you rather than
@@ -1224,6 +1228,22 @@ at once, and a crowd doing one thing together is the clearest sign they are all
 in the same world — but the car is gone, and a behaviour with nothing to
 trigger it is not a behaviour. Browsing is what the crowd does together now.
 
+**Where a bird is allowed to land.** There used to be three perches on the
+roofs of the buildings across the way, and they were wrong twice over. Wrong to
+look at, because those roofs are a street's width off and a bird standing on
+one is a speck against a wall of windows — the eye never finds it, so the whole
+point of putting a singer where it can be seen is lost.
+
+And wrong to *measure*, which is the more interesting half. A perch's depth is
+`2 + z*12`, where `z` is a place on the deck plane you are standing on. A
+building's `z` is a different quantity in a different space — how far back the
+block sits among the other blocks — and feeding one into the other put a bird
+on the near-right roof at depth 3.6 against a bird on your own parapet at 14.
+The further off it stood, the *bigger* it came out, by nearly a factor of two.
+Every perch now takes its depth from the one plane, which is the only way the
+sizes can be made to agree; the animals on the ground already did, through
+`groundDepth`, which is why they were never wrong in the same way.
+
 **And they walk rather than skate.** The gait used to advance with `p.sp*dt` —
 speed along the *street* — and the street is in perspective, so the same speed
 is a crawl at the far end and a stride at the near one while the legs turned
@@ -1242,6 +1262,15 @@ far a foot travels, and the share of the cycle it spends down — a little under
 two thirds, which is why a walk has a double-support phase and a run does not)
 live in one place, because the painter and the update have to agree about them
 to the letter and a walk where they disagree even slightly is a walk on ice.
+
+A straight hip-to-foot limb reads as a pair of scissors, though, and the one
+thing a leg does that a scissor blade does not is *bend*. At this size the knee
+is the only joint worth having: nearly straight through the stance, taking the
+weight, and folded hard through the swing to get the foot past the ground —
+which is also why a walking figure's silhouette changes shape rather than
+merely shearing. The arm gets an elbow for the same reason and bends the other
+way. Both are gated on drawn size, so a figure at the far end keeps the
+two-fill straight leg it can afford and nobody pays for a knee they cannot see.
 
 Measured on the running piece: a body moving 0.51 px a frame carries a planted
 foot 0.013 px with it. Standing still measures zero travel and therefore zero
