@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=40";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=40";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=40";
+} from "./util.js?v=41";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=41";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=41";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -65,7 +65,6 @@ const CITY_WALL = CITY_WALL_RUNS[1].h;   // the run most of the frame is behind
    The city puts its horizon band on its own eye line, so the warm strip at the
    foot of a dusk sits behind the skyline rather than below the parapet where
    nothing would ever see it. Everywhere else keeps the plain ramp. */
-const CITY_SKY_STOPS = [0.30, CITY_EYE + 0.02];
 const FLAT_SKY_STOPS = [0.5, 1];
 
 /* ============================================================================
@@ -419,33 +418,44 @@ class Scene {
       glassLit: parseColor(themeVar("--scene-glasslit")),
       /* The city's own sky, in three bands, and its own materials. See the
          token block in styles.css for why it does not share the land's. */
-      citySky: {
-        dawn: [parseColor(themeVar("--city-sky-dawn-top")),
-               parseColor(themeVar("--city-sky-dawn-mid")),
-               parseColor(themeVar("--city-sky-dawn-bot"))],
-        day:  [parseColor(themeVar("--city-sky-day-top")),
-               parseColor(themeVar("--city-sky-day-mid")),
-               parseColor(themeVar("--city-sky-day-bot"))],
-        dusk: [parseColor(themeVar("--city-sky-dusk-top")),
-               parseColor(themeVar("--city-sky-dusk-mid")),
-               parseColor(themeVar("--city-sky-dusk-bot"))],
-        night:[parseColor(themeVar("--city-sky-night-top")),
-               parseColor(themeVar("--city-sky-night-mid")),
-               parseColor(themeVar("--city-sky-night-bot"))]
-      },
       cityFace: {
         dawn: parseColor(themeVar("--city-face-dawn")),
         day:  parseColor(themeVar("--city-face-day")),
         dusk: parseColor(themeVar("--city-face-dusk")),
         night:parseColor(themeVar("--city-face-night"))
       },
+      /* The city, drawn out of the same paintbox as everywhere else.
+
+         It used to keep its own: four wall colours of its own for the four
+         hours, its own near-black line, its own cyan and magenta. The argument
+         for that is in the README and it is not a bad one — a city at noon is
+         warm brick against a cold sky and the same city at midnight is cold
+         slate against a warm-lit one, which one grey mixed with the sky cannot
+         give you.
+
+         But it made the city a different picture from the other four. Stood
+         next to a meadow it was another artist's work: harder, colder, lined,
+         and reaching for hues nothing else in the piece owns. Five places have
+         to look like five views out of one window, and that matters more than
+         the last few per cent of a wall's hue. So the materials are the piece's
+         own three — leaf, earth and stone — and the line, the glass, the lamps
+         and the signs are all mixed from tokens the rest of the land already
+         uses. What the city keeps is its *shapes*. */
       city: {
-        ink: parseColor(themeVar("--city-ink")),
-        glass: parseColor(themeVar("--city-glass")),
-        lamp: parseColor(themeVar("--city-lamp")),
-        neon: [parseColor(themeVar("--city-neon-a")),
-               parseColor(themeVar("--city-neon-b")),
-               parseColor(themeVar("--city-neon-c"))]
+        ink: parseColor(themeVar("--scene-ink-deep")),
+        glass: mix(parseColor(themeVar("--scene-stone")),
+                   parseColor(themeVar("--scene-moon")), 0.34),
+        lamp: parseColor(themeVar("--scene-sun")),
+        /* Three sign colours rather than a cyan, a violet and a magenta. They
+           are the warm of the sun, the cool of stone lifted toward the moon,
+           and a dusty rose between the two — all of them a step off something
+           the piece already has, so a lit hoarding is the brightest thing in
+           the frame without being the only saturated thing in it. */
+        neon: [parseColor(themeVar("--scene-sun")),
+               mix(parseColor(themeVar("--scene-stone")),
+                   parseColor(themeVar("--scene-moon")), 0.52),
+               mix(parseColor(themeVar("--scene-earth")),
+                   parseColor(themeVar("--scene-sun")), 0.58)]
       },
       sun: parseColor(themeVar("--scene-sun")),
       moon: parseColor(themeVar("--scene-moon")),
@@ -2070,30 +2080,32 @@ class Scene {
      city dusk actually is. */
   skyColors() {
     const m = this.timeMix, total = m.dawn + m.day + m.dusk + m.night || 1;
-    const inCity = this.loc === "city";
-    const sky = inCity ? this.tok.citySky : this.tok.sky;
+    /* One sky for all five places.
+
+       The city used to have its own, in three bands rather than two — cool
+       overhead, warm on the skyline, and a third colour between them. That is
+       truer to a real sky at either end of the day, and it made the city the
+       one place in this piece with a different atmosphere over it. Standing
+       next to the other four it read as another artist's work, and five places
+       have to look like five views out of one window. */
+    const sky = this.tok.sky;
     const top = this._top || (this._top = [0,0,0,1]);
     const mid = this._mid || (this._mid = [0,0,0,1]);
     const bot = this._bot || (this._bot = [0,0,0,1]);
     top[0] = top[1] = top[2] = 0; bot[0] = bot[1] = bot[2] = 0;
-    mid[0] = mid[1] = mid[2] = 0;
     for (const ph of PHASES) {
       const w = m[ph] / total, s = sky[ph];
       const b = s[s.length - 1];
       top[0] += s[0][0]*w; top[1] += s[0][1]*w; top[2] += s[0][2]*w;
       bot[0] += b[0]*w;    bot[1] += b[1]*w;    bot[2] += b[2]*w;
-      if (inCity) { mid[0] += s[1][0]*w; mid[1] += s[1][1]*w; mid[2] += s[1][2]*w; }
     }
-    if (inCity) {
-      this._skyStops = CITY_SKY_STOPS;
-    } else {
-      mid[0] = (top[0] + bot[0])*0.5;
-      mid[1] = (top[1] + bot[1])*0.5;
-      mid[2] = (top[2] + bot[2])*0.5;
-      this._skyStops = FLAT_SKY_STOPS;
-    }
+    mid[0] = (top[0] + bot[0])*0.5;
+    mid[1] = (top[1] + bot[1])*0.5;
+    mid[2] = (top[2] + bot[2])*0.5;
+    this._skyStops = FLAT_SKY_STOPS;
     return this._sky || (this._sky = [top, mid, bot]);
   }
+
 
   nightness() {
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
@@ -2126,6 +2138,12 @@ class Scene {
 
   /* And what the city's walls are made of at this hour, blended over the
      turn exactly as the sky is. See the token block in styles.css. */
+  /* A warmth for the hour, which the materials are taken a third of the way
+     toward. This used to *be* the wall — four colours, one per phase, and the
+     stone of the piece never entered into it. It is a tint now: the hour
+     reaches the city through the sky, as it does in the other four places, and
+     this only keeps a little of what the old table knew about a wall at noon
+     being warmer than the same wall at midnight. */
   cityFaceColor() {
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
     const f = this.tok.cityFace;
@@ -4516,13 +4534,24 @@ class Scene {
        most of what depth in a city view actually is. `ink` is the line — one
        dark, thinning with distance the same way. */
     const fc = this.cityFaceColor();
-    /* What distance mixes a building *toward* is not the colour of the sky
-       sitting on the skyline. It is the colour of the air, and the air a mile
-       off is a good way up the sky from the horizon band. */
-    const air = mix(bot, this._top, 0.35);
-    const face = (z, shade) => mix(fc, air,
-      Math.max(0, Math.min(0.92, 0.04 + z*0.52 + (shade || 0))));
-    const ink = (z) => mix(cy.ink, air, 0.02 + z*0.68);
+    /* What distance mixes a building *toward* is not quite the colour of the
+       sky sitting on the skyline — it is the colour of the air, which is some
+       way up from the horizon band. A fifth of the way, which is close enough
+       to the plain `bot` every other place in the piece washes toward that the
+       five read as one hand, and far enough off it that a night city does not
+       come out the colour of the one teal stripe in the picture. */
+    const air = mix(bot, this._top, 0.22);
+    /* And what it mixes *from* is one of the piece's own three materials.
+       Brick is earth, concrete and stone are stone, and glass is stone lifted
+       a little toward the sky because that is what is standing in it. Four
+       wall colours of the city's own, one per hour, are gone: the hour arrives
+       through the sky the way it does everywhere else. */
+    const matBase = (mat) => mat === "brick" ? this.tok.earth
+      : mat === "glass" ? mix(this.tok.stone, this._top, 0.20)
+      : this.tok.stone;
+    const face = (z, shade, mat) => mix(mix(matBase(mat), fc, 0.30), air,
+      Math.max(0, Math.min(0.92, 0.06 + z*0.54 + (shade || 0))));
+    const ink = (z) => mix(cy.ink, air, 0.18 + z*0.70);
     this._cityAir = air;
     this._cityFace = face; this._cityInk = ink;
 
@@ -4671,7 +4700,7 @@ class Scene {
      whatever it carries on its head. */
   drawCityBlock(c, b, W, H, par, bot, lum, phase) {
     const F = this.cityFaces(b, W, H);
-    const col = this._cityFace(b.z, b.shade);
+    const col = this._cityFace(b.z, b.shade, b.mat);
     const mn = Math.min(W, H);
     const lit = this._lit || { x: 0.5, alt: 1, str: 1 };
 
@@ -4746,7 +4775,7 @@ class Scene {
        decision, and a near line heavier than a far one is how any drawing has
        ever said which is which. */
     c.strokeStyle = css(this._cityInk(b.z));
-    c.lineWidth = Math.max(0.9, mn*(b.near ? 0.0044 : 0.0026)*(1 - b.z*0.55));
+    c.lineWidth = Math.max(0.5, mn*(b.near ? 0.0022 : 0.0013)*(1 - b.z*0.55));
     c.lineJoin = "round";
     c.beginPath();
     c.rect(F.x0 + 0.5, F.ty + 0.5, F.x1 - F.x0 - 1, F.foot - F.ty);
@@ -4900,7 +4929,7 @@ class Scene {
         c.globalAlpha = 1;
       }
       // the mullions, and a floor line every storey behind them
-      c.strokeStyle = css(mix(this._cityFace(b.z, b.shade), cy.ink, 0.30));
+      c.strokeStyle = css(mix(this._cityFace(b.z, b.shade, b.mat), cy.ink, 0.30));
       c.lineWidth = Math.max(0.6, mn*0.0012*(1 - b.z*0.5));
       c.beginPath();
       for (let k = 1; k < cols; k++) {
@@ -4909,7 +4938,7 @@ class Scene {
       }
       c.stroke();
       if (gapy > 5) {
-        c.strokeStyle = css(mix(this._cityFace(b.z, b.shade), cy.ink, 0.16));
+        c.strokeStyle = css(mix(this._cityFace(b.z, b.shade, b.mat), cy.ink, 0.16));
         c.beginPath();
         for (let r = 1; r < rows; r++) {
           const y = Math.round(ty + my + r*gapy) + 0.5;
@@ -4927,7 +4956,7 @@ class Scene {
          submissions a frame for a wall, which was most of what the city cost.
          The rule this piece has followed everywhere else applies here too:
          anything drawn many times in one colour goes down as one path. */
-      const band = mix(this._cityFace(b.z, b.shade), this.tok.moon, 0.13);
+      const band = mix(this._cityFace(b.z, b.shade, b.mat), this.tok.moon, 0.13);
       const ribbon = mix(glassCol, cy.ink, 0.10);
       c.fillStyle = css(band);
       c.beginPath();
@@ -4968,7 +4997,7 @@ class Scene {
         c.globalAlpha = 1;
       }
       if (detail) {
-        const wall = this._cityFace(b.z, b.shade);
+        const wall = this._cityFace(b.z, b.shade, b.mat);
         // the reveal at the head of each opening, and the sill under it
         c.fillStyle = css(mix(wall, cy.ink, 0.30));
         c.beginPath();
@@ -5007,7 +5036,7 @@ class Scene {
       if (sx1 - sx0 > 3 && gapy > 4) {
         c.save();
         this.poly(c, F.side); c.clip();
-        c.strokeStyle = css(mix(this._cityFace(b.z, b.shade), cy.ink, 0.26));
+        c.strokeStyle = css(mix(this._cityFace(b.z, b.shade, b.mat), cy.ink, 0.26));
         c.lineWidth = Math.max(0.5, mn*0.0010);
         c.beginPath();
         for (let r = 1; r < rows; r++) {
@@ -5806,7 +5835,7 @@ class Scene {
     const F = this.cityFaces(b, W, H);
     if (!F.top) return;
     const cy = this.tok.city;
-    const col = this._cityFace(b.z, b.shade);
+    const col = this._cityFace(b.z, b.shade, b.mat);
     const mn = Math.min(W, H);
     const un = F.x1 - F.x0;
     const deep = Math.abs(F.top[0][1] - F.top[3][1]);
@@ -6385,8 +6414,8 @@ class Scene {
         Math.max(2, mn*0.004), deckTop - top);
     }
 
-    c.strokeStyle = css(mix(cy.ink, bot, 0.06));
-    c.lineWidth = Math.max(1.3, mn*0.0030);
+    c.strokeStyle = css(mix(cy.ink, bot, 0.34));
+    c.lineWidth = Math.max(1, mn*0.0020);
     c.lineJoin = "miter";
     c.beginPath();
     let px = 0;
@@ -6511,7 +6540,14 @@ class Scene {
         side: css(mix(base, cy.ink, 0.22)),
         top: css(mix(mix(base, bot, 0.22),
           lum > 0.4 ? cy.lamp : this.tok.moon, 0.10 + lum*0.26)),
-        line: css(mix(cy.ink, bot, 0.05))
+        /* Softened a long way toward the sky. Nothing else in this piece
+           draws a line round anything — a meadow's trees, a wood's trunks and
+           every animal in all five places are silhouettes told apart by value
+           alone — and a near-black outline on a roof vent was the last thing
+           in the city announcing that it had been drawn by somebody else. It
+           is a shade, not a line, and the ramps across the faces do the work
+           the outline used to do. */
+        line: css(mix(cy.ink, bot, 0.42))
       };
       const line = faces.line;
       const lw = Math.max(0.8, mn*0.0024*sc);

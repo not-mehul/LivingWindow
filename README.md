@@ -1401,24 +1401,42 @@ among vertical ones that have only the narrow band of sky they happen to face.
 Painting the near ground dark, which is right for a hedge and right for a dune,
 made a rooftop look like a hole.
 
-**Its own palette, and its own sky.** Every other place in the piece is a warm
-etching: one brown ink, mixed with the sky at whatever ratio the distance calls
-for. The city has its own tokens because that will not do here — and its own
-sky in three bands rather than two, because a real sky at either end of the day
-is cool overhead, warm at the horizon and something else again in between. The
-pink between a dawn's violet and its gold is a band, not a crossing point. The
-third stop lands on the city's own eye line, so the warm strip sits behind the
-skyline instead of below the parapet where nothing would ever see it.
+**It used to have its own palette, and its own sky.** Every other place in the
+piece is a warm etching: three materials — leaf, earth and stone — mixed with
+the sky at whatever ratio the distance calls for, and no line drawn round
+anything. The city had four wall colours of its own, one per hour; its own
+sky in three bands rather than two; a near-black line round every surface; and
+cyan, violet and magenta for its signs.
 
-Its walls also change colour with the hour rather than only in value. Mixing
-one grey with the sky gets a city right at midnight and exactly backwards at
-noon: a city at noon is warm brick and tan concrete against a cold blue sky,
-and the same city at midnight is cold slate against a warm-lit one. So there
-are four wall colours, blended over the turn the way the sky is. And what
-distance mixes them *toward* is not the colour of the sky sitting on the
-skyline but the colour of the air a third of the way up it — mixing toward the
-horizon band itself turned every distant tower the colour of the one bright
-stripe in the picture, and a night city came out teal from top to bottom.
+The argument for all of that was good, and it is worth writing down because it
+is still true. A city at noon is warm brick and tan concrete against a cold
+blue sky, and the same city at midnight is cold slate against a warm-lit one —
+mixing one grey with the sky gets the value right and the hue exactly backwards,
+twice a day. A real sky at either end of the day is cool overhead and warm on
+the skyline, and the pink between a dawn's violet and its gold is a band rather
+than a crossing point. And a city is made of hard edges where a meadow is not.
+
+It was all true and it was the wrong call. Stood next to the other four the
+city was another artist's work: harder, colder, lined, and reaching for hues
+nothing else in the piece owns. Five places have to look like five views out of
+one window, and that matters more than the last few per cent of a wall's hue.
+
+So the walls are the piece's own three materials — brick is earth, concrete is
+stone, glass is stone lifted a little toward the sky because that is what is
+standing in it — washed toward the air by distance the way every hedge and
+hill and dune here already is. The hour arrives through the sky, as it does
+everywhere else, with the old per-hour table kept only as a tint a third of the
+way in, which is as much as it was ever really worth. The sky is the shared
+two-band one. The line is the scene's own deep ink taken a long way toward the
+air and drawn thin, which on the far ranks is no line at all — nothing else in
+this piece outlines anything, and a near-black edge on a roof vent was the last
+thing in the city announcing where it had come from. What separates a face from
+the face beside it now is value, which is what separates a fox from a hedge.
+
+The signs are the warm of the sun, the cool of stone lifted toward the moon,
+and a dusty rose between them: a lit hoarding is still the brightest thing in
+the frame without being the only saturated thing in it. What the city keeps is
+its *shapes*.
 
 The city is also lit on its own clock. `nightness` answers a question about the
 sky; `cityLit` answers one about the city, and they are not the same question.
