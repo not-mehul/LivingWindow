@@ -5,9 +5,9 @@
    ============================================================ */
 import {
   mulberry32, parseColor, css, mix, themeVar, REDUCED, LOC_HASH, state, stepWeather
-} from "./util.js?v=39";
-import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=39";
-import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=39";
+} from "./util.js?v=40";
+import { PSTYLE, ANIM, GAIT, gaitFoot, gaitPose, gaitAt } from "./species.js?v=40";
+import { makeSkyPainter, Canvas2DSky } from "./sky.js?v=40";
 
 const PHASES = ["dawn", "day", "dusk", "night"];   // hoisted: no per-frame array literal
 
@@ -117,6 +117,15 @@ const CITY_VP = { x: 0.398, y: CITY_EYE + 0.020 };
    to agree about them to the letter, and a walk where they disagree even
    slightly is a walk on ice. */
 const WALK_A = 0.17, WALK_D = 0.62;
+
+/* When the market is open, on the city's own lighting clock. Above this the
+   stalls are out, the shopfronts are lit, the vendors are behind their tables
+   and the crowd stops to browse; below it the trestles are folded against the
+   wall and the shutters are down. One number, because four things read it and
+   a shop lit next to a stall that is not there is worse than either. It sits
+   above dawn (0.20) and below dusk (0.86), so the market keeps the hours a
+   night market keeps. */
+const CITY_OPEN = 0.30;
 const WALK_STRIDE = 2*WALK_A/WALK_D;
 
 /* How deep a block is, as a fraction of the way to the vanishing point. Near
@@ -132,35 +141,55 @@ const boxDepth = (z) => 0.052 + (1 - z)*0.070;
      glass     a curtain wall — vertical mullions, no floors to speak of, and
                the sky in it rather than a colour of its own                */
 const CITY_BLOCKS = [
+  /* `st` is the building's storey height, as a multiple of the standard one.
+
+     Every block used to take the same window pitch off the frame size, so
+     every building in the city had its floors at exactly the same spacing —
+     which is the single loudest thing wrong with a drawn skyline and the
+     hardest to name when you are looking at it. Real blocks disagree about
+     this more than about anything else: a 1920s office has low floors and a
+     lot of them, a modern tower has tall ones and few, and a warehouse
+     conversion has enormous ones. Nothing else on a facade tells you as
+     quickly what a building *is*.
+
+     `set` gives a block a crown — a smaller box stepping back before it stops.
+     A rank where every building ends in a bare ruled line reads as a bar
+     chart however varied the heights are, and the fix is not more variety in
+     the heights, it is that some of them stop in stages. */
   /* ---- the far middle: what stands at the top of the street ------------- */
-  { x: 0.296, w: 0.078, z: 0.78, top: 0.352, mat: "concrete" },
-  { x: 0.446, w: 0.092, z: 0.72, top: 0.330, mat: "glass" },
-  { x: 0.352, w: 0.104, z: 0.66, top: 0.298, mat: "concrete" },
-  { x: 0.500, w: 0.070, z: 0.60, top: 0.356, mat: "brick" },
+  { x: 0.296, w: 0.078, z: 0.78, top: 0.352, mat: "concrete", st: 1.10 },
+  { x: 0.446, w: 0.092, z: 0.72, top: 0.330, mat: "glass",    st: 1.28 },
+  { x: 0.352, w: 0.104, z: 0.66, top: 0.298, mat: "concrete", st: 0.92, set: 0.30 },
+  { x: 0.500, w: 0.070, z: 0.60, top: 0.356, mat: "brick",    st: 0.80 },
 
   /* ---- the right-hand rank, standing behind the low roof ---------------- */
-  { x: 0.828, w: 0.086, z: 0.68, top: 0.300, mat: "concrete" },
-  { x: 0.674, w: 0.094, z: 0.56, top: 0.372, mat: "brick" },
-  { x: 0.560, w: 0.118, z: 0.46, top: 0.316, mat: "concrete" },
-  { x: 0.742, w: 0.108, z: 0.40, top: 0.268, mat: "glass" },
-  { x: 0.884, w: 0.098, z: 0.44, top: 0.352, mat: "brick" },
+  { x: 0.828, w: 0.086, z: 0.68, top: 0.238, mat: "concrete", st: 1.04 },
+  { x: 0.674, w: 0.094, z: 0.56, top: 0.408, mat: "brick",    st: 0.78 },
+  { x: 0.560, w: 0.118, z: 0.46, top: 0.288, mat: "concrete", st: 1.16, set: 0.26 },
+  { x: 0.742, w: 0.108, z: 0.40, top: 0.186, mat: "glass",    st: 1.34 },
+  { x: 0.884, w: 0.098, z: 0.44, top: 0.430, mat: "brick",    st: 0.86 },
 
   /* ---- the left, layered so the near brick has something behind it ------ */
-  { x: 0.158, w: 0.118, z: 0.36, top: 0.062, mat: "glass" },
-  { x: 0.246, w: 0.086, z: 0.50, top: 0.196, mat: "concrete" },
+  { x: 0.158, w: 0.118, z: 0.36, top: 0.062, mat: "glass",    st: 1.30 },
+  { x: 0.246, w: 0.086, z: 0.50, top: 0.196, mat: "concrete", st: 0.96, set: 0.34 },
 
   /* ---- the middle distance either side of the slot --------------------- */
-  { x: 0.612, w: 0.132, z: 0.28, top: 0.392, mat: "concrete", set: 0.35 },
-  { x: 0.756, w: 0.152, z: 0.21, top: 0.330, mat: "glass" },
+  { x: 0.612, w: 0.132, z: 0.28, top: 0.452, mat: "concrete", st: 1.08, set: 0.35 },
+  { x: 0.756, w: 0.152, z: 0.21, top: 0.330, mat: "glass",    st: 1.40 },
 
   /* ---- and the four that hold the frame -------------------------------- */
   /* Hard against the left edge, out of the top of the picture: this is what
      stops the view reading as a photograph of a skyline and makes it a place
      you are standing in. */
-  { x: -0.078, w: 0.180, z: 0.062, top: 0.040, mat: "concrete", role: "edgeL" },
+  { x: -0.078, w: 0.180, z: 0.062, top: 0.040, mat: "concrete", st: 1.18,
+    role: "edgeL" },
   /* The brown slab that lips the street on the left. Its right-hand face is
-     the street's left wall, so its edge is exactly the canyon's lip. */
-  { x: 0.100, w: 0.220, z: 0.118, top: 0.132, mat: "brick", role: "lipL" },
+     the street's left wall, so its edge is exactly the canyon's lip. Low
+     floors and a lot of them: it is the oldest thing in the frame, and being
+     the largest unbroken surface in the picture it is also the one that most
+     needs a rhythm of its own. */
+  { x: 0.100, w: 0.220, z: 0.118, top: 0.132, mat: "brick", st: 0.72,
+    role: "lipL" },
   /* And the one on the right, which is *lower than you are* — so its roof is
      a floor of pipework and hoardings laid out below your eye, and it is the
      single thing in the frame that most says you are up somewhere.
@@ -170,9 +199,12 @@ const CITY_BLOCKS = [
      line a hand's breadth under your eye you are not looking *down* on
      anything, you are looking along it, and the whole floor comes out five
      pixels deep and holds nothing. */
-  { x: 0.520, w: 0.230, z: 0.086, top: 0.622, k: 0.34, mat: "concrete", role: "lipR" },
-  { x: 0.902, w: 0.196, z: 0.096, top: 0.108, mat: "brick", role: "edgeR" }
+  { x: 0.520, w: 0.230, z: 0.086, top: 0.622, k: 0.34, mat: "concrete",
+    st: 1.22, role: "lipR" },
+  { x: 0.902, w: 0.196, z: 0.096, top: 0.108, mat: "brick", st: 0.88,
+    role: "edgeR" }
 ];
+
 
 /* The far rank: the shape the city makes against the air.
 
@@ -1247,14 +1279,20 @@ class Scene {
            sign painted on the sky. A banner is a tall narrow panel down a
            corner; a hoarding is a wide lit picture. Which of the two, and
            what is on it, is the seed's business. */
-        if (L.z < 0.60 && rng() < 0.62) {
+        /* A banner, on maybe half the nearer blocks — and never on one that
+           runs off the edge of the frame, where it is cut in half and reads as
+           a mistake rather than as a sign. Four of them at one proportion was
+           the other thing that made this skyline feel stamped out, so the
+           length and the width range far more widely than they did. */
+        const onFrame = L.x > 0.01 && L.x + L.w < 0.99;
+        if (L.z < 0.60 && onFrame && rng() < 0.30) {
           const vert = rng() < 0.62;
           b.neon.push({ hue: Math.floor(rng()*3), vert,
-            u: vert ? (rng() < 0.5 ? 0.04 + rng()*0.08 : 0.82 + rng()*0.10)
+            u: vert ? (rng() < 0.5 ? 0.06 + rng()*0.10 : 0.78 + rng()*0.12)
                     : 0.12 + rng()*0.44,
-            v: 0.06 + rng()*(vert ? 0.30 : 0.48),
-            len: vert ? 0.28 + rng()*0.30 : 0.32 + rng()*0.36,
-            wide: vert ? 0.17 + rng()*0.07 : 0.17 + rng()*0.09,
+            v: 0.05 + rng()*(vert ? 0.42 : 0.48),
+            len: vert ? 0.20 + rng()*0.48 : 0.24 + rng()*0.44,
+            wide: vert ? 0.13 + rng()*0.13 : 0.14 + rng()*0.14,
             glyphs: 2 + Math.floor(rng()*3), seed: rng(),
             ph: rng()*Math.PI*2, buzz: rng() < 0.16 });
         }
@@ -1321,13 +1359,21 @@ class Scene {
         { u: 0.400, w: 0.165, h: 0.130, v0: 0.58 },
         { u: 0.680, w: 0.230, h: 0.205, v0: 0.22 }
       ];
+      /* Two hoardings, spaced, and level.
+
+         Three of them at three angles, each a third of the roof wide, came out
+         as a heap of pale rectangles leaning on one another in the middle of
+         the frame — the eye read it as clutter rather than as signage, and it
+         was the loudest thing in the picture. A hoarding is bolted to a frame
+         by somebody with a spirit level; the tilt was a small lie that cost a
+         great deal. */
       lipR.boards = [
-        { u: 0.145, w: 0.360, hue: Math.floor(rng()*3), seed: rng(),
-          tilt: -0.035, ph: rng()*Math.PI*2 },
-        { u: 0.605, w: 0.330, hue: Math.floor(rng()*3), seed: rng(),
-          tilt: 0.028, ph: rng()*Math.PI*2 }
+        { u: 0.075, w: 0.300, hue: Math.floor(rng()*3), seed: rng(),
+          tilt: 0, ph: rng()*Math.PI*2 },
+        { u: 0.640, w: 0.270, hue: Math.floor(rng()*3), seed: rng(),
+          tilt: 0, ph: rng()*Math.PI*2 }
       ];
-      lipR.faceBoard = { u: 0.150, v: 0.290, w: 0.520, h: 0.360,
+      lipR.faceBoard = { u: 0.190, v: 0.360, w: 0.440, h: 0.300,
         hue: Math.floor(rng()*3), seed: rng(), ph: rng()*Math.PI*2 };
       // and a banner down the inner corner of the slab on the left
       byRole.lipL.neon = [{ hue: Math.floor(rng()*3), vert: true,
@@ -2060,9 +2106,22 @@ class Scene {
      signs are at full strength against a sky that still has colour in it, and
      at dawn they are still burning while the horizon goes gold. `nightness`
      answers a question about the sky; this answers one about the city. */
+  /* How lit the city is, on its own clock rather than the sky's.
+
+     A street lamp and a shop sign come on the moment the sun is off the
+     buildings and stay on well after it is back, so this is deliberately not
+     `nightness` — but it had dawn at 0.56, and dawn in this piece is a sky
+     that has already gone pink and pale right across. Every window in the
+     frame was burning and every neon was at full strength under broad
+     daylight, which is the one lighting mistake nobody can fail to see.
+
+     Dawn is the tail of the night, not half of it: the lamps that are still on
+     are the ones nobody has switched off yet. Dusk keeps the high figure,
+     because at dusk the city really is lighting up while the sky still has
+     colour in it, and that is the hour this place looks best. */
   cityLit() {
     const m = this.timeMix, total = m.dawn+m.day+m.dusk+m.night || 1;
-    return Math.min(1, (m.night + m.dusk*0.90 + m.dawn*0.56) / total);
+    return Math.min(1, (m.night + m.dusk*0.86 + m.dawn*0.20) / total);
   }
 
   /* And what the city's walls are made of at this hour, blended over the
@@ -3958,14 +4017,31 @@ class Scene {
     for (const p of W) {
       const a = this.canyonAt(p.u);
       const sx = (a.cx + p.off*0.72*a.hw)*this.W;
+      const sy = a.y*this.H;
       const hpx = a.hw*this.W*0.21*p.sz;
       if (p.lastSX !== undefined) {
-        const d = sx - p.lastSX;
-        if (hpx > 0.5) p.gait += (Math.abs(d)/(hpx*WALK_STRIDE))*Math.PI*2;
-        // which way they are going *on the screen*, which is what the legs read
-        if (Math.abs(d) > 0.02) p.faceX = d > 0 ? 1 : -1;
+        const dx = sx - p.lastSX, dy = sy - p.lastSY;
+        /* The *whole* displacement, not the sideways part of it. This street
+           runs away from the viewer, so somebody walking straight up it barely
+           moves in x at all — nearly all of their travel is down the screen.
+           Measuring only x gave them a gait of almost nothing while they
+           covered real ground, so they glided toward you with their feet
+           twitching, which is the same skating fault wearing a different hat. */
+        if (hpx > 0.5) {
+          p.gait += (Math.hypot(dx, dy)/(hpx*WALK_STRIDE))*Math.PI*2;
+        }
+        /* And which way they are facing. Sideways travel decides it when there
+           is any; when there is not — walking straight up or down the way —
+           they are turned toward or away from the point the street runs to,
+           which is the only other direction there is to face. */
+        if (Math.abs(dx) > Math.abs(dy)*0.35 && Math.abs(dx) > 0.03) {
+          p.faceX = dx > 0 ? 1 : -1;
+        } else if (Math.abs(dy) > 0.03) {
+          const toVP = CITY_VP.x*this.W - sx;
+          p.faceX = (dy < 0 ? toVP : -toVP) > 0 ? 1 : -1;
+        }
       }
-      p.lastSX = sx;
+      p.lastSX = sx; p.lastSY = sy;
       p.idle = (p.idle || 0) + dt*1.1;
     }
 
@@ -3986,7 +4062,7 @@ class Scene {
     } else if (r < 0.63) {
       p.mode = "hurry";
       p.modeT = 3 + p.rng()*6;
-    } else if (r < 0.82 && this.cityLit() > 0.16) {
+    } else if (r < 0.82 && this.cityLit() > CITY_OPEN) {
       /* Stopping at a stall — and only when there is a stall to stop at. The
          market is a night market: by day the trestles are folded against the
          wall, and somebody standing in front of one gesturing at a sheet is
@@ -4607,7 +4683,7 @@ class Scene {
       const inset = b.w*0.17;
       const crown = { x: b.x + inset, w: b.w - inset*2, z: b.z,
         topY: b.topY - (CITY_PARAPET - b.topY)*b.set*0.22,
-        mat: b.mat, shade: b.shade, near: b.near, k: b.k,
+        mat: b.mat, shade: b.shade, near: b.near, k: b.k, st: b.st,
         lit: [], neon: [], boards: [], _crown: true, set: 0,
         beacon: b.beacon, antenna: false, roof: "none" };
       // its own foot is the parent's head, so the two read as one building
@@ -4776,7 +4852,11 @@ class Scene {
        so the near building's storeys stood ten metres apart and the far one's
        were on top of each other. Windows are the same size on every building
        in a city; how many fit is a consequence of that, not a choice. */
-    const pitch = Math.max(5.5, mn*0.0172);
+    /* The storey height is the building's own, not the frame's. One pitch for
+       every block put every floor in the city at the same spacing, which is
+       the loudest thing wrong with a drawn skyline and the hardest to name
+       while looking at it. */
+    const pitch = Math.max(4.6, mn*0.0172*(b.st || 1));
     const cols = Math.max(2, Math.round((bw - bw*0.16)/pitch));
     const rows = Math.max(3, Math.round((bh - bh*0.04)/(pitch*1.12)));
     const mx = bw*0.08, my = Math.min(mn*0.010, bh*0.045);
@@ -5162,7 +5242,7 @@ class Scene {
            few people walking through, and at dusk the whole of it lights up.
            It is also the largest thing the hour does to this place, and it
            costs one branch. */
-        const open = lum > 0.16;
+        const open = lum > CITY_OPEN;
         if (open) {
           const col = f.hue === 0 ? cy.lamp : this.tok.glassLit;
           c.fillStyle = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${0.26 + 0.46*lum})`;
@@ -5207,7 +5287,7 @@ class Scene {
          on four poles. Drawn as one pale sheet it was a shape that said
          "awning" and nothing else; what makes it a market is being able to see
          that somebody is standing behind a table under it. */
-      const marketOpen = lum > 0.16;
+      const marketOpen = lum > CITY_OPEN;
       for (const st of cn.stalls) {
         const a = this.canyonAt(st.u);
         const un = this.canyonUnit(a, W);
@@ -5376,7 +5456,7 @@ class Scene {
        has to be drawn in front of whoever is standing behind it. */
     const moving = cn.walkers.slice();
     // nobody is selling anything by daylight; the stalls are not even out
-    if (lum > 0.16) for (const v of (cn.vendors || [])) moving.push(v);
+    if (lum > CITY_OPEN) for (const v of (cn.vendors || [])) moving.push(v);
     moving.sort((a, b) => b.u - a.u);
     for (const m of moving) this.paintWalker(c, W, H, m, lum);
   }
@@ -5917,7 +5997,11 @@ class Scene {
     const lit = a > 0.06;
     const wall = mix(this._cityFc, this._cityAir, 0.26 + z*0.5);
     // the board itself — there whether it is switched on or not
-    c.fillStyle = css(lit ? mix(wall, col, 0.30*a) : mix(wall, this.tok.moon, 0.20));
+    /* Switched off, a sign is *darker* than the wall it hangs on, not paler.
+       Mixed toward the moon it came out as a row of blank white boards down
+       the daylight side of the frame — five of them at one proportion, which
+       read as missing artwork rather than as signage waiting for dark. */
+    c.fillStyle = css(lit ? mix(wall, col, 0.30*a) : mix(wall, cy.ink, 0.22));
     c.fillRect(x, y, w, h);
     /* The frame round it, and the fact that it has a thickness. A hoarding is
        a made object bolted to something, not a coloured rectangle. */
@@ -5936,7 +6020,7 @@ class Scene {
        the same marks in the same places — a sign does not change what is
        printed on it when the sun goes down. */
     const ink = lit ? `rgba(${rgb},${Math.min(1, a*1.15)})`
-      : css(mix(this._cityInk(z), wall, 0.30));
+      : css(mix(this._cityInk(z), wall, 0.52));
     c.strokeStyle = ink;
     c.lineCap = "round"; c.lineJoin = "round";
     const r = mulberry32((seed*4294967295) >>> 0);
@@ -5962,7 +6046,7 @@ class Scene {
       /* A hoarding is a picture: a ground, a figure over it, one long sweep
          and a couple of rules of copy under it. That is the whole grammar of
          every printed board that has ever been bolted to a roof. */
-      c.fillStyle = lit ? `rgba(${rgb},${a*0.16})` : css(mix(wall, col, 0.16));
+      c.fillStyle = lit ? `rgba(${rgb},${a*0.16})` : css(mix(wall, cy.ink, 0.30));
       c.fillRect(x + w*0.06, y + h*0.10, w*0.88, h*0.52);
       c.lineWidth = Math.max(1.2, h*0.055);
       c.beginPath();

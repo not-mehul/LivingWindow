@@ -6,9 +6,9 @@
    subtitle callback are injected, so this module never reaches
    for globals.
    ============================================================ */
-import { mulberry32, REDUCED, state } from "./util.js?v=39";
+import { mulberry32, REDUCED, state } from "./util.js?v=40";
 import { SPECIES, CRITTER_VOICES, COUNTERSING, note, burst, noteTrain,
-  gaitAt } from "./species.js?v=39";
+  gaitAt } from "./species.js?v=40";
 
 /* Unwire a set of nodes. Disconnecting is always safe to attempt twice. */
 /* How far ahead of its first sample a voice's graph is built. See performCall. */

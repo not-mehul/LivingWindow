@@ -1228,6 +1228,43 @@ at once, and a crowd doing one thing together is the clearest sign they are all
 in the same world — but the car is gone, and a behaviour with nothing to
 trigger it is not a behaviour. Browsing is what the crowd does together now.
 
+**The city was lit at dawn.** `cityLit` answers a question about the city
+rather than about the sky — a street lamp comes on the moment the sun is off
+the buildings and stays on well after it is back — and that is right, but it
+had dawn at 0.56. Dawn in this piece is a sky that has already gone pink and
+pale right across, so every window in the frame was burning and every neon was
+at full strength under broad daylight. Dawn is the *tail* of the night, not
+half of it: the lamps still on at dawn are the ones nobody has switched off
+yet. It is 0.20 now. Dusk keeps its high figure, because at dusk the city
+really is lighting up while the sky still has colour in it, and that is the
+hour this place looks best.
+
+One threshold, `CITY_OPEN`, now decides whether the market is open — the stalls
+out, the shopfronts lit, the vendors behind their tables, the crowd stopping to
+browse. Four things read it, and a lit shop beside a stall that is not there is
+worse than either state on its own. It sits above dawn and below dusk, so the
+market keeps the hours a night market keeps.
+
+**Every building had its floors at the same spacing.** The window pitch came
+off the frame size, so a 1920s office and a modern tower had identical storey
+heights — which is the loudest thing wrong with a drawn skyline and the hardest
+to name while looking at it, because nothing else on a facade tells you as
+quickly what a building *is*. `st` is the block's own storey height as a
+multiple of the standard one, and it ranges from 0.72 on the old brick slab
+that lips the street to 1.40 on the newest glass tower.
+
+Alongside it: more of them stop in stages rather than at a bare ruled line, and
+the middle rank's heights were opened out — they had all sat within a tenth of
+the frame of each other, which is not rhythm, it is a picket fence. The
+hoardings on the low roof went from three at three angles to two, spaced and
+level; a hoarding is bolted up by somebody with a spirit level, and the tilt
+was a small lie that cost a great deal. Banners are rarer, vary far more in
+proportion, and never appear on a block that runs off the edge of the frame
+where they are cut in half. And a sign that is switched off is now *darker*
+than the wall it hangs on: mixed toward the moon they came out as a row of
+blank white boards down the daylight side of the picture, which reads as
+missing artwork rather than as signage waiting for dark.
+
 **Where a bird is allowed to land.** There used to be three perches on the
 roofs of the buildings across the way, and they were wrong twice over. Wrong to
 look at, because those roofs are a street's width off and a bird standing on
@@ -1262,6 +1299,16 @@ far a foot travels, and the share of the cycle it spends down — a little under
 two thirds, which is why a walk has a double-support phase and a run does not)
 live in one place, because the painter and the update have to agree about them
 to the letter and a walk where they disagree even slightly is a walk on ice.
+
+That distance is the *whole* of it and not the sideways part. This street runs
+away from the viewer, so somebody walking straight up it barely moves in x at
+all — nearly all of their travel is down the screen — and measuring only x gave
+them a gait of almost nothing while they covered real ground. They glided
+toward you with their feet twitching, which is the same skating fault wearing a
+different hat. Which way they face follows the same logic: sideways travel
+decides it when there is any, and when there is not they are turned toward or
+away from the point the street runs to, which is the only other direction there
+is to face.
 
 A straight hip-to-foot limb reads as a pair of scissors, though, and the one
 thing a leg does that a scissor blade does not is *bend*. At this size the knee
