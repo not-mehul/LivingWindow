@@ -4,8 +4,8 @@ import { AudioSystem } from './audio/AudioSystem';
 import { WORLD_HEIGHT } from './config';
 import { attachInput } from './core/input';
 import { Viewport } from './core/Viewport';
-import { CityLife } from './life/CityLife';
-import { CityScene } from './scene/city/CityScene';
+import { createLandscape, loadLandscapeChoice, saveLandscapeChoice } from './landscapes/registry';
+import type { Landscape, LandscapeId, LandscapeLayers } from './landscapes/types';
 import type { Environment } from './scene/Environment';
 import { computeLighting, interiorTint } from './scene/lighting';
 import { createWeatherAtlas } from './scene/weather/atlas';
@@ -76,6 +76,17 @@ function createPrecipitation(scene: WorldScene, atlas: ReturnType<typeof createW
   return [back, front];
 }
 
+/** A landscape plus its weather renderers and screen-space layers, built once and kept. */
+interface Mounted {
+  landscape: Landscape;
+  precipitation: PrecipitationLayer[];
+  lightning: Lightning;
+  layers: LandscapeLayers;
+}
+
+/** Seconds for each half of the fade between landscapes. */
+const FADE_SECONDS = 0.35;
+
 async function boot(): Promise<void> {
   // Every texture in the project is pixel art: never smooth it.
   TextureStyle.defaultOptions.scaleMode = 'nearest';
@@ -104,12 +115,7 @@ async function boot(): Promise<void> {
 
   // --- World (native 840×360 pixels, rendered off-screen) ----------------
   const viewport = new Viewport(host.clientWidth, host.clientHeight, dpr);
-  const scene = new CityScene();
   const atlas = createWeatherAtlas();
-  const precipitation = createPrecipitation(scene, atlas);
-  const lightning = new Lightning(scene.horizonY);
-  scene.sky.boltLayer.addChild(lightning.bolt);
-  viewport.world.addChild(scene.container, lightning.overlay);
   let audio: AudioSystem | null = null;
 
   // --- Screen-space window -----------------------------------------------
@@ -121,50 +127,95 @@ async function boot(): Promise<void> {
   const glass = new GlassWeather(atlas);
   sash.glassLayer.addChild(glass.container);
   const bowl = new BirdseedBowl(birdseed, () => !viewport.didDrag);
-  /** Foreground (z = 0) layer on the sill: the cat (behind the bowl), the bowl, then birds. */
+  /** Foreground (z = 0) layer on the sill: visitors behind the bowl, the bowl, then birds. */
   const sillLayer = new Container({ label: 'sill-layer' });
-  const catSlot = new Container({ label: 'cat-slot' });
-  sillLayer.addChild(catSlot, bowl.container);
-  /** Birds flying close to the window, drawn in screen space outside the glass. */
+  const sillBack = new Container({ label: 'sill-back' });
+  const sillFront = new Container({ label: 'sill-front' });
+  sillLayer.addChild(sillBack, bowl.container, sillFront);
+  /** Creatures flying close to the window, drawn in screen space outside the glass. */
   const nearLayer = new Container({ label: 'near-flight' });
   nearLayer.eventMode = 'none';
   /** Lightning briefly lights up the room too. */
   const roomFlash = new Sprite({ texture: Texture.WHITE, blendMode: 'add', tint: 0xdfe4ff, alpha: 0 });
+  /** Darkens the view while switching landscapes. */
+  const fade = new Sprite({ texture: Texture.WHITE, tint: 0x0c0a12, alpha: 0 });
 
-  app.stage.addChild(viewport.view, nearLayer, sash.container, frame.container, frame.sillContainer, sillLayer, roomFlash);
+  app.stage.addChild(viewport.view, nearLayer, sash.container, frame.container, frame.sillContainer, sillLayer, roomFlash, fade);
   // The stage itself is hit-testable so it can show a grab cursor when the
   // view can be panned; interactive children (sash rail, bowl) override it.
   app.stage.eventMode = 'static';
   app.stage.hitArea = app.screen;
   // Purely decorative layers must opt out, or (under a static stage) their
   // full-screen bounds would swallow taps meant for the sash and bowl.
-  for (const decorative of [viewport.view, frame.container, frame.sillContainer, roomFlash]) {
+  for (const decorative of [viewport.view, frame.container, frame.sillContainer, roomFlash, fade]) {
     decorative.eventMode = 'none';
   }
   const interior = [sash.container, frame.container, frame.sillContainer, bowl.container];
 
-  // --- Life: birds, people, stalls and the rooftop cat ---------------------
-  const life = new CityLife({
-    scene,
-    viewport,
-    nearLayer,
-    sillLayer,
-    catSlot,
-    birdseed,
-    sound: (id, pan, depth) => audio?.engine.playSpatialSound(id, pan, depth, 'wildlife'),
-    canTap: () => !viewport.didDrag,
-  });
+  // --- Landscapes ------------------------------------------------------------
+  const mounted = new Map<LandscapeId, Mounted>();
+  const mount = (id: LandscapeId): Mounted => {
+    const existing = mounted.get(id);
+    if (existing) return existing;
+    const layers: LandscapeLayers = {
+      near: new Container({ label: `${id}-near` }),
+      sillBack: new Container({ label: `${id}-sill-back` }),
+      sillFront: new Container({ label: `${id}-sill-front` }),
+    };
+    nearLayer.addChild(layers.near);
+    sillBack.addChild(layers.sillBack);
+    sillFront.addChild(layers.sillFront);
+    const landscape = createLandscape(id, {
+      viewport,
+      layers,
+      birdseed,
+      sound: (soundId, pan, depth) => audio?.engine.playSpatialSound(soundId, pan, depth, 'wildlife'),
+      canTap: () => !viewport.didDrag,
+    });
+    const precipitation = createPrecipitation(landscape.scene, atlas);
+    const lightning = new Lightning(landscape.scene.horizonY);
+    landscape.scene.sky.boltLayer.addChild(lightning.bolt);
+    const entry: Mounted = { landscape, precipitation, lightning, layers };
+    mounted.set(id, entry);
+    return entry;
+  };
+
+  let current: Mounted = mount(loadLandscapeChoice());
+  const show = (next: Mounted) => {
+    for (const m of mounted.values()) {
+      const active = m === next;
+      m.layers.near.visible = m.layers.sillBack.visible = m.layers.sillFront.visible = active;
+    }
+    viewport.world.removeChildren();
+    viewport.world.addChild(next.landscape.scene.container, next.lightning.overlay);
+    frame.setTheme(next.landscape.theme);
+    sash.setTheme(next.landscape.theme);
+    audio?.setSoundscape(next.landscape.createSoundscape, next.landscape.id);
+    current = next;
+  };
+  show(current);
+
+  /** Pending switch: fade out, swap, fade back in. */
+  let transition: { to: LandscapeId; t: number; swapped: boolean } | null = null;
+  const landscapeListeners = new Set<(id: LandscapeId) => void>();
+  const setLandscape = (id: LandscapeId) => {
+    if (id === current.landscape.id && !transition) return;
+    transition = { to: id, t: 0, swapped: false };
+    saveLandscapeChoice(id);
+    for (const listener of landscapeListeners) listener(id);
+  };
+
   const bowlSillX = () => (bowl.container.x - frame.sillSurface.left) / frame.sillSurface.frameScale;
-  // Taps that hit no other control may shoo a bird away.
+  // Taps that hit no other control may shoo a creature away.
   app.stage.on('pointertap', (event) => {
-    if (event.target === app.stage) life.birds.tap(event.global.x, event.global.y);
+    if (event.target === app.stage) current.landscape.life.tap(event.global.x, event.global.y);
   });
-  birdseed.on('filled', () => life.birds.startleNear(bowlSillX(), 26));
+  birdseed.on('filled', () => current.landscape.life.startleNear(bowlSillX(), 26));
   weather.on('lightning', ({ intensity, distance }) => {
-    const x = lightning.strike(intensity, distance);
+    const x = current.lightning.strike(intensity, distance);
     audio?.weather.thunder(intensity, distance, viewport.worldXToStereo(x));
     // A close crack sends birds flying.
-    life.birds.startleAll(distance < 0.4 ? 0.6 : 0.25);
+    current.landscape.life.startleAll(distance < 0.4 ? 0.6 : 0.25);
   });
 
   const layout = () => {
@@ -173,8 +224,8 @@ async function boot(): Promise<void> {
     sash.layout(l, frame.innerTop, frame.sillSurface);
     glass.layout(sash.glassRect);
     bowl.layout(frame.sillSurface, l.devicePixelRatio);
-    roomFlash.width = l.screenWidth;
-    roomFlash.height = l.screenHeight;
+    roomFlash.width = fade.width = l.screenWidth;
+    roomFlash.height = fade.height = l.screenHeight;
   };
   layout();
 
@@ -208,6 +259,7 @@ async function boot(): Promise<void> {
       if (audio) void audio.engine.unlock().then(() => audio?.radio.toggle());
     },
     toggleMute: () => audio?.engine.setMuted(!audio.engine.muted),
+    setLandscape,
   });
   const overlay = new Overlay(document.body, {
     windowState,
@@ -217,6 +269,11 @@ async function boot(): Promise<void> {
     weather,
     onAddSeed: addSeed,
     onToggleFullscreen: toggleFullscreen,
+    landscape: {
+      current: () => (transition?.to ?? current.landscape.id),
+      set: setLandscape,
+      onChange: (listener) => landscapeListeners.add(listener),
+    },
   });
 
   // --- Audio ---------------------------------------------------------------
@@ -224,6 +281,7 @@ async function boot(): Promise<void> {
   void AudioSystem.create(windowState.isOpen).then((system) => {
     if (!system) return;
     audio = system;
+    system.setSoundscape(current.landscape.createSoundscape, current.landscape.id);
     overlay.attachAudio(system);
     windowState.on('toggle', ({ open, durationSeconds }) => {
       system.engine.setWindowOpen(open, durationSeconds);
@@ -250,9 +308,10 @@ async function boot(): Promise<void> {
 
     env.time += dt;
     env.lighting = computeLighting(clock.hours, weather.snapshot);
-    scene.update(dt, env);
+    const { landscape, precipitation, lightning } = current;
+    landscape.scene.update(dt, env);
     for (const layer of precipitation) layer.update(dt, env);
-    life.update(dt, env, {
+    landscape.life.update(dt, env, {
       surface: frame.sillSurface,
       bowlX: bowlSillX(),
       bowlHalfWidth: BOWL_HALF_WIDTH,
@@ -260,12 +319,25 @@ async function boot(): Promise<void> {
     });
     lightning.update(dt);
     glass.update(dt, env, windowState.openness);
-    audio?.update(dt, env, 1 - windowState.openness, life.street.crowdLevel);
+    audio?.update(dt, env, 1 - windowState.openness, landscape.life.ambienceLevel);
 
     // The room is lit by daylight through the window, and by a lamp at night.
     const roomTint = interiorTint(env.lighting);
     for (const layer of interior) layer.tint = roomTint;
     roomFlash.alpha = lightning.flash * 0.12;
+
+    if (transition) {
+      transition.t += dt / FADE_SECONDS;
+      if (!transition.swapped && transition.t >= 1) {
+        transition.swapped = true;
+        show(mount(transition.to));
+      }
+      fade.alpha = transition.swapped ? Math.max(0, 2 - transition.t) : Math.min(1, transition.t);
+      if (transition.t >= 2) {
+        transition = null;
+        fade.alpha = 0;
+      }
+    }
 
     viewport.update(dt);
     sash.update();
@@ -288,9 +360,17 @@ async function boot(): Promise<void> {
         birdseed,
         clock,
         weather,
-        lightning,
         glass,
-        life,
+        setLandscape,
+        get landscape() {
+          return current.landscape;
+        },
+        get life() {
+          return current.landscape.life;
+        },
+        get lightning() {
+          return current.lightning;
+        },
         audio: () => audio,
         /** Run the simulation forward without drawing (for tests and demos). */
         fastForward: (seconds: number, step = 1 / 30) => {

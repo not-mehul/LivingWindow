@@ -1,6 +1,7 @@
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { PixelCanvas } from '../../core/pixelTexture';
 import { createRng, randomInt } from '../../core/random';
+import type { Ledge } from '../../life/types';
 
 /**
  * Procedurally generates the placeholder downtown skyline as separate depth
@@ -20,15 +21,7 @@ export interface WindowRecord {
   h: number;
 }
 
-/** A horizontal surface a bird can stand on, in world pixels. */
-export interface Ledge {
-  x0: number;
-  x1: number;
-  /** World y of the surface (birds' feet). */
-  y: number;
-  layer: CityLayerName;
-  kind: 'roof' | 'tower' | 'antenna' | 'lamp' | 'sidewalk';
-}
+export type { Ledge };
 
 export interface CityLayer {
   name: CityLayerName;

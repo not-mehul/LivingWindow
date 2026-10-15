@@ -7,8 +7,8 @@ import type { SoundId } from './sounds/SoundBank';
 export interface AudioManifest {
   /** One-shot variants per sound id, e.g. "sparrow-chirp": ["audio/birds/sparrow-1.ogg"]. */
   sounds?: Partial<Record<SoundId, string[]>>;
-  /** Looping ambience beds. */
-  beds?: { rain?: string; wind?: string; city?: string };
+  /** Looping ambience beds: weather layers and one per landscape. */
+  beds?: { rain?: string; wind?: string; city?: string; meadows?: string; beach?: string; forest?: string };
   thunder?: string[];
   radio?: {
     /** Local tracks for the radio, played in shuffled order. */

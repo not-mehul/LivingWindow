@@ -38,6 +38,16 @@ export const TEMPERAMENTS: Record<SpeciesId, Temperament> = {
   pigeon: { chirp: 0.8, hop: 1.2, peck: 2.2, look: 2, stay: [25, 70], speed: 150, flapRate: 9, glide: 0.5, wariness: 40 },
   sparrow: { chirp: 2.6, hop: 3, peck: 1.6, look: 2.6, stay: [12, 40], speed: 170, flapRate: 15, glide: 0.15, wariness: 55 },
   crow: { chirp: 1.6, hop: 1, peck: 1.2, look: 2.4, stay: [20, 60], speed: 140, flapRate: 7, glide: 0.6, wariness: 70 },
+  woodpecker: { chirp: 0.8, hop: 1, peck: 3.2, look: 1.6, stay: [20, 55], speed: 150, flapRate: 11, glide: 0.4, wariness: 60 },
+  jay: { chirp: 2, hop: 2, peck: 1.4, look: 2.6, stay: [15, 45], speed: 160, flapRate: 10, glide: 0.35, wariness: 65 },
+  chickadee: { chirp: 3, hop: 3.2, peck: 1.8, look: 2.6, stay: [10, 35], speed: 175, flapRate: 17, glide: 0.1, wariness: 45 },
+  finch: { chirp: 2.8, hop: 2.6, peck: 2, look: 2.2, stay: [12, 40], speed: 170, flapRate: 15, glide: 0.15, wariness: 55 },
+  bluebird: { chirp: 2.4, hop: 2, peck: 1.4, look: 2.4, stay: [12, 40], speed: 165, flapRate: 14, glide: 0.2, wariness: 55 },
+  robin: { chirp: 2.2, hop: 2.4, peck: 2.2, look: 2.4, stay: [15, 50], speed: 160, flapRate: 12, glide: 0.25, wariness: 50 },
+  seagull: { chirp: 1.8, hop: 1, peck: 1.6, look: 2.2, stay: [25, 80], speed: 145, flapRate: 6, glide: 0.8, wariness: 45 },
+  sandpiper: { chirp: 1.2, hop: 2.5, peck: 3, look: 1.4, stay: [15, 45], speed: 180, flapRate: 16, glide: 0.2, wariness: 60 },
+  owl: { chirp: 1.4, hop: 0.2, peck: 0.3, look: 3.2, stay: [60, 180], speed: 120, flapRate: 6, glide: 0.7, wariness: 50 },
+  eagle: { chirp: 0.4, hop: 0, peck: 0.3, look: 2, stay: [40, 90], speed: 130, flapRate: 4, glide: 0.95, wariness: 80 },
 };
 
 export interface PerchContext {

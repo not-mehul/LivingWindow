@@ -2,7 +2,7 @@ import { Container, Graphics, Rectangle } from 'pixi.js';
 import { lerp, snapToDevicePixel } from '../core/math';
 import type { ViewportLayout } from '../core/viewportLayout';
 import type { WindowState } from '../state/WindowState';
-import { GLASS, WOOD } from './palette';
+import { CITY_THEME, GLASS, type FrameTheme, type WoodPalette } from './palette';
 import type { SillSurface } from './WindowFrame';
 
 const STILE = 3;
@@ -35,6 +35,7 @@ export class WindowSash {
   private openY = 0;
   private frameScale = 1;
   private devicePixelRatio = 1;
+  private wood: WoodPalette = CITY_THEME.wood;
 
   constructor(
     private readonly state: WindowState,
@@ -45,6 +46,11 @@ export class WindowSash {
     this.container.eventMode = 'static';
     this.container.cursor = 'pointer';
     this.container.on('pointertap', onActivate);
+  }
+
+  setTheme(theme: FrameTheme): void {
+    this.wood = theme.wood;
+    if (this.widthPx > 0) this.redraw();
   }
 
   /** The glass area inside the rails, in sash art pixels. */
@@ -92,6 +98,7 @@ export class WindowSash {
     const h = this.heightPx;
     const g = this.body;
     const glass = this.glassRect;
+    const WOOD = this.wood;
     g.clear();
 
     // Glass tint with darker edges for a hint of thickness.

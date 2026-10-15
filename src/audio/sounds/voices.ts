@@ -260,6 +260,229 @@ const catPurr: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return length;
 };
 
+/** A pure, enveloped tone with an optional pitch glide. */
+function blip(
+  ctx: BaseAudioContext,
+  out: AudioNode,
+  when: number,
+  length: number,
+  from: number,
+  to: number,
+  peak: number,
+  type: OscillatorType = 'sine',
+): void {
+  const [osc, amp] = tone(ctx, type, out);
+  osc.frequency.setValueAtTime(from, when);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(20, to), when + length);
+  envelope(amp.gain, when, Math.min(0.01, length / 4), peak, length);
+  osc.start(when);
+  osc.stop(when + length + 0.03);
+}
+
+/** Harsh calls (jays, gulls) through a resonant band. */
+function harsh(ctx: BaseAudioContext, out: AudioNode, center: number, q = 2): BiquadFilterNode {
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = center;
+  band.Q.value = q;
+  band.connect(out);
+  return band;
+}
+
+const woodpeckerDrum: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  const knocks = 12 + Math.floor(Math.random() * 10);
+  const interval = 1 / (rand(16, 22) * rate);
+  for (let i = 0; i < knocks; i++) {
+    const fade = 1 - (i / knocks) * 0.6;
+    noiseBurst(ctx, noise, out, when + i * interval, 0.025, { type: 'bandpass', frequency: 1100 * rate, Q: 2.5 }, 0.5 * gain * fade);
+  }
+  return knocks * interval + 0.05;
+};
+
+const jayCall: SynthVoice = (ctx, out, when, gain, rate) => {
+  const band = harsh(ctx, out, 2400 * rate, 1.5);
+  const calls = 2 + Math.floor(Math.random() * 2);
+  let t = when;
+  for (let i = 0; i < calls; i++) {
+    blip(ctx, band, t, 0.22, 2400 * rate, 1700 * rate, 0.25 * gain, 'sawtooth');
+    t += 0.3;
+  }
+  return t - when;
+};
+
+const chickadeeCall: SynthVoice = (ctx, out, when, gain, rate) => {
+  let t = when;
+  blip(ctx, out, t, 0.07, 6200 * rate, 5200 * rate, 0.18 * gain);
+  t += 0.1;
+  blip(ctx, out, t, 0.06, 5600 * rate, 4800 * rate, 0.16 * gain);
+  t += 0.12;
+  // The buzzy "dee-dee-dee".
+  const dees = 2 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < dees; i++) {
+    blip(ctx, out, t, 0.14, 3900 * rate, 3700 * rate, 0.12 * gain, 'square');
+    t += 0.18;
+  }
+  return t - when;
+};
+
+const finchSong: SynthVoice = (ctx, out, when, gain, rate) => {
+  const notes = 8 + Math.floor(Math.random() * 7);
+  let t = when;
+  for (let i = 0; i < notes; i++) {
+    const f = rand(2600, 5200) * rate;
+    const length = rand(0.04, 0.09);
+    blip(ctx, out, t, length, f, f * rand(0.75, 1.3), 0.15 * gain);
+    t += length + rand(0.01, 0.05);
+  }
+  return t - when;
+};
+
+const bluebirdSong: SynthVoice = (ctx, out, when, gain, rate) => {
+  const phrases = 3 + Math.floor(Math.random() * 3);
+  let t = when;
+  for (let i = 0; i < phrases; i++) {
+    const [osc, amp] = tone(ctx, 'sine', out);
+    const f = rand(1800, 2700) * rate;
+    const length = rand(0.18, 0.3);
+    osc.frequency.setValueAtTime(f, t);
+    osc.frequency.linearRampToValueAtTime(f * rand(0.85, 1.2), t + length);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 24;
+    const depth = ctx.createGain();
+    depth.gain.value = f * 0.04;
+    lfo.connect(depth).connect(osc.frequency);
+    envelope(amp.gain, t, 0.02, 0.16 * gain, length);
+    osc.start(t);
+    lfo.start(t);
+    osc.stop(t + length + 0.05);
+    lfo.stop(t + length + 0.05);
+    t += length + rand(0.05, 0.12);
+  }
+  return t - when;
+};
+
+const robinSong: SynthVoice = (ctx, out, when, gain, rate) => {
+  const phrases = 4 + Math.floor(Math.random() * 3);
+  let t = when;
+  for (let i = 0; i < phrases; i++) {
+    const hi = rand(2600, 3300) * rate;
+    const lo = hi * rand(0.68, 0.82);
+    const up = Math.random() < 0.5;
+    blip(ctx, out, t, 0.11, up ? lo : hi, up ? hi : lo, 0.16 * gain);
+    blip(ctx, out, t + 0.12, 0.1, up ? hi : lo, up ? lo : hi, 0.14 * gain);
+    t += 0.3 + rand(0.02, 0.12);
+  }
+  return t - when;
+};
+
+const gullCry: SynthVoice = (ctx, out, when, gain, rate) => {
+  const band = harsh(ctx, out, 1500 * rate, 1.8);
+  const calls = 2 + Math.floor(Math.random() * 3);
+  let t = when;
+  for (let i = 0; i < calls; i++) {
+    const f = rand(900, 1050) * rate * (1 - i * 0.05);
+    const [osc, amp] = tone(ctx, 'sawtooth', band);
+    const length = i === 0 ? 0.5 : 0.28;
+    osc.frequency.setValueAtTime(f, t);
+    osc.frequency.linearRampToValueAtTime(f * 1.45, t + length * 0.3);
+    osc.frequency.linearRampToValueAtTime(f * 0.8, t + length);
+    envelope(amp.gain, t, 0.03, 0.22 * gain, length);
+    osc.start(t);
+    osc.stop(t + length + 0.05);
+    t += length + 0.08;
+  }
+  return t - when;
+};
+
+const sandpiperPeep: SynthVoice = (ctx, out, when, gain, rate) => {
+  const peeps = 1 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < peeps; i++) blip(ctx, out, when + i * 0.13, 0.06, 5200 * rate, 4600 * rate, 0.14 * gain);
+  return peeps * 0.13;
+};
+
+const owlHoot: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  const notes: Array<[number, number]> = [
+    [0, 0.28],
+    [0.42, 0.18],
+    [0.66, 0.7],
+  ];
+  for (const [at, length] of notes) {
+    const t = when + at;
+    const [osc, amp] = tone(ctx, 'sine', out);
+    osc.frequency.setValueAtTime(390 * rate, t);
+    osc.frequency.linearRampToValueAtTime(350 * rate, t + length);
+    envelope(amp.gain, t, 0.05, 0.3 * gain, length);
+    osc.start(t);
+    osc.stop(t + length + 0.08);
+    noiseBurst(ctx, noise, out, t, length, { type: 'lowpass', frequency: 500 }, 0.03 * gain, 0.05);
+  }
+  return 1.45;
+};
+
+const eagleCry: SynthVoice = (ctx, out, when, gain, rate) => {
+  const notes = 6 + Math.floor(Math.random() * 4);
+  let t = when;
+  for (let i = 0; i < notes; i++) {
+    const f = (3600 - i * 120) * rate;
+    blip(ctx, out, t, 0.07, f, f * 0.9, 0.12 * gain);
+    t += 0.09;
+  }
+  return t - when;
+};
+
+const squirrelChatter: SynthVoice = (ctx, out, when, gain, rate) => {
+  const chirps = 8 + Math.floor(Math.random() * 10);
+  for (let i = 0; i < chirps; i++) {
+    blip(ctx, out, when + i * 0.055, 0.035, rand(3200, 4600) * rate, rand(2400, 3200) * rate, 0.12 * gain, 'square');
+  }
+  return chirps * 0.055;
+};
+
+const deerSnort: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  noiseBurst(ctx, noise, out, when, 0.3, { type: 'bandpass', frequency: 700 * rate, Q: 1.2 }, 0.4 * gain, 0.02);
+  return 0.32;
+};
+
+const cowMoo: SynthVoice = (ctx, out, when, gain, rate) => {
+  const length = rand(1, 1.6);
+  const formant = ctx.createBiquadFilter();
+  formant.type = 'lowpass';
+  formant.Q.value = 6;
+  formant.frequency.setValueAtTime(300, when);
+  formant.frequency.linearRampToValueAtTime(900, when + length * 0.4);
+  formant.frequency.linearRampToValueAtTime(400, when + length);
+  formant.connect(out);
+  const [osc, amp] = tone(ctx, 'sawtooth', formant);
+  const f = rand(105, 135) * rate;
+  osc.frequency.setValueAtTime(f, when);
+  osc.frequency.linearRampToValueAtTime(f * 1.15, when + length * 0.3);
+  osc.frequency.linearRampToValueAtTime(f * 0.85, when + length);
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.4 * gain, when + 0.15);
+  amp.gain.setValueAtTime(0.4 * gain, when + length * 0.75);
+  amp.gain.linearRampToValueAtTime(0, when + length);
+  osc.start(when);
+  osc.stop(when + length + 0.05);
+  return length;
+};
+
+const chickenCluck: SynthVoice = (ctx, out, when, gain, rate) => {
+  const band = harsh(ctx, out, 900 * rate, 3);
+  const clucks = 2 + Math.floor(Math.random() * 4);
+  let t = when;
+  for (let i = 0; i < clucks; i++) {
+    blip(ctx, band, t, 0.06, 420 * rate, 300 * rate, 0.35 * gain, 'square');
+    t += rand(0.12, 0.22);
+  }
+  return t - when;
+};
+
+const splash: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  noiseBurst(ctx, noise, out, when, 0.45, { type: 'highpass', frequency: 1200 * rate }, 0.4 * gain, 0.005);
+  noiseBurst(ctx, noise, out, when, 0.2, { type: 'lowpass', frequency: 500 }, 0.3 * gain, 0.003);
+  return 0.5;
+};
+
 export const SYNTH_VOICES = {
   'sparrow-chirp': sparrowChirp,
   'pigeon-coo': pigeonCoo,
@@ -272,4 +495,19 @@ export const SYNTH_VOICES = {
   'car-horn': carHorn,
   'cat-meow': catMeow,
   'cat-purr': catPurr,
+  'woodpecker-drum': woodpeckerDrum,
+  'jay-call': jayCall,
+  'chickadee-call': chickadeeCall,
+  'finch-song': finchSong,
+  'bluebird-song': bluebirdSong,
+  'robin-song': robinSong,
+  'gull-cry': gullCry,
+  'sandpiper-peep': sandpiperPeep,
+  'owl-hoot': owlHoot,
+  'eagle-cry': eagleCry,
+  'squirrel-chatter': squirrelChatter,
+  'deer-snort': deerSnort,
+  'cow-moo': cowMoo,
+  'chicken-cluck': chickenCluck,
+  splash,
 } satisfies Record<string, SynthVoice>;

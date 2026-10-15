@@ -1,3 +1,4 @@
+import { LANDSCAPE_IDS, type LandscapeId } from '../landscapes/types';
 import type { Viewport } from './Viewport';
 
 export interface KeyboardActions {
@@ -9,6 +10,7 @@ export interface KeyboardActions {
   shiftTime: (hours: number) => void;
   toggleRadio: () => void;
   toggleMute: () => void;
+  setLandscape: (id: LandscapeId) => void;
 }
 
 /** Simulated hours moved per `[` / `]` press. */
@@ -83,6 +85,12 @@ export function attachInput(canvas: HTMLCanvasElement, viewport: Viewport, actio
         break;
       case ']':
         actions.shiftTime(TIME_STEP_HOURS);
+        break;
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+        actions.setLandscape(LANDSCAPE_IDS[Number(event.key) - 1]);
         break;
       case 'ArrowLeft':
         viewport.nudge(-KEY_NUDGE);

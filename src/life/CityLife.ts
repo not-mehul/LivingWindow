@@ -1,5 +1,6 @@
 import type { Container } from 'pixi.js';
 import type { Viewport } from '../core/Viewport';
+import type { SceneLife, SillBase } from '../landscapes/types';
 import type { CityScene } from '../scene/city/CityScene';
 import type { Environment } from '../scene/Environment';
 import type { BirdseedState } from '../state/BirdseedState';
@@ -22,7 +23,7 @@ export interface CityLifeOptions {
 }
 
 /** Everything alive in the downtown scene: birds, people, stalls and the cat. */
-export class CityLife {
+export class CityLife implements SceneLife {
   readonly birds: BirdSystem;
   readonly street: StreetLife;
   readonly cat: RooftopCat;
@@ -48,7 +49,23 @@ export class CityLife {
     options.catSlot.addChild(this.cat.container);
   }
 
-  update(dt: number, env: Environment, sill: Omit<SillState, 'catX' | 'catStalking'>): void {
+  get ambienceLevel(): number {
+    return this.street.crowdLevel;
+  }
+
+  tap(screenX: number, screenY: number): boolean {
+    return this.birds.tap(screenX, screenY);
+  }
+
+  startleAll(probability: number): void {
+    this.birds.startleAll(probability);
+  }
+
+  startleNear(sillX: number, radius: number): void {
+    this.birds.startleNear(sillX, radius);
+  }
+
+  update(dt: number, env: Environment, sill: SillBase): void {
     const state: SillState = { ...sill, catX: this.cat.position, catStalking: this.cat.isStalking };
     this.cat.update(dt, env, state, this.birds.sillBirds());
     this.birds.update(dt, env, { ...state, catX: this.cat.position, catStalking: this.cat.isStalking });

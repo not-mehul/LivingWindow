@@ -2,6 +2,7 @@ import type { Environment } from '../../scene/Environment';
 import type { AudioEngine } from '../AudioEngine';
 import type { SoundId } from '../sounds/SoundBank';
 import { birdActivity, cityBusyness } from './schedules';
+import { Soundscape } from './Soundscape';
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
@@ -14,8 +15,7 @@ const rand = (min: number, max: number) => min + Math.random() * (max - min);
  * occasional off-screen bird, far away. A crowd murmur rises with the
  * number of people on the street.
  */
-export class CitySoundscape {
-  private readonly bed: GainNode;
+export class CitySoundscape extends Soundscape {
   private readonly hum: GainNode;
   private readonly wash: GainNode;
   private readonly murmur: GainNode;
@@ -24,43 +24,20 @@ export class CitySoundscape {
   private hornTimer = rand(20, 60);
   private birdTimer = rand(2, 6);
 
-  constructor(
-    private readonly engine: AudioEngine,
-    city?: AudioBuffer,
-  ) {
-    const ctx = engine.context;
-    this.bed = ctx.createGain();
-    this.bed.connect(engine.inputs.ambience);
-
+  constructor(engine: AudioEngine, city?: AudioBuffer) {
+    super(engine);
     // Distant voices from the street: a band of noise whose colour wanders.
-    this.murmurFilter = ctx.createBiquadFilter();
-    this.murmurFilter.type = 'bandpass';
-    this.murmurFilter.frequency.value = 650;
-    this.murmurFilter.Q.value = 1.2;
-    this.murmur = ctx.createGain();
-    this.murmur.gain.value = 0;
-    engine.noise.source('pink').connect(this.murmurFilter).connect(this.murmur).connect(this.bed);
+    this.murmurFilter = this.filter('bandpass', 650, 1.2);
+    this.murmur = this.gain();
+    this.noise('pink').connect(this.murmurFilter).connect(this.murmur).connect(this.bed);
 
-    this.hum = ctx.createGain();
-    this.hum.gain.value = 0;
-    this.wash = ctx.createGain();
-    this.wash.gain.value = 0;
+    this.hum = this.gain();
+    this.wash = this.gain();
     if (city) {
-      const src = ctx.createBufferSource();
-      src.buffer = city;
-      src.loop = true;
-      src.start(0, Math.random() * city.duration);
-      src.connect(this.wash).connect(this.bed);
+      this.loop(city).connect(this.wash).connect(this.bed);
     } else {
-      const humFilter = ctx.createBiquadFilter();
-      humFilter.type = 'lowpass';
-      humFilter.frequency.value = 150;
-      engine.noise.source('brown').connect(humFilter).connect(this.hum).connect(this.bed);
-      const washFilter = ctx.createBiquadFilter();
-      washFilter.type = 'bandpass';
-      washFilter.frequency.value = 480;
-      washFilter.Q.value = 0.5;
-      engine.noise.source('pink').connect(washFilter).connect(this.wash).connect(this.bed);
+      this.noise('brown').connect(this.filter('lowpass', 150)).connect(this.hum).connect(this.bed);
+      this.noise('pink').connect(this.filter('bandpass', 480, 0.5)).connect(this.wash).connect(this.bed);
     }
   }
 
@@ -73,7 +50,7 @@ export class CitySoundscape {
     const rain = env.weather.kind === 'rain' ? env.weather.precipitation : 0;
 
     // Snow blankets the city in quiet.
-    this.bed.gain.setTargetAtTime(1 - 0.45 * snow, now, 1);
+    if (!this.isDisposed) this.bed.gain.setTargetAtTime(1 - 0.45 * snow, now, 1);
     this.hum.gain.setTargetAtTime(0.35 + 0.25 * busy, now, 1);
     this.wash.gain.setTargetAtTime(0.03 + 0.12 * busy, now, 1);
 

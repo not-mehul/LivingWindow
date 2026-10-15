@@ -2,7 +2,9 @@ import { Container, NineSliceSprite, TilingSprite, type Texture } from 'pixi.js'
 import { snapToDevicePixel } from '../core/math';
 import { drawPixelTexture } from '../core/pixelTexture';
 import type { ViewportLayout } from '../core/viewportLayout';
-import { WALL, WOOD } from './palette';
+import { CITY_THEME, type FrameTheme } from './palette';
+import { pixelHash } from '../sprites/raster';
+import type { PixelCanvas } from '../core/pixelTexture';
 
 /** Thickness of the frame's top and side borders, in frame art pixels. */
 export const FRAME_BORDER = 6;
@@ -29,7 +31,19 @@ export interface SillSurface {
   frameScale: number;
 }
 
-function createFrameTexture(): Texture {
+/** Flecks of bare wood where paint has worn away. */
+function chip(c: PixelCanvas, theme: FrameTheme, seed: number, density = 0.05): void {
+  if (!theme.chipped) return;
+  for (let y = 0; y < c.height; y++) {
+    for (let x = 0; x < c.width; x++) {
+      const pixel = c.ctx.getImageData(x, y, 1, 1).data;
+      if (pixel[3] > 0 && pixelHash(x, y, seed) < density) c.px(x, y, theme.chipped);
+    }
+  }
+}
+
+function createFrameTexture(theme: FrameTheme): Texture {
+  const WOOD = theme.wood;
   const b = FRAME_BORDER;
   const s = FRAME_TEX;
   return drawPixelTexture(s, s, (c) => {
@@ -58,10 +72,12 @@ function createFrameTexture(): Texture {
     c.vline(b - 1, b - 1, s - 2 * b + 2, WOOD.outline);
     c.vline(s - b, b - 1, s - 2 * b + 2, WOOD.outline);
     c.hline(b - 1, s - b, s - 2 * b + 2, WOOD.outline);
+    chip(c, theme, 3);
   });
 }
 
-function createSillTexture(): Texture {
+function createSillTexture(theme: FrameTheme): Texture {
+  const WOOD = theme.wood;
   const w = SILL_TEX_WIDTH;
   const h = SILL_HEIGHT;
   return drawPixelTexture(w, h, (c) => {
@@ -89,30 +105,51 @@ function createSillTexture(): Texture {
       c.rect(x + 1, 3, SILL_CAP - 2, h - 6, WOOD.base);
       c.vline(x === 0 ? 0 : w - 1, 0, h, WOOD.outline);
     }
+    chip(c, theme, 7, 0.04);
   });
 }
 
-function createWallTexture(): Texture {
+function createWallTexture(theme: FrameTheme): Texture {
+  const WALL = theme.wall;
   return drawPixelTexture(16, 16, (c) => {
     c.rect(0, 0, 16, 16, WALL.base);
-    // Subtle plaster speckle.
-    for (const [x, y] of [
-      [2, 3],
-      [9, 1],
-      [13, 7],
-      [5, 10],
-      [11, 13],
-      [1, 14],
-    ]) {
-      c.px(x, y, WALL.light);
-    }
-    for (const [x, y] of [
-      [7, 6],
-      [14, 2],
-      [3, 7],
-      [10, 9],
-    ]) {
-      c.px(x, y, WALL.dark);
+    if (theme.wallPattern === 'logs') {
+      // Stacked logs: a lit top edge and a dark seam on each.
+      for (const y of [0, 8]) {
+        c.hline(0, y, 16, WALL.light);
+        c.hline(0, y + 6, 16, WALL.dark);
+        c.hline(0, y + 7, 16, WALL.trim);
+      }
+      c.px(5, 3, WALL.dark);
+      c.px(12, 11, WALL.dark);
+    } else if (theme.wallPattern === 'boards') {
+      // Vertical tongue-and-groove boards.
+      for (const x of [0, 8]) {
+        c.vline(x, 0, 16, WALL.trim);
+        c.vline(x + 1, 0, 16, WALL.light);
+      }
+      c.px(4, 6, WALL.dark);
+      c.px(12, 13, WALL.dark);
+    } else {
+      // Subtle plaster speckle.
+      for (const [x, y] of [
+        [2, 3],
+        [9, 1],
+        [13, 7],
+        [5, 10],
+        [11, 13],
+        [1, 14],
+      ]) {
+        c.px(x, y, WALL.light);
+      }
+      for (const [x, y] of [
+        [7, 6],
+        [14, 2],
+        [3, 7],
+        [10, 9],
+      ]) {
+        c.px(x, y, WALL.dark);
+      }
     }
   });
 }
@@ -135,12 +172,12 @@ export class WindowFrame {
   private _surface: SillSurface = { left: 0, right: 0, y: 0, top: 0, frameScale: 1 };
   private _innerTop = 0;
 
-  constructor() {
-    const wallTexture = createWallTexture();
+  constructor(theme: FrameTheme = CITY_THEME) {
+    const wallTexture = createWallTexture(theme);
     this.wallLeft = new TilingSprite({ texture: wallTexture, label: 'wall-left' });
     this.wallRight = new TilingSprite({ texture: wallTexture, label: 'wall-right' });
     this.frame = new NineSliceSprite({
-      texture: createFrameTexture(),
+      texture: createFrameTexture(theme),
       leftWidth: FRAME_BORDER,
       rightWidth: FRAME_BORDER,
       topHeight: FRAME_BORDER,
@@ -148,7 +185,7 @@ export class WindowFrame {
       label: 'frame',
     });
     this.sill = new NineSliceSprite({
-      texture: createSillTexture(),
+      texture: createSillTexture(theme),
       leftWidth: SILL_CAP,
       rightWidth: SILL_CAP,
       topHeight: 0,
@@ -157,6 +194,15 @@ export class WindowFrame {
     });
     this.container.addChild(this.wallLeft, this.wallRight, this.frame);
     this.sillContainer.addChild(this.sill);
+  }
+
+  /** Re-skin the window for another landscape. */
+  setTheme(theme: FrameTheme): void {
+    const wall = createWallTexture(theme);
+    this.wallLeft.texture = wall;
+    this.wallRight.texture = wall;
+    this.frame.texture = createFrameTexture(theme);
+    this.sill.texture = createSillTexture(theme);
   }
 
   get sillSurface(): SillSurface {

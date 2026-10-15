@@ -1,4 +1,5 @@
 import type { AudioSystem } from '../audio/AudioSystem';
+import { LANDSCAPE_IDS, LANDSCAPE_LABELS, type LandscapeId } from '../landscapes/types';
 import { UI_HIDE_DELAY_MS } from '../config';
 import type { Viewport } from '../core/Viewport';
 import type { BirdseedState } from '../state/BirdseedState';
@@ -8,7 +9,14 @@ import { WEATHER_LABELS, type Weather, type WeatherType } from '../state/Weather
 import type { WindowState } from '../state/WindowState';
 import { createSoundPanel } from './SoundPanel';
 
+export interface LandscapeControl {
+  current: () => LandscapeId;
+  set: (id: LandscapeId) => void;
+  onChange: (listener: (id: LandscapeId) => void) => void;
+}
+
 export interface OverlayOptions {
+  landscape: LandscapeControl;
   windowState: WindowState;
   birdseed: BirdseedState;
   viewport: Viewport;
@@ -78,6 +86,12 @@ export class Overlay {
     this.element.setAttribute('aria-label', 'Living Window controls');
     this.element.innerHTML = `
       <div class="overlay__title">Living Window</div>
+      <div class="chip-row chip-row--landscapes" role="radiogroup" aria-label="Landscape">
+        ${LANDSCAPE_IDS.map(
+          (id, i) =>
+            `<button type="button" class="chip" role="radio" data-landscape="${id}" aria-keyshortcuts="${i + 1}">${LANDSCAPE_LABELS[id]}</button>`,
+        ).join('')}
+      </div>
       <details class="overlay__section" data-section="time" open>
         <summary>Time</summary>
         <div class="overlay__row overlay__row--between">
@@ -116,7 +130,7 @@ export class Overlay {
       </details>
       <div data-audio-slot></div>
       <div class="overlay__hint" data-hint="pan"></div>
-      <div class="overlay__hint overlay__hint--keys">Space pause · [ ] time · W window · B seed · R radio · M mute · F fullscreen</div>
+      <div class="overlay__hint overlay__hint--keys">1–4 landscape · Space pause · [ ] time · W window · B seed · R radio · M mute · F fullscreen</div>
     `;
     parent.appendChild(this.element);
 
@@ -141,6 +155,17 @@ export class Overlay {
     } else {
       fullscreenButton.hidden = true;
     }
+
+    const landscapeButtons = [...this.element.querySelectorAll<HTMLButtonElement>('[data-landscape]')];
+    const refreshLandscape = () => {
+      const active = options.landscape.current();
+      for (const button of landscapeButtons) button.setAttribute('aria-checked', String(button.dataset.landscape === active));
+    };
+    for (const button of landscapeButtons) {
+      button.addEventListener('click', () => options.landscape.set(button.dataset.landscape as LandscapeId));
+    }
+    options.landscape.onChange(refreshLandscape);
+    refreshLandscape();
 
     this.pauseButton.addEventListener('click', () => clock.togglePaused());
     this.timeSlider.addEventListener('pointerdown', () => (this.scrubbing = true));

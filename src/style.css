@@ -277,6 +277,12 @@ body.is-idle canvas {
   background: #3c2f4d;
 }
 
+.chip-row--landscapes .chip {
+  flex: 1;
+  padding: 6px 4px;
+}
+
+.chip[aria-checked='true'],
 .chip[aria-pressed='true'] {
   color: #1a1426;
   background: var(--ui-accent);

@@ -2,7 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { clamp, lerp } from '../core/math';
 import type { Viewport } from '../core/Viewport';
 import type { Environment } from '../scene/Environment';
-import type { Ledge } from '../scene/city/cityGenerator';
+import type { SoundId } from '../audio/sounds/SoundBank';
 import {
   chooseNextState,
   PECK_INTERVAL,
@@ -17,7 +17,7 @@ import { birdActivity } from '../audio/soundscapes/schedules';
 import { interiorTint } from '../scene/lighting';
 import type { BirdseedState } from '../state/BirdseedState';
 import { BirdSpriteCache, FLAP_CYCLE, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
-import { sillWidth, type LifeSoundSink, type SillState } from './types';
+import { sillWidth, type Ledge, type LifeSoundSink, type SillState } from './types';
 
 /** Below this depth birds are drawn in screen space, at the window's pixel scale. */
 const NEAR_Z = 0.33;
@@ -27,7 +27,64 @@ const MAX_SILL_BIRDS = 3;
 const SILL_SPACING = 24;
 
 const LAYER_Z = { far: 0.92, mid: 0.8, near: 0.62 } as const;
-const KIND_Z: Partial<Record<Ledge['kind'], number>> = { lamp: 0.68, sidewalk: 0.72 };
+const KIND_Z: Record<string, number> = { lamp: 0.68, sidewalk: 0.72 };
+
+export const SPECIES_VOICE: Record<SpeciesId, SoundId> = {
+  pigeon: 'pigeon-coo',
+  sparrow: 'sparrow-chirp',
+  crow: 'crow-caw',
+  woodpecker: 'woodpecker-drum',
+  jay: 'jay-call',
+  chickadee: 'chickadee-call',
+  finch: 'finch-song',
+  bluebird: 'bluebird-song',
+  robin: 'robin-song',
+  seagull: 'gull-cry',
+  sandpiper: 'sandpiper-peep',
+  owl: 'owl-hoot',
+  eagle: 'eagle-cry',
+};
+
+/**
+ * Which birds live in a landscape and when they're about. Each scene
+ * supplies its own; the default is the city.
+ */
+export interface BirdEcology {
+  /** Relative odds of each species turning up, for the hour and weather. */
+  mix: (hours: number, env: Environment) => Partial<Record<SpeciesId, number>>;
+  /** Overall bird activity 0..1 (defaults to the daytime chorus). */
+  activity?: (env: Environment) => number;
+  /** Species that never land on the sill. */
+  shySpecies?: readonly SpeciesId[];
+  /** At most this many of a species at once. */
+  maxPerSpecies?: Partial<Record<SpeciesId, number>>;
+  /** Species seen as distant flocks; empty for none. */
+  flockSpecies?: readonly SpeciesId[];
+  /** Preference of a species for a kind of perch (default 1). */
+  perchPreference?: (species: SpeciesId, kind: string) => number;
+}
+
+export const CITY_ECOLOGY: BirdEcology = {
+  mix: (hours) => {
+    const dusk = (hours > 17.5 && hours < 20.5) || (hours > 5 && hours < 7);
+    const crow = dusk ? 0.3 : 0.12;
+    return { crow, pigeon: 0.45, sparrow: 1 - crow - 0.45 };
+  },
+  shySpecies: [],
+  flockSpecies: ['pigeon', 'pigeon', 'crow'],
+  perchPreference: (species, kind) =>
+    (kind === 'sidewalk' ? (species === 'pigeon' ? 3 : 0.5) : 1) *
+    (kind === 'antenna' ? (species === 'crow' ? 2 : species === 'sparrow' ? 0 : 1) : 1),
+};
+
+/** Daytime activity: the dawn chorus, quiet nights, fewer birds in bad weather. */
+export function defaultActivity(env: Environment): number {
+  const { weather } = env;
+  let a = birdActivity(env.lighting.hours);
+  if (weather.kind === 'rain') a *= 1 - Math.min(1, weather.precipitation * 1.6);
+  if (weather.kind === 'snow') a *= 1 - 0.5 * weather.precipitation;
+  return a * (1 - weather.lightning);
+}
 
 interface Perch {
   ledge: Ledge;
@@ -104,6 +161,7 @@ export interface BirdSystemOptions {
   sound: LifeSoundSink;
   /** Return false to ignore a tap (e.g. it ended a pan). */
   canTap: () => boolean;
+  ecology?: BirdEcology;
   rng?: () => number;
 }
 
@@ -119,6 +177,7 @@ export class BirdSystem {
   private readonly perches: Perch[];
   private readonly sprites = new BirdSpriteCache();
   private readonly rng: () => number;
+  private readonly ecology: BirdEcology;
   private nextId = 1;
   private spawnTimer = 2;
   private flockTimer = 8;
@@ -128,9 +187,10 @@ export class BirdSystem {
 
   constructor(private readonly options: BirdSystemOptions) {
     this.rng = options.rng ?? Math.random;
+    this.ecology = options.ecology ?? CITY_ECOLOGY;
     this.perches = options.ledges.map((ledge) => ({
       ledge,
-      z: KIND_Z[ledge.kind] ?? LAYER_Z[ledge.layer],
+      z: ledge.z ?? KIND_Z[ledge.kind] ?? LAYER_Z[ledge.layer],
       occupants: new Set<Bird>(),
       capacity: ledge.kind === 'sidewalk' ? 6 : Math.max(1, Math.floor((ledge.x1 - ledge.x0 + 1) / 6)),
     }));
@@ -163,7 +223,10 @@ export class BirdSystem {
     this.flockTimer -= dt;
     if (this.flockTimer <= 0) {
       this.flockTimer = 20 + this.rng() * 50;
-      if (activity > 0.1 && env.weather.lightning < 0.3) this.spawnFlock();
+      const flockers = this.ecology.flockSpecies ?? [];
+      if (activity > 0.1 && env.weather.lightning < 0.3 && flockers.length > 0) {
+        this.spawnFlock(flockers[Math.floor(this.rng() * flockers.length)]);
+      }
     }
 
     for (let i = this.birds.length - 1; i >= 0; i--) {
@@ -221,28 +284,34 @@ export class BirdSystem {
   // --- Director -------------------------------------------------------
 
   private activity(env: Environment): number {
-    const { weather } = env;
-    let a = birdActivity(env.lighting.hours);
-    if (weather.kind === 'rain') a *= 1 - Math.min(1, weather.precipitation * 1.6);
-    if (weather.kind === 'snow') a *= 1 - 0.5 * weather.precipitation;
-    a *= 1 - weather.lightning;
-    return a;
+    return (this.ecology.activity ?? defaultActivity)(env);
   }
 
-  private pickSpecies(hours: number): SpeciesId {
-    const dusk = (hours > 17.5 && hours < 20.5) || (hours > 5 && hours < 7);
-    const roll = this.rng();
-    const crow = dusk ? 0.3 : 0.12;
-    if (roll < crow) return 'crow';
-    return roll < crow + 0.45 ? 'pigeon' : 'sparrow';
+  /** Roll a species from the ecology's mix, respecting per-species caps. */
+  private pickSpecies(env: Environment): SpeciesId | null {
+    const mix = this.ecology.mix(env.lighting.hours, env);
+    const caps = this.ecology.maxPerSpecies ?? {};
+    const options = (Object.entries(mix) as Array<[SpeciesId, number]>).filter(([species, w]) => {
+      const cap = caps[species];
+      return w > 0 && (cap === undefined || this.birds.filter((b) => b.species === species).length < cap);
+    });
+    const total = options.reduce((sum, [, w]) => sum + w, 0);
+    let roll = this.rng() * total;
+    for (const [species, w] of options) {
+      roll -= w;
+      if (roll < 0) return species;
+    }
+    return null;
   }
 
   private spawn(sill: SillState): void {
     const env = this.env;
     if (!env) return;
-    const species = this.pickSpecies(env.lighting.hours);
+    const species = this.pickSpecies(env);
+    if (!species) return;
     const sillBirds = this.birds.filter((b) => b.onSill || b.flight?.arrive.kind === 'sill').length;
-    const sillOk = sill.windowOpen && sill.catX === null && sillBirds < MAX_SILL_BIRDS;
+    const shy = this.ecology.shySpecies ?? [];
+    const sillOk = sill.windowOpen && sill.catX === null && sillBirds < MAX_SILL_BIRDS && !shy.includes(species);
     const chanceSill = clamp(0.1 * this.options.birdseed.attraction, 0, 0.75);
     if (sillOk && this.rng() < chanceSill) {
       const spot = this.chooseSillSpot(sill);
@@ -263,18 +332,12 @@ export class BirdSystem {
     const { viewport } = this.options;
     const left = viewport.panX - 40;
     const right = viewport.panX + viewport.layout.visibleWorldWidth + 40;
+    const preference = this.ecology.perchPreference ?? (() => 1);
+    const weight = (p: Perch) => preference(species, p.ledge.kind);
     const candidates = this.perches.filter(
-      (p) =>
-        p.occupants.size < p.capacity &&
-        p.ledge.x1 >= left &&
-        p.ledge.x0 <= right &&
-        // Sparrows rarely go up antennas; pigeons love the street.
-        !(species === 'sparrow' && p.ledge.kind === 'antenna'),
+      (p) => p.occupants.size < p.capacity && p.ledge.x1 >= left && p.ledge.x0 <= right && weight(p) > 0,
     );
     if (candidates.length === 0) return null;
-    const weight = (p: Perch) =>
-      (p.ledge.kind === 'sidewalk' ? (species === 'pigeon' ? 3 : 0.5) : 1) *
-      (p.ledge.kind === 'antenna' && species === 'crow' ? 2 : 1);
     const total = candidates.reduce((s, p) => s + weight(p), 0);
     let roll = this.rng() * total;
     for (const p of candidates) {
@@ -432,6 +495,8 @@ export class BirdSystem {
       }
       case 'peck-seed':
         bird.peckTimer = 0;
+        // Woodpeckers drum on wood rather than pecking the ground.
+        if (bird.species === 'woodpecker' && !bird.onSill && this.rng() < 0.6) this.sound(bird, 'woodpecker-drum');
         if (bird.onSill && sill && this.atBowl(bird, sill)) bird.facing = bird.sillX < sill.bowlX ? 1 : -1;
         break;
       case 'chirp':
@@ -703,8 +768,7 @@ export class BirdSystem {
   // --- Sound ----------------------------------------------------------
 
   private voice(bird: Bird): void {
-    const id = bird.species === 'pigeon' ? 'pigeon-coo' : bird.species === 'crow' ? 'crow-caw' : 'sparrow-chirp';
-    this.sound(bird, id);
+    this.sound(bird, SPECIES_VOICE[bird.species]);
   }
 
   private sound(bird: Bird, id: Parameters<LifeSoundSink>[0]): void {
@@ -722,12 +786,11 @@ export class BirdSystem {
 
   // --- Distant flocks -------------------------------------------------
 
-  private spawnFlock(): void {
+  private spawnFlock(species: SpeciesId): void {
     const { viewport, worldLayers } = this.options;
     const count = 4 + Math.floor(this.rng() * 6);
     const right = this.rng() < 0.5;
     const z = 0.86 + this.rng() * 0.1;
-    const species: SpeciesId = this.rng() < 0.7 ? 'pigeon' : 'crow';
     const flock: Flock = {
       sprites: [],
       offsets: [],

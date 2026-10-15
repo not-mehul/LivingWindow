@@ -21,3 +21,16 @@ export interface SillState {
 export function sillWidth(sill: SillState): number {
   return (sill.surface.right - sill.surface.left) / sill.surface.frameScale;
 }
+
+/** A horizontal surface a bird can stand on, in world pixels. */
+export interface Ledge {
+  x0: number;
+  x1: number;
+  /** World y of the surface (birds' feet). */
+  y: number;
+  /** Which world depth layer the perch belongs to (for occlusion). */
+  layer: 'far' | 'mid' | 'near';
+  kind: string;
+  /** Depth override; otherwise derived from the layer. */
+  z?: number;
+}
