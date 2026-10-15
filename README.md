@@ -167,6 +167,17 @@ for the full vision and roadmap.
 - **Docker**: one command to host it on your network (see
   [Deployment](#deployment)).
 
+**Interface — neon HUD**
+
+The control panel is a cyberpunk heads-up display: dark scanlined glass with
+chamfered corners and corner brackets, a cyan/magenta neon glow, numbered
+sections, notched chips, and command-style buttons with a lit rail. A
+`FEED://<landscape> ● LIVE` readout sits under the title, which glitches now and
+then, and the panel flickers on when it reappears. All of this motion is off
+under `prefers-reduced-motion`. The palette lives in the `--hud-*` custom
+properties at the top of `src/style.css`. The pixel-art window and scenes are
+unchanged.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.

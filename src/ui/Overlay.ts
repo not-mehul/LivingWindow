@@ -89,8 +89,15 @@ export class Overlay {
     this.element.className = 'overlay';
     this.element.setAttribute('role', 'toolbar');
     this.element.setAttribute('aria-label', 'Living Window controls');
+    // The outer element carries the neon glow; the body is clipped to the
+    // chamfered HUD shape and scrolls (a clip-path would cut the glow off).
     this.element.innerHTML = `
-      <div class="overlay__title">Living Window</div>
+      <div class="overlay__body">
+      <div class="overlay__title" data-text="Living Window">Living Window</div>
+      <div class="overlay__sys" aria-hidden="true">
+        <span data-feed></span>
+        <span class="overlay__live">Live</span>
+      </div>
       <div class="chip-row chip-row--landscapes" role="radiogroup" aria-label="Landscape">
         ${LANDSCAPE_IDS.map(
           (id, i) =>
@@ -137,6 +144,7 @@ export class Overlay {
       <div data-audio-slot></div>
       <div class="overlay__hint" data-hint="pan"></div>
       <div class="overlay__hint overlay__hint--keys">1–4 landscape · Space pause · [ ] time · W window · B seed · R radio · M mute · F fullscreen</div>
+      </div>
     `;
     parent.appendChild(this.element);
 
@@ -163,8 +171,10 @@ export class Overlay {
     }
 
     const landscapeButtons = [...this.element.querySelectorAll<HTMLButtonElement>('[data-landscape]')];
+    const feed = this.query('[data-feed]');
     const refreshLandscape = () => {
       const active = options.landscape.current();
+      feed.textContent = `Feed://${active}`;
       for (const button of landscapeButtons) button.setAttribute('aria-checked', String(button.dataset.landscape === active));
     };
     for (const button of landscapeButtons) {
