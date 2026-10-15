@@ -8,6 +8,7 @@ import { createRng, randomInt, randomRange } from '../../core/random';
 import type { Ledge } from '../../life/types';
 import { pixelHash } from '../../sprites/raster';
 import { WaveModel, type BreakEvent } from '../../sim/waves';
+import { quality } from '../../core/quality';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
@@ -220,7 +221,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
 
     this.waterTimer -= dt;
     if (this.waterTimer <= 0) {
-      this.waterTimer = 1 / WATER_FPS;
+      this.waterTimer = 1 / (WATER_FPS * quality.scale);
       this.tick++;
       this.drawWater(env);
     }

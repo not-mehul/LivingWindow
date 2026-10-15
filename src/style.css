@@ -36,6 +36,8 @@ body {
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+  /* No "save image / copy" callout when long-pressing the view on iOS. */
+  -webkit-touch-callout: none;
 }
 
 body.is-idle,
@@ -84,6 +86,10 @@ body.is-idle canvas {
   transition:
     opacity 400ms steps(4),
     transform 400ms steps(4);
+  /* Taps on controls respond instantly, without double-tap zoom. */
+  touch-action: manipulation;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 
 .overlay.is-hidden {

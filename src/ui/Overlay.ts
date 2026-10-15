@@ -7,11 +7,14 @@ import type { Clock } from '../state/Clock';
 import { formatClock, PHASE_LABELS, PHASE_PRESETS, type DayPhase } from '../state/timeOfDay';
 import { WEATHER_LABELS, type Weather, type WeatherType } from '../state/Weather';
 import type { WindowState } from '../state/WindowState';
+import type { ScreenWakeLock } from '../core/wakeLock';
 import { createSoundPanel } from './SoundPanel';
 
 export interface LandscapeControl {
   current: () => LandscapeId;
   set: (id: LandscapeId) => void;
+  /** Warm up a landscape's code before it's chosen. */
+  preload?: (id: LandscapeId) => void;
   onChange: (listener: (id: LandscapeId) => void) => void;
 }
 
@@ -24,10 +27,12 @@ export interface OverlayOptions {
   weather: Weather;
   onAddSeed: () => void;
   onToggleFullscreen: (() => void) | null;
+  wakeLock?: ScreenWakeLock;
 }
 
 const SECTIONS_KEY = 'livingWindow.ui.sections';
-const COMPACT_COLLAPSED = new Set(['window', 'sound', 'radio']);
+// The weather header keeps showing the current condition while folded.
+const COMPACT_COLLAPSED = new Set(['weather', 'window', 'sound', 'radio']);
 
 const ACTIVITY_EVENTS = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
 
@@ -127,6 +132,7 @@ export class Overlay {
           </div>
         </div>
         <button type="button" class="pixel-button" data-action="fullscreen" aria-keyshortcuts="F">Fullscreen</button>
+        <button type="button" class="pixel-button" data-action="wake" aria-pressed="false">Keep screen awake</button>
       </details>
       <div data-audio-slot></div>
       <div class="overlay__hint" data-hint="pan"></div>
@@ -162,10 +168,26 @@ export class Overlay {
       for (const button of landscapeButtons) button.setAttribute('aria-checked', String(button.dataset.landscape === active));
     };
     for (const button of landscapeButtons) {
-      button.addEventListener('click', () => options.landscape.set(button.dataset.landscape as LandscapeId));
+      const id = button.dataset.landscape as LandscapeId;
+      button.addEventListener('click', () => options.landscape.set(id));
+      button.addEventListener('pointerenter', () => options.landscape.preload?.(id), { once: true });
     }
     options.landscape.onChange(refreshLandscape);
     refreshLandscape();
+
+    const wakeButton = this.query<HTMLButtonElement>('[data-action="wake"]');
+    const wake = options.wakeLock;
+    if (wake?.supported) {
+      const refreshWake = () => {
+        wakeButton.setAttribute('aria-pressed', String(wake.enabled));
+        wakeButton.textContent = wake.enabled ? `Screen stays awake${wake.active ? '' : ' (tap)'}` : 'Keep screen awake';
+      };
+      wakeButton.addEventListener('click', () => wake.setEnabled(!wake.enabled));
+      wake.on('change', refreshWake);
+      refreshWake();
+    } else {
+      wakeButton.hidden = true;
+    }
 
     this.pauseButton.addEventListener('click', () => clock.togglePaused());
     this.timeSlider.addEventListener('pointerdown', () => (this.scrubbing = true));
@@ -228,8 +250,9 @@ export class Overlay {
     } catch {
       // Storage unavailable: every section starts open.
     }
-    // On small screens, start with the less-used sections folded away.
-    const compact = window.innerWidth < 600;
+    // On phones (portrait or landscape), start with the less-used sections
+    // folded away so the panel leaves most of the view clear.
+    const compact = window.innerWidth < 600 || window.innerHeight < 500;
     for (const details of this.element.querySelectorAll<HTMLDetailsElement>('details[data-section]')) {
       const name = details.dataset.section ?? '';
       if (name in saved) details.open = saved[name];

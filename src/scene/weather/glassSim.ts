@@ -52,7 +52,7 @@ export class GlassRainSim {
 
   constructor(
     private readonly rng: () => number = Math.random,
-    readonly maxDrops = 700,
+    public maxDrops = 700,
   ) {}
 
   resize(width: number, height: number): void {

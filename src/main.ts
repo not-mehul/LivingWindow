@@ -1,10 +1,15 @@
 import { Application, Container, Sprite, Texture, TextureStyle } from 'pixi.js';
+// Eval-free shader and uniform code paths, so the strict Content-Security-Policy
+// served by the Docker image (no 'unsafe-eval') can stay in place.
+import 'pixi.js/unsafe-eval';
 import './style.css';
 import { AudioSystem } from './audio/AudioSystem';
 import { WORLD_HEIGHT } from './config';
 import { attachInput } from './core/input';
+import { quality } from './core/quality';
+import { ScreenWakeLock } from './core/wakeLock';
 import { Viewport } from './core/Viewport';
-import { createLandscape, loadLandscapeChoice, saveLandscapeChoice } from './landscapes/registry';
+import { createLandscape, loadLandscapeChoice, preloadLandscape, saveLandscapeChoice } from './landscapes/registry';
 import type { Landscape, LandscapeId, LandscapeLayers } from './landscapes/types';
 import type { Environment } from './scene/Environment';
 import { computeLighting, interiorTint } from './scene/lighting';
@@ -106,6 +111,8 @@ async function boot(): Promise<void> {
     background: '#1a1626',
   });
   host.appendChild(app.canvas);
+  // iOS Safari ignores user-scalable=no; stop pinch-zoom from scaling the page.
+  document.addEventListener('gesturestart', (event) => event.preventDefault());
 
   // --- Simulation state -------------------------------------------------
   const windowState = new WindowState(true);
@@ -153,10 +160,18 @@ async function boot(): Promise<void> {
   const interior = [sash.container, frame.container, frame.sillContainer, bowl.container];
 
   // --- Landscapes ------------------------------------------------------------
-  const mounted = new Map<LandscapeId, Mounted>();
-  const mount = (id: LandscapeId): Mounted => {
+  const mounted = new Map<LandscapeId, Promise<Mounted>>();
+  const mount = (id: LandscapeId): Promise<Mounted> => {
     const existing = mounted.get(id);
     if (existing) return existing;
+    const pending = build(id);
+    // A failed download can be retried next time.
+    pending.catch(() => mounted.delete(id));
+    mounted.set(id, pending);
+    return pending;
+  };
+  const all: Mounted[] = [];
+  const build = async (id: LandscapeId): Promise<Mounted> => {
     const layers: LandscapeLayers = {
       near: new Container({ label: `${id}-near` }),
       sillBack: new Container({ label: `${id}-sill-back` }),
@@ -165,7 +180,7 @@ async function boot(): Promise<void> {
     nearLayer.addChild(layers.near);
     sillBack.addChild(layers.sillBack);
     sillFront.addChild(layers.sillFront);
-    const landscape = createLandscape(id, {
+    const landscape = await createLandscape(id, {
       viewport,
       layers,
       birdseed,
@@ -176,13 +191,13 @@ async function boot(): Promise<void> {
     const lightning = new Lightning(landscape.scene.horizonY);
     landscape.scene.sky.boltLayer.addChild(lightning.bolt);
     const entry: Mounted = { landscape, precipitation, lightning, layers };
-    mounted.set(id, entry);
+    all.push(entry);
     return entry;
   };
 
-  let current: Mounted = mount(loadLandscapeChoice());
+  let current: Mounted = await mount(loadLandscapeChoice()).catch(() => mount('city'));
   const show = (next: Mounted) => {
-    for (const m of mounted.values()) {
+    for (const m of all) {
       const active = m === next;
       m.layers.near.visible = m.layers.sillBack.visible = m.layers.sillFront.visible = active;
     }
@@ -195,12 +210,17 @@ async function boot(): Promise<void> {
   };
   show(current);
 
-  /** Pending switch: fade out, swap, fade back in. */
-  let transition: { to: LandscapeId; t: number; swapped: boolean } | null = null;
+  /** Pending switch: fade out (while the new landscape loads), swap, fade back in. */
+  let transition: { to: LandscapeId; t: number; swapped: boolean; ready: Mounted | null; failed: boolean } | null = null;
   const landscapeListeners = new Set<(id: LandscapeId) => void>();
   const setLandscape = (id: LandscapeId) => {
     if (id === current.landscape.id && !transition) return;
-    transition = { to: id, t: 0, swapped: false };
+    const pending = { to: id, t: 0, swapped: false, ready: null as Mounted | null, failed: false };
+    transition = pending;
+    void mount(id).then(
+      (m) => (pending.ready = m),
+      () => (pending.failed = true),
+    );
     saveLandscapeChoice(id);
     for (const listener of landscapeListeners) listener(id);
   };
@@ -248,6 +268,7 @@ async function boot(): Promise<void> {
 
   // --- Input & UI ---------------------------------------------------------
   const toggleFullscreen = fullscreenToggle();
+  const wakeLock = new ScreenWakeLock();
   const addSeed = () => bowl.pour();
   attachInput(app.canvas, viewport, {
     toggleWindow,
@@ -269,9 +290,11 @@ async function boot(): Promise<void> {
     weather,
     onAddSeed: addSeed,
     onToggleFullscreen: toggleFullscreen,
+    wakeLock,
     landscape: {
-      current: () => (transition?.to ?? current.landscape.id),
+      current: () => (transition && !transition.failed ? transition.to : current.landscape.id),
       set: setLandscape,
+      preload: preloadLandscape,
       onChange: (listener) => landscapeListeners.add(listener),
     },
   });
@@ -329,8 +352,17 @@ async function boot(): Promise<void> {
     if (transition) {
       transition.t += dt / FADE_SECONDS;
       if (!transition.swapped && transition.t >= 1) {
-        transition.swapped = true;
-        show(mount(transition.to));
+        // Hold on the dark frame until the landscape has finished loading.
+        transition.t = 1;
+        if (transition.ready) {
+          transition.swapped = true;
+          show(transition.ready);
+        } else if (transition.failed) {
+          // Couldn't load (offline?): fade back into the current view.
+          transition.swapped = true;
+          const failedTo = current.landscape.id;
+          for (const listener of landscapeListeners) listener(failedTo);
+        }
       }
       fade.alpha = transition.swapped ? Math.max(0, 2 - transition.t) : Math.min(1, transition.t);
       if (transition.t >= 2) {
@@ -345,6 +377,7 @@ async function boot(): Promise<void> {
   };
 
   app.ticker.add((ticker) => {
+    quality.sample(ticker.deltaMS);
     simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS));
     viewport.render(app.renderer);
     overlay.tick();
@@ -361,7 +394,15 @@ async function boot(): Promise<void> {
         clock,
         weather,
         glass,
+        quality,
+        wakeLock,
         setLandscape,
+        /** Resolves once a landscape switch has finished. */
+        landscapeReady: () =>
+          new Promise<void>((resolve) => {
+            const check = () => (transition ? requestAnimationFrame(check) : resolve());
+            check();
+          }),
         get landscape() {
           return current.landscape;
         },

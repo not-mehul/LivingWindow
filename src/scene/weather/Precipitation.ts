@@ -1,6 +1,7 @@
 import { Particle, ParticleContainer, Rectangle, type Texture } from 'pixi.js';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { clamp } from '../../core/math';
+import { quality } from '../../core/quality';
 import type { PrecipitationKind } from '../../state/Weather';
 import type { Environment } from '../Environment';
 import { RAIN_LENGTHS, RAIN_SLANTS, type WeatherAtlas } from './atlas';
@@ -75,7 +76,7 @@ export class PrecipitationLayer {
     const { weather, lighting } = env;
     const kind = weather.kind;
     const max = kind === 'snow' ? this.config.maxSnow : kind === 'rain' ? this.config.maxRain : 0;
-    const target = Math.round(max * weather.precipitation);
+    const target = Math.round(max * weather.precipitation * quality.scale);
 
     // Spawn at a bounded rate so a downpour builds up from the top.
     if (kind !== 'none' && this.drops.length < target) {

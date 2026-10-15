@@ -36,15 +36,19 @@ export class AudioSystem {
     engine.on('mute', save);
     radio.on('change', save);
 
-    // The first tap or key press anywhere unlocks audio (browser policy).
+    // Any tap or key press (re)starts audio when the browser has suspended it:
+    // at first load, and after iOS interrupts it (a call, switching apps).
     const unlock = () => {
+      if (engine.running) return;
       void engine.unlock().then(() => {
-        if (!engine.running) return;
-        for (const event of UNLOCK_EVENTS) window.removeEventListener(event, unlock);
-        if (this.settings.radioOn && !radio.isOn) radio.setOn(true);
+        if (engine.running && this.settings.radioOn && !radio.isOn) radio.setOn(true);
       });
     };
-    for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlock);
+    for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlock, { passive: true });
+    // Coming back to the tab: try to resume straight away (works where allowed).
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !engine.running) void engine.unlock();
+    });
   }
 
   /** Returns null when the browser has no Web Audio support. */

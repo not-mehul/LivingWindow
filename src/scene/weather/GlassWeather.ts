@@ -1,5 +1,6 @@
 import { Particle, ParticleContainer, Rectangle } from 'pixi.js';
 import { lerpColor } from '../../core/color';
+import { quality } from '../../core/quality';
 import type { Environment } from '../Environment';
 import type { WeatherAtlas } from './atlas';
 import { GlassRainSim, type GlassDrop } from './glassSim';
@@ -30,6 +31,7 @@ export class GlassWeather {
 
   update(dt: number, env: Environment, windowOpenness: number): void {
     const { weather, lighting } = env;
+    this.sim.maxDrops = Math.round(700 * quality.scale);
     this.sim.update(dt, {
       rain: weather.kind === 'rain' ? weather.precipitation : 0,
       snow: weather.kind === 'snow' ? weather.precipitation : 0,

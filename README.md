@@ -141,6 +141,32 @@ for the full vision and roadmap.
   fireflies on dry nights. The soundscape has a babbling stream, grass in the
   breeze, songbirds and crickets.
 
+**Step 6 — Mobile, performance and deployment** ✅
+
+- **Touch & mobile**: swipe to look around, tap to show the controls (which
+  fold their less-used sections on phones, portrait or landscape), no
+  accidental page scroll, pinch-zoom or long-press callouts.
+- **Audio unlock**: browsers only start Web Audio after a gesture, so the first
+  tap or key press anywhere unlocks it. On iOS the session is set to
+  `playback` (so the silent switch doesn't mute it) and a silent buffer is
+  played inside the gesture. Audio resumes when you return to the tab, and the
+  radio picks up again if it was on.
+- **Keep screen awake** (Window section): the Screen Wake Lock API keeps a
+  phone or tablet on as an ambient display. It is remembered and re-acquired
+  when the tab returns. The button is hidden where unsupported.
+- **Install to home screen**: a web app manifest and icons, so it opens
+  fullscreen without browser chrome on Android and iOS.
+- **Lighter start**: each landscape is a separately loaded chunk (preloaded
+  when you hover its chip). The initial bundle dropped from ~506 KB to
+  ~120 KB (~38 KB gzipped).
+- **Adaptive quality**: if frames stay slow for a few seconds, the rain-on-glass
+  drop count, precipitation density and sea animation rate are halved. They
+  come back once the device keeps up again. Force a level with `?quality=low` or
+  `?quality=high`. Lightning flashes are softened under
+  `prefers-reduced-motion`.
+- **Docker**: one command to host it on your network (see
+  [Deployment](#deployment)).
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
@@ -173,6 +199,48 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | `M`                            | Mute / unmute         |
 | `F`                            | Toggle fullscreen     |
 
+## Deployment
+
+### Docker (one command, local network)
+
+```sh
+docker compose up -d --build
+```
+
+Then open `http://<this-machine's-LAN-IP>:8080` on any device on your network,
+such as an old tablet, a TV browser or a phone. The image is a multi-stage
+build. Node type-checks, tests and builds the site, then a small `nginx:alpine`
+image (~100 MB, ~5 MB RAM) serves it with long-lived caching for hashed assets,
+gzip, a strict Content-Security-Policy and a `/healthz` endpoint. The
+container runs read-only with no extra privileges.
+
+| Setting | How |
+| ------- | --- |
+| Port | `LIVING_WINDOW_PORT=9000 docker compose up -d` |
+| Your own recordings | Uncomment the `public/audio` volume in `docker-compose.yml` (see `public/audio/README.md`) |
+| Reach it from outside your network | `CLOUDFLARE_TUNNEL_TOKEN=… docker compose --profile tunnel up -d` runs a Cloudflare Tunnel next to it (configure the tunnel to point at `http://living-window:8080`) |
+| Docker Hub rate-limited | `docker compose build --build-arg NODE_IMAGE=mirror.gcr.io/library/node:22-alpine --build-arg NGINX_IMAGE=mirror.gcr.io/library/nginx:alpine` |
+
+Without Compose:
+
+```sh
+docker build -t living-window .
+docker run -d -p 8080:8080 --read-only --tmpfs /var/cache/nginx --tmpfs /var/run --tmpfs /tmp living-window
+```
+
+### Any static host
+
+`npm run build` writes a self-contained static site to `dist/` with relative
+asset paths. It runs from any sub-path on GitHub Pages, Cloudflare Pages,
+Netlify, Vercel, a NAS web folder or `python3 -m http.server`. If your host
+sets a Content-Security-Policy, the app needs no `unsafe-eval`.
+`docker/nginx.conf` has a working policy.
+
+### Phones and tablets
+
+See [`docs/MOBILE_TESTING.md`](./docs/MOBILE_TESTING.md) for the real-device
+checklist (audio unlock, silent switch, wake lock, home-screen install).
+
 ## Project layout
 
 ```
@@ -185,6 +253,8 @@ src/
     input.ts                Pointer / wheel / keyboard input
     pixelTexture.ts         Helpers for drawing pixel art into crisp textures
     simplex.ts              Seedable 2D simplex noise
+    quality.ts              Frame-time monitor and adaptive quality level
+    wakeLock.ts             Screen Wake Lock (keep the display on)
     Emitter.ts, math.ts, random.ts, color.ts
   state/
     WindowState.ts          Open/closed window model + transition events
@@ -220,20 +290,27 @@ src/
   ui/
     Overlay.ts              Auto-hiding control panel
     SoundPanel.ts           Mixer and radio controls
+public/
+  manifest.webmanifest, icons/   Home-screen install (PWA manifest + icons)
+  audio/                    Optional recordings (see its README)
+docker/nginx.conf           Static server config used by the Docker image
+Dockerfile, docker-compose.yml  One-command local hosting
 ```
 
-### Hooks for upcoming steps
+### Extension points
 
-- `WindowState` emits `toggle` (with its duration) and `settled`, ready for the
-  audio low-pass filter (Step 3).
+- `WindowState` emits `toggle` (with its duration) and `settled`; the audio
+  low-pass filter follows it.
 - A landscape is a `WorldScene` + `SceneLife` + frame theme + `Soundscape`,
   registered in `src/landscapes/registry.ts`.
 - In development, `window.livingWindow` exposes the systems, including
-  `fastForward(seconds)` to run the simulation without drawing, and
+  `fastForward(seconds)` to run the simulation without drawing,
+  `setLandscape(id)` + `landscapeReady()` (switching is asynchronous), and
   `life.birds.summonToSill()` / `life.cat.summon()` for demos.
 - New scenes implement `WorldScene` and get the sky, lighting, precipitation,
-  lightning and rain-on-glass for free (Steps 4–5).
+  lightning and rain-on-glass for free. Expensive effects can read
+  `quality.scale` (1 or 0.5) to thin themselves out on slow devices.
 - `Viewport.world` is where scene layers go, in native world pixels;
   `Viewport.worldXToStereo()` maps a world x to a stereo pan for spatial audio.
 - The `sill-layer` container (in `main.ts`) holds z = 0 foreground entities.
-  `BirdseedBowl.perchPoint` and `BirdseedState.attraction` feed the bird FSM (Step 4).
+  `BirdseedBowl.perchPoint` and `BirdseedState.attraction` feed the bird FSM.

@@ -116,9 +116,30 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
     return this.settings.volumes[bus];
   }
 
-  /** Browsers only allow audio after a user gesture: call this from one. */
+  /**
+   * Browsers only allow audio after a user gesture: call this from one
+   * (synchronously, before any await, as iOS requires).
+   */
   async unlock(): Promise<void> {
+    // iOS Safari 16.4+: play through the ringer's silent switch, like a music app.
+    const session = (navigator as Navigator & { audioSession?: { type: string } }).audioSession;
+    if (session && session.type !== 'playback') {
+      try {
+        session.type = 'playback';
+      } catch {
+        // Not supported here.
+      }
+    }
     if (this.context.state === 'running') return;
+    // Older iOS only fully unlocks once a sound has started inside the gesture.
+    try {
+      const silent = this.context.createBufferSource();
+      silent.buffer = this.context.createBuffer(1, 1, this.context.sampleRate);
+      silent.connect(this.context.destination);
+      silent.start(0);
+    } catch {
+      // Harmless if it fails.
+    }
     try {
       await this.context.resume();
     } catch {
