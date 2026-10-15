@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { approach, clamp, easeInOutCubic, snapToDevicePixel } from './math';
 import { createRng } from './random';
+import { createSimplex2D } from './simplex';
 
 describe('math helpers', () => {
   it('clamps', () => {
@@ -35,5 +36,33 @@ describe('createRng', () => {
     expect(values).toEqual(Array.from({ length: 1000 }, () => b()));
     expect(values.every((v) => v >= 0 && v < 1)).toBe(true);
     expect(createRng(43)()).not.toBe(values[0]);
+  });
+});
+
+describe('createSimplex2D', () => {
+  it('is deterministic and stays within [-1, 1]', () => {
+    const a = createSimplex2D(createRng(5));
+    const b = createSimplex2D(createRng(5));
+    let min = Infinity;
+    let max = -Infinity;
+    for (let i = 0; i < 5000; i++) {
+      const x = i * 0.137;
+      const y = i * 0.071;
+      const v = a(x, y);
+      expect(v).toBe(b(x, y));
+      min = Math.min(min, v);
+      max = Math.max(max, v);
+    }
+    expect(min).toBeGreaterThanOrEqual(-1);
+    expect(max).toBeLessThanOrEqual(1);
+    // It should actually vary.
+    expect(max - min).toBeGreaterThan(1);
+  });
+
+  it('is continuous', () => {
+    const noise = createSimplex2D(createRng(8));
+    for (let x = 0; x < 50; x += 0.01) {
+      expect(Math.abs(noise(x + 0.001, 3) - noise(x, 3))).toBeLessThan(0.02);
+    }
   });
 });

@@ -4,7 +4,14 @@ export interface KeyboardActions {
   toggleWindow: () => void;
   addSeed: () => void;
   toggleFullscreen: (() => void) | null;
+  togglePause: () => void;
+  /** Shift the clock by a number of simulated hours. */
+  shiftTime: (hours: number) => void;
 }
+
+/** Simulated hours moved per `[` / `]` press. */
+const TIME_STEP_HOURS = 0.5;
+const REPEATABLE_KEYS = new Set(['ArrowLeft', 'ArrowRight', '[', ']']);
 
 /** Speed added per arrow-key press, in world px / s. */
 const KEY_NUDGE = 260;
@@ -40,8 +47,10 @@ export function attachInput(canvas: HTMLCanvasElement, viewport: Viewport, actio
 
   window.addEventListener('keydown', (event) => {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
-    // Held arrow keys keep pushing the view; other shortcuts fire once per press.
-    if (event.repeat && event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    // Let focused controls (buttons, the time slider) handle their own keys.
+    if (event.target instanceof HTMLButtonElement || event.target instanceof HTMLInputElement) return;
+    // Held arrows / brackets keep panning or scrubbing; other shortcuts fire once.
+    if (event.repeat && !REPEATABLE_KEYS.has(event.key)) return;
     switch (event.key) {
       case 'w':
       case 'W':
@@ -54,6 +63,16 @@ export function attachInput(canvas: HTMLCanvasElement, viewport: Viewport, actio
       case 'f':
       case 'F':
         actions.toggleFullscreen?.();
+        break;
+      case ' ':
+        actions.togglePause();
+        event.preventDefault();
+        break;
+      case '[':
+        actions.shiftTime(-TIME_STEP_HOURS);
+        break;
+      case ']':
+        actions.shiftTime(TIME_STEP_HOURS);
         break;
       case 'ArrowLeft':
         viewport.nudge(-KEY_NUDGE);

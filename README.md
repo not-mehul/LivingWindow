@@ -27,6 +27,32 @@ for the full vision and roadmap.
 - Auto-hiding pixel-art overlay UI (fades after 3 s of inactivity, along with the cursor).
 - A procedural placeholder city skyline stands in for the real scene art (Step 4).
 
+**Step 2 — Chronos clock & weather engine** ✅
+
+- **Simulated clock** running at 6× (a full day every 4 real hours, one
+  simulated hour every 10 real minutes), starting from your local time. Pause
+  it, scrub it with the slider or `[` / `]`, or jump to Dawn, Morning, Midday,
+  Golden Hour, Dusk, Night or 2–4 AM; it carries on from wherever you leave it.
+- **Lighting**: a 24-hour palette of keyframes drives a dithered pixel sky,
+  sun and moon arcs with glows, twinkling stars and tinted clouds. Every
+  scene layer is authored in daylight and multiplied by an ambient tint, with
+  extra haze on distant layers. The room itself picks up daylight by day and a
+  warm lamp glow at night.
+- **Emissive layers**: city windows switch on and off one by one following a
+  daily schedule (busy evenings, an almost dark 2–4 AM), and streetlamps
+  flicker on individually at dusk.
+- **Weather engine**: a Markov chain moves between Clear, Overcast, Light Rain,
+  Thunderstorm and Snow on simulated time, while simplex noise drives gusts,
+  downpour swells and lightning bursts so nothing repeats. Pick the weather by
+  hand to lock it, or choose Auto to hand it back.
+- **Weather rendering**: rain streaks that follow the wind and snowflakes that
+  sway, in two depth layers (behind and in front of the nearest towers), with
+  splashes on the street. Lightning flashes the world and the room, with
+  pixel bolts for nearby strikes.
+- **Rain on the glass** when the window is closed: drops land, merge, grow
+  into runners that slide down, swallowing others and leaving bead trails,
+  then dry off after the rain. Snowflakes stick and melt.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
@@ -51,29 +77,39 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | Drag / swipe, scroll, `←` `→`  | Look around (when the view is cropped) |
 | Click the sash's bottom rail, `W` | Open / close the window |
 | Click the bowl, `B`            | Add birdseed          |
+| `Space`                        | Pause / resume time   |
+| `[` `]`                        | Scrub time ∓30 minutes |
 | `F`                            | Toggle fullscreen     |
 
 ## Project layout
 
 ```
 src/
-  config.ts                 Tuning constants (world size, timings, crop limits)
+  config.ts                 Tuning constants (world size, timings, time scale)
   main.ts                   Bootstraps PixiJS and wires everything together
   core/
     viewportLayout.ts       Pure screen → world mapping math (unit tested)
     Viewport.ts             Off-screen world render target, panning & inertia
     input.ts                Pointer / wheel / keyboard input
     pixelTexture.ts         Helpers for drawing pixel art into crisp textures
-    Emitter.ts, math.ts, random.ts
+    simplex.ts              Seedable 2D simplex noise
+    Emitter.ts, math.ts, random.ts, color.ts
   state/
     WindowState.ts          Open/closed window model + transition events
     BirdseedState.ts        Seed level, depletion and bird attraction
+    Clock.ts, timeOfDay.ts  Simulated clock, day phases and presets
+    Weather.ts              Markov + noise weather engine, lightning events
   window/
     WindowFrame.ts          Wall, nine-slice frame and windowsill
     WindowSash.ts           Sliding glass pane (with a glass layer for rain, Step 2)
     BirdseedBowl.ts         Interactive bowl on the sill
   scene/
-    PlaceholderCityScene.ts Procedural stand-in skyline
+    WorldScene.ts           Contract every landscape implements
+    Environment.ts          Per-frame lighting + weather passed to scenes
+    lighting.ts             Time-of-day / weather lighting model (unit tested)
+    sky/Sky.ts              Gradient, stars, sun, moon, clouds
+    city/                   Placeholder city: generator, window lights, lamps
+    weather/                Rain/snow particles, lightning, rain on the glass
   ui/
     Overlay.ts              Auto-hiding control panel
 ```
@@ -81,8 +117,12 @@ src/
 ### Hooks for upcoming steps
 
 - `WindowState` emits `toggle` (with its duration) and `settled`, ready for the
-  audio low-pass filter (Step 3) and rain-on-glass (Step 2).
-- `WindowSash.glassLayer` is a masked container on the pane for droplets and snow.
+  audio low-pass filter (Step 3).
+- `Weather` emits `lightning` with an `intensity` and `distance`, for thunder
+  timing and volume (Step 3); `weather.snapshot` exposes live rain, wind and
+  cloud values for the ambience mix.
+- New scenes implement `WorldScene` and get the sky, lighting, precipitation,
+  lightning and rain-on-glass for free (Steps 4–5).
 - `Viewport.world` is where scene layers go, in native world pixels;
   `Viewport.worldXToStereo()` maps a world x to a stereo pan for spatial audio.
 - The `sill-layer` container (in `main.ts`) holds z = 0 foreground entities.

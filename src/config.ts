@@ -39,3 +39,14 @@ export const DRAG_THRESHOLD_PX = 6;
  * between half of this boost and the full value.
  */
 export const BIRDSEED_MAX_ATTRACTION = 6;
+
+/**
+ * Simulated seconds per real second. At 6× a full 24-hour day takes four
+ * real hours and one simulated hour passes every ten real minutes.
+ */
+export const TIME_SCALE = 6;
+
+/** Real seconds for the weather to blend into a newly chosen state. */
+export const WEATHER_BLEND_SECONDS = 45;
+/** Faster blend used when the user picks the weather by hand. */
+export const WEATHER_MANUAL_BLEND_SECONDS = 6;
