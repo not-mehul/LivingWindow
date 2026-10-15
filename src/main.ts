@@ -1,5 +1,6 @@
 import { Application, Container, Sprite, Texture, TextureStyle } from 'pixi.js';
 import './style.css';
+import { AudioSystem } from './audio/AudioSystem';
 import { WORLD_HEIGHT } from './config';
 import { lerpColor } from './core/color';
 import { attachInput } from './core/input';
@@ -110,7 +111,11 @@ async function boot(): Promise<void> {
   const lightning = new Lightning(scene.horizonY);
   scene.sky.boltLayer.addChild(lightning.bolt);
   viewport.world.addChild(scene.container, lightning.overlay);
-  weather.on('lightning', ({ intensity, distance }) => lightning.strike(intensity, distance));
+  let audio: AudioSystem | null = null;
+  weather.on('lightning', ({ intensity, distance }) => {
+    const x = lightning.strike(intensity, distance);
+    audio?.weather.thunder(intensity, distance, viewport.worldXToStereo(x));
+  });
 
   // --- Screen-space window -----------------------------------------------
   const frame = new WindowFrame();
@@ -176,6 +181,10 @@ async function boot(): Promise<void> {
     toggleFullscreen,
     togglePause: () => clock.togglePaused(),
     shiftTime: (hours) => clock.setTime(clock.hours + hours),
+    toggleRadio: () => {
+      if (audio) void audio.engine.unlock().then(() => audio?.radio.toggle());
+    },
+    toggleMute: () => audio?.engine.setMuted(!audio.engine.muted),
   });
   const overlay = new Overlay(document.body, {
     windowState,
@@ -185,6 +194,22 @@ async function boot(): Promise<void> {
     weather,
     onAddSeed: addSeed,
     onToggleFullscreen: toggleFullscreen,
+  });
+
+  // --- Audio ---------------------------------------------------------------
+  // Built in the background so visuals never wait on audio files.
+  void AudioSystem.create(windowState.isOpen).then((system) => {
+    if (!system) return;
+    audio = system;
+    overlay.attachAudio(system);
+    windowState.on('toggle', ({ open, durationSeconds }) => {
+      system.engine.setWindowOpen(open, durationSeconds);
+      system.engine.playUi('window-slide');
+    });
+    windowState.on('settled', ({ open }) => {
+      if (!open) system.engine.playUi('window-thunk');
+    });
+    birdseed.on('filled', () => system.engine.playUi('seed-pour', 0.5));
   });
 
   // --- Main loop ----------------------------------------------------------
@@ -206,6 +231,7 @@ async function boot(): Promise<void> {
     for (const layer of precipitation) layer.update(dt, env);
     lightning.update(dt);
     glass.update(dt, env, windowState.openness);
+    audio?.update(dt, env, 1 - windowState.openness);
 
     // The room is lit by daylight through the window, and by a lamp at night.
     const { lighting } = env;
@@ -222,7 +248,9 @@ async function boot(): Promise<void> {
   });
 
   if (import.meta.env.DEV) {
-    Object.assign(window, { livingWindow: { app, viewport, windowState, birdseed, clock, weather, lightning, glass } });
+    Object.assign(window, {
+      livingWindow: { app, viewport, windowState, birdseed, clock, weather, lightning, glass, audio: () => audio },
+    });
   }
 }
 

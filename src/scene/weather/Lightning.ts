@@ -41,7 +41,8 @@ export class Lightning {
     return this._flash;
   }
 
-  strike(intensity: number, distance: number): void {
+  /** Flash (and maybe draw a bolt). Returns the strike's world x, for panning thunder. */
+  strike(intensity: number, distance: number): number {
     const rng = this.rng;
     this.elapsed = 0;
     this.strength = intensity * (1 - 0.6 * distance);
@@ -50,7 +51,9 @@ export class Lightning {
     if (rng() < 0.75) this.pulses.push({ at: 0.06 + rng() * 0.06, amplitude: 0.35 + rng() * 0.35 });
     if (rng() < 0.4) this.pulses.push({ at: 0.18 + rng() * 0.1, amplitude: 0.5 + rng() * 0.4 });
     this.bolt.clear();
-    if (distance < BOLT_DISTANCE) this.drawBolt(distance);
+    const x = 40 + Math.floor(rng() * (WORLD_WIDTH - 80));
+    if (distance < BOLT_DISTANCE) this.drawBolt(x, distance);
+    return x;
   }
 
   update(dt: number): void {
@@ -71,7 +74,7 @@ export class Lightning {
     }
   }
 
-  private drawBolt(distance: number): void {
+  private drawBolt(x: number, distance: number): void {
     const rng = this.rng;
     const g = this.bolt;
     const near = distance < 0.3;
@@ -86,7 +89,6 @@ export class Lightning {
         }
       }
     };
-    const x = 40 + Math.floor(rng() * (WORLD_WIDTH - 80));
     const top = Math.floor(rng() * 25);
     segment(x, top, this.horizonY + 10, 0.05);
   }

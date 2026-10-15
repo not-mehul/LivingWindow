@@ -53,6 +53,34 @@ for the full vision and roadmap.
   into runners that slide down, swallowing others and leaving bead trails,
   then dry off after the rain. Snowflakes stick and melt.
 
+**Step 3 — Audio engine & lofi radio** ✅
+
+- **Web Audio mixer** in two acoustic zones. Exterior buses (wildlife, landscape
+  ambience, weather) pass through the **window filter**: closing the window
+  sweeps a low-pass from 20 kHz to 450 Hz and drops it 8 dB over 0.6 s, in step
+  with the sash. Interior sounds (radio, rain tapping the glass, room foley)
+  stay crisp. A limiter guards the output.
+- **Five volume sliders**: Master, Wildlife & Birds, Weather, Landscape and Lofi
+  Radio, plus mute (`M`). Settings persist in the browser.
+- **`playSpatialSound(id, screenX, depthZ)`** pans a one-shot to its screen
+  position (−1…1), makes distant sounds quieter and duller, and gives every play
+  a random ±8% pitch and ±15% gain so nothing repeats exactly.
+- **Weather audio**: rain and wind follow the live weather, with gust whistles,
+  thunder delayed and softened by distance and panned to the strike, and drops
+  tapping the glass when the window is shut.
+- **City ambience**: a low hum, cars passing below (rush hour busy, 3 AM quiet,
+  hissing on wet roads), the odd distant horn, birdsong by day with a dawn
+  chorus, and snow muffling it all.
+- **Lofi radio** (`R`): plays an internet stream URL or a local playlist through
+  a warm "small radio in the room" chain (band-limited, mid bump, soft
+  saturation, room reverb, slightly left of centre). With neither configured,
+  the built-in **Living Window FM** generates endless lofi tracks: jazzy chord
+  progressions, bass, lazy swung drums, vinyl crackle and tape wobble.
+- **Everything is synthesized**, so no assets are needed. Real recordings can
+  replace any sound: see [`public/audio/README.md`](./public/audio/README.md).
+- Browsers start audio only after a gesture: the first tap or key press anywhere
+  enables sound (the Sound panel also offers a button).
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
@@ -79,6 +107,8 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | Click the bowl, `B`            | Add birdseed          |
 | `Space`                        | Pause / resume time   |
 | `[` `]`                        | Scrub time ∓30 minutes |
+| `R`                            | Radio on / off        |
+| `M`                            | Mute / unmute         |
 | `F`                            | Toggle fullscreen     |
 
 ## Project layout
@@ -110,17 +140,26 @@ src/
     sky/Sky.ts              Gradient, stars, sun, moon, clouds
     city/                   Placeholder city: generator, window lights, lamps
     weather/                Rain/snow particles, lightning, rain on the glass
+  audio/
+    AudioEngine.ts          Buses, window filter, limiter, playSpatialSound
+    AudioSystem.ts          Assembles engine, radio and soundscapes
+    mixer.ts, spatial.ts    Volume/settings and spatial maths (unit tested)
+    sounds/                 Synthesized voices + recorded-sample bank
+    soundscapes/            Weather sound and city ambience
+    radio/                  Radio chain, generative lofi station, music theory
+    manifest.ts             Optional recordings from public/audio/manifest.json
   ui/
     Overlay.ts              Auto-hiding control panel
+    SoundPanel.ts           Mixer and radio controls
 ```
 
 ### Hooks for upcoming steps
 
 - `WindowState` emits `toggle` (with its duration) and `settled`, ready for the
   audio low-pass filter (Step 3).
-- `Weather` emits `lightning` with an `intensity` and `distance`, for thunder
-  timing and volume (Step 3); `weather.snapshot` exposes live rain, wind and
-  cloud values for the ambience mix.
+- Birds (Step 4) voice themselves with
+  `audio.engine.playSpatialSound('sparrow-chirp', viewport.worldXToStereo(x), z)`;
+  the city soundscape's background birdsong is a placeholder until then.
 - New scenes implement `WorldScene` and get the sky, lighting, precipitation,
   lightning and rain-on-glass for free (Steps 4–5).
 - `Viewport.world` is where scene layers go, in native world pixels;

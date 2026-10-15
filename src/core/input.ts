@@ -7,6 +7,8 @@ export interface KeyboardActions {
   togglePause: () => void;
   /** Shift the clock by a number of simulated hours. */
   shiftTime: (hours: number) => void;
+  toggleRadio: () => void;
+  toggleMute: () => void;
 }
 
 /** Simulated hours moved per `[` / `]` press. */
@@ -59,6 +61,14 @@ export function attachInput(canvas: HTMLCanvasElement, viewport: Viewport, actio
       case 'b':
       case 'B':
         actions.addSeed();
+        break;
+      case 'r':
+      case 'R':
+        actions.toggleRadio();
+        break;
+      case 'm':
+      case 'M':
+        actions.toggleMute();
         break;
       case 'f':
       case 'F':

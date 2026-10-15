@@ -1,3 +1,4 @@
+import type { AudioSystem } from '../audio/AudioSystem';
 import { UI_HIDE_DELAY_MS } from '../config';
 import type { Viewport } from '../core/Viewport';
 import type { BirdseedState } from '../state/BirdseedState';
@@ -5,6 +6,7 @@ import type { Clock } from '../state/Clock';
 import { formatClock, PHASE_LABELS, PHASE_PRESETS, type DayPhase } from '../state/timeOfDay';
 import { WEATHER_LABELS, type Weather, type WeatherType } from '../state/Weather';
 import type { WindowState } from '../state/WindowState';
+import { createSoundPanel } from './SoundPanel';
 
 export interface OverlayOptions {
   windowState: WindowState;
@@ -15,6 +17,8 @@ export interface OverlayOptions {
   onAddSeed: () => void;
   onToggleFullscreen: (() => void) | null;
 }
+
+const SECTIONS_KEY = 'livingWindow.ui.sections';
 
 const ACTIVITY_EVENTS = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
 
@@ -73,7 +77,8 @@ export class Overlay {
     this.element.setAttribute('aria-label', 'Living Window controls');
     this.element.innerHTML = `
       <div class="overlay__title">Living Window</div>
-      <section class="overlay__section" aria-label="Time of day">
+      <details class="overlay__section" data-section="time" open>
+        <summary>Time</summary>
         <div class="overlay__row overlay__row--between">
           <div class="clock" aria-live="off">
             <span class="clock__time" data-clock>00:00</span>
@@ -88,16 +93,17 @@ export class Overlay {
               `<button type="button" class="chip" data-hours="${p.hours}" title="${PHASE_LABELS[p.phase]}">${PRESET_SHORT[p.phase]}</button>`,
           ).join('')}
         </div>
-      </section>
-      <section class="overlay__section" aria-label="Weather">
-        <div class="overlay__label">Weather <span data-weather-status></span></div>
+      </details>
+      <details class="overlay__section" data-section="weather" open>
+        <summary>Weather <span class="overlay__status" data-weather-status></span></summary>
         <div class="chip-row" data-weather>
           ${WEATHER_CHIPS.map(
             (c) => `<button type="button" class="chip" data-weather-value="${c.value}">${c.label}</button>`,
           ).join('')}
         </div>
-      </section>
-      <section class="overlay__section" aria-label="Window">
+      </details>
+      <details class="overlay__section" data-section="window" open>
+        <summary>Window</summary>
         <button type="button" class="pixel-button" data-action="window" aria-keyshortcuts="W"></button>
         <div class="overlay__row">
           <button type="button" class="pixel-button" data-action="seed" aria-keyshortcuts="B">Add birdseed</button>
@@ -106,9 +112,10 @@ export class Overlay {
           </div>
         </div>
         <button type="button" class="pixel-button" data-action="fullscreen" aria-keyshortcuts="F">Fullscreen</button>
-      </section>
+      </details>
+      <div data-audio-slot></div>
       <div class="overlay__hint" data-hint="pan"></div>
-      <div class="overlay__hint overlay__hint--keys">Space pause · [ ] time · W window · B seed · F fullscreen</div>
+      <div class="overlay__hint overlay__hint--keys">Space pause · [ ] time · W window · B seed · R radio · M mute · F fullscreen</div>
     `;
     parent.appendChild(this.element);
 
@@ -173,10 +180,43 @@ export class Overlay {
       window.addEventListener(event, () => this.show(), { passive: true });
     }
 
+    this.restoreSections();
     this.refresh();
     this.refreshClock(true);
     this.refreshWeather();
     this.show();
+  }
+
+  /** Add the mixer and radio controls once the audio system is ready. */
+  attachAudio(audio: AudioSystem): void {
+    const slot = this.query('[data-audio-slot]');
+    slot.replaceWith(createSoundPanel(audio));
+    this.restoreSections();
+  }
+
+  /** Remember which panel sections the viewer collapsed (per browser only). */
+  private restoreSections(): void {
+    let saved: Record<string, boolean> = {};
+    try {
+      saved = JSON.parse(localStorage.getItem(SECTIONS_KEY) ?? '{}') as Record<string, boolean>;
+    } catch {
+      // Storage unavailable: every section starts open.
+    }
+    for (const details of this.element.querySelectorAll<HTMLDetailsElement>('details[data-section]')) {
+      const name = details.dataset.section ?? '';
+      if (name in saved) details.open = saved[name];
+      if (details.dataset.bound) continue;
+      details.dataset.bound = 'true';
+      details.addEventListener('toggle', () => {
+        try {
+          const current = JSON.parse(localStorage.getItem(SECTIONS_KEY) ?? '{}') as Record<string, boolean>;
+          current[name] = details.open;
+          localStorage.setItem(SECTIONS_KEY, JSON.stringify(current));
+        } catch {
+          // Not persisted; that's fine.
+        }
+      });
+    }
   }
 
   /** Call once per frame; only touches the DOM when the displayed minute changes. */
@@ -237,8 +277,8 @@ export class Overlay {
   private refreshWeather(): void {
     const { weather } = this.options;
     this.weatherStatus.textContent = weather.locked
-      ? `· ${WEATHER_LABELS[weather.type]} (locked)`
-      : `· Auto: ${WEATHER_LABELS[weather.type]}`;
+      ? `${WEATHER_LABELS[weather.type]} (locked)`
+      : `Auto: ${WEATHER_LABELS[weather.type]}`;
     for (const button of this.weatherButtons) {
       const value = button.dataset.weatherValue;
       const active = value === 'auto' ? !weather.locked : weather.locked && value === weather.type;
