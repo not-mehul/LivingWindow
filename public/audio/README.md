@@ -21,7 +21,10 @@ Anything listed replaces its synthesized version; anything left out keeps the sy
   "beds": {
     "rain": "audio/ambience/rain-loop.ogg",
     "wind": "audio/ambience/wind-loop.ogg",
-    "city": "audio/ambience/city-loop.ogg"
+    "city": "audio/ambience/city-loop.ogg",
+    "meadows": "audio/ambience/stream-loop.ogg",
+    "beach": "audio/ambience/surf-loop.ogg",
+    "forest": "audio/ambience/forest-wind-loop.ogg"
   },
   "thunder": ["audio/weather/thunder-1.ogg"],
   "radio": {
@@ -31,6 +34,12 @@ Anything listed replaces its synthesized version; anything left out keeps the sy
 }
 ```
 
+- **Sound ids**: `sparrow-chirp`, `pigeon-coo`, `crow-caw`, `woodpecker-drum`,
+  `jay-call`, `chickadee-call`, `finch-song`, `bluebird-song`, `robin-song`,
+  `gull-cry`, `sandpiper-peep`, `owl-hoot`, `eagle-cry`, `wing-flap`,
+  `glass-tap`, `seed-pour`, `window-slide`, `window-thunk`, `car-horn`,
+  `cat-meow`, `cat-purr`, `squirrel-chatter`, `deer-snort`, `cow-moo`,
+  `chicken-cluck`, `splash`.
 - **One-shots** with several variants are picked at random, and every play
   still gets the ±8% pitch / ±15% gain variation.
 - **Beds** should loop seamlessly; levels follow the weather and time of day.

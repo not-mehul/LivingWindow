@@ -1,11 +1,13 @@
+import { createBeach } from './beach';
 import { createCity } from './city';
 import { createForest } from './forest';
+import { createMeadows } from './meadows';
 import type { Landscape, LandscapeDeps, LandscapeId } from './types';
 
 const FACTORIES: Record<LandscapeId, (deps: LandscapeDeps) => Landscape> = {
   city: createCity,
-  meadows: createCity,
-  beach: createCity,
+  meadows: createMeadows,
+  beach: createBeach,
   forest: createForest,
 };
 

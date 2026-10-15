@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { drawBird, SPECIES, type BirdPose, type SpeciesId } from './birdSprites';
 import { CAT_HEIGHT, CAT_WIDTH, drawCat, type CatPose } from './catSprites';
 import { PixelGrid } from './raster';
+import { drawDolphin, drawTurtle } from './beachSprites';
+import { drawDeer, drawSquirrel } from './forestSprites';
+import { drawChicken, drawCow, drawRabbit, drawStreamFish } from './meadowSprites';
 import { drawPerson, drawStall, randomLook } from './streetSprites';
 
 const POSES: BirdPose[] = ['idle', 'idle-breathe', 'look-up', 'look-back', 'peck-reach', 'peck-down', 'chirp', 'hop', 'fly-up', 'fly-mid', 'fly-down', 'glide', 'sleep'];
@@ -67,5 +70,38 @@ describe('other sprites', () => {
     expect(drawPerson(look, 'walk-a', true).isEmpty()).toBe(false);
     expect(drawPerson(look, 'stand', false).isEmpty()).toBe(false);
     for (const stage of [0, 1, 2, 3]) expect(drawStall('fruit', stage).isEmpty()).toBe(false);
+  });
+});
+
+describe('landscape creatures', () => {
+  it('draws deer and squirrels in every pose', () => {
+    for (const kind of ['doe', 'buck', 'fawn'] as const) {
+      for (const pose of ['walk-1', 'walk-3', 'graze-1', 'alert', 'bound-1'] as const) {
+        const g = drawDeer(kind, pose, 30);
+        expect(g.height).toBe(30);
+        expect(g.isEmpty()).toBe(false);
+      }
+    }
+    for (const pose of ['run-1', 'sit', 'nibble', 'climb-1', 'cling'] as const) {
+      expect(drawSquirrel(pose, 13).isEmpty()).toBe(false);
+    }
+  });
+
+  it('gives a buck antlers in the box', () => {
+    const buck = drawDeer('buck', 'walk-1', 36);
+    const doe = drawDeer('doe', 'walk-1', 36);
+    const topRow = (g: PixelGrid) => [...Array(g.height).keys()].find((y) => [...Array(g.width).keys()].some((x) => g.get(x, y)));
+    expect(topRow(buck)!).toBeLessThan(topRow(doe)!);
+  });
+
+  it('draws cows, chickens, rabbits, fish, turtles and dolphins', () => {
+    for (const coat of ['holstein', 'jersey', 'brown'] as const) {
+      for (const pose of ['walk-2', 'graze-1', 'stand', 'lie'] as const) expect(drawCow(coat, pose, 22).isEmpty()).toBe(false);
+    }
+    for (const pose of ['stand', 'peck', 'walk', 'flap'] as const) expect(drawChicken(pose).isEmpty()).toBe(false);
+    for (const pose of ['sit', 'hop-1', 'hop-2', 'peek'] as const) expect(drawRabbit(pose).isEmpty()).toBe(false);
+    expect(drawStreamFish('trout', 0).isEmpty()).toBe(false);
+    expect(drawTurtle(1).isEmpty()).toBe(false);
+    for (let f = 0; f < 4; f++) expect(drawDolphin(f).isEmpty()).toBe(false);
   });
 });

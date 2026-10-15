@@ -108,6 +108,39 @@ for the full vision and roadmap.
   midnight. A crowd murmur follows the number of people.
 - **Windows come alive**: silhouettes stroll past lit windows and TVs flicker.
 
+**Step 5 — The Meadows, the Beach and the Deep Forest** ✅
+
+- **Four landscapes**, switched with the chips at the top of the panel or `1`–`4`
+  (City, Meadows, Beach, Forest) with a short fade; the choice is remembered.
+  Each has its own window: an apartment, a farmhouse, a weathered beach house and
+  a log cabin. Each also has its own birds and soundscape; the clock, weather,
+  lighting, rain-on-glass, sill and birdseed are shared.
+- **13 bird species** from the same generator, now driven by per-landscape
+  "ecologies": pigeons, sparrows and crows downtown; robins, bluebirds, finches
+  and sparrows in the meadows; seagulls at the beach; chickadees, jays,
+  woodpeckers (which drum) and robins in the forest; owls by night in the
+  forest and meadows; an eagle soaring over the hills.
+- **The Deep Forest**: three depths of trunks with bark, moss and perches;
+  crowns, canopy and ferns that sway with the wind (vertex-animated meshes);
+  light shafts through canopy gaps that follow the sun; falling leaves; deer
+  walking between the trunk layers, grazing, looking up and bounding off at a
+  fright; squirrels climbing trunks, plus one that raids the sill bowl. The
+  soundscape has wind in the canopy, rustling leaves, creaking trunks, distant
+  calls and crickets.
+- **The Beach**: a sea that takes its colour from the sky, with swells that
+  roll in, break, wash up the sand and drain away (leaving wet sand that slowly
+  dries); a glitter path under the sun or moon; a boids fish school in the
+  shallows that scatters when a gull dives on it; sandpipers chasing the
+  waves; sea turtles hauling out (mostly at night); dolphins breaching at the
+  horizon; gulls on the groyne posts and the sill. The soundscape has distant
+  swells, each wave's crash and backwash, a breeze and gulls.
+- **The Meadows**: hills, a tree line and an old oak that sway; a herd of cows
+  that graze, wander, moo and lie down at night; hens pecking round the hen
+  house who go in at dusk; rabbits darting between bushes; a clear stream seen
+  side-on with fish holding against the current (tap to make them dart);
+  fireflies on dry nights. The soundscape has a babbling stream, grass in the
+  breeze, songbirds and crickets.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
@@ -130,11 +163,12 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | Input                          | Action                |
 | ------------------------------ | --------------------- |
 | Drag / swipe, scroll, `←` `→`  | Look around (when the view is cropped) |
+| `1` `2` `3` `4`                | City / Meadows / Beach / Forest |
 | Click the sash's bottom rail, `W` | Open / close the window |
 | Click the bowl, `B`            | Add birdseed          |
 | `Space`                        | Pause / resume time   |
 | `[` `]`                        | Scrub time ∓30 minutes |
-| Tap a bird / the cat           | Shoo the bird / pet the cat |
+| Tap a bird / the cat / a deer / the fish | Shoo it, pet it, or make it dart |
 | `R`                            | Radio on / off        |
 | `M`                            | Mute / unmute         |
 | `F`                            | Toggle fullscreen     |
@@ -164,14 +198,16 @@ src/
   sim/                      Pure behaviour logic (unit tested): bird and cat
                             state machines, perspective, crowd and stall schedules
   sprites/                  Procedural pixel-art generators (birds, cat, street)
-  life/                     Living things: BirdSystem, RooftopCat, StreetLife
+  landscapes/               The four landscapes and the registry that builds them
+  life/                     Living things: BirdSystem (any ecology), city, forest,
+                            beach and meadow creatures, sill visitors
   scene/
     WorldScene.ts           Contract every landscape implements
     Environment.ts          Per-frame lighting + weather passed to scenes
     lighting.ts             Time-of-day / weather lighting model (unit tested)
     sky/Sky.ts              Gradient, stars, sun, moon, clouds
-    city/                   City generator (buildings, perches, doors), window
-                            lights and life, street lamps
+    city/ forest/ beach/ meadow/   The four landscapes' scenery
+    common/SwayMesh.ts      Wind-swayed vertex meshes for trees and plants
     weather/                Rain/snow particles, lightning, rain on the glass
   audio/
     AudioEngine.ts          Buses, window filter, limiter, playSpatialSound
@@ -190,9 +226,8 @@ src/
 
 - `WindowState` emits `toggle` (with its duration) and `settled`, ready for the
   audio low-pass filter (Step 3).
-- `WorldScene` plus a scene's own "life" module (see `src/life/CityLife.ts`) is
-  the pattern for Step 5's forest, beach and meadows: the bird system already
-  takes any set of ledges and depth layers.
+- A landscape is a `WorldScene` + `SceneLife` + frame theme + `Soundscape`,
+  registered in `src/landscapes/registry.ts`.
 - In development, `window.livingWindow` exposes the systems, including
   `fastForward(seconds)` to run the simulation without drawing, and
   `life.birds.summonToSill()` / `life.cat.summon()` for demos.

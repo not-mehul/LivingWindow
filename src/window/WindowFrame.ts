@@ -34,10 +34,11 @@ export interface SillSurface {
 /** Flecks of bare wood where paint has worn away. */
 function chip(c: PixelCanvas, theme: FrameTheme, seed: number, density = 0.05): void {
   if (!theme.chipped) return;
+  // Read the pixels once, then paint flecks only onto opaque ones.
+  const { data } = c.ctx.getImageData(0, 0, c.width, c.height);
   for (let y = 0; y < c.height; y++) {
     for (let x = 0; x < c.width; x++) {
-      const pixel = c.ctx.getImageData(x, y, 1, 1).data;
-      if (pixel[3] > 0 && pixelHash(x, y, seed) < density) c.px(x, y, theme.chipped);
+      if (data[(y * c.width + x) * 4 + 3] > 0 && pixelHash(x, y, seed) < density) c.px(x, y, theme.chipped);
     }
   }
 }

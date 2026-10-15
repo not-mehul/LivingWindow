@@ -35,10 +35,10 @@ export class ForestSoundscape extends Soundscape {
     const now = this.engine.context.currentTime;
     const wind = Math.abs(env.weather.wind);
     const rain = env.weather.kind === 'rain' ? env.weather.precipitation : 0;
-    this.windGain.gain.setTargetAtTime(0.06 + 0.4 * wind, now, 0.8);
+    this.windGain.gain.setTargetAtTime(0.12 + 0.45 * wind, now, 0.8);
     this.windBand.frequency.setTargetAtTime(320 + 700 * wind, now, 0.8);
     // Leaves flutter: a level that jitters with the gusts.
-    this.rustle.gain.setTargetAtTime((0.015 + 0.14 * wind) * (0.4 + Math.random() * 0.9), now, 0.05);
+    this.rustle.gain.setTargetAtTime((0.03 + 0.16 * wind) * (0.4 + Math.random() * 0.9), now, 0.05);
 
     this.creakTimer -= dt;
     if (this.creakTimer <= 0) {
