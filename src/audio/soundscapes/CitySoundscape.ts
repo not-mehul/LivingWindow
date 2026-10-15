@@ -10,13 +10,16 @@ const rand = (min: number, max: number) => min + Math.random() * (max - min);
  * on the street below (busier at rush hour, hissing on wet roads), the odd
  * distant horn, and background birdsong by day.
  *
- * Background birds are a placeholder until the bird state machine (Step 4)
- * voices its own visible birds through `playSpatialSound`.
+ * Visible birds voice themselves; the background birdsong here is the
+ * occasional off-screen bird, far away. A crowd murmur rises with the
+ * number of people on the street.
  */
 export class CitySoundscape {
   private readonly bed: GainNode;
   private readonly hum: GainNode;
   private readonly wash: GainNode;
+  private readonly murmur: GainNode;
+  private readonly murmurFilter: BiquadFilterNode;
   private carTimer = rand(1, 4);
   private hornTimer = rand(20, 60);
   private birdTimer = rand(2, 6);
@@ -28,6 +31,15 @@ export class CitySoundscape {
     const ctx = engine.context;
     this.bed = ctx.createGain();
     this.bed.connect(engine.inputs.ambience);
+
+    // Distant voices from the street: a band of noise whose colour wanders.
+    this.murmurFilter = ctx.createBiquadFilter();
+    this.murmurFilter.type = 'bandpass';
+    this.murmurFilter.frequency.value = 650;
+    this.murmurFilter.Q.value = 1.2;
+    this.murmur = ctx.createGain();
+    this.murmur.gain.value = 0;
+    engine.noise.source('pink').connect(this.murmurFilter).connect(this.murmur).connect(this.bed);
 
     this.hum = ctx.createGain();
     this.hum.gain.value = 0;
@@ -52,7 +64,7 @@ export class CitySoundscape {
     }
   }
 
-  update(dt: number, env: Environment): void {
+  update(dt: number, env: Environment, crowd = 0.5): void {
     if (!this.engine.running) return;
     const now = this.engine.context.currentTime;
     const hours = env.lighting.hours;
@@ -64,6 +76,9 @@ export class CitySoundscape {
     this.bed.gain.setTargetAtTime(1 - 0.45 * snow, now, 1);
     this.hum.gain.setTargetAtTime(0.35 + 0.25 * busy, now, 1);
     this.wash.gain.setTargetAtTime(0.03 + 0.12 * busy, now, 1);
+
+    this.murmur.gain.setTargetAtTime((0.02 + 0.16 * crowd) * (1 - rain * 0.6), now, 1.5);
+    this.murmurFilter.frequency.setTargetAtTime(520 + Math.random() * 300, now, 0.4);
 
     this.carTimer -= dt;
     if (this.carTimer <= 0) {
@@ -80,11 +95,11 @@ export class CitySoundscape {
     const birds = birdActivity(hours) * (1 - Math.min(1, rain * 1.5)) * (1 - snow * 0.7);
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {
-      this.birdTimer = rand(1.5, 6) / Math.max(0.05, birds);
+      this.birdTimer = rand(6, 20) / Math.max(0.05, birds);
       if (birds > 0.02) {
         const roll = Math.random();
         const id: SoundId = roll < 0.6 ? 'sparrow-chirp' : roll < 0.9 ? 'pigeon-coo' : 'crow-caw';
-        this.engine.playSpatialSound(id, rand(-1, 1), rand(0.35, 0.9));
+        this.engine.playSpatialSound(id, rand(-1, 1), rand(0.75, 1));
       }
     }
   }

@@ -4,8 +4,9 @@ import { createRng } from '../../core/random';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
-import { generateCity, HORIZON_Y, STREET_Y, type CityLayerName } from './cityGenerator';
+import { generateCity, HORIZON_Y, STREET_Y, type CityLayerName, type CityLayout } from './cityGenerator';
 import { StreetLamps } from './StreetLamps';
+import { WindowLife } from './WindowLife';
 import { WindowLights } from './WindowLights';
 
 /** How bright each layer's lit windows read: distance dims them. */
@@ -23,14 +24,24 @@ export class CityScene implements WorldScene {
   readonly groundY = [STREET_Y + 2, STREET_Y + 30] as const;
   readonly weatherBack = new Container({ label: 'weather-back' });
   readonly weatherFront = new Container({ label: 'weather-front' });
+  /** Slots for living things, in depth order. */
+  readonly birdsFar = new Container({ label: 'birds-far' });
+  readonly birdsMid = new Container({ label: 'birds-mid' });
+  readonly birdsNear = new Container({ label: 'birds-near' });
+  readonly street = new Container({ label: 'street' });
+  readonly streetLights = new Container({ label: 'street-emissive' });
+  readonly city: CityLayout;
+  readonly sidewalkY = STREET_Y + 3;
 
   private readonly layers: Record<CityLayerName, Sprite>;
   private readonly lights: WindowLights[] = [];
   private readonly lamps: StreetLamps;
+  private readonly life: WindowLife[] = [];
 
   constructor() {
     const rng = createRng(9001);
     const city = generateCity();
+    this.city = city;
     const sprites = {} as Record<CityLayerName, Sprite>;
     const lightsByLayer = {} as Record<CityLayerName, WindowLights>;
     for (const layer of city.layers) {
@@ -41,17 +52,27 @@ export class CityScene implements WorldScene {
     }
     this.layers = sprites;
     this.lamps = new StreetLamps(city.lamps, STREET_Y + 3, rng);
+    const midLife = new WindowLife(lightsByLayer.mid, rng);
+    const nearLife = new WindowLife(lightsByLayer.near, rng);
+    this.life.push(midLife, nearLife);
 
     this.container.addChild(
       this.sky.container,
       sprites.far,
       lightsByLayer.far.sprite,
+      this.birdsFar,
       sprites.mid,
       lightsByLayer.mid.sprite,
+      midLife.graphics,
+      this.birdsMid,
       this.weatherBack,
       sprites.near,
       lightsByLayer.near.sprite,
+      nearLife.graphics,
       this.lamps.graphics,
+      this.street,
+      this.streetLights,
+      this.birdsNear,
       this.weatherFront,
     );
   }
@@ -64,5 +85,6 @@ export class CityScene implements WorldScene {
     this.layers.near.tint = lighting.ambient;
     for (const lights of this.lights) lights.update(dt, lighting.windowsLit, lighting.emissive);
     this.lamps.update(dt, lighting.darkness, lighting.emissive);
+    for (const life of this.life) life.update(dt, lighting.emissive, lighting.darkness);
   }
 }

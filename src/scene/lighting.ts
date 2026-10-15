@@ -1,4 +1,12 @@
 import { desaturate, lerpColor, luminance, scaleColor } from '../core/color';
+
+/** Warm lamp light inside the room, which takes over from daylight at night. */
+const ROOM_LAMP = 0xffd9b0;
+
+/** Light on things inside the room: daylight through the window, a warm lamp at night. */
+export function interiorTint(lighting: Pick<Lighting, 'ambient' | 'darkness'>): number {
+  return lerpColor(lerpColor(0xffffff, lighting.ambient, 0.5), ROOM_LAMP, lighting.darkness * 0.55);
+}
 import { clamp } from '../core/math';
 import { wrapHours } from '../state/timeOfDay';
 import type { WeatherSnapshot } from '../state/Weather';

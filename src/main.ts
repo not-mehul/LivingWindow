@@ -2,17 +2,18 @@ import { Application, Container, Sprite, Texture, TextureStyle } from 'pixi.js';
 import './style.css';
 import { AudioSystem } from './audio/AudioSystem';
 import { WORLD_HEIGHT } from './config';
-import { lerpColor } from './core/color';
 import { attachInput } from './core/input';
 import { Viewport } from './core/Viewport';
+import { CityLife } from './life/CityLife';
 import { CityScene } from './scene/city/CityScene';
 import type { Environment } from './scene/Environment';
-import { computeLighting } from './scene/lighting';
+import { computeLighting, interiorTint } from './scene/lighting';
 import { createWeatherAtlas } from './scene/weather/atlas';
 import { GlassWeather } from './scene/weather/GlassWeather';
 import { Lightning } from './scene/weather/Lightning';
 import { PrecipitationLayer } from './scene/weather/Precipitation';
 import type { WorldScene } from './scene/WorldScene';
+import { BOWL_HALF_WIDTH } from './window/BirdseedBowl';
 import { BirdseedState } from './state/BirdseedState';
 import { Clock } from './state/Clock';
 import { Weather } from './state/Weather';
@@ -26,8 +27,6 @@ import { WindowSash } from './window/WindowSash';
 const MAX_DEVICE_PIXEL_RATIO = 3;
 /** Longest frame step the simulation will take (e.g. after a background tab). */
 const MAX_FRAME_SECONDS = 0.1;
-/** Warm lamp light inside the room, which takes over from daylight at night. */
-const ROOM_LAMP = 0xffd9b0;
 
 function currentDevicePixelRatio(): number {
   return Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
@@ -105,17 +104,13 @@ async function boot(): Promise<void> {
 
   // --- World (native 840×360 pixels, rendered off-screen) ----------------
   const viewport = new Viewport(host.clientWidth, host.clientHeight, dpr);
-  const scene: WorldScene = new CityScene();
+  const scene = new CityScene();
   const atlas = createWeatherAtlas();
   const precipitation = createPrecipitation(scene, atlas);
   const lightning = new Lightning(scene.horizonY);
   scene.sky.boltLayer.addChild(lightning.bolt);
   viewport.world.addChild(scene.container, lightning.overlay);
   let audio: AudioSystem | null = null;
-  weather.on('lightning', ({ intensity, distance }) => {
-    const x = lightning.strike(intensity, distance);
-    audio?.weather.thunder(intensity, distance, viewport.worldXToStereo(x));
-  });
 
   // --- Screen-space window -----------------------------------------------
   const frame = new WindowFrame();
@@ -126,13 +121,17 @@ async function boot(): Promise<void> {
   const glass = new GlassWeather(atlas);
   sash.glassLayer.addChild(glass.container);
   const bowl = new BirdseedBowl(birdseed, () => !viewport.didDrag);
-  /** Foreground (z = 0) layer on the sill: the bowl now, perched birds later. */
+  /** Foreground (z = 0) layer on the sill: the cat (behind the bowl), the bowl, then birds. */
   const sillLayer = new Container({ label: 'sill-layer' });
-  sillLayer.addChild(bowl.container);
+  const catSlot = new Container({ label: 'cat-slot' });
+  sillLayer.addChild(catSlot, bowl.container);
+  /** Birds flying close to the window, drawn in screen space outside the glass. */
+  const nearLayer = new Container({ label: 'near-flight' });
+  nearLayer.eventMode = 'none';
   /** Lightning briefly lights up the room too. */
   const roomFlash = new Sprite({ texture: Texture.WHITE, blendMode: 'add', tint: 0xdfe4ff, alpha: 0 });
 
-  app.stage.addChild(viewport.view, sash.container, frame.container, frame.sillContainer, sillLayer, roomFlash);
+  app.stage.addChild(viewport.view, nearLayer, sash.container, frame.container, frame.sillContainer, sillLayer, roomFlash);
   // The stage itself is hit-testable so it can show a grab cursor when the
   // view can be panned; interactive children (sash rail, bowl) override it.
   app.stage.eventMode = 'static';
@@ -142,7 +141,31 @@ async function boot(): Promise<void> {
   for (const decorative of [viewport.view, frame.container, frame.sillContainer, roomFlash]) {
     decorative.eventMode = 'none';
   }
-  const interior = [sash.container, frame.container, frame.sillContainer, sillLayer];
+  const interior = [sash.container, frame.container, frame.sillContainer, bowl.container];
+
+  // --- Life: birds, people, stalls and the rooftop cat ---------------------
+  const life = new CityLife({
+    scene,
+    viewport,
+    nearLayer,
+    sillLayer,
+    catSlot,
+    birdseed,
+    sound: (id, pan, depth) => audio?.engine.playSpatialSound(id, pan, depth, 'wildlife'),
+    canTap: () => !viewport.didDrag,
+  });
+  const bowlSillX = () => (bowl.container.x - frame.sillSurface.left) / frame.sillSurface.frameScale;
+  // Taps that hit no other control may shoo a bird away.
+  app.stage.on('pointertap', (event) => {
+    if (event.target === app.stage) life.birds.tap(event.global.x, event.global.y);
+  });
+  birdseed.on('filled', () => life.birds.startleNear(bowlSillX(), 26));
+  weather.on('lightning', ({ intensity, distance }) => {
+    const x = lightning.strike(intensity, distance);
+    audio?.weather.thunder(intensity, distance, viewport.worldXToStereo(x));
+    // A close crack sends birds flying.
+    life.birds.startleAll(distance < 0.4 ? 0.6 : 0.25);
+  });
 
   const layout = () => {
     const l = viewport.layout;
@@ -219,8 +242,8 @@ async function boot(): Promise<void> {
     weather: weather.snapshot,
   };
 
-  app.ticker.add((ticker) => {
-    const dt = Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS);
+  /** Advance every simulation system by one step (no drawing). */
+  const simulate = (dt: number) => {
     const simHours = clock.update(dt);
     weather.update(dt, simHours);
     windowState.update(dt);
@@ -229,19 +252,28 @@ async function boot(): Promise<void> {
     env.lighting = computeLighting(clock.hours, weather.snapshot);
     scene.update(dt, env);
     for (const layer of precipitation) layer.update(dt, env);
+    life.update(dt, env, {
+      surface: frame.sillSurface,
+      bowlX: bowlSillX(),
+      bowlHalfWidth: BOWL_HALF_WIDTH,
+      windowOpen: windowState.isOpen && !windowState.isAnimating,
+    });
     lightning.update(dt);
     glass.update(dt, env, windowState.openness);
-    audio?.update(dt, env, 1 - windowState.openness);
+    audio?.update(dt, env, 1 - windowState.openness, life.street.crowdLevel);
 
     // The room is lit by daylight through the window, and by a lamp at night.
-    const { lighting } = env;
-    const interiorTint = lerpColor(lerpColor(0xffffff, lighting.ambient, 0.5), ROOM_LAMP, lighting.darkness * 0.55);
-    for (const layer of interior) layer.tint = interiorTint;
+    const roomTint = interiorTint(env.lighting);
+    for (const layer of interior) layer.tint = roomTint;
     roomFlash.alpha = lightning.flash * 0.12;
 
     viewport.update(dt);
     sash.update();
     bowl.update(dt);
+  };
+
+  app.ticker.add((ticker) => {
+    simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS));
     viewport.render(app.renderer);
     overlay.tick();
     app.stage.cursor = viewport.isDragging ? 'grabbing' : viewport.isPannable ? 'grab' : 'default';
@@ -249,7 +281,22 @@ async function boot(): Promise<void> {
 
   if (import.meta.env.DEV) {
     Object.assign(window, {
-      livingWindow: { app, viewport, windowState, birdseed, clock, weather, lightning, glass, audio: () => audio },
+      livingWindow: {
+        app,
+        viewport,
+        windowState,
+        birdseed,
+        clock,
+        weather,
+        lightning,
+        glass,
+        life,
+        audio: () => audio,
+        /** Run the simulation forward without drawing (for tests and demos). */
+        fastForward: (seconds: number, step = 1 / 30) => {
+          for (let t = 0; t < seconds; t += step) simulate(step);
+        },
+      },
     });
   }
 }

@@ -209,6 +209,57 @@ const carHorn: SynthVoice = (ctx, out, when, gain, rate) => {
   return length + 0.1;
 };
 
+const catMeow: SynthVoice = (ctx, out, when, gain, rate) => {
+  const length = rand(0.45, 0.7);
+  // A voiced "mee-ow": a buzzy tone through a vowel-like formant that opens and closes.
+  const formant = ctx.createBiquadFilter();
+  formant.type = 'bandpass';
+  formant.Q.value = 4;
+  formant.frequency.setValueAtTime(900, when);
+  formant.frequency.linearRampToValueAtTime(1600, when + length * 0.35);
+  formant.frequency.linearRampToValueAtTime(700, when + length);
+  formant.connect(out);
+  const [osc, amp] = tone(ctx, 'sawtooth', formant);
+  const f = rand(480, 620) * rate;
+  osc.frequency.setValueAtTime(f * 0.9, when);
+  osc.frequency.linearRampToValueAtTime(f * 1.25, when + length * 0.35);
+  osc.frequency.linearRampToValueAtTime(f * 0.8, when + length);
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.35 * gain, when + 0.05);
+  amp.gain.setValueAtTime(0.35 * gain, when + length * 0.7);
+  amp.gain.linearRampToValueAtTime(0, when + length);
+  osc.start(when);
+  osc.stop(when + length + 0.05);
+  return length;
+};
+
+const catPurr: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  const length = rand(1.6, 2.4);
+  const src = ctx.createBufferSource();
+  src.buffer = noise.get('brown');
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 320 * rate;
+  const amp = ctx.createGain();
+  amp.gain.value = 0;
+  // ~25 Hz rumble from an amplitude-modulated low noise.
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 24 * rate;
+  const depth = ctx.createGain();
+  depth.gain.value = 0.35 * gain;
+  lfo.connect(depth).connect(amp.gain);
+  const env = ctx.createGain();
+  env.gain.setValueAtTime(0, when);
+  env.gain.linearRampToValueAtTime(1, when + 0.3);
+  env.gain.setValueAtTime(1, when + length - 0.4);
+  env.gain.linearRampToValueAtTime(0, when + length);
+  src.connect(lowpass).connect(amp).connect(env).connect(out);
+  src.start(when, Math.random() * 5, length + 0.1);
+  lfo.start(when);
+  lfo.stop(when + length + 0.1);
+  return length;
+};
+
 export const SYNTH_VOICES = {
   'sparrow-chirp': sparrowChirp,
   'pigeon-coo': pigeonCoo,
@@ -219,4 +270,6 @@ export const SYNTH_VOICES = {
   'window-slide': windowSlide,
   'window-thunk': windowThunk,
   'car-horn': carHorn,
+  'cat-meow': catMeow,
+  'cat-purr': catPurr,
 } satisfies Record<string, SynthVoice>;

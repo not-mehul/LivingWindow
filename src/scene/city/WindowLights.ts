@@ -8,7 +8,7 @@ const COOL = ['#bfe0ff', '#d6e8ff'];
 /** Seconds between re-evaluating which windows are lit. */
 const TICK_SECONDS = 0.5;
 
-interface LitWindow extends WindowRecord {
+export interface LitWindow extends WindowRecord {
   /** The window is lit while the city-wide lit fraction exceeds this. */
   threshold: number;
   color: string;
@@ -44,6 +44,15 @@ export class WindowLights {
     this.texture = createNearestTexture(this.canvas.canvas);
     this.sprite = new Sprite(this.texture);
     this.baseAlpha = brightness;
+  }
+
+  /** A random window that currently has its light on, if any. */
+  randomLitWindow(rng: () => number): LitWindow | null {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const w = this.windows[Math.floor(rng() * this.windows.length)];
+      if (w?.lit && w.w >= 3) return w;
+    }
+    return null;
   }
 
   /** @param litFraction share of windows that should be lit, 0..1 */

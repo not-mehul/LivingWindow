@@ -20,16 +20,31 @@ export interface WindowRecord {
   h: number;
 }
 
+/** A horizontal surface a bird can stand on, in world pixels. */
+export interface Ledge {
+  x0: number;
+  x1: number;
+  /** World y of the surface (birds' feet). */
+  y: number;
+  layer: CityLayerName;
+  kind: 'roof' | 'tower' | 'antenna' | 'lamp' | 'sidewalk';
+}
+
 export interface CityLayer {
   name: CityLayerName;
   canvas: PixelCanvas;
   /** Windows that remain visible (not hidden behind a later building). */
   windows: WindowRecord[];
+  ledges: Ledge[];
+  /** Street-level doorways (x centre) people can come and go through. */
+  doors: number[];
 }
 
 export interface CityLayout {
   layers: CityLayer[];
   lamps: Array<{ x: number; y: number }>;
+  /** Lamp heads and the sidewalk, in front of every building layer. */
+  streetLedges: Ledge[];
 }
 
 interface LayerStyle {
@@ -59,6 +74,8 @@ class LayerBuilder {
   /** Which building last painted each pixel, to drop windows that end up hidden. */
   private readonly owner = new Int32Array(WORLD_WIDTH * WORLD_HEIGHT).fill(-1);
   private readonly candidates: Array<WindowRecord & { id: number }> = [];
+  private readonly ledgeCandidates: Array<Omit<Ledge, 'layer'> & { id: number }> = [];
+  private readonly doorCandidates: Array<{ x: number; id: number }> = [];
   private nextId = 0;
 
   constructor(
@@ -89,15 +106,28 @@ class LayerBuilder {
       c.rect(tx + 6, top - 3, 1, 3, dark);
       c.rect(tx - 1, top - 10, 10, 1, lit);
       this.claim(tx - 1, top - 10, 10, 10, id);
+      this.ledgeCandidates.push({ x0: tx, x1: tx + 7, y: top - 10, kind: 'tower', id });
     } else if (roof < 0.5) {
       const ax = x + randomInt(rng, 2, Math.max(2, width - 3));
       const h = randomInt(rng, 8, 18);
       c.vline(ax, top - h, h, dark);
       this.claim(ax, top - h, 1, h, id);
+      this.ledgeCandidates.push({ x0: ax, x1: ax, y: top - h, kind: 'antenna', id });
     } else if (roof < 0.7 && width > 10) {
       c.rect(x + 2, top - 3, width - 4, 3, body);
       c.hline(x + 2, top - 3, width - 4, lit);
       this.claim(x + 2, top - 3, width - 4, 3, id);
+    }
+
+    this.ledgeCandidates.push({ x0: x + 2, x1: x + width - 3, y: top, kind: 'roof', id });
+
+    // A lobby door at street level on wider buildings.
+    if (width >= 16 && bottom >= STREET_Y && rng() < 0.7) {
+      const dx = x + Math.floor(width / 2) - 1 + randomInt(rng, -3, 3);
+      c.rect(dx, bottom - 6, 3, 6, shade(body, 0.45));
+      c.hline(dx - 1, bottom - 7, 5, dark);
+      this.candidates.push({ x: dx, y: bottom - 5, w: 3, h: 5, id });
+      this.doorCandidates.push({ x: dx + 1, id });
     }
 
     // Window grid, with the occasional horizontal floor band.
@@ -105,7 +135,7 @@ class LayerBuilder {
     const cols = Math.max(1, Math.floor((width - 3) / pitch));
     const offsetX = x + Math.floor((width - cols * pitch + (pitch - size)) / 2);
     let floor = 0;
-    for (let wy = top + 4; wy < bottom - 4; wy += pitch + 1) {
+    for (let wy = top + 4; wy < bottom - 9; wy += pitch + 1) {
       if (++floor % 6 === 0) {
         c.hline(x, wy - 1, width, dark);
         continue;
@@ -122,7 +152,29 @@ class LayerBuilder {
     const windows = this.candidates
       .filter((w) => this.owner[(w.y + 1) * WORLD_WIDTH + w.x + 1] === w.id)
       .map(({ x, y, w, h }) => ({ x, y, w, h }));
-    return { name, canvas: this.canvas, windows };
+    const ledges: Ledge[] = [];
+    for (const l of this.ledgeCandidates) {
+      // Keep only the stretches where this building's top is the visible
+      // surface and there's open sky above for a bird to stand in.
+      let start = -1;
+      for (let x = l.x0; x <= l.x1 + 1; x++) {
+        const ok = x <= l.x1 && this.ownerAt(x, l.y) === l.id && this.ownerAt(x, l.y - 4) === -1;
+        if (ok && start < 0) start = x;
+        if (!ok && start >= 0) {
+          if (x - 1 >= start && (x - start >= 3 || l.kind === 'antenna')) {
+            ledges.push({ x0: start, x1: x - 1, y: l.y, layer: name, kind: l.kind });
+          }
+          start = -1;
+        }
+      }
+    }
+    const doors = this.doorCandidates.filter((d) => this.ownerAt(d.x, STREET_Y - 3) === d.id).map((d) => d.x);
+    return { name, canvas: this.canvas, windows, ledges, doors };
+  }
+
+  private ownerAt(x: number, y: number): number {
+    if (x < 0 || y < 0 || x >= WORLD_WIDTH || y >= WORLD_HEIGHT) return -1;
+    return this.owner[y * WORLD_WIDTH + x];
   }
 
   private claim(x: number, y: number, w: number, h: number, id: number): void {
@@ -179,6 +231,10 @@ export function generateCity(seed = 20261015): CityLayout {
     near.building(x, top + randomInt(rng, -6, 6), w, STREET_Y);
   }
   const lamps = drawStreet(near.canvas, rng);
+  const streetLedges: Ledge[] = [
+    ...lamps.map(({ x, y }): Ledge => ({ x0: x - 3, x1: x, y: y - 1, layer: 'near', kind: 'lamp' })),
+    { x0: 0, x1: WORLD_WIDTH - 1, y: STREET_Y + 3, layer: 'near', kind: 'sidewalk' },
+  ];
 
-  return { layers: [far.build('far'), mid.build('mid'), near.build('near')], lamps };
+  return { layers: [far.build('far'), mid.build('mid'), near.build('near')], lamps, streetLedges };
 }

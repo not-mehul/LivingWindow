@@ -19,6 +19,7 @@ export interface OverlayOptions {
 }
 
 const SECTIONS_KEY = 'livingWindow.ui.sections';
+const COMPACT_COLLAPSED = new Set(['window', 'sound', 'radio']);
 
 const ACTIVITY_EVENTS = ['pointermove', 'pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
 
@@ -202,9 +203,12 @@ export class Overlay {
     } catch {
       // Storage unavailable: every section starts open.
     }
+    // On small screens, start with the less-used sections folded away.
+    const compact = window.innerWidth < 600;
     for (const details of this.element.querySelectorAll<HTMLDetailsElement>('details[data-section]')) {
       const name = details.dataset.section ?? '';
       if (name in saved) details.open = saved[name];
+      else if (compact && COMPACT_COLLAPSED.has(name)) details.open = false;
       if (details.dataset.bound) continue;
       details.dataset.bound = 'true';
       details.addEventListener('toggle', () => {

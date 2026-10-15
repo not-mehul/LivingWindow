@@ -81,6 +81,33 @@ for the full vision and roadmap.
 - Browsers start audio only after a gesture: the first tap or key press anywhere
   enables sound (the Sound panel also offers a button).
 
+**Step 4 — Vertical slice: Downtown City Rooftop** ✅
+
+- **Procedural pixel-art sprites**: birds and the cat are built from body-part
+  shapes and rasterized at exactly the pixel size their depth calls for, so
+  instead of three fixed LODs every size is crisp and nothing shimmers. They
+  follow S(z) = S_min + (1 − S_min)(1 − z)²: 48 px on the sill, ~16–20 px mid
+  distance, 6 px silhouettes on the horizon. Pedestrians, stalls and window
+  occupants are small hand-built pixel maps.
+- **Birds** (pigeons, sparrows, crows) run the design's state machine:
+  FLY_IN → PERCH_IDLE ⇄ LOOK_AROUND ⇄ HOP ⇄ PECK_SEED ⇄ CHIRP → TAKE_OFF, with
+  species temperaments and weighted, never-looping transitions. They perch on
+  rooftops, water towers, antennas, street lamps and the sidewalk, grow as they
+  fly in towards the window, land on the sill and peck at the bowl. Seed raises
+  the odds of a sill visit up to 6× and lasts several minutes. Distant flocks
+  cross the sky. Every call goes through `playSpatialSound`.
+- **Scattering**: birds take off from the closing sash, close lightning, the
+  start of rain, seed poured beside them, the stalking cat, or a tap.
+- **The rooftop cat** (a rare visitor, in one of four coats) pads along the
+  sill, sits, blinks, stretches, naps, stalks birds and pounces. Tap it for a
+  meow, or a purr if it's napping. Rain or a closing window sends it off.
+- **The street**: pedestrians follow the city's day: a morning rush, a crowded
+  6 PM, a lively night market and an empty 2–4 AM. When rain starts they open
+  umbrellas or dash into doorways. Day vendors set up their stalls in the
+  morning and pack away at dusk; night-market stalls glow from evening to
+  midnight. A crowd murmur follows the number of people.
+- **Windows come alive**: silhouettes stroll past lit windows and TVs flicker.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
@@ -107,6 +134,7 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | Click the bowl, `B`            | Add birdseed          |
 | `Space`                        | Pause / resume time   |
 | `[` `]`                        | Scrub time ∓30 minutes |
+| Tap a bird / the cat           | Shoo the bird / pet the cat |
 | `R`                            | Radio on / off        |
 | `M`                            | Mute / unmute         |
 | `F`                            | Toggle fullscreen     |
@@ -133,12 +161,17 @@ src/
     WindowFrame.ts          Wall, nine-slice frame and windowsill
     WindowSash.ts           Sliding glass pane (with a glass layer for rain, Step 2)
     BirdseedBowl.ts         Interactive bowl on the sill
+  sim/                      Pure behaviour logic (unit tested): bird and cat
+                            state machines, perspective, crowd and stall schedules
+  sprites/                  Procedural pixel-art generators (birds, cat, street)
+  life/                     Living things: BirdSystem, RooftopCat, StreetLife
   scene/
     WorldScene.ts           Contract every landscape implements
     Environment.ts          Per-frame lighting + weather passed to scenes
     lighting.ts             Time-of-day / weather lighting model (unit tested)
     sky/Sky.ts              Gradient, stars, sun, moon, clouds
-    city/                   Placeholder city: generator, window lights, lamps
+    city/                   City generator (buildings, perches, doors), window
+                            lights and life, street lamps
     weather/                Rain/snow particles, lightning, rain on the glass
   audio/
     AudioEngine.ts          Buses, window filter, limiter, playSpatialSound
@@ -157,9 +190,12 @@ src/
 
 - `WindowState` emits `toggle` (with its duration) and `settled`, ready for the
   audio low-pass filter (Step 3).
-- Birds (Step 4) voice themselves with
-  `audio.engine.playSpatialSound('sparrow-chirp', viewport.worldXToStereo(x), z)`;
-  the city soundscape's background birdsong is a placeholder until then.
+- `WorldScene` plus a scene's own "life" module (see `src/life/CityLife.ts`) is
+  the pattern for Step 5's forest, beach and meadows: the bird system already
+  takes any set of ledges and depth layers.
+- In development, `window.livingWindow` exposes the systems, including
+  `fastForward(seconds)` to run the simulation without drawing, and
+  `life.birds.summonToSill()` / `life.cat.summon()` for demos.
 - New scenes implement `WorldScene` and get the sky, lighting, precipitation,
   lightning and rain-on-glass for free (Steps 4–5).
 - `Viewport.world` is where scene layers go, in native world pixels;

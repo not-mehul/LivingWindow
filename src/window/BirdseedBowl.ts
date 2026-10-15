@@ -31,6 +31,8 @@ const BOWL_PALETTE = {
 };
 
 const BOWL_WIDTH = BOWL_ROWS[0].length;
+/** Half the bowl's width in art pixels, for creatures lining up beside it. */
+export const BOWL_HALF_WIDTH = BOWL_WIDTH / 2;
 /** Extra rows above the bowl for the heaped seed mound. */
 const HEADROOM = 4;
 const TEX_HEIGHT = BOWL_ROWS.length + HEADROOM;

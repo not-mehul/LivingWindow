@@ -69,8 +69,8 @@ export class AudioSystem {
     return new AudioSystem(engine, radio, weather, ambience, settings);
   }
 
-  update(dt: number, env: Environment, glassExposure: number): void {
+  update(dt: number, env: Environment, glassExposure: number, crowd = 0.5): void {
     this.weather.update(dt, env, glassExposure);
-    this.ambience.update(dt, env);
+    this.ambience.update(dt, env, crowd);
   }
 }
