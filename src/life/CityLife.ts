@@ -30,7 +30,7 @@ export class CityLife implements SceneLife {
 
   constructor(options: CityLifeOptions) {
     const { scene } = options;
-    const ledges = [...scene.city.layers.flatMap((l) => l.ledges), ...scene.city.streetLedges];
+    const ledges = scene.city.ledges;
     this.birds = new BirdSystem({
       ledges,
       worldLayers: { far: scene.birdsFar, mid: scene.birdsMid, near: scene.birdsNear },
@@ -41,8 +41,7 @@ export class CityLife implements SceneLife {
       sound: options.sound,
       canTap: options.canTap,
     });
-    const doors = scene.city.layers.filter((l) => l.name !== 'far').flatMap((l) => l.doors);
-    this.street = new StreetLife({ doors, sidewalkY: scene.sidewalkY });
+    this.street = new StreetLife({ doors: scene.city.doors, stallSpots: scene.city.stallSpots, laneHalf: scene.laneHalf, project: scene.project });
     scene.street.addChild(this.street.container);
     scene.streetLights.addChild(this.street.lightsContainer);
     this.cat = new RooftopCat(options.sound, options.canTap);

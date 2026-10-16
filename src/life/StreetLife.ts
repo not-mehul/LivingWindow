@@ -1,7 +1,7 @@
 import { Container, Sprite, type Texture } from 'pixi.js';
 import { drawPixelTexture } from '../core/pixelTexture';
 import { lerpColor } from '../core/color';
-import { WORLD_WIDTH } from '../config';
+import { FOCAL } from '../sim/groundPlane';
 import type { Environment } from '../scene/Environment';
 import { MAX_PEDESTRIANS, pedestrianTarget, RAIN_THRESHOLD } from '../sim/crowd';
 import { stallProgress, type MarketShift } from '../sim/stalls';
@@ -19,14 +19,16 @@ import {
 interface Person {
   id: number;
   look: PersonLook;
-  x: number;
-  /** Feet row; a pixel of variation gives the crowd depth. */
-  y: number;
-  dir: 1 | -1;
+  /** On the street's ground plane. */
+  gx: number;
+  depth: number;
+  /** Ground px per second. */
   speed: number;
-  /** Where they're headed: an edge of the panorama or a doorway. */
-  goal: number;
+  /** Where they're headed: an end of the street, or a doorway. */
+  goal: { gx: number; depth: number };
   goalIsDoor: boolean;
+  /** Which way they face on screen. */
+  dir: 1 | -1;
   umbrella: boolean;
   umbrellaIn: number | null;
   hurrying: boolean;
@@ -40,13 +42,22 @@ interface Person {
 interface Stall {
   kind: StallKind;
   shift: MarketShift;
-  x: number;
+  gx: number;
+  depth: number;
   offset: number;
   sprite: Sprite;
   lights: Sprite | null;
   glow: Sprite | null;
   vendor: Person | null;
 }
+
+/** A person's height (world px) right in front of the view, at depth 1. */
+const PERSON_HEIGHT_AT_1 = 30;
+/** A stall's height at depth 1. */
+const STALL_HEIGHT_AT_1 = 36;
+/** The street's ends: people walk off into the distance, or out of view under the sill. */
+const FAR_END = 9.5;
+const NEAR_END = 0.95;
 
 /** A warm, dithered pool of light thrown by a night-market stall. */
 function createGlowTexture(): Texture {
@@ -73,20 +84,27 @@ function createGlowTexture(): Texture {
 }
 
 export interface StreetLifeOptions {
-  /** Doorways along the street (world x). */
-  doors: number[];
-  /** Sidewalk surface (world y of people's feet). */
-  sidewalkY: number;
+  /** Doorways along the street, at the building lines. */
+  doors: Array<{ gx: number; depth: number }>;
+  /** Where the market stalls set up. */
+  stallSpots: Array<{ gx: number; depth: number }>;
+  /** Half-width of the lane people walk in (ground px). */
+  laneHalf: number;
+  /** Screen position of a point on the street. */
+  project: (gx: number, depth: number) => { x: number; y: number };
   rng?: () => number;
 }
 
 /**
- * The street below: pedestrians who follow the city's daily rhythm (and
- * reach for umbrellas or dash for doorways when it rains), daytime vendors
- * who set up in the morning, and night-market stalls that light up the evening.
+ * The market street far below: pedestrians who follow the city's daily
+ * rhythm, walking up and down the street (shrinking into the distance, or
+ * growing as they come towards the building and pass out of sight below),
+ * ducking into doorways, reaching for umbrellas when it rains; daytime
+ * vendors who set up in the morning; and night-market stalls that light up
+ * the evening.
  */
 export class StreetLife {
-  readonly container = new Container({ label: 'street-life' });
+  readonly container = new Container({ label: 'street-life', sortableChildren: true });
   /** Emissive stall lights (string bulbs, lanterns). */
   readonly lightsContainer = new Container({ label: 'street-lights' });
 
@@ -94,8 +112,6 @@ export class StreetLife {
   private readonly stalls: Stall[] = [];
   private readonly personSprites = new PersonSpriteCache();
   private readonly stallSprites = new StallSpriteCache();
-  private readonly stallLayer = new Container({ label: 'stalls' });
-  private readonly peopleLayer = new Container({ label: 'pedestrians', sortableChildren: true });
   private readonly rng: () => number;
   private nextId = 1;
   private spawnTimer = 0;
@@ -105,13 +121,12 @@ export class StreetLife {
 
   constructor(private readonly options: StreetLifeOptions) {
     this.rng = options.rng ?? Math.random;
-    this.container.addChild(this.stallLayer, this.peopleLayer);
     this.createStalls();
   }
 
   /** Share of the maximum crowd currently on the street, 0..1 (for crowd murmur). */
   get crowdLevel(): number {
-    return this.people.filter((p) => !p.vendor).length / MAX_PEDESTRIANS;
+    return this.pedestrianCount / MAX_PEDESTRIANS;
   }
 
   get pedestrianCount(): number {
@@ -161,24 +176,31 @@ export class StreetLife {
     }
   }
 
+  private laneSpot(): number {
+    return (this.rng() * 2 - 1) * this.options.laneHalf * 0.75;
+  }
+
   private spawn(raining: boolean, anywhere: boolean): void {
-    const { doors, sidewalkY } = this.options;
-    const fromDoor = doors.length > 0 && this.rng() < 0.45;
-    const dir: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
-    let x: number;
-    if (anywhere) x = this.rng() * WORLD_WIDTH;
-    else if (fromDoor) x = doors[Math.floor(this.rng() * doors.length)];
-    else x = dir > 0 ? -6 : WORLD_WIDTH + 6;
-    const look = randomLook(this.rng);
+    const { doors } = this.options;
+    const away = this.rng() < 0.5;
+    let gx = this.laneSpot();
+    let depth: number;
+    const fromDoor = !anywhere && doors.length > 0 && this.rng() < 0.4;
+    if (anywhere) depth = NEAR_END + 0.2 + this.rng() * (FAR_END - NEAR_END - 1);
+    else if (fromDoor) {
+      const door = doors[Math.floor(this.rng() * doors.length)];
+      gx = door.gx * 0.95;
+      depth = door.depth;
+    } else depth = away ? NEAR_END : FAR_END;
     const person: Person = {
       id: this.nextId++,
-      look,
-      x,
-      y: sidewalkY + Math.floor(this.rng() * 3) - 1,
-      dir,
-      speed: 5.5 + this.rng() * 4.5,
-      goal: dir > 0 ? WORLD_WIDTH + 8 : -8,
+      look: randomLook(this.rng),
+      gx,
+      depth,
+      speed: 16 + this.rng() * 12,
+      goal: { gx: this.laneSpot(), depth: away ? FAR_END + 0.5 : NEAR_END - 0.1 },
       goalIsDoor: false,
+      dir: this.rng() < 0.5 ? 1 : -1,
       umbrella: raining && this.rng() < 0.85,
       umbrellaIn: null,
       hurrying: false,
@@ -188,15 +210,15 @@ export class StreetLife {
       sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }),
       vendor: false,
     };
-    // Some are heading into a building down the street.
-    if (doors.length > 0 && this.rng() < 0.35) {
-      const ahead = doors.filter((d) => (d - x) * dir > 20);
+    // Some are heading into a building along the street.
+    if (doors.length > 0 && this.rng() < 0.3) {
+      const ahead = doors.filter((d) => (d.depth - depth) * (away ? 1 : -1) > 0.3);
       if (ahead.length > 0) {
         person.goal = ahead[Math.floor(this.rng() * ahead.length)];
         person.goalIsDoor = true;
       }
     }
-    this.peopleLayer.addChild(person.sprite);
+    this.container.addChild(person.sprite);
     this.people.push(person);
   }
 
@@ -204,9 +226,8 @@ export class StreetLife {
   private onRainStart(): void {
     for (const p of this.people) {
       if (p.vendor || p.umbrella) continue;
-      if (this.rng() < 0.6) {
-        p.umbrellaIn = 0.3 + this.rng() * 2.2;
-      } else {
+      if (this.rng() < 0.6) p.umbrellaIn = 0.3 + this.rng() * 2.2;
+      else {
         p.hurrying = true;
         this.headIndoors(p);
       }
@@ -215,11 +236,15 @@ export class StreetLife {
 
   private headIndoors(p: Person): void {
     const { doors } = this.options;
-    const candidates = [...doors, -8, WORLD_WIDTH + 8];
-    const nearest = candidates.reduce((a, b) => (Math.abs(b - p.x) < Math.abs(a - p.x) ? b : a));
-    p.goal = nearest;
-    p.goalIsDoor = doors.includes(nearest);
-    p.dir = nearest >= p.x ? 1 : -1;
+    const ends = [
+      { gx: p.gx, depth: NEAR_END - 0.1 },
+      { gx: p.gx, depth: FAR_END + 0.5 },
+    ];
+    const cost = (g: { gx: number; depth: number }) => Math.abs(g.depth - p.depth) * FOCAL + Math.abs(g.gx - p.gx);
+    const door = doors.reduce<{ gx: number; depth: number } | null>((best, d) => (!best || cost(d) < cost(best) ? d : best), null);
+    const end = cost(ends[0]) < cost(ends[1]) ? ends[0] : ends[1];
+    p.goalIsDoor = door !== null && cost(door) < cost(end);
+    p.goal = p.goalIsDoor && door ? door : end;
     p.browse = 0;
   }
 
@@ -240,7 +265,7 @@ export class StreetLife {
     }
     // Pause at an open stall now and then, especially at the night market.
     if (!p.browsed && !p.hurrying && !raining) {
-      const stall = this.stalls.find((s) => stallProgress(s.shift, this.hours, s.offset) >= 1 && Math.abs(s.x - p.x) < 2);
+      const stall = this.stalls.find((s) => stallProgress(s.shift, this.hours, s.offset) >= 1 && Math.abs(s.depth - p.depth) * FOCAL < 3 && Math.sign(s.gx) === Math.sign(p.gx || 1));
       if (stall) {
         p.browsed = true;
         if (this.rng() < (stall.shift === 'night' ? 0.55 : 0.3)) p.browse = 2 + this.rng() * 8;
@@ -248,18 +273,36 @@ export class StreetLife {
     }
 
     const speed = p.speed * (p.hurrying ? 2.1 : 1);
-    p.x += p.dir * speed * dt;
-    p.stride += speed * dt * 0.28;
-    const arrived = (p.goal - p.x) * p.dir <= 0;
-    return arrived;
+    const dz = (p.goal.depth - p.depth) * FOCAL;
+    const dx = p.goal.gx - p.gx;
+    const distance = Math.hypot(dx, dz);
+    if (distance < 2) return true;
+    // Walk mostly along the street; drift across it on the way (straight over to a doorway near the end).
+    const step = Math.min(distance, speed * dt);
+    const across = p.goalIsDoor && Math.abs(dz) < 60 ? 1 : Math.min(1, 40 / Math.max(40, Math.abs(dz)));
+    const sx = dx * across;
+    const len = Math.hypot(sx, dz) || 1;
+    const before = p.gx / p.depth;
+    p.gx += (sx / len) * step;
+    p.depth += ((dz / len) * step) / FOCAL;
+    // Face the way they're moving across the screen (walking straight up the street, keep the last way).
+    const screenDx = p.gx / p.depth - before;
+    if (Math.abs(screenDx) > 0.002) p.dir = screenDx > 0 ? 1 : -1;
+    p.stride += step / p.depth * 0.28;
+    return false;
+  }
+
+  private heightAt(depth: number): number {
+    return Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / depth));
   }
 
   private draw(p: Person, tint: number): void {
     const frame = p.browse > 0 ? 'stand' : Math.floor(p.stride) % 2 === 0 ? 'walk-a' : 'walk-b';
-    p.sprite.texture = this.personSprites.get(p.look, p.id, frame, p.umbrella);
+    p.sprite.texture = this.personSprites.get(p.look, p.id, frame, p.umbrella, this.heightAt(p.depth));
     p.sprite.scale.x = p.dir;
-    p.sprite.position.set(Math.round(p.x), p.y);
-    p.sprite.zIndex = p.y;
+    const pt = this.options.project(p.gx, p.depth);
+    p.sprite.position.set(Math.round(pt.x), Math.round(pt.y));
+    p.sprite.zIndex = pt.y;
     p.sprite.tint = tint;
   }
 
@@ -273,37 +316,41 @@ export class StreetLife {
   // --- Stalls ---------------------------------------------------------
 
   private createStalls(): void {
-    const { doors, sidewalkY } = this.options;
     const glowTexture = createGlowTexture();
-    const place = (positions: number[], kinds: readonly StallKind[], shift: MarketShift) => {
-      positions.forEach((x, i) => {
-        // Keep doorways clear.
-        if (doors.some((d) => Math.abs(d - x) < 14)) x += 18;
-        const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
-        sprite.position.set(x, sidewalkY);
-        sprite.visible = false;
-        this.stallLayer.addChild(sprite);
-        const kind = kinds[i % kinds.length];
-        const lightsTexture = this.stallSprites.lights(kind);
-        let lights: Sprite | null = null;
-        let glow: Sprite | null = null;
-        if (lightsTexture) {
-          glow = new Sprite({ texture: glowTexture, anchor: { x: 0.5, y: 1 } });
-          glow.position.set(x, sidewalkY + 2);
-          glow.blendMode = 'add';
-          glow.visible = false;
-          this.lightsContainer.addChild(glow);
-          lights = new Sprite({ texture: lightsTexture, anchor: { x: 0.5, y: 1 } });
-          lights.position.set(x, sidewalkY);
-          lights.blendMode = 'add';
-          lights.visible = false;
-          this.lightsContainer.addChild(lights);
-        }
-        this.stalls.push({ kind, shift, x, offset: (this.rng() - 0.5) * 0.6, sprite, lights, glow, vendor: null });
-      });
-    };
-    place([118, 296, 540, 706], DAY_STALLS, 'day');
-    place([168, 404, 468, 640, 778], NIGHT_STALLS, 'night');
+    const spots = [...this.options.stallSpots];
+    spots.forEach(({ gx, depth }, i) => {
+      // Alternate day and night stalls along the street.
+      const shift: MarketShift = i % 2 === 0 ? 'day' : 'night';
+      const kinds = shift === 'day' ? DAY_STALLS : NIGHT_STALLS;
+      const kind = kinds[Math.floor(i / 2) % kinds.length];
+      const height = Math.max(4, Math.round(STALL_HEIGHT_AT_1 / depth));
+      const at = this.options.project(gx, depth);
+      const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
+      sprite.position.set(Math.round(at.x), Math.round(at.y));
+      sprite.zIndex = at.y;
+      sprite.visible = false;
+      // Facing into the street.
+      if (gx > 0) sprite.scale.x = -1;
+      this.container.addChild(sprite);
+      const lightsTexture = this.stallSprites.lights(kind, height);
+      let lights: Sprite | null = null;
+      let glow: Sprite | null = null;
+      if (lightsTexture) {
+        glow = new Sprite({ texture: glowTexture, anchor: { x: 0.5, y: 1 } });
+        glow.position.set(Math.round(at.x), Math.round(at.y) + 2);
+        glow.scale.set(height / 16);
+        glow.blendMode = 'add';
+        glow.visible = false;
+        this.lightsContainer.addChild(glow);
+        lights = new Sprite({ texture: lightsTexture, anchor: { x: 0.5, y: 1 } });
+        lights.position.set(Math.round(at.x), Math.round(at.y));
+        if (gx > 0) lights.scale.x = -1;
+        lights.blendMode = 'add';
+        lights.visible = false;
+        this.lightsContainer.addChild(lights);
+      }
+      this.stalls.push({ kind, shift, gx, depth, offset: (this.rng() - 0.5) * 0.6, sprite, lights, glow, vendor: null });
+    });
   }
 
   private updateStalls(hours: number, emissive: number, tint: number): void {
@@ -312,30 +359,32 @@ export class StreetLife {
       const progress = stallProgress(stall.shift, hours, stall.offset);
       const visible = progress > 0;
       stall.sprite.visible = visible;
+      const height = Math.max(4, Math.round(STALL_HEIGHT_AT_1 / stall.depth));
       if (visible) {
         const stage = progress >= 1 ? STALL_STAGES - 1 : Math.min(STALL_STAGES - 2, Math.floor(progress * (STALL_STAGES - 1)));
-        stall.sprite.texture = this.stallSprites.get(stall.kind, stage);
+        stall.sprite.texture = this.stallSprites.get(stall.kind, stage, height);
         stall.sprite.tint = tint;
       }
       if (stall.lights && stall.glow) {
         const lit = progress >= 1;
         stall.lights.visible = stall.glow.visible = lit;
         // Bulbs shimmer a little; the glow only shows once it's dark.
-        const shimmer = 0.85 + 0.15 * Math.sin(performance.now() / 300 + stall.x);
+        const shimmer = 0.85 + 0.15 * Math.sin(performance.now() / 300 + stall.depth * 40);
         stall.lights.alpha = Math.min(1, emissive * 1.3) * shimmer;
         stall.glow.alpha = Math.max(0, emissive - 0.3) * 0.5;
       }
-      // A vendor minds the stall while it's up.
+      // A vendor minds the stall while it's up, behind the counter (on the wall side).
       if (progress > 0.3 && !stall.vendor) {
+        const gx = stall.gx + Math.sign(stall.gx) * 12;
         const vendor: Person = {
           id: this.nextId++,
           look: randomLook(this.rng),
-          x: stall.x + 3,
-          y: this.options.sidewalkY - 2,
-          dir: this.rng() < 0.5 ? 1 : -1,
+          gx,
+          depth: stall.depth,
           speed: 0,
-          goal: 0,
+          goal: { gx, depth: stall.depth },
           goalIsDoor: false,
+          dir: stall.gx > 0 ? -1 : 1,
           umbrella: false,
           umbrellaIn: null,
           hurrying: false,
@@ -345,11 +394,12 @@ export class StreetLife {
           sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }),
           vendor: true,
         };
-        vendor.sprite.texture = this.personSprites.get(vendor.look, vendor.id, 'stand', false);
-        vendor.sprite.position.set(vendor.x, vendor.y);
+        vendor.sprite.texture = this.personSprites.get(vendor.look, vendor.id, 'stand', false, this.heightAt(stall.depth));
+        const at = this.options.project(gx, stall.depth);
+        vendor.sprite.position.set(Math.round(at.x), Math.round(at.y) - 1);
         vendor.sprite.scale.x = vendor.dir;
-        // Behind the counter.
-        this.stallLayer.addChildAt(vendor.sprite, 0);
+        vendor.sprite.zIndex = stall.sprite.zIndex - 0.5;
+        this.container.addChild(vendor.sprite);
         stall.vendor = vendor;
         this.people.push(vendor);
       } else if (progress <= 0.3 && stall.vendor) {

@@ -115,6 +115,19 @@ export class PixelGrid {
     }
   }
 
+  /** A copy resized to w × h by nearest neighbour (crisp pixels, the odd row or column doubled or dropped). */
+  resampled(w: number, h: number): PixelGrid {
+    const out = new PixelGrid(Math.max(1, w), Math.max(1, h));
+    for (let y = 0; y < out.height; y++) {
+      const sy = Math.min(this.height - 1, Math.floor(((y + 0.5) * this.height) / out.height));
+      for (let x = 0; x < out.width; x++) {
+        const sx = Math.min(this.width - 1, Math.floor(((x + 0.5) * this.width) / out.width));
+        out.data[y * out.width + x] = this.data[sy * this.width + sx];
+      }
+    }
+    return out;
+  }
+
   isEmpty(): boolean {
     return this.data.every((v) => v === 0);
   }

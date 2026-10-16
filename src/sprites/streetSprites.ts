@@ -116,14 +116,46 @@ export function drawPerson(look: PersonLook, frame: PersonFrame, umbrella: boole
   return g;
 }
 
+/**
+ * A pedestrian at any height: the full figure from about 13 px up (scaled
+ * crisply), and below that a simpler one that keeps a head, a coloured body
+ * and striding legs down to a few pixels.
+ */
+export function drawPersonSized(look: PersonLook, frame: PersonFrame, umbrella: boolean, height: number): PixelGrid {
+  const h = Math.max(3, Math.round(height));
+  if (h >= PERSON_HEIGHT) return drawPerson(look, frame, umbrella).resampled(Math.round((PERSON_WIDTH * h) / PERSON_HEIGHT), h);
+  const w = Math.max(3, Math.round(h * 0.5));
+  const g = new PixelGrid(w, h);
+  const mid = Math.floor((w - 1) / 2);
+  const headRows = h >= 8 ? 2 : 1;
+  const canopy = umbrella && h >= 5 ? 1 : 0;
+  if (canopy) for (let x = 0; x < w; x++) g.set(x, 0, P.Umbrella);
+  const head = canopy;
+  g.set(mid, head, h >= 8 ? P.Hair : P.Skin);
+  if (headRows === 2) g.set(mid, head + 1, P.Skin);
+  const torso = head + headRows;
+  const legs = Math.max(1, Math.round((h - torso) * 0.45));
+  const torsoRows = Math.max(1, h - torso - legs);
+  const bodyW = w >= 4 ? 2 : 1;
+  g.rect(mid, torso, bodyW, torsoRows, P.Top);
+  if (torsoRows > 1) g.set(mid, torso + torsoRows - 1, P.TopShade);
+  for (let i = 0; i < legs; i++) {
+    const y = torso + torsoRows + i;
+    const spread = frame === 'walk-a' && i > 0 ? 1 : 0;
+    g.set(mid - spread, y, i === legs - 1 ? P.Shoes : P.Bottom);
+    if (bodyW > 1 || spread) g.set(mid + bodyW - 1 + spread, y, i === legs - 1 ? P.Shoes : P.Bottom);
+  }
+  return g;
+}
+
 export class PersonSpriteCache {
   private readonly cache = new Map<string, Texture>();
 
-  get(look: PersonLook, id: number, frame: PersonFrame, umbrella: boolean): Texture {
-    const key = `${id}:${frame}:${umbrella}`;
+  get(look: PersonLook, id: number, frame: PersonFrame, umbrella: boolean, height = PERSON_HEIGHT): Texture {
+    const key = `${id}:${frame}:${umbrella}:${height}`;
     let texture = this.cache.get(key);
     if (!texture) {
-      texture = gridToTexture(drawPerson(look, frame, umbrella), personPalette(look));
+      texture = gridToTexture(drawPersonSized(look, frame, umbrella, height), personPalette(look));
       this.cache.set(key, texture);
     }
     return texture;
@@ -245,22 +277,24 @@ export const STALL_LIGHT_PALETTE = [0, 0xffe6a0, 0xff5a3c, 0xffc870];
 export class StallSpriteCache {
   private readonly cache = new Map<string, Texture>();
 
-  get(kind: StallKind, stage: number): Texture {
-    const key = `${kind}:${stage}`;
+  /** A stall at a set-up stage, drawn `height` px tall (it's seen at many distances). */
+  get(kind: StallKind, stage: number, height = STALL_HEIGHT): Texture {
+    const key = `${kind}:${stage}:${height}`;
     let texture = this.cache.get(key);
     if (!texture) {
-      texture = gridToTexture(drawStall(kind, stage), STALL_PALETTES[kind]);
+      const grid = drawStall(kind, stage);
+      texture = gridToTexture(height === STALL_HEIGHT ? grid : grid.resampled(Math.round((STALL_WIDTH * height) / STALL_HEIGHT), height), STALL_PALETTES[kind]);
       this.cache.set(key, texture);
     }
     return texture;
   }
 
-  lights(kind: StallKind): Texture | null {
-    const key = `${kind}:lights`;
+  lights(kind: StallKind, height = STALL_HEIGHT): Texture | null {
+    const key = `${kind}:lights:${height}`;
     if (this.cache.has(key)) return this.cache.get(key) ?? null;
     const grid = drawStallLights(kind);
     if (!grid) return null;
-    const texture = gridToTexture(grid, STALL_LIGHT_PALETTE);
+    const texture = gridToTexture(height === STALL_HEIGHT ? grid : grid.resampled(Math.round((STALL_WIDTH * height) / STALL_HEIGHT), height), STALL_LIGHT_PALETTE);
     this.cache.set(key, texture);
     return texture;
   }

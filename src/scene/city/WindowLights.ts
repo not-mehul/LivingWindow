@@ -3,15 +3,15 @@ import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import type { WindowRecord } from './cityGenerator';
 
-const WARM = ['#ffd27a', '#ffd27a', '#ffc764', '#ffe1a0', '#ffb85c'];
-const COOL = ['#bfe0ff', '#d6e8ff'];
+const WARM = [0xffd27a, 0xffd27a, 0xffc764, 0xffe1a0, 0xffb85c];
+const COOL = [0xbfe0ff, 0xd6e8ff];
 /** Seconds between re-evaluating which windows are lit. */
 const TICK_SECONDS = 0.5;
 
 export interface LitWindow extends WindowRecord {
   /** The window is lit while the city-wide lit fraction exceeds this. */
   threshold: number;
-  color: string;
+  color: number;
   lit: boolean;
 }
 
@@ -24,6 +24,7 @@ export class WindowLights {
   readonly sprite: Sprite;
   private readonly canvas = new PixelCanvas(WORLD_WIDTH, WORLD_HEIGHT);
   private readonly texture: Texture;
+  private readonly image: ImageData;
   private readonly windows: LitWindow[];
   private accumulator = TICK_SECONDS;
   private dirty = true;
@@ -41,6 +42,7 @@ export class WindowLights {
       color: rng() < 0.12 ? COOL[Math.floor(rng() * COOL.length)] : WARM[Math.floor(rng() * WARM.length)],
       lit: false,
     }));
+    this.image = this.canvas.ctx.createImageData(WORLD_WIDTH, WORLD_HEIGHT);
     this.texture = createNearestTexture(this.canvas.canvas);
     this.sprite = new Sprite(this.texture);
     this.baseAlpha = brightness;
@@ -81,11 +83,21 @@ export class WindowLights {
 
   private redraw(): void {
     this.dirty = false;
-    const { ctx } = this.canvas;
-    ctx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    const data = this.image.data;
+    data.fill(0);
+    const paint = (i: number, c: number) => {
+      const k = i * 4;
+      data[k] = c >> 16;
+      data[k + 1] = (c >> 8) & 255;
+      data[k + 2] = c & 255;
+      data[k + 3] = 255;
+    };
     for (const w of this.windows) {
-      if (w.lit) this.canvas.rect(w.x, w.y, w.w, w.h, w.color);
+      if (!w.lit) continue;
+      if (w.mask) for (const i of w.mask) paint(i, w.color);
+      else for (let y = w.y; y < w.y + w.h; y++) for (let x = w.x; x < w.x + w.w; x++) paint(y * WORLD_WIDTH + x, w.color);
     }
+    this.canvas.ctx.putImageData(this.image, 0, 0);
     this.texture.source.update();
   }
 }

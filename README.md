@@ -295,6 +295,34 @@ The meadows are rebuilt after their reference drawing, keeping the farm life.
   at dusk. Rabbits peek out of the hedge and the field bushes. Squirrels climb
   the oaks, and birds perch on their limbs, the coop roof and the fence posts.
 
+**Redesign, part 5 — the city** ✅
+
+The city is rebuilt after its reference drawing: from high on a rooftop you
+look straight down a market street in one-point perspective.
+
+- **Drawn by casting rays** (`sim/cityGeometry.ts`, unit tested). Everything
+  is a box on the ground plane: the buildings along both sides of the street,
+  the rooftops below with their plant, pipes, stair house and water tank, the
+  billboards, the skybridge, the blade signs and awnings, the towers rising off
+  the top of the view, and the skyline beyond with its tiered spire. The
+  generator casts a ray through every pixel into those boxes (nearest first,
+  so it stays quick). Walls, roofs and window grids all converge on one
+  vanishing point, roofs below eye level show their tops, and distance adds
+  haze. An ink pass draws a line wherever two buildings or faces meet, echoing
+  the drawing's line work.
+- **Our rooftop.** A terrace with a pipe railing runs along the left, and our
+  own roof's coping sweeps across the lower right, as in the drawing. Pigeons
+  strut on both and on the sill; other birds perch on the rail, the
+  billboards, the skybridge, the lamps and the roof lines.
+- **The street far below.** People walk up and down it in depth, shrinking
+  into the distance or growing as they come towards the building, ducking
+  into doorways, browsing the stalls and opening umbrellas in the rain. Day
+  and night market stalls set up along both sides, drawn to size for their
+  distance. Lamps along the kerbs throw dithered pools on the paving.
+- **At night** windows light one by one (including the oddly shaped ones on
+  walls seen at an angle), the signs' neon glyphs glow, and the night market's
+  strings of bulbs warm the street.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
