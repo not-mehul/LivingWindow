@@ -5,6 +5,7 @@ import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import { createRng } from '../../core/random';
 import type { GroundPlane } from '../../sim/groundPlane';
 import type { WalkArea } from '../../sim/groundWalker';
+import { DayNightSprite, type NightGrade } from '../common/night';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
@@ -61,6 +62,17 @@ interface Leaf {
   landed: number;
 }
 
+/** Moonlit grades for the forest's layers, after the night drawing. */
+const NIGHT: Record<'far' | 'mountains' | 'valley' | 'wood', NightGrade> = {
+  // Moonlit peaks and slopes: pale blue-violet, the brightest land in the view.
+  far: { desaturate: 0.55, tint: [0.62, 0.66, 0.98], lift: [20, 22, 46] },
+  mountains: { desaturate: 0.5, tint: [0.62, 0.66, 0.95], lift: [16, 18, 40] },
+  valley: { desaturate: 0.4, tint: [0.5, 0.62, 0.78], lift: [10, 14, 30] },
+  // The wood: deep teal greens, bark a dusky violet-brown.
+  wood: { desaturate: 0.35, tint: [0.46, 0.6, 0.66], lift: [6, 10, 20] },
+};
+const NIGHT_FOLIAGE = 0x58808c;
+
 interface Tree {
   sway: SwayMesh;
   haze: number;
@@ -93,11 +105,11 @@ export class ForestScene implements WorldScene {
   readonly birdsNear = new Container({ label: 'birds-near' });
   readonly layout: ForestLayout;
 
-  private readonly far: Sprite;
-  private readonly mountains: Sprite;
-  private readonly valley: Sprite;
-  private readonly ground: Sprite;
-  private readonly near: Sprite;
+  private readonly far: DayNightSprite;
+  private readonly mountains: DayNightSprite;
+  private readonly valley: DayNightSprite;
+  private readonly ground: DayNightSprite;
+  private readonly near: DayNightSprite;
   private readonly trees: Tree[] = [];
   private readonly canopy: SwayMesh[] = [];
   private readonly ferns: SwayMesh[] = [];
@@ -114,11 +126,11 @@ export class ForestScene implements WorldScene {
   constructor() {
     const layout = generateForest();
     this.layout = layout;
-    this.far = new Sprite(layout.far.toTexture());
-    this.mountains = new Sprite(layout.mountains.toTexture());
-    this.valley = new Sprite(layout.valley.toTexture());
-    this.ground = new Sprite(layout.ground.toTexture());
-    this.near = new Sprite(layout.near.toTexture());
+    this.far = new DayNightSprite(layout.far, NIGHT.far);
+    this.mountains = new DayNightSprite(layout.mountains, NIGHT.mountains);
+    this.valley = new DayNightSprite(layout.valley, NIGHT.valley);
+    this.ground = new DayNightSprite(layout.ground, NIGHT.wood);
+    this.near = new DayNightSprite(layout.near, NIGHT.wood);
 
     for (const tree of [...layout.midTrees, ...layout.floorPlants]) {
       const sway = new SwayMesh(tree.art.toTexture(), { anchor: 'bottom', amplitude: 1 + tree.art.height / 90 });
@@ -156,15 +168,15 @@ export class ForestScene implements WorldScene {
 
     this.container.addChild(
       this.sky.container,
-      this.far,
-      this.mountains,
-      this.valley,
+      this.far.container,
+      this.mountains.container,
+      this.valley.container,
       this.birdsFar,
       this.weatherBack,
-      this.ground,
+      this.ground.container,
       this.midground,
       this.birdsMid,
-      this.near,
+      this.near.container,
       this.birdsNear,
       this.rayLayer,
       this.leafLayer,
@@ -180,17 +192,19 @@ export class ForestScene implements WorldScene {
     const wind = weather.wind;
 
     // Atmospheric perspective: the further away, the more it takes the sky's haze.
-    this.far.tint = lerpColor(lighting.haze, lighting.skyHorizon, 0.4);
-    this.mountains.tint = lerpColor(lighting.ambient, lighting.haze, 0.8);
-    this.valley.tint = lerpColor(lighting.ambient, lighting.haze, 0.45);
-    this.ground.tint = lerpColor(lighting.ambient, lighting.haze, 0.08);
+    this.far.update(lerpColor(lighting.haze, lighting.skyHorizon, 0.4), lighting);
+    this.mountains.update(lerpColor(lighting.ambient, lighting.haze, 0.8), lighting);
+    this.valley.update(lerpColor(lighting.ambient, lighting.haze, 0.45), lighting);
+    this.ground.update(lerpColor(lighting.ambient, lighting.haze, 0.08), lighting);
+    // By moonlight the trees go a deep teal, the distant ones paler and bluer.
+    const foliage = lerpColor(lighting.ambient, NIGHT_FOLIAGE, lighting.nightness * 0.65);
     for (const tree of this.trees) {
-      tree.sway.mesh.tint = lerpColor(lighting.ambient, lighting.haze, tree.haze);
+      tree.sway.mesh.tint = lerpColor(foliage, lighting.haze, tree.haze);
       tree.sway.update(time, wind);
     }
-    this.near.tint = lighting.ambient;
+    this.near.update(lighting.ambient, lighting);
     // The canopy and undergrowth sit in shade.
-    const shade = scaleColor(lighting.ambient, 0.85);
+    const shade = scaleColor(foliage, 0.85);
     this.canopyLayer.tint = shade;
     this.fernLayer.tint = shade;
 

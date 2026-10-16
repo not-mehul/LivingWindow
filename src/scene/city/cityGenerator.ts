@@ -63,8 +63,10 @@ export interface CityLayout {
   layers: CityLayer[];
   /** Things hanging over the street (the skybridge, signs, awnings): drawn over the people beyond them. */
   over: PixelBuffer;
-  /** Neon on the signs and billboards (lit after dark). */
+  /** Neon on the signs and billboards (lit after dark), with a soft halo. */
   neon: PixelBuffer;
+  /** The warm glow the night market throws up off the street and onto the shopfronts. */
+  streetGlow: PixelBuffer;
   ledges: Ledge[];
   lamps: StreetLampSpot[];
   /** Doorways on the street, on the ground plane (gx at the building line). */
@@ -310,6 +312,12 @@ export function generateCity(seed = 20261015): CityLayout {
   };
   const neon = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
   const over = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
+  const streetGlow = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
+  const glowAt = (x: number, y: number, level: number) => {
+    if (level <= 0) return;
+    // Dithered, so it stays pixel art; brighter towards amber-white at its heart.
+    if (level > bayer(x, y)) streetGlow.set(x, y, level > 0.6 ? 0xe88a34 : 0xb05418);
+  };
   // Boxes that hang over the street, so people further off pass behind them.
   const overhangs = new Set(buildings.filter((b) => b.material === 'bridge' || b.material === 'awning' || (b.material === 'sign' && Math.abs(b.box.gx) < STREET_HALF + 20) || (b.material === 'pipe' && Math.abs(b.box.gx) < 1)).map((b) => b.id));
   const owner = new Int32Array(WORLD_WIDTH * WORLD_HEIGHT).fill(-1);
@@ -361,14 +369,45 @@ export function generateCity(seed = 20261015): CityLayout {
           w.pixels.push(i);
         }
         if (glow !== null) neon.set(x, y, glow);
+        // Shopfronts and the lower walls catch the market's light.
+        const side = best.face === 'left' || best.face === 'right';
+        if (side && hitBy.box.depth < 12 && Math.abs(hitBy.box.gx) < STREET_HALF + 400 && best.h < 70) {
+          glowAt(x, y, (1 - best.h / 70) * 0.75 * (1 - best.depth / 12));
+        }
       } else if (bRay > 0) {
         // The street (or an alley's floor) far below.
         const depth = CITY_EYE / bRay;
         const color = shadeStreet(aRay * depth, depth, x, y);
         bands[bandOf(depth)].set(x, y, haze(color, depth));
         zbuf[i] = depth;
+        // The lane between the stalls glows at night, fading off into the distance.
+        if (Math.abs(aRay * depth) < STREET_HALF && depth < 11) glowAt(x, y, 0.85 * (1 - depth / 11) ** 0.7 * (1 - Math.abs(aRay * depth) / (STREET_HALF * 1.6)));
       }
     }
+  }
+
+  // --- A soft halo round the neon ---
+  {
+    const halo: Array<[number, number, number]> = [];
+    for (let y = 2; y < WORLD_HEIGHT - 2; y++) {
+      for (let x = 2; x < WORLD_WIDTH - 2; x++) {
+        if (neon.get(x, y) >= 0) continue;
+        let best = -1;
+        let dist = 9;
+        for (let dy = -2; dy <= 2; dy++) {
+          for (let dx = -2; dx <= 2; dx++) {
+            const c = neon.get(x + dx, y + dy);
+            const d = dx * dx + dy * dy;
+            if (c >= 0 && d < dist) {
+              dist = d;
+              best = c;
+            }
+          }
+        }
+        if (best >= 0 && (dist <= 2 || bayer(x, y) < 0.5)) halo.push([x, y, scaleColor(best, dist <= 2 ? 0.45 : 0.25)]);
+      }
+    }
+    for (const [x, y, c] of halo) neon.set(x, y, c);
   }
 
   // --- Ink along every edge, like the drawing's line work: between buildings, faces, sky and street ---
@@ -519,6 +558,7 @@ export function generateCity(seed = 20261015): CityLayout {
     layers: (['far', 'mid', 'near'] as const).map((name) => ({ name, art: bands[name], windows: windows[name] })),
     over,
     neon,
+    streetGlow,
     ledges,
     lamps,
     doors,
@@ -608,7 +648,8 @@ function shadeBuilding(b: Building, hit: Hit, x: number, y: number): { color: nu
         glow = b.neon ?? NEONS[0];
         return { color: 0x3a3c44, window, glow };
       }
-      return { color: lerpColor(0xe2e0d6, 0xc8c6bc, v), window, glow: scaleColor(b.neon ?? NEONS[0], 0.18) };
+      // The panel is backlit after dark, as in the night drawing.
+      return { color: lerpColor(0xe2e0d6, 0xc8c6bc, v), window, glow: scaleColor(b.neon ?? NEONS[0], 0.4) };
     }
     case 'bridge': {
       // Concrete deck with a dark band of windows and a truss.

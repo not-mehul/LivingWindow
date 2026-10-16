@@ -323,6 +323,29 @@ look straight down a market street in one-point perspective.
   walls seen at an angle), the signs' neon glyphs glow, and the night market's
   strings of bulbs warm the street.
 
+**Night pass — moonlight after the night drawings** ✅
+
+- **Moonlit, not murky.** As true night falls (`lighting.nightness`), each
+  landscape's still layers cross-fade to a moonlit version, graded once at load
+  (`scene/common/night.ts`): colour drained towards grey, a cool cast, and a lift
+  so shapes stay readable. The grades are tuned per layer from the references:
+  - the forest's peaks a pale blue-violet over deep teal woods;
+  - the beach's sand a pale lavender grey;
+  - the meadow a deep blue with lavender paths;
+  - the city a deep teal.
+
+  Creatures, plants and trees take a brighter, cooler moonlight tint.
+- **Sky.** Many more stars, and a bigger moon with a wide halo: full over the
+  forest and the beach, a crescent over the meadows and the city. The beach has
+  the Milky Way and the meadows a few constellations; the city's night sky is
+  a teal blue.
+- **Beach.** A deep navy sea with silvery crests, bright white foam and a broad
+  silver path under the moon.
+- **Meadows.** The oaks cast shadows by moonlight too.
+- **City.** Fewer, cream-white windows lit; backlit sign panels with a soft
+  neon halo; and the night market throws a warm amber glow up off the street
+  and onto the shopfronts.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.

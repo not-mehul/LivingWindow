@@ -26,6 +26,13 @@ export interface Lighting {
   cloudTint: number;
   /** 0 = broad daylight, 1 = deep night (after weather). */
   darkness: number;
+  /**
+   * How far into true night it is, 0..1: scenes cross-fade their art to its
+   * moonlit version by this. Zero through the day and twilight.
+   */
+  nightness: number;
+  /** How bright the moonlight is, 0..1 (cloud and storm dim it). */
+  moonlight: number;
   stars: number;
   sun: CelestialBody;
   moon: CelestialBody;
@@ -76,18 +83,21 @@ const KEYFRAMES: readonly Keyframe[] = [
 
 /** Fraction of city windows lit through the day: the evening peak, the 2–4 AM lull. */
 const WINDOWS_LIT: ReadonlyArray<[hour: number, fraction: number]> = [
-  [0, 0.3],
-  [2, 0.08],
+  [0, 0.15],
+  [2, 0.07],
   [4, 0.06],
   [5.5, 0.14],
   [7, 0.12],
   [8.5, 0.04],
   [16, 0.05],
-  [18, 0.3],
-  [20, 0.45],
-  [22.5, 0.42],
-  [24, 0.3],
+  [18, 0.16],
+  [20, 0.22],
+  [22.5, 0.2],
+  [24, 0.15],
 ];
+
+/** The cool blue the night lifts towards under the moon. */
+const MOONLIGHT = 0x6878a8;
 
 const SUNRISE = 6;
 const SUNSET = 19;
@@ -169,10 +179,14 @@ export function computeLighting(
   const skyTop = lerpColor(key.top, deck(key.top), overcast);
   const skyHorizon = lerpColor(key.horizon, deck(key.horizon), overcast);
 
-  const ambient = scaleColor(desaturate(key.ambient, cloud * 0.35), 1 - cloud * 0.22 - storm * 0.22);
+  const dimmed = scaleColor(desaturate(key.ambient, cloud * 0.35), 1 - cloud * 0.22 - storm * 0.22);
+  const darkness = darknessOf(dimmed);
+  // By moonlight the night isn't murky: things lift towards a cool, readable blue.
+  const nightness = smoothstep(clamp((darkness - 0.55) / 0.4, 0, 1));
+  const moonlight = clamp(1 - cloud * 0.55 - storm * 0.3, 0, 1);
+  const ambient = lerpColor(dimmed, MOONLIGHT, nightness * 0.6 * moonlight);
   const haze = lerpColor(ambient, skyHorizon, 0.38);
   const cloudTint = scaleColor(desaturate(key.cloud, cloud * 0.5), 1 - cloud * 0.3 - storm * 0.3);
-  const darkness = darknessOf(ambient);
 
   const sunArc = arc(hours, SUNRISE, SUNSET);
   const moonArc = arc(hours, MOONRISE, MOONSET);
@@ -186,6 +200,8 @@ export function computeLighting(
     haze,
     cloudTint,
     darkness,
+    nightness,
+    moonlight,
     stars: key.stars * (1 - cloud) * (1 - cloud),
     sun: {
       ...sunArc,

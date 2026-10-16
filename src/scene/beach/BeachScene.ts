@@ -11,6 +11,7 @@ import { BEACH_HORIZON, beachPlane, BREAK_S, SHALLOWS_S, shorePoint, shoreXAtY }
 import { WaveModel, type BreakEvent } from '../../sim/waves';
 import { pixelHash } from '../../sprites/raster';
 import { bayer } from '../common/paint';
+import { DayNightSprite, type NightGrade } from '../common/night';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
@@ -18,6 +19,16 @@ import type { WorldScene } from '../WorldScene';
 import { generateBeach, type BeachLayout } from './beachGenerator';
 
 export { BEACH_HORIZON };
+
+/** Moonlit grades for the beach's layers, after the night drawing. */
+const NIGHT: Record<'land' | 'sand' | 'scrub' | 'props', NightGrade> = {
+  land: { desaturate: 0.5, tint: [0.3, 0.36, 0.46], lift: [8, 10, 22] },
+  // Sand glows a pale lavender grey under the moon.
+  sand: { desaturate: 0.85, tint: [0.52, 0.52, 0.6], lift: [12, 12, 24] },
+  scrub: { desaturate: 0.55, tint: [0.36, 0.42, 0.46], lift: [6, 8, 14] },
+  props: { desaturate: 0.7, tint: [0.56, 0.56, 0.64], lift: [8, 8, 16] },
+};
+const NIGHT_PLANTS = 0x4c5c66;
 
 const WATER_TOP = BEACH_HORIZON + 1;
 const WATER_HEIGHT = WORLD_HEIGHT - WATER_TOP;
@@ -43,7 +54,7 @@ export interface BeachEvents {
  */
 export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   readonly container = new Container({ label: 'beach-scene' });
-  readonly sky = new Sky({ horizonY: BEACH_HORIZON, seed: 909 });
+  readonly sky = new Sky({ horizonY: BEACH_HORIZON, seed: 909, milkyWay: true });
   readonly horizonY = BEACH_HORIZON;
   readonly groundY = [BEACH_HORIZON + 10, 340] as const;
   readonly weatherBack = new Container({ label: 'weather-back' });
@@ -61,11 +72,11 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   readonly waves: WaveModel;
   readonly layout: BeachLayout;
 
-  private readonly land: Sprite;
-  private readonly sand: Sprite;
-  private readonly scrub: Sprite;
-  private readonly props: Sprite;
-  private readonly dune: Sprite;
+  private readonly land: DayNightSprite;
+  private readonly sand: DayNightSprite;
+  private readonly scrub: DayNightSprite;
+  private readonly props: DayNightSprite;
+  private readonly dune: DayNightSprite;
   private readonly water: Sprite;
   private readonly waterCanvas = new PixelCanvas(WORLD_WIDTH, WATER_HEIGHT);
   private readonly waterImage: ImageData;
@@ -85,11 +96,11 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     this.layout = generateBeach();
     this.ledges = this.layout.ledges;
     this.waves = new WaveModel(createRng(31));
-    this.land = new Sprite(this.layout.land.toTexture());
-    this.sand = new Sprite(this.layout.sand.toTexture());
-    this.scrub = new Sprite(this.layout.scrub.toTexture());
-    this.props = new Sprite(this.layout.props.toTexture());
-    this.dune = new Sprite(this.layout.dune.toTexture());
+    this.land = new DayNightSprite(this.layout.land, NIGHT.land);
+    this.sand = new DayNightSprite(this.layout.sand, NIGHT.sand);
+    this.scrub = new DayNightSprite(this.layout.scrub, NIGHT.scrub);
+    this.props = new DayNightSprite(this.layout.props, NIGHT.props);
+    this.dune = new DayNightSprite(this.layout.dune, NIGHT.sand);
 
     this.waterImage = this.waterCanvas.ctx.createImageData(WORLD_WIDTH, WATER_HEIGHT);
     this.waterTexture = createNearestTexture(this.waterCanvas.canvas);
@@ -117,20 +128,20 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
 
     this.container.addChild(
       this.sky.container,
-      this.land,
-      this.sand,
-      this.scrub,
+      this.land.container,
+      this.sand.container,
+      this.scrub.container,
       this.water,
       this.fishLayer,
       this.horizonLayer,
       this.birdsFar,
       this.shoreLayer,
-      this.props,
+      this.props.container,
       this.palmLayer,
       this.birdsMid,
       this.splashLayer,
       this.weatherBack,
-      this.dune,
+      this.dune.container,
       this.tuftLayer,
       this.birdsNear,
       this.weatherFront,
@@ -164,19 +175,21 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   update(dt: number, env: Environment): void {
     const { lighting, weather, time } = env;
     this.sky.update(dt, env);
-    this.land.tint = lerpColor(lighting.haze, lighting.ambient, 0.3);
-    this.sand.tint = lighting.ambient;
-    this.scrub.tint = lighting.ambient;
-    this.props.tint = lighting.ambient;
-    this.dune.tint = lighting.ambient;
-    this.tuftLayer.tint = lighting.ambient;
+    this.land.update(lerpColor(lighting.haze, lighting.ambient, 0.3), lighting);
+    this.sand.update(lighting.ambient, lighting);
+    this.scrub.update(lighting.ambient, lighting);
+    this.props.update(lighting.ambient, lighting);
+    this.dune.update(lighting.ambient, lighting);
+    // By moonlight the palms and grasses are dark grey-green against pale sand.
+    const plants = lerpColor(lighting.ambient, NIGHT_PLANTS, lighting.nightness * 0.85);
+    this.tuftLayer.tint = plants;
     for (const palm of this.palms) {
-      palm.sway.mesh.tint = lerpColor(lighting.ambient, lighting.haze, palm.haze);
+      palm.sway.mesh.tint = lerpColor(plants, lighting.haze, palm.haze);
       palm.sway.update(time, weather.wind);
     }
     for (const g of this.tufts) {
       g.update(time * 1.2, weather.wind);
-      if (g.mesh.parent === this.palmLayer) g.mesh.tint = lighting.ambient;
+      if (g.mesh.parent === this.palmLayer) g.mesh.tint = plants;
     }
 
     const energy = Math.min(1, Math.abs(weather.wind) * 0.8 + weather.lightning * 0.6 + (weather.kind === 'rain' ? 0.15 : 0));
@@ -201,21 +214,26 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   private drawWater(env: Environment): void {
     const { lighting } = env;
     const amb = lighting.ambient;
-    const seaFar = lerpColor(lighting.skyHorizon, multiplyColor(0x2a6496, amb), 0.55);
-    const seaNear = lerpColor(lighting.skyHorizon, multiplyColor(0x2a8cae, amb), 0.12);
-    const shallow = multiplyColor(0x4ec6c2, amb);
-    const crest = lerpColor(seaNear, multiplyColor(0xe2f2f4, amb), 0.6);
-    const ripple = lerpColor(seaNear, multiplyColor(0xbfe2ea, amb), 0.45);
-    const foam = lerpColor(multiplyColor(0xf6f8f6, amb), 0xffffff, 0.15 + 0.2 * (1 - lighting.darkness));
-    const sheet = lerpColor(multiplyColor(0xd8c08a, amb), multiplyColor(0x9ad4d4, amb), 0.6);
-    const wet = multiplyColor(0x9a7c50, amb);
+    // By moonlight: a deep navy sea with silvery crests and bright white foam, as in the night drawing.
+    const n = lighting.nightness;
+    const moon = n * lighting.moonlight;
+    const seaFar = lerpColor(lerpColor(lighting.skyHorizon, multiplyColor(0x2a6496, amb), 0.55), 0x1a2450, n);
+    const seaNear = lerpColor(lerpColor(lighting.skyHorizon, multiplyColor(0x2a8cae, amb), 0.12), 0x24366a, n);
+    const shallow = lerpColor(multiplyColor(0x4ec6c2, amb), 0x3a5888, n);
+    const crest = lerpColor(lerpColor(seaNear, multiplyColor(0xe2f2f4, amb), 0.6), 0x8a9ccc, moon);
+    const ripple = lerpColor(lerpColor(seaNear, multiplyColor(0xbfe2ea, amb), 0.45), 0x5a6ca4, n);
+    const foam = lerpColor(lerpColor(multiplyColor(0xf6f8f6, amb), 0xffffff, 0.15 + 0.2 * (1 - lighting.darkness)), 0xe4ecf8, moon);
+    const sheet = lerpColor(lerpColor(multiplyColor(0xd8c08a, amb), multiplyColor(0x9ad4d4, amb), 0.6), 0x7686b0, n);
+    const wet = lerpColor(multiplyColor(0x9a7c50, amb), 0x50506a, n);
     const surf = [0, 1, 2, 3].map((k) => lerpColor(shallow, foam, 0.95 - k * 0.16));
 
     // Glitter path under the sun (or the moon, faintly).
     const body = lighting.sun.visible && lighting.sun.elevation > 0.02 ? lighting.sun : lighting.moon.visible ? lighting.moon : null;
     const glintX = body ? lerp(70, WORLD_WIDTH - 70, body.progress) : -999;
-    const glintStrength = body === lighting.sun ? body.glow * 1.2 + 0.2 : body ? body.glow * 0.6 : 0;
-    const glint = body ? lerpColor(body.color, 0xffffff, 0.3) : 0xffffff;
+    // The moon lays a broad silver path across the water.
+    const glintStrength = body === lighting.sun ? body.glow * 1.2 + 0.2 : body ? body.glow * 1.6 : 0;
+    const glint = body ? lerpColor(body.color, 0xffffff, body === lighting.sun ? 0.3 : 0.6) : 0xffffff;
+    const glintWidth = body === lighting.moon ? 1.6 : 1;
 
     // The sea's colour steps from the horizon towards us, each with its shallows ramp.
     const SHADES = 6;
@@ -258,7 +276,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
       const lineHalf = [1.4, 0.9, 0.9, 0.9].map((h) => h * depth + 1.2);
       const fronts = breakers.map((b) => lerp(BREAK_S, -2, b.progress));
       const thicks = breakers.map((b) => 14 * (1 - b.progress) + 6);
-      const glintHalf = 4 + (y - WATER_TOP) * 0.5;
+      const glintHalf = (4 + (y - WATER_TOP) * 0.5) * glintWidth;
       for (let x = x0; x < WORLD_WIDTH; x++) {
         const s = (x - shoreX) * depth;
         const dither = bayer(x, y);

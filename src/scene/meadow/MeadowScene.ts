@@ -10,6 +10,7 @@ import type { WalkArea } from '../../sim/groundWalker';
 import { MEADOW_HORIZON, meadowCreek, meadowPlane, shadowCast } from '../../sim/meadowGeometry';
 import { pixelHash } from '../../sprites/raster';
 import { bayer } from '../common/paint';
+import { DayNightSprite, type NightGrade } from '../common/night';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import type { Trunk } from '../forest/forestGenerator';
@@ -18,6 +19,16 @@ import type { WorldScene } from '../WorldScene';
 import { generateMeadow, type MeadowLayout, type MeadowOak } from './meadowGenerator';
 
 export { MEADOW_HORIZON };
+
+/** Moonlit grades for the meadow's layers, after the night drawing. */
+const NIGHT: Record<'hills' | 'trees' | 'pasture', NightGrade> = {
+  hills: { desaturate: 0.6, tint: [0.42, 0.46, 0.7], lift: [10, 12, 30] },
+  trees: { desaturate: 0.5, tint: [0.32, 0.4, 0.58], lift: [6, 8, 20] },
+  // The grass goes a deep moonlit blue, the path and bare earth a dusky lavender.
+  pasture: { desaturate: 0.72, tint: [0.3, 0.34, 0.56], lift: [8, 10, 24] },
+};
+const NIGHT_TREES = 0x3e5078;
+const NIGHT_FLOWERS = 0x8088bc;
 
 /** Rebuild the creek's surface at this rate. */
 const CREEK_FPS = 15;
@@ -41,7 +52,7 @@ interface Swaying {
  */
 export class MeadowScene implements WorldScene {
   readonly container = new Container({ label: 'meadow-scene' });
-  readonly sky = new Sky({ horizonY: MEADOW_HORIZON, seed: 4321 });
+  readonly sky = new Sky({ horizonY: MEADOW_HORIZON, seed: 4321, moonPhase: 'crescent', constellations: true });
   readonly horizonY = MEADOW_HORIZON;
   readonly groundY = [MEADOW_HORIZON + 8, 340] as const;
   readonly weatherBack = new Container({ label: 'weather-back' });
@@ -61,9 +72,9 @@ export class MeadowScene implements WorldScene {
   readonly trunks: Trunk[];
   readonly bushes: MeadowLayout['bushes'];
 
-  private readonly hills: Sprite;
-  private readonly treeLine: Sprite;
-  private readonly ground: Sprite;
+  private readonly hills: DayNightSprite;
+  private readonly treeLine: DayNightSprite;
+  private readonly ground: DayNightSprite;
   private readonly swaying: Swaying[] = [];
   private readonly still: Array<{ sprite: Sprite; haze: number }> = [];
   private readonly flowerLayer = new Container({ label: 'flowers' });
@@ -87,9 +98,9 @@ export class MeadowScene implements WorldScene {
     this.ledges = layout.ledges;
     this.trunks = layout.trunks;
     this.bushes = layout.bushes;
-    this.hills = new Sprite(layout.hills.toTexture());
-    this.treeLine = new Sprite(layout.treeLine.toTexture());
-    this.ground = new Sprite(layout.ground.toTexture());
+    this.hills = new DayNightSprite(layout.hills, NIGHT.hills);
+    this.treeLine = new DayNightSprite(layout.treeLine, NIGHT.trees);
+    this.ground = new DayNightSprite(layout.ground, NIGHT.pasture);
 
     for (const oak of layout.oaks) {
       const sway = new SwayMesh(oak.art.toTexture(), { anchor: 'bottom', amplitude: oak.sway, frequency: 0.7 });
@@ -150,10 +161,10 @@ export class MeadowScene implements WorldScene {
 
     this.container.addChild(
       this.sky.container,
-      this.hills,
+      this.hills.container,
       this.birdsFar,
-      this.ground,
-      this.treeLine,
+      this.ground.container,
+      this.treeLine.container,
       this.creekSprite,
       this.creekLife,
       this.shadowLayer,
@@ -170,16 +181,18 @@ export class MeadowScene implements WorldScene {
   update(dt: number, env: Environment): void {
     const { lighting, weather, time } = env;
     this.sky.update(dt, env);
-    this.hills.tint = lerpColor(lighting.haze, lighting.ambient, 0.35);
-    this.treeLine.tint = lerpColor(lighting.ambient, lighting.haze, 0.2);
-    this.ground.tint = lighting.ambient;
+    this.hills.update(lerpColor(lighting.haze, lighting.ambient, 0.35), lighting);
+    this.treeLine.update(lerpColor(lighting.ambient, lighting.haze, 0.2), lighting);
+    this.ground.update(lighting.ambient, lighting);
+    // By moonlight the oaks and hedges go a deep blue-green; the flowers keep a hint of their colour.
+    const plants = lerpColor(lighting.ambient, NIGHT_TREES, lighting.nightness * 0.9);
     for (const s of this.swaying) {
       s.sway.update(time * s.speed, weather.wind);
-      s.sway.mesh.tint = lerpColor(lighting.ambient, lighting.haze, s.haze);
+      s.sway.mesh.tint = lerpColor(plants, lighting.haze, s.haze);
     }
     for (const s of this.still) s.sprite.tint = lerpColor(lighting.ambient, lighting.haze, s.haze);
     for (const f of this.flowerSways) f.update(time * 1.3, weather.wind);
-    this.flowerLayer.tint = lighting.ambient;
+    this.flowerLayer.tint = lerpColor(lighting.ambient, NIGHT_FLOWERS, lighting.nightness * 0.8);
     this.creekLife.tint = lighting.ambient;
     this.updateShadows(env);
 
@@ -190,13 +203,16 @@ export class MeadowScene implements WorldScene {
     }
   }
 
-  /** The oaks' shadows: thrown away from the sun, longer when it is low, gone under cloud or at night. */
+  /** The oaks' shadows: thrown away from the sun (or, fainter, the moon), longer when it is low, gone under cloud. */
   private updateShadows(env: Environment): void {
-    const { sun } = env.lighting;
-    const strength = sun.visible ? Math.min(1, sun.elevation * 4) * (1 - env.weather.cloudCover) ** 1.5 : 0;
-    const step = Math.round((Math.max(0, Math.min(1, sun.progress)) - 0.5) * (SHADOW_STEPS - 1));
+    const { sun, moon, nightness, moonlight } = env.lighting;
+    const clear = (1 - env.weather.cloudCover) ** 1.5;
+    const byMoon = !sun.visible && moon.visible;
+    const body = byMoon ? moon : sun;
+    const strength = body.visible ? Math.min(1, body.elevation * 4) * clear * (byMoon ? 0.9 * nightness * moonlight : 1) : 0;
+    const step = Math.round((Math.max(0, Math.min(1, body.progress)) - 0.5) * (SHADOW_STEPS - 1));
     const progress = 0.5 + step / (SHADOW_STEPS - 1);
-    const cast = shadowCast(progress, Math.max(0.2, sun.elevation));
+    const cast = shadowCast(progress, Math.max(0.2, body.elevation));
     for (const s of this.shadows) {
       s.sprite.alpha = strength * 0.42;
       if (strength <= 0) continue;

@@ -3,8 +3,9 @@ import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import type { WindowRecord } from './cityGenerator';
 
-const WARM = [0xffd27a, 0xffd27a, 0xffc764, 0xffe1a0, 0xffb85c];
-const COOL = [0xbfe0ff, 0xd6e8ff];
+// Mostly a soft cream-white, as in the night drawing, with the odd warmer lamp.
+const WARM = [0xfff0c8, 0xfff0c8, 0xffe8b8, 0xffdc9a, 0xfff6dc];
+const COOL = [0xd6e8ff, 0xe8f0ff];
 /** Seconds between re-evaluating which windows are lit. */
 const TICK_SECONDS = 0.5;
 

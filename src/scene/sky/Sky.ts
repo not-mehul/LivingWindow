@@ -1,6 +1,6 @@
 import { Container, Sprite, TilingSprite, type Texture } from 'pixi.js';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
-import { channels } from '../../core/color';
+import { channels, lerpColor } from '../../core/color';
 import { lerp } from '../../core/math';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import { createRng, randomInt, randomRange } from '../../core/random';
@@ -22,6 +22,14 @@ export interface SkyOptions {
   /** World y of the horizon (where the horizon colour is reached). */
   horizonY: number;
   seed?: number;
+  /** The moon's phase in this landscape's sky. */
+  moonPhase?: 'full' | 'crescent';
+  /** Faint lines joining the stars of a few constellations. */
+  constellations?: boolean;
+  /** A dusting of the Milky Way across the sky. */
+  milkyWay?: boolean;
+  /** This landscape's own night-sky colours (zenith, horizon), blended in as night falls. */
+  nightColors?: readonly [top: number, horizon: number];
 }
 
 /**
@@ -70,20 +78,57 @@ class SkyGradient {
   }
 }
 
-function createStarTextures(horizonY: number, rng: () => number): { fixed: Texture; twinkle: Texture[] } {
+function createStarTextures(horizonY: number, rng: () => number, options: SkyOptions): { fixed: Texture; twinkle: Texture[] } {
   const colors = ['#ffffff', '#dfe8ff', '#fff2d6', '#cfd8ff'];
   const fixed = new PixelCanvas(WORLD_WIDTH, horizonY);
   const twinkle = Array.from({ length: TWINKLE_GROUPS }, () => new PixelCanvas(WORLD_WIDTH, horizonY));
-  for (let i = 0; i < 220; i++) {
+  if (options.milkyWay) {
+    // A band of faint stars and glow sweeping diagonally across the sky.
+    for (let i = 0; i < 1400; i++) {
+      const t = rng();
+      const across = (rng() + rng() + rng() - 1.5) * 26;
+      const x = Math.round(t * WORLD_WIDTH);
+      const y = Math.round(horizonY * 0.75 - t * horizonY * 0.65 + across);
+      if (y < 0 || y >= horizonY - 20) continue;
+      fixed.px(x, y, rng() < 0.3 ? '#8a94c8' : rng() < 0.6 ? '#5c6698' : '#c8d0f0');
+    }
+  }
+  if (options.constellations) {
+    // A few patterns of brighter stars, joined by faint lines.
+    const shapes = [
+      [[0, 0], [14, -3], [26, 2], [36, 0], [40, 12], [56, 14], [58, 2]],
+      [[0, 10], [10, 0], [22, 4], [30, -6], [42, 2]],
+      [[0, 0], [8, 10], [20, 12], [26, 2], [12, -4]],
+    ];
+    shapes.forEach((shape, k) => {
+      const ox = 120 + k * 230 + randomInt(rng, -30, 30);
+      const oy = 22 + randomInt(rng, 0, Math.max(1, Math.floor(horizonY * 0.3)));
+      for (let i = 1; i < shape.length; i++) {
+        const [x0, y0] = shape[i - 1];
+        const [x1, y1] = shape[i];
+        const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0));
+        for (let s = 1; s < steps; s++) {
+          if (s % 2) continue;
+          fixed.px(Math.round(ox + x0 + ((x1 - x0) * s) / steps), Math.round(oy + y0 + ((y1 - y0) * s) / steps), '#3c4a7a');
+        }
+      }
+      for (const [x, y] of shape) {
+        fixed.px(ox + x, oy + y, '#ffffff');
+        fixed.px(ox + x + 1, oy + y, '#a8b4e8');
+      }
+    });
+  }
+  for (let i = 0; i < 480; i++) {
     const x = randomInt(rng, 0, WORLD_WIDTH - 1);
     // Fewer stars near the horizon where the sky is brighter and hazier.
     const y = Math.floor(rng() ** 1.6 * (horizonY - 30));
     const color = colors[randomInt(rng, 0, colors.length - 1)];
     const target = rng() < 0.25 ? twinkle[i % TWINKLE_GROUPS] : fixed;
-    target.px(x, y, color);
+    // Most are faint; some read a little brighter.
+    target.px(x, y, rng() < 0.55 ? color : '#8a92b8');
   }
   // A handful of bright stars with a pixel cross.
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 16; i++) {
     const x = randomInt(rng, 4, WORLD_WIDTH - 5);
     const y = randomInt(rng, 4, Math.floor(horizonY * 0.55));
     const c = twinkle[i % TWINKLE_GROUPS];
@@ -100,19 +145,21 @@ function createStarTextures(horizonY: number, rng: () => number): { fixed: Textu
   return { fixed: fixed.toTexture(), twinkle: twinkle.map((c) => c.toTexture()) };
 }
 
-function createDiscTexture(radius: number, craters: boolean): Texture {
+function createDiscTexture(radius: number, craters: boolean, crescent = false): Texture {
   const size = radius * 2 + 1;
   const c = new PixelCanvas(size, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const d = Math.hypot(x - radius, y - radius);
       if (d > radius + 0.2) continue;
+      // A crescent: the disc with an offset disc taken out of it.
+      if (crescent && Math.hypot(x - radius - radius * 0.55, y - radius + radius * 0.25) < radius * 0.95) continue;
       // Authored in greys so the lighting tint supplies the hue.
       const rim = d > radius - 1.2;
       c.px(x, y, rim ? '#e6e6e6' : '#ffffff');
     }
   }
-  if (craters) {
+  if (craters && !crescent) {
     for (const [x, y, r] of [
       [radius - 3, radius - 2, 1.6],
       [radius + 3, radius + 1, 1.2],
@@ -192,6 +239,8 @@ export class Sky {
   private readonly moonGlow: Sprite;
   private readonly clouds: Cloud[] = [];
   private readonly horizonY: number;
+  private readonly moonHaloStrength: number;
+  private readonly nightColors?: readonly [number, number];
   private cloudsSettled = false;
 
   constructor(options: SkyOptions) {
@@ -199,15 +248,19 @@ export class Sky {
     const rng = createRng(options.seed ?? 4242);
     this.gradient = new SkyGradient(options.horizonY);
 
-    const starTextures = createStarTextures(options.horizonY, rng);
+    const starTextures = createStarTextures(options.horizonY, rng, options);
     this.stars = new Sprite(starTextures.fixed);
     this.twinkles = starTextures.twinkle.map((t) => new Sprite(t));
 
     const glow = createGlowTexture(56);
     this.sunGlow = new Sprite({ texture: glow, anchor: 0.5, blendMode: 'add' });
-    this.moonGlow = new Sprite({ texture: glow, anchor: 0.5, blendMode: 'add', scale: 0.6 });
+    this.nightColors = options.nightColors;
+    const crescent = options.moonPhase === 'crescent';
+    // The moon's halo: wide and bright at full moon, as in the night drawings.
+    this.moonGlow = new Sprite({ texture: glow, anchor: 0.5, blendMode: 'add', scale: crescent ? 0.6 : 1 });
     this.sun = new Sprite({ texture: createDiscTexture(9, false), anchor: 0.5 });
-    this.moon = new Sprite({ texture: createDiscTexture(7, true), anchor: 0.5 });
+    this.moon = new Sprite({ texture: createDiscTexture(crescent ? 8 : 10, true, crescent), anchor: 0.5 });
+    this.moonHaloStrength = crescent ? 0.35 : 0.6;
 
     const cloudLayer = new Container({ label: 'clouds' });
     for (let i = 0; i < CLOUD_COUNT; i++) {
@@ -237,7 +290,11 @@ export class Sky {
 
   update(dt: number, env: Environment): void {
     const { lighting, weather, time } = env;
-    this.gradient.update(lighting.skyTop, lighting.skyHorizon);
+    const night = this.nightColors ? lighting.nightness : 0;
+    this.gradient.update(
+      night > 0 && this.nightColors ? lerpColor(lighting.skyTop, this.nightColors[0], night) : lighting.skyTop,
+      night > 0 && this.nightColors ? lerpColor(lighting.skyHorizon, this.nightColors[1], night) : lighting.skyHorizon,
+    );
 
     this.stars.alpha = lighting.stars;
     this.twinkles.forEach((sprite, i) => {
@@ -249,7 +306,7 @@ export class Sky {
     this.sunGlow.alpha = lighting.sun.glow;
     this.placeBody(this.moon, this.moonGlow, lighting.moon, 170);
     this.moon.alpha = lighting.moon.visible ? lighting.moon.glow : 0;
-    this.moonGlow.alpha = lighting.moon.glow * 0.35;
+    this.moonGlow.alpha = lighting.moon.glow * this.moonHaloStrength;
 
     this.updateClouds(dt, env);
   }

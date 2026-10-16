@@ -13,6 +13,10 @@ describe('computeLighting', () => {
     expect(noon.ambient).toBe(0xffffff);
     expect(noon.darkness).toBe(0);
     expect(midnight.darkness).toBeGreaterThan(0.9);
+    expect(midnight.nightness).toBeGreaterThan(0.9);
+    expect(noon.nightness).toBe(0);
+    // Moonlit, not murky: the night lifts towards a readable blue.
+    expect(luminance(midnight.ambient)).toBeGreaterThan(0.3);
     expect(luminance(midnight.skyTop)).toBeLessThan(0.1);
     expect(noon.stars).toBe(0);
     expect(midnight.stars).toBe(1);
@@ -62,7 +66,7 @@ describe('computeLighting', () => {
 
 describe('city window schedule', () => {
   it('peaks in the evening and empties out between 2 and 4 AM', () => {
-    expect(windowsLitAt(20.5)).toBeGreaterThan(0.4);
+    expect(windowsLitAt(20.5)).toBeGreaterThan(0.18);
     expect(windowsLitAt(3)).toBeLessThan(0.1);
     expect(windowsLitAt(13)).toBeLessThan(0.1);
     expect(windowsLitAt(18)).toBeGreaterThan(windowsLitAt(13));
