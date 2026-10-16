@@ -6,57 +6,82 @@ import { SwayMesh } from '../scene/common/SwayMesh';
 import type { BirdseedState } from '../state/BirdseedState';
 import { pixelHash } from '../sprites/raster';
 import { LINEN, PLANT, SEED } from './palette';
-import { curtainWidth, SILL_LEFT_RESERVE, type SillSurface } from './WindowFrame';
+import { curtainWidth, plantSize, type PlantSize } from './sillProps';
+import type { SillSurface } from './WindowFrame';
 import { PixelBuffer } from './woodArt';
 
-const POT_WIDTH = 20;
-const POT_HEIGHT = 16;
-const LEAVES_WIDTH = 46;
-const LEAVES_HEIGHT = 50;
 /** Seeds that are always lying about; pours add more, birds tidy them up. */
 const BASE_SPECKS = 10;
 const MAX_SPECKS = 42;
+/** Sill rows below the standing line where the pot rests: at the front lip, like the dish. */
+const FOOT_ROWS = 5;
 
-/** Terracotta pot, slightly tapered, with a rolled rim and dark soil. */
-function drawPot(): Texture {
-  const p = new PixelBuffer(POT_WIDTH, POT_HEIGHT);
-  // Rim.
-  p.rect(0, 0, POT_WIDTH, 4, PLANT.pot);
-  p.hline(1, 0, POT_WIDTH - 2, PLANT.potRim);
-  p.hline(2, 1, POT_WIDTH - 4, PLANT.soil);
-  p.hline(1, 3, POT_WIDTH - 2, PLANT.potShadow);
-  // Body, tapering towards the foot, lit from the window on the left.
-  for (let y = 4; y < POT_HEIGHT; y++) {
-    const inset = 1 + Math.floor((y - 4) / 4);
-    for (let x = inset; x < POT_WIDTH - inset; x++) {
-      const u = (x - inset) / (POT_WIDTH - inset * 2 - 1);
-      const color = u < 0.22 ? PLANT.potLight : u > 0.78 ? PLANT.potShadow : PLANT.pot;
-      p.set(x, y, color);
+/** Ink outline: colour every empty pixel that touches the drawing. */
+function inkOutline(p: PixelBuffer, color: string): void {
+  const outline: Array<[number, number]> = [];
+  for (let y = 0; y < p.height; y++) {
+    for (let x = 0; x < p.width; x++) {
+      if (p.isSet(x, y)) continue;
+      if (p.isSet(x - 1, y) || p.isSet(x + 1, y) || p.isSet(x, y - 1) || p.isSet(x, y + 1)) outline.push([x, y]);
     }
-    p.set(inset, y, PLANT.potOutline);
-    p.set(POT_WIDTH - inset - 1, y, PLANT.potOutline);
   }
-  p.hline(0, 0, POT_WIDTH, PLANT.potOutline);
-  p.vline(0, 0, 4, PLANT.potOutline);
-  p.vline(POT_WIDTH - 1, 0, 4, PLANT.potOutline);
-  const footInset = 1 + Math.floor((POT_HEIGHT - 5) / 4);
-  p.hline(footInset, POT_HEIGHT - 1, POT_WIDTH - footInset * 2, PLANT.potOutline);
+  for (const [x, y] of outline) p.set(x, y, color);
+}
+
+/** Terracotta pot: a banded, rolled rim, a tapered body lit from the window, and a saucer. */
+function drawPot(size: PlantSize): Texture {
+  const W = size.potWidth;
+  const H = size.potHeight;
+  // One spare pixel all round for the outline.
+  const p = new PixelBuffer(W + 2, H + 2);
+  const rimRows = Math.max(4, Math.round(H * 0.22));
+  const saucerRows = Math.max(2, Math.round(H * 0.1));
+  const bodyTop = rimRows;
+  const bodyBottom = H - saucerRows;
+  const shade = (u: number) => (u < 0.22 ? PLANT.potLight : u > 0.76 ? PLANT.potShadow : PLANT.pot);
+  // Rim band, slightly wider than the body.
+  for (let y = 0; y < rimRows; y++) {
+    for (let x = 0; x < W; x++) p.set(x + 1, y + 1, shade(x / (W - 1)));
+  }
+  p.hline(2, 1, W - 2, PLANT.potRim);
+  p.hline(3, 2, W - 4, PLANT.soil);
+  p.hline(3, 3, W - 4, PLANT.soil);
+  p.hline(1, rimRows, W, PLANT.potShadow);
+  // Tapered body, with a highlight streak catching the window light.
+  for (let y = bodyTop; y < bodyBottom; y++) {
+    const t = (y - bodyTop) / Math.max(1, bodyBottom - bodyTop);
+    const inset = 1 + Math.round(t * W * 0.12);
+    for (let x = inset; x < W - inset; x++) {
+      const u = (x - inset) / Math.max(1, W - inset * 2 - 1);
+      p.set(x + 1, y + 1, Math.abs(u - 0.16) < 0.05 ? PLANT.potRim : shade(u));
+    }
+  }
+  // Saucer.
+  const footInset = 1 + Math.round(W * 0.12) - 2;
+  for (let y = bodyBottom; y < H; y++) {
+    for (let x = footInset; x < W - footInset; x++) {
+      p.set(x + 1, y + 1, y === bodyBottom ? PLANT.potRim : shade((x - footInset) / (W - footInset * 2)));
+    }
+  }
+  inkOutline(p, PLANT.potOutline);
   return p.toTexture();
 }
 
 /** A leafy herb: arching stems with pointed oval leaves, inked like the reference. */
-function drawLeaves(): Texture {
-  const W = LEAVES_WIDTH;
-  const H = LEAVES_HEIGHT;
+function drawLeaves(size: PlantSize): Texture {
+  const W = size.leavesWidth;
+  const H = size.leavesHeight;
+  const scale = H / 50;
   const p = new PixelBuffer(W, H);
   const rng = createRng(4242);
   const baseX = W / 2;
   const baseY = H - 1;
   const leaves: Array<{ x: number; y: number; angle: number; length: number }> = [];
-  const stems = [-62, -38, -16, 4, 22, 44, 66];
+  const stemPixels: Array<[number, number]> = [];
+  const stems = [-70, -52, -34, -16, 0, 14, 30, 48, 66];
   for (const degrees of stems) {
     const a = (degrees * Math.PI) / 180;
-    const length = 26 + rng() * 18 - Math.abs(degrees) * 0.12;
+    const length = (28 + rng() * 18 - Math.abs(degrees) * 0.12) * scale;
     // Stems arch outward: a quadratic curve from the soil.
     const tipX = baseX + Math.sin(a) * length;
     const tipY = baseY - Math.cos(a) * length * 0.95;
@@ -64,52 +89,55 @@ function drawLeaves(): Texture {
     const ctrlY = baseY - length * 0.75;
     let lastX = baseX;
     let lastY = baseY;
-    for (let i = 0; i <= 24; i++) {
-      const t = i / 24;
+    const steps = Math.round(24 * scale);
+    const every = Math.max(4, Math.round(6 * scale));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
       const x = (1 - t) ** 2 * baseX + 2 * (1 - t) * t * ctrlX + t * t * tipX;
       const y = (1 - t) ** 2 * baseY + 2 * (1 - t) * t * ctrlY + t * t * tipY;
-      p.set(x, y, PLANT.leafDark);
-      if (i % 6 === 3 && t > 0.2) {
-        const side = i % 12 === 3 ? 1 : -1;
+      stemPixels.push([Math.round(x), Math.round(y)]);
+      if (i % every === Math.floor(every / 2) && t > 0.2) {
+        const side = Math.floor(i / every) % 2 === 0 ? 1 : -1;
         const dir = Math.atan2(y - lastY, x - lastX) + side * 0.9;
-        leaves.push({ x, y, angle: dir, length: 5 + rng() * 2 });
+        leaves.push({ x, y, angle: dir, length: (5 + rng() * 2.2) * scale });
       }
       lastX = x;
       lastY = y;
     }
-    leaves.push({ x: tipX, y: tipY, angle: Math.atan2(tipY - lastY, tipX - lastX) - Math.PI / 2 + a * 0.3, length: 7 });
+    leaves.push({
+      x: tipX,
+      y: tipY,
+      angle: Math.atan2(tipY - lastY, tipX - lastX) - Math.PI / 2 + a * 0.3,
+      length: 7 * scale,
+    });
   }
-  // Leaves: pointed ovals, a darker underside half and a pale midrib.
+  // Leaves: pointed ovals with a darker underside half, a pale midrib and side veins.
   for (const leaf of leaves) {
     const cos = Math.cos(leaf.angle);
     const sin = Math.sin(leaf.angle);
     const width = leaf.length * 0.42;
     const cx = leaf.x + cos * leaf.length * 0.5;
     const cy = leaf.y + sin * leaf.length * 0.5;
-    for (let j = -10; j <= 10; j++) {
-      for (let i = -10; i <= 10; i++) {
+    const reach = Math.ceil(leaf.length);
+    for (let j = -reach; j <= reach; j++) {
+      for (let i = -reach; i <= reach; i++) {
         const u = (i * cos + j * sin) / (leaf.length * 0.5);
         const v = (-i * sin + j * cos) / width;
         // Pointed tip: narrow the leaf towards u = 1.
         const taper = u > 0 ? 1 - u * u * 0.55 : 1;
         if (u * u + (v / taper) ** 2 > 1) continue;
-        const x = Math.round(cx + i);
-        const y = Math.round(cy + j);
-        const color = Math.abs(v) < 0.18 && u > -0.7 ? PLANT.leafVein : v < 0 ? PLANT.leafLight : u > 0.4 ? PLANT.leaf : PLANT.leafDark;
-        p.set(x, y, color);
+        const midrib = Math.abs(v) < 0.14 && u > -0.75;
+        const vein = scale > 1.2 && Math.abs(Math.abs(v) - (u + 0.9) * 0.45) < 0.09 && u < 0.6;
+        let color: string = v < 0 ? PLANT.leafLight : u > 0.4 ? PLANT.leaf : PLANT.leafDark;
+        if (vein) color = v < 0 ? PLANT.leaf : PLANT.leafDark;
+        if (midrib) color = PLANT.leafVein;
+        p.set(Math.round(cx + i), Math.round(cy + j), color);
       }
     }
   }
-  // Ink outline round the whole plant.
-  const filled = (x: number, y: number) => p.isSet(x, y);
-  const outline: Array<[number, number]> = [];
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (filled(x, y)) continue;
-      if (filled(x - 1, y) || filled(x + 1, y) || filled(x, y - 1) || filled(x, y + 1)) outline.push([x, y]);
-    }
-  }
-  for (const [x, y] of outline) p.set(x, y, PLANT.leafOutline);
+  inkOutline(p, PLANT.leafOutline);
+  // Stems are plain inked lines, showing between and behind the leaves.
+  for (const [x, y] of stemPixels) if (!p.isSet(x, y)) p.set(x, y, PLANT.leafDark);
   return p.toTexture();
 }
 
@@ -173,8 +201,9 @@ export class SillDecor {
   /** Plant and curtain: in front of everything on the sill. */
   readonly front = new Container({ label: 'sill-decor-front' });
 
-  private readonly pot = new Sprite({ texture: drawPot(), anchor: { x: 0.5, y: 1 } });
-  private readonly leaves = new SwayMesh(drawLeaves(), { anchor: 'bottom', amplitude: 2, frequency: 1.3 });
+  private readonly pot = new Sprite({ anchor: { x: 0.5, y: 1 } });
+  private leaves: SwayMesh | null = null;
+  private plantSize: PlantSize | null = null;
   private readonly plant = new Container({ label: 'plant' });
   private curtain: SwayMesh | null = null;
   private curtainSize = '';
@@ -187,8 +216,7 @@ export class SillDecor {
   private frameScale = 1;
 
   constructor(birdseed: BirdseedState) {
-    this.leaves.mesh.position.set(-LEAVES_WIDTH / 2, -POT_HEIGHT - LEAVES_HEIGHT + 3);
-    this.plant.addChild(this.leaves.mesh, this.pot);
+    this.plant.addChild(this.pot);
     this.front.addChild(this.plant);
     this.back.addChild(this.seeds);
     for (let i = 0; i < BASE_SPECKS; i++) this.addSpeck(i < 6 ? 0.07 : 0.4);
@@ -211,7 +239,7 @@ export class SillDecor {
     });
   }
 
-  layout(layout: ViewportLayout, surface: SillSurface, bowlX: number): void {
+  layout(layout: ViewportLayout, surface: SillSurface, bowlX: number, nearness = 1): void {
     const { opening, frameScale: fs, screenWidth, screenHeight, devicePixelRatio } = layout;
     const snap = (v: number) => snapToDevicePixel(v, devicePixelRatio);
     this.frameScale = fs;
@@ -220,9 +248,14 @@ export class SillDecor {
     this.visibleWidth = Math.max(1, visibleRight - this.visibleLeft);
     this.bowlFraction = (bowlX - this.visibleLeft) / this.visibleWidth;
 
-    // The plant stands at the left end of the sill, over the foot of the jamb.
+    // The plant stands at the front-left of the sill, over the foot of the jamb.
+    const size = plantSize(nearness);
+    this.resizePlant(size);
     this.plant.scale.set(fs);
-    this.plant.position.set(snap(this.visibleLeft + (SILL_LEFT_RESERVE / 2) * fs), snap(surface.y + 2 * fs));
+    this.plant.position.set(
+      snap(this.visibleLeft + Math.round(size.potWidth / 2 + 3) * fs),
+      snap(surface.y + FOOT_ROWS * fs),
+    );
 
     // The curtain hangs from above the view down past the sill.
     const height = Math.ceil((screenHeight - opening.y) / fs) + 2;
@@ -245,10 +278,29 @@ export class SillDecor {
     this.redrawSeeds();
   }
 
+  /** Redraw the plant when the view calls for a different size. */
+  private resizePlant(size: PlantSize): void {
+    if (this.plantSize && this.plantSize.leavesHeight === size.leavesHeight) return;
+    this.plantSize = size;
+    const oldPot = this.pot.texture;
+    this.pot.texture = drawPot(size);
+    if (oldPot && oldPot !== Texture.EMPTY) oldPot.destroy(true);
+    if (this.leaves) {
+      this.plant.removeChild(this.leaves.mesh);
+      this.leaves.mesh.texture.destroy(true);
+      this.leaves.mesh.destroy();
+    }
+    this.leaves = new SwayMesh(drawLeaves(size), { anchor: 'bottom', amplitude: 2.5, frequency: 1.3 });
+    // The stems rise out of the soil just below the pot's rim.
+    const rimDrop = Math.max(3, Math.round(size.potHeight * 0.12));
+    this.leaves.mesh.position.set(-size.leavesWidth / 2, -(size.potHeight + 1) - size.leavesHeight + rimDrop);
+    this.plant.addChildAt(this.leaves.mesh, 0);
+  }
+
   /** Breeze through the open window stirs the leaves and curtain. */
   update(time: number, wind: number, openness: number): void {
     const calm = openness * openness;
-    this.leaves.update(time, wind * 0.6, calm);
+    this.leaves?.update(time, wind * 0.6, calm);
     this.curtain?.update(time * 0.8, wind, calm);
   }
 
@@ -270,7 +322,7 @@ export class SillDecor {
     const g = this.seeds;
     g.clear();
     const widthArt = this.visibleWidth / this.frameScale;
-    const minX = SILL_LEFT_RESERVE;
+    const minX = this.plantSize?.reserve ?? 34;
     for (const s of this.specks) {
       const x = Math.round(s.fx * widthArt);
       if (x < minX || x > widthArt - 8) continue;

@@ -18,7 +18,6 @@ import { GlassWeather } from './scene/weather/GlassWeather';
 import { Lightning } from './scene/weather/Lightning';
 import { PrecipitationLayer } from './scene/weather/Precipitation';
 import type { WorldScene } from './scene/WorldScene';
-import { BOWL_HALF_WIDTH } from './window/BirdseedBowl';
 import { BirdseedState } from './state/BirdseedState';
 import { Clock } from './state/Clock';
 import { Weather } from './state/Weather';
@@ -262,8 +261,8 @@ async function boot(): Promise<void> {
     frame.layout(l);
     sashes.layout(frame.clearOpening, l.devicePixelRatio);
     glass.layout(sashes.glassRect);
-    bowl.layout(frame.sillSurface, l.devicePixelRatio);
-    decor.layout(l, frame.sillSurface, bowl.container.x);
+    bowl.layout(frame.sillSurface, l.devicePixelRatio, frame.nearness);
+    decor.layout(l, frame.sillSurface, bowl.container.x, frame.nearness);
     roomFlash.width = fade.width = l.screenWidth;
     roomFlash.height = fade.height = l.screenHeight;
   };
@@ -357,7 +356,7 @@ async function boot(): Promise<void> {
     landscape.life.update(dt, env, {
       surface: frame.sillSurface,
       bowlX: bowlSillX(),
-      bowlHalfWidth: BOWL_HALF_WIDTH,
+      bowlHalfWidth: bowl.halfWidth,
       windowOpen: windowState.isOpen && !windowState.isAnimating && bowl.present,
     });
     lightning.update(dt);

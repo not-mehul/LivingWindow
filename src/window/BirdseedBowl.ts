@@ -1,83 +1,152 @@
 import { Container, Graphics, Rectangle, Sprite, type Texture } from 'pixi.js';
 import { clamp, snapToDevicePixel } from '../core/math';
-import { PixelCanvas } from '../core/pixelTexture';
 import { createRng } from '../core/random';
 import type { BirdseedStage, BirdseedState } from '../state/BirdseedState';
+import { pixelHash } from '../sprites/raster';
 import { BowlPresence } from './bowlPresence';
 import { CERAMIC, SEED } from './palette';
+import { dishSize, type DishSize } from './sillProps';
 import type { SillSurface } from './WindowFrame';
+import { PixelBuffer } from './woodArt';
 
-/** A shallow, unglazed terracotta dish. */
-const BOWL_ROWS = [
-  '........oooooooooooooooooo........',
-  '....ooorrrrrrrrrrrrrrrrrrrrooo....',
-  '...oorrriiiiiiiiiiiiiiiiiirrroo...',
-  '.orriiiiiiiiiiiiiiiiiiiiiiiiiirro.',
-  'olriiiiiiiiiiiiiiiiiiiiiiiiiiiirlo',
-  'olrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrlo',
-  '.olbbbbbbbbbbbbbbbbbbbbbbbbbbbbso.',
-  '.oolbbbbbbbbbbbbbbbbbbbbbbbbbssoo.',
-  '....oolbbbbbbbbbbbbbbbbbbbssoo....',
-  '.....oossssssssssssssssssssoo.....',
-  '.......oooooooooooooooooooo.......',
-] as const;
-
-const BOWL_PALETTE = {
-  o: CERAMIC.outline,
-  r: CERAMIC.rim,
-  l: CERAMIC.light,
-  b: CERAMIC.base,
-  s: CERAMIC.shadow,
-  i: CERAMIC.inside,
-};
-
-const BOWL_WIDTH = BOWL_ROWS[0].length;
-/** Half the bowl's width in art pixels, for creatures lining up beside it. */
-export const BOWL_HALF_WIDTH = BOWL_WIDTH / 2;
-/** Extra rows above the bowl for the heaped seed mound. */
-const HEADROOM = 4;
-// (Dish rows 2–4 are its inside; row 5 is the front of the rim.)
-const TEX_HEIGHT = BOWL_ROWS.length + HEADROOM;
 const SEED_COLORS = [SEED.dark, SEED.base, SEED.base, SEED.light, SEED.pale];
 
-/** Horizontal extents of seed per texture row, by fill stage (row offsets from bowl top). */
-const SEED_SPANS: Record<Exclude<BirdseedStage, 0>, Array<[row: number, from: number, to: number]>> = {
-  1: [[4, 10, 23]],
-  2: [
-    [3, 6, 27],
-    [4, 4, 29],
-  ],
-  3: [
-    [-3, 13, 20],
-    [-2, 10, 23],
-    [-1, 7, 26],
-    [0, 5, 28],
-    [1, 4, 29],
-    [2, 4, 29],
-    [3, 4, 29],
-    [4, 3, 30],
-  ],
-};
+/** Proportions of the dish, derived from its size (art px). */
+interface DishGeometry {
+  size: DishSize;
+  /** Texture size: the dish, the mound headroom and a 1-px outline margin. */
+  texWidth: number;
+  texHeight: number;
+  /** Texture row of the dish's top edge. */
+  top: number;
+  cx: number;
+  /** Rim ellipse: centre row (dish rows), half-width, half-height. */
+  rimY: number;
+  a: number;
+  b: number;
+  /** The opening inside the rolled rim. */
+  ia: number;
+  ib: number;
+}
 
-function createBowlTextures(): Record<BirdseedStage, Texture> {
-  const make = (stage: BirdseedStage) => {
-    const c = new PixelCanvas(BOWL_WIDTH, TEX_HEIGHT);
-    c.stamp(0, HEADROOM, BOWL_ROWS, BOWL_PALETTE);
-    if (stage > 0) {
-      const rng = createRng(1337 + stage);
-      for (const [row, from, to] of SEED_SPANS[stage as 1 | 2 | 3]) {
-        for (let x = from; x <= to; x++) {
-          c.px(x, HEADROOM + row, SEED_COLORS[Math.floor(rng() * SEED_COLORS.length)]);
+function dishGeometry(size: DishSize): DishGeometry {
+  const rimY = Math.round(size.height * 0.32);
+  const a = size.width / 2 - 0.5;
+  const thickness = Math.max(3, Math.round(size.width * 0.05));
+  return {
+    size,
+    texWidth: size.width + 2,
+    texHeight: size.mound + size.height + 2,
+    top: size.mound + 1,
+    cx: size.width / 2 + 1,
+    rimY,
+    a,
+    b: rimY,
+    ia: a - thickness,
+    ib: Math.max(2, rimY - Math.round(thickness * 0.55)),
+  };
+}
+
+/**
+ * A wide, unglazed terracotta dish seen from just above: a thick rolled rim,
+ * the shaded inside, a rounded belly lit from the window side and a foot.
+ * `stage` adds seed: a scattering, a layer, then a heaped mound.
+ */
+function drawDish(g: DishGeometry, stage: BirdseedStage): Texture {
+  const { size, cx, rimY, a, b, ia, ib, top } = g;
+  const p = new PixelBuffer(g.texWidth, g.texHeight);
+  const rng = createRng(1337 + stage * 17 + size.width);
+  type Part = 'inside' | 'rim' | 'body' | 'foot' | null;
+  const partAt = (x: number, y: number): Part => {
+    const dx = x + 0.5 - cx;
+    const dy = y - top + 0.5 - rimY;
+    if (y < top || y >= top + size.height) return null;
+    if ((dx / ia) ** 2 + ((dy + 0.6) / ib) ** 2 <= 1) return 'inside';
+    if ((dx / a) ** 2 + (dy / b) ** 2 <= 1) return 'rim';
+    if (dy < 0) return null;
+    const s = dy / (size.height - rimY);
+    const halfWidth = a * Math.sqrt(Math.max(0, 1 - 0.75 * s * s));
+    if (Math.abs(dx) > halfWidth) return null;
+    return y >= top + size.height - 2 ? 'foot' : 'body';
+  };
+
+  for (let y = 0; y < g.texHeight; y++) {
+    for (let x = 0; x < g.texWidth; x++) {
+      const part = partAt(x, y);
+      if (!part) continue;
+      const dx = x + 0.5 - cx;
+      const dy = y - top + 0.5 - rimY;
+      let color: string;
+      if (part === 'inside') {
+        // The back of the bowl sits in the rim's shadow.
+        // The far wall sits in the rim's shadow; the floor nearer us catches light.
+        color = dy < -ib * 0.35 ? CERAMIC.insideDark : dy < ib * 0.25 ? CERAMIC.inside : CERAMIC.insideLight;
+      } else if (part === 'rim') {
+        color = dy < 0 ? CERAMIC.light : CERAMIC.rim;
+        if (pixelHash(x, y, 9) < 0.035) color = CERAMIC.chip;
+      } else if (part === 'body') {
+        const s = dy / (size.height - rimY);
+        const halfWidth = a * Math.sqrt(Math.max(0, 1 - 0.75 * s * s));
+        const u = dx / halfWidth;
+        color = u < -0.55 ? CERAMIC.light : u > 0.55 ? CERAMIC.shadow : CERAMIC.base;
+        if (s > 0.78 && u > -0.55) color = CERAMIC.shadow;
+        // A thrown ring part-way down the belly.
+        if (Math.abs(s - 0.42) < 0.06 && pixelHash(x, 3, 5) < 0.75) color = u > 0.55 ? CERAMIC.outline : CERAMIC.shadow;
+      } else {
+        color = CERAMIC.shadow;
+      }
+      p.set(x, y, color);
+    }
+  }
+  // Define the lip: a lit edge on the front of the rim, shadow inside the back.
+  for (let y = 0; y < g.texHeight; y++) {
+    for (let x = 0; x < g.texWidth; x++) {
+      const here = partAt(x, y);
+      if (here === 'rim' && partAt(x, y - 1) === 'inside') p.set(x, y, CERAMIC.shine);
+      if (here === 'inside' && partAt(x, y - 1) === 'rim') p.set(x, y, CERAMIC.outline);
+    }
+  }
+
+  // Seed.
+  if (stage > 0) {
+    const mound = stage === 3;
+    for (let y = 0; y < g.texHeight; y++) {
+      for (let x = 0; x < g.texWidth; x++) {
+        const dx = x + 0.5 - cx;
+        const dy = y - top + 0.5 - rimY;
+        const inside = partAt(x, y) === 'inside';
+        let seeded = false;
+        if (stage === 1) seeded = inside && dy > -ib * 0.1 && rng() < 0.32;
+        else if (stage === 2) seeded = inside && dy > -ib * 0.55 && rng() < 0.97;
+        else seeded = inside || (dy <= 0.5 && (dx / (ia * 0.94)) ** 2 + (dy / (ib + size.mound)) ** 2 <= 1);
+        if (!seeded) continue;
+        let color = SEED_COLORS[Math.floor(rng() * SEED_COLORS.length)];
+        // The heap catches the light on its upper left.
+        if (mound && dy < -ib * 0.4 && dx < 0 && rng() < 0.5) color = SEED.pale;
+        p.set(x, y, color);
+        // Striped sunflower seeds here and there.
+        if (rng() < 0.08 && (inside || mound)) {
+          p.set(x, y, SEED.dark);
+          if (p.isSet(x + 1, y)) p.set(x + 1, y, SEED.pale);
         }
       }
-      if (stage === 3) {
-        // Rim stays visible in front of the heaped seed.
-        c.stamp(0, HEADROOM + 5, [BOWL_ROWS[5]], BOWL_PALETTE);
-      }
     }
-    return c.toTexture();
-  };
-  return { 0: make(0), 1: make(1), 2: make(2), 3: make(3) };
+  }
+
+  // Ink outline round the silhouette (the heap included).
+  const outline: Array<[number, number]> = [];
+  for (let y = 0; y < g.texHeight; y++) {
+    for (let x = 0; x < g.texWidth; x++) {
+      if (p.isSet(x, y)) continue;
+      if (p.isSet(x - 1, y) || p.isSet(x + 1, y) || p.isSet(x, y - 1) || p.isSet(x, y + 1)) outline.push([x, y]);
+    }
+  }
+  for (const [x, y] of outline) p.set(x, y, CERAMIC.outline);
+  return p.toTexture();
+}
+
+function createDishTextures(g: DishGeometry): Record<BirdseedStage, Texture> {
+  return { 0: drawDish(g, 0), 1: drawDish(g, 1), 2: drawDish(g, 2), 3: drawDish(g, 3) };
 }
 
 interface FallingSeed {
@@ -89,8 +158,10 @@ interface FallingSeed {
   color: number;
 }
 
-/** Fraction of the sill's visible width at which the bowl sits. */
-const BOWL_POSITION = 0.74;
+/** Fraction of the sill's usable width at which the bowl sits. */
+const BOWL_POSITION = 0.72;
+/** Sill rows below the standing line where the dish's foot rests: right at the front lip. */
+const FOOT_ROWS = 5;
 const POUR_SECONDS = 0.55;
 const BUMP_SECONDS = 0.35;
 const GRAVITY = 260; // art px / s²
@@ -102,7 +173,8 @@ const GRAVITY = 260; // art px / s²
 export class BirdseedBowl {
   readonly container = new Container({ label: 'birdseed-bowl' });
 
-  private readonly textures = createBowlTextures();
+  private geometry = dishGeometry(dishSize(1));
+  private textures = createDishTextures(this.geometry);
   private readonly sprite: Sprite;
   private readonly particles = new Graphics();
   private seeds: FallingSeed[] = [];
@@ -120,8 +192,7 @@ export class BirdseedBowl {
     this.container.addChild(this.sprite, this.particles);
     this.container.eventMode = 'static';
     this.container.cursor = 'pointer';
-    // Generous hit box so it's easy to tap on phones.
-    this.container.hitArea = new Rectangle(-BOWL_WIDTH / 2 - 4, -TEX_HEIGHT - 6, BOWL_WIDTH + 8, TEX_HEIGHT + 8);
+    this.updateHitArea();
     this.container.on('pointertap', () => {
       if (this.canTap()) this.pour();
     });
@@ -136,6 +207,11 @@ export class BirdseedBowl {
    */
   get perchPoint(): { x: number; y: number } {
     return { x: this.container.x, y: this.surface?.y ?? this.container.y };
+  }
+
+  /** Half the dish's width (art px), for creatures lining up beside it. */
+  get halfWidth(): number {
+    return this.geometry.size.width / 2;
   }
 
   /** Whether the bowl is on the sill (it's taken in while the window is shut). */
@@ -163,33 +239,54 @@ export class BirdseedBowl {
     // Negative progress delays the settle until most of the seed has landed.
     this.bump = -(POUR_SECONDS * 0.8) / BUMP_SECONDS;
     const rng = Math.random;
-    const count = 14;
+    const g = this.geometry;
+    // Seed lands across the middle of the opening (sprite coordinates: foot at 0).
+    const rimRow = -(g.texHeight - g.top) + g.rimY;
+    const count = 14 + Math.round(g.size.width / 6);
     for (let i = 0; i < count; i++) {
       const color = SEED_COLORS[Math.floor(rng() * SEED_COLORS.length)];
       this.seeds.push({
-        x: Math.round((rng() - 0.5) * 12),
-        y: -TEX_HEIGHT - 10 - rng() * 10,
+        x: Math.round((rng() - 0.5) * g.ia * 0.9),
+        y: -g.texHeight - 10 - rng() * 14,
         vy: 0,
         delay: (i / count) * POUR_SECONDS,
-        landY: -TEX_HEIGHT + HEADROOM + 1 + Math.floor(rng() * 3),
+        landY: rimRow - 1 + Math.floor(rng() * 4),
         color: Number.parseInt(color.slice(1), 16),
       });
     }
     return true;
   }
 
-  layout(surface: SillSurface, devicePixelRatio: number): void {
+  /** Place the dish on the sill, drawn at the size for this view's `nearness`. */
+  layout(surface: SillSurface, devicePixelRatio: number, nearness = 1): void {
     this.surface = surface;
+    this.resize(dishSize(nearness));
     const fs = surface.frameScale;
-    const margin = (BOWL_WIDTH / 2 + 10) * fs;
+    const margin = (this.halfWidth + 10) * fs;
     const span = surface.right - surface.left;
     const x = clamp(surface.left + span * BOWL_POSITION, surface.left + margin, surface.right - margin);
     this.container.scale.set(fs);
     this.container.position.set(
       snapToDevicePixel(Math.round(x / fs) * fs, devicePixelRatio),
-      // Sit the foot slightly into the sill surface so it reads as resting on it.
-      snapToDevicePixel(surface.y + fs, devicePixelRatio),
+      // The foot rests at the front of the sill: nearest the viewer.
+      snapToDevicePixel(surface.y + FOOT_ROWS * fs, devicePixelRatio),
     );
+  }
+
+  private resize(size: DishSize): void {
+    if (size.width === this.geometry.size.width) return;
+    const old = this.textures;
+    this.geometry = dishGeometry(size);
+    this.textures = createDishTextures(this.geometry);
+    this.sprite.texture = this.textures[this.state.stage];
+    for (const texture of Object.values(old)) texture.destroy(true);
+    this.updateHitArea();
+  }
+
+  private updateHitArea(): void {
+    // Generous hit box so it's easy to tap on phones.
+    const { texWidth, texHeight } = this.geometry;
+    this.container.hitArea = new Rectangle(-texWidth / 2 - 4, -texHeight - 6, texWidth + 8, texHeight + 8);
   }
 
   update(deltaSeconds: number): void {

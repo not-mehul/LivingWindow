@@ -5,6 +5,7 @@ import type { ViewportLayout } from '../core/viewportLayout';
 import { pixelHash } from '../sprites/raster';
 import { HINGE_FRACTIONS, SASH_TUCK } from './casement';
 import { IRON, RUSTIC_THEME, type FrameTheme } from './palette';
+import { curtainWidth, nearness, plantSize } from './sillProps';
 import { paintPlank, PixelBuffer } from './woodArt';
 
 /** Width of each jamb (side post), in frame art pixels. */
@@ -17,12 +18,7 @@ export const FRAME_BORDER = FRAME_SIDE;
 export const SILL_HEIGHT = 30;
 /** Rows from the top of the sill art to where objects stand (mid-way across its top). */
 export const SILL_SURFACE_OFFSET = 8;
-/** Sill art reserved at the left for the potted plant (no creatures walk there). */
-export const SILL_LEFT_RESERVE = 34;
-/** The curtain's width (art px) for a view this wide: slimmer on phones. */
-export function curtainWidth(visibleArtWidth: number): number {
-  return Math.round(Math.min(42, Math.max(26, visibleArtWidth * 0.12)));
-}
+
 
 /** The visible wall-depth faces inside the jambs and under the head. */
 const REVEAL = 6;
@@ -236,6 +232,7 @@ export class WindowFrame {
   private lastLayout: ViewportLayout | null = null;
   private _surface: SillSurface = { left: 0, right: 0, y: 0, top: 0, frameScale: 1 };
   private _clear: ClearOpening = { x: 0, y: 0, width: 0, height: 0, frameScale: 1 };
+  private _nearness = 1;
 
   constructor(theme: FrameTheme = RUSTIC_THEME) {
     this.theme = theme;
@@ -263,6 +260,11 @@ export class WindowFrame {
   /** Y (CSS px) of the underside of the head beam. */
   get innerTop(): number {
     return this._clear.y;
+  }
+
+  /** How large the sill's props are drawn for this view (see `sillProps`). */
+  get nearness(): number {
+    return this._nearness;
   }
 
   /** The glazed opening the sashes fill. */
@@ -319,8 +321,10 @@ export class WindowFrame {
 
     const visibleLeft = Math.max(0, opening.x);
     const visibleRight = Math.min(screenWidth, opening.x + opening.width);
+    this._nearness = nearness((visibleRight - visibleLeft) / fs);
     this._surface = {
-      left: visibleLeft + SILL_LEFT_RESERVE * fs,
+      // Clear of the potted plant at the left end.
+      left: visibleLeft + plantSize(this._nearness).reserve * fs,
       // Clear of the curtain's foot, which tucks in a little at the bottom.
       right: visibleRight - (curtainWidth((visibleRight - visibleLeft) / fs) - 6) * fs,
       y: sillTop + SILL_SURFACE_OFFSET * fs,

@@ -32,7 +32,11 @@ export const CERAMIC = {
   base: '#a8552e',
   light: '#c8744a',
   rim: '#df9a6c',
+  shine: '#f0bc8e',
+  chip: '#f6d4b0',
   inside: '#5a2814',
+  insideDark: '#42200f',
+  insideLight: '#743418',
 } as const;
 
 /** The potted plant on the sill. */
