@@ -2,10 +2,11 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { WORLD_WIDTH } from '../../config';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
-import { WATER_BOTTOM, WATER_TOP } from '../../scene/meadow/MeadowScene';
+import { FOCAL } from '../../sim/groundPlane';
+import { meadowCreek, meadowPlane } from '../../sim/meadowGeometry';
 import { fireflyLevel, rabbitActivity } from '../../sim/wildlife';
 import { BirdSpriteCache } from '../../sprites/birdSprites';
-import { RabbitSprites, StreamFishSprites, type FishKind, type RabbitPose } from '../../sprites/meadowSprites';
+import { RabbitSprites, TOP_FISH_HEADINGS, TopFishSprites, type FishKind, type RabbitPose } from '../../sprites/meadowSprites';
 import type { LifeSoundSink } from '../types';
 
 const r = (min: number, max: number) => min + Math.random() * (max - min);
@@ -82,6 +83,8 @@ export class Rabbits {
           }
           break;
         case 'hop': {
+          // Never aim past the edge of the world (it could never get there).
+          rb.target = Math.max(4, Math.min(WORLD_WIDTH - 4, rb.target));
           const dx = rb.target - rb.x;
           rb.dir = dx >= 0 ? 1 : -1;
           rb.x += Math.sign(dx) * Math.min(Math.abs(dx), (rb.timer < -5 ? 60 : 22) * dt);
@@ -105,6 +108,8 @@ export class Rabbits {
       rb.sprite.texture = this.sprites.get(pose);
       rb.sprite.scale.x = rb.dir;
       rb.sprite.position.set(Math.round(rb.x), home.y);
+      // Sorted among the bushes and cows; just in front of its own bush while peeking out.
+      rb.sprite.zIndex = home.y + 0.5;
       rb.sprite.tint = env.lighting.ambient;
     }
   }
@@ -118,41 +123,51 @@ export class Rabbits {
   }
 }
 
-// --- Fish in the stream ---------------------------------------------------
+// --- Fish in the creek, seen from above ---------------------------------
 
-interface StreamFish {
+interface CreekFish {
   kind: FishKind;
-  x: number;
-  y: number;
+  /** Ground px along the creek (depth × focal length) and across it. */
+  along: number;
+  across: number;
   home: number;
-  vx: number;
+  /** Darting speed along the creek (ground px/s; positive = away, upstream). */
+  speed: number;
   dart: number;
-  dir: 1 | -1;
   sprite: Sprite;
 }
 
-/** Fish holding station against the current, now and then darting off. */
+/** The creek's flow comes towards the viewer: fish face upstream, away from us. */
+const MIN_ALONG = 1.5 * FOCAL;
+const MAX_ALONG = 3.6 * FOCAL;
+
+/**
+ * Trout and minnows in the creek, seen from above as dark shapes with a glint
+ * off their backs: they hold station against the current, finning, and now
+ * and then dart off. A tap nearby scatters them.
+ */
 export class StreamFishes {
-  private readonly fish: StreamFish[] = [];
-  private readonly sprites = new StreamFishSprites();
+  private readonly fish: CreekFish[] = [];
+  private readonly sprites = new TopFishSprites();
 
   constructor(container: Container) {
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 8; i++) {
       const kind: FishKind = i < 3 ? 'trout' : 'minnow';
       const sprite = new Sprite({ anchor: 0.5 });
       container.addChild(sprite);
-      const x = r(40, WORLD_WIDTH - 40);
-      this.fish.push({ kind, x, y: r(WATER_TOP + 6, WATER_BOTTOM - 6), home: x, vx: 0, dart: 0, dir: -1, sprite });
+      const along = r(MIN_ALONG, MAX_ALONG);
+      this.fish.push({ kind, along, across: r(-0.5, 0.5) * meadowCreek.halfWidth, home: along, speed: 0, dart: 0, sprite });
     }
   }
 
-  /** Startle the fish near a point. */
+  /** Startle the fish near a world point. */
   scatter(x: number, y: number): boolean {
     let hit = false;
     for (const f of this.fish) {
-      if (Math.abs(f.x - x) < 40 && Math.abs(f.y - y) < 20) {
+      const p = f.sprite.position;
+      if (Math.abs(p.x - x) < 30 && Math.abs(p.y - y) < 18) {
         f.dart = 0.6;
-        f.vx = (f.x > x ? 1 : -1) * r(60, 90);
+        f.speed = (Math.random() < 0.6 ? 1 : -1) * r(160, 240);
         hit = true;
       }
     }
@@ -160,28 +175,34 @@ export class StreamFishes {
   }
 
   update(dt: number, env: Environment, time: number): void {
+    const half = meadowCreek.halfWidth * 0.7;
     for (const f of this.fish) {
       if (f.dart > 0) {
         f.dart -= dt;
-        f.x += f.vx * dt;
-        f.vx *= Math.exp(-3 * dt);
-        if (f.dart <= 0) f.home = f.x;
+        f.along += f.speed * dt;
+        f.speed *= Math.exp(-3 * dt);
+        if (f.dart <= 0) f.home = f.along;
       } else {
-        // Facing upstream (the current flows to the right), finning gently.
-        f.x += (f.home - f.x) * dt * 0.8 + Math.sin(time * 1.3 + f.home) * 3 * dt;
-        f.y += Math.sin(time * 0.7 + f.home * 0.1) * 2 * dt;
+        // Holding against the current, drifting a little and finning.
+        f.along += (f.home - f.along) * dt * 0.8 + Math.sin(time * 1.3 + f.home) * 6 * dt;
+        f.across += Math.sin(time * 0.7 + f.home * 0.1) * 3 * dt;
         if (Math.random() < dt * 0.04) {
           f.dart = r(0.3, 0.7);
-          f.vx = (Math.random() < 0.7 ? -1 : 1) * r(30, 70);
+          f.speed = (Math.random() < 0.7 ? 1 : -1) * r(80, 160);
         }
       }
-      f.x = Math.max(6, Math.min(WORLD_WIDTH - 6, f.x));
-      f.y = Math.max(WATER_TOP + 4, Math.min(WATER_BOTTOM - 4, f.y));
-      f.dir = f.dart > 0 ? (f.vx >= 0 ? 1 : -1) : -1;
-      f.sprite.texture = this.sprites.get(f.kind, Math.floor(time * (f.dart > 0 ? 12 : 4) + f.home) % 2 === 0 ? 0 : 1);
-      f.sprite.scale.x = -f.dir;
-      f.sprite.position.set(Math.round(f.x), Math.round(f.y));
-      f.sprite.alpha = 0.85 * (1 - env.lighting.darkness * 0.8);
+      f.along = Math.max(MIN_ALONG, Math.min(MAX_ALONG, f.along));
+      f.across = Math.max(-half, Math.min(half, f.across));
+      const depth = f.along / FOCAL;
+      const p = meadowCreek.point(depth, f.across);
+      // Facing upstream, or the way it darts.
+      let angle = meadowCreek.screenAngle(depth);
+      if (f.dart > 0 && f.speed < 0) angle += Math.PI;
+      const heading = Math.round((angle / (Math.PI * 2)) * TOP_FISH_HEADINGS);
+      f.sprite.texture = this.sprites.get(f.kind, heading, Math.floor(time * (f.dart > 0 ? 12 : 4) + f.home) % 2 === 0 ? 0 : 1);
+      f.sprite.position.set(Math.round(p.x), Math.round(p.y));
+      // Harder to see at night.
+      f.sprite.alpha = 0.9 * (1 - env.lighting.darkness * 0.85);
     }
   }
 }
@@ -257,7 +278,7 @@ export class Fireflies {
   constructor(private readonly graphics: Graphics) {
     graphics.blendMode = 'add';
     for (let i = 0; i < 34; i++) {
-      this.flies.push({ x: r(0, WORLD_WIDTH), y: r(262, 330), vx: r(-3, 3), vy: r(-1, 1), phase: Math.random() * 4, on: r(0.3, 0.6), off: r(1, 4) });
+      this.flies.push({ x: r(0, WORLD_WIDTH), y: r(meadowPlane.horizonY + 30, 330), vx: r(-3, 3), vy: r(-1, 1), phase: Math.random() * 4, on: r(0.3, 0.6), off: r(1, 4) });
     }
   }
 
@@ -276,7 +297,7 @@ export class Fireflies {
       f.vx = Math.max(-5, Math.min(5, f.vx));
       f.vy = Math.max(-2, Math.min(2, f.vy));
       f.x = (f.x + f.vx * dt + WORLD_WIDTH) % WORLD_WIDTH;
-      f.y = Math.max(255, Math.min(334, f.y + f.vy * dt));
+      f.y = Math.max(meadowPlane.horizonY + 20, Math.min(334, f.y + f.vy * dt));
       if (f.phase > f.on) continue;
       // Glow swells and fades within each flash.
       const glow = Math.sin((f.phase / f.on) * Math.PI);

@@ -1,281 +1,167 @@
-import { Container, Graphics, Sprite } from 'pixi.js';
-import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
-import { lerpColor, multiplyColor, scaleColor } from '../../core/color';
-import { PixelCanvas } from '../../core/pixelTexture';
-import { createRng, randomInt, randomRange } from '../../core/random';
+import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { WORLD_WIDTH } from '../../config';
+import { lerpColor, multiplyColor } from '../../core/color';
+import { PixelBuffer } from '../../core/pixelBuffer';
+import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
+import { quality } from '../../core/quality';
 import type { Ledge } from '../../life/types';
-import type { Trunk } from '../forest/forestGenerator';
+import type { GroundPlane } from '../../sim/groundPlane';
+import type { WalkArea } from '../../sim/groundWalker';
+import { MEADOW_HORIZON, meadowCreek, meadowPlane, shadowCast } from '../../sim/meadowGeometry';
 import { pixelHash } from '../../sprites/raster';
+import { bayer } from '../common/paint';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
+import type { Trunk } from '../forest/forestGenerator';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
+import { generateMeadow, type MeadowLayout, type MeadowOak } from './meadowGenerator';
 
-export const MEADOW_HORIZON = 222;
-export const FAR_COWS_Y = 272;
-export const NEAR_COWS_Y = 290;
-export const BANK_Y = 302;
-export const WATER_TOP = 306;
-export const WATER_BOTTOM = 334;
-export const COOP_X = 400;
+export { MEADOW_HORIZON };
 
-const LEAVES = ['#3c6430', '#4e7a3e', '#5e8a44', '#6a9a4e', '#80ae5a'];
+/** Rebuild the creek's surface at this rate. */
+const CREEK_FPS = 15;
+/** Sun directions the oak shadows are drawn for. */
+const SHADOW_STEPS = 9;
 
-function hills(color: string, light: string, base: number, peak: number, seed: number): PixelCanvas {
-  const c = new PixelCanvas(WORLD_WIDTH, WORLD_HEIGHT);
-  for (let x = 0; x < WORLD_WIDTH; x++) {
-    const top = Math.round(base - (base - peak) * (0.55 + 0.3 * Math.sin(x * 0.009 + seed) + 0.15 * Math.sin(x * 0.027 + seed * 2)));
-    c.vline(x, top, WORLD_HEIGHT - top, color);
-    c.px(x, top, light);
-  }
-  return c;
-}
+/** Where the cows graze: the pasture from just beyond the flowers out to the tree line. */
+export const PASTURE: WalkArea = { minDepth: 1.3, maxDepth: 3.6, halfWidth: (d) => meadowPlane.halfWidthAt(d) };
 
-function blob(c: PixelCanvas, clumps: Array<[number, number, number]>, seed: number): void {
-  for (const [cx, cy, r] of clumps) {
-    for (let y = Math.floor(cy - r); y <= cy + r; y++) {
-      for (let x = Math.floor(cx - r); x <= cx + r; x++) {
-        const dx = (x + 0.5 - cx) / r;
-        const dy = (y + 0.5 - cy) / r;
-        if (dx * dx + dy * dy > 1 - pixelHash(x, y, seed) * 0.25) continue;
-        let shade = Math.min(4, Math.max(0, Math.round(2 - dy * 1.6)));
-        if (pixelHash(x, y, seed + 1) < 0.12) shade = Math.max(0, shade - 1);
-        c.px(x, y, LEAVES[shade]);
-      }
-    }
-  }
-}
-
-function tuft(rng: () => number, flowers: boolean): PixelCanvas {
-  const w = randomInt(rng, 10, 18);
-  const h = randomInt(rng, 9, 16);
-  const c = new PixelCanvas(w, h);
-  const flowerColors = ['#f0e050', '#f0f0f0', '#e870a0', '#9a70e0', '#f09040'];
-  for (let i = 0; i < randomInt(rng, 5, 9); i++) {
-    const bx = w / 2 + randomRange(rng, -3, 3);
-    const lean = randomRange(rng, -0.4, 0.4);
-    const len = randomRange(rng, h * 0.5, h);
-    for (let t = 0; t < len; t++) c.px(Math.round(bx + lean * t), h - 1 - t, t > len * 0.7 ? '#9ac060' : '#5a8a3a');
-    if (flowers && rng() < 0.4) {
-      const fx = Math.round(bx + lean * len);
-      const fy = Math.round(h - 1 - len);
-      c.px(fx, fy, flowerColors[randomInt(rng, 0, flowerColors.length - 1)]);
-    }
-  }
-  return c;
+interface Swaying {
+  sway: SwayMesh;
+  haze: number;
+  speed: number;
 }
 
 /**
- * Scene 2: the meadows, from a farmhouse window. Rolling hills and a tree
- * line, a pasture of wildflowers for the cows, an old oak, a fence and a
- * hen house, and a clear stream seen side-on, so you can watch the fish.
+ * Scene 2: the meadows, after the reference drawing. Big field oaks on the
+ * left throw shadows that swing round with the sun; a two-track path winds
+ * away over a rise to the tree line; a creek meanders across the right past
+ * the hen house and the hedge; wildflowers nod right in front of the window.
  */
 export class MeadowScene implements WorldScene {
   readonly container = new Container({ label: 'meadow-scene' });
   readonly sky = new Sky({ horizonY: MEADOW_HORIZON, seed: 4321 });
   readonly horizonY = MEADOW_HORIZON;
-  readonly groundY = [262, BANK_Y] as const;
+  readonly groundY = [MEADOW_HORIZON + 8, 340] as const;
   readonly weatherBack = new Container({ label: 'weather-back' });
   readonly weatherFront = new Container({ label: 'weather-front' });
+  readonly plane: GroundPlane = meadowPlane;
+  readonly pasture = PASTURE;
   readonly birdsFar = new Container({ label: 'birds-far' });
   readonly birdsMid = new Container({ label: 'birds-mid' });
   readonly birdsNear = new Container({ label: 'birds-near' });
-  readonly cowsFar = new Container({ label: 'cows-far' });
-  readonly cowsNear = new Container({ label: 'cows-near' });
-  readonly yard = new Container({ label: 'yard' });
-  readonly rabbitLayer = new Container({ label: 'rabbits' });
-  /** Fish live in here; it is clipped to the water. */
-  readonly underwater = new Container({ label: 'underwater' });
+  /** Oaks, the hen house, bushes, cows, hens and rabbits, sorted by where they stand. */
+  readonly midground = new Container({ label: 'midground', sortableChildren: true });
+  /** Fish in the creek (seen from above). */
+  readonly creekLife = new Container({ label: 'creek-life' });
   readonly nightLayer = new Graphics();
-  readonly ledges: Ledge[] = [];
-  readonly trunks: Trunk[] = [];
-  readonly bushes: Array<{ x: number; y: number; width: number }> = [];
+  readonly layout: MeadowLayout;
+  readonly ledges: Ledge[];
+  readonly trunks: Trunk[];
+  readonly bushes: MeadowLayout['bushes'];
 
-  private readonly layers: Array<{ sprite: Sprite; haze: number }> = [];
-  private readonly sways: Array<{ mesh: SwayMesh; speed: number }> = [];
-  private readonly swayHaze = new Map<SwayMesh, number>();
-  private readonly water: Sprite;
-  private readonly surface = new Graphics();
-  private readonly specks: Array<{ x: number; y: number; speed: number }> = [];
-  private readonly bubbles: Array<{ x: number; y: number }> = [];
+  private readonly hills: Sprite;
+  private readonly treeLine: Sprite;
+  private readonly ground: Sprite;
+  private readonly swaying: Swaying[] = [];
+  private readonly still: Array<{ sprite: Sprite; haze: number }> = [];
+  private readonly flowerLayer = new Container({ label: 'flowers' });
+  private readonly flowerSways: SwayMesh[] = [];
+  private readonly shadowLayer = new Container({ label: 'oak-shadows' });
+  private readonly shadows: Array<{ oak: MeadowOak; sprite: Sprite; textures: Map<number, Texture> }> = [];
+
+  private readonly creekCanvas: PixelCanvas;
+  private readonly creekImage: ImageData;
+  private readonly creekTexture: Texture;
+  private readonly creekSprite: Sprite;
+  /** Each creek pixel's offset into the creek canvas's image data. */
+  private readonly creekOffset: Int32Array;
+  /** Each creek pixel's ordered-dither threshold. */
+  private readonly creekDither: Float32Array;
+  private creekTimer = 0;
 
   constructor() {
-    const rng = createRng(6060);
-    const add = (canvas: PixelCanvas, haze: number) => {
-      const sprite = new Sprite(canvas.toTexture());
-      this.layers.push({ sprite, haze });
-      return sprite;
-    };
-    const sway = (canvas: PixelCanvas, x: number, y: number, amplitude: number, haze: number, speed = 1) => {
-      const mesh = new SwayMesh(canvas.toTexture(), { anchor: 'bottom', amplitude });
-      mesh.mesh.position.set(Math.round(x), Math.round(y));
-      this.sways.push({ mesh, speed });
-      this.swayHaze.set(mesh, haze);
-      return mesh.mesh;
-    };
+    this.layout = generateMeadow();
+    const layout = this.layout;
+    this.ledges = layout.ledges;
+    this.trunks = layout.trunks;
+    this.bushes = layout.bushes;
+    this.hills = new Sprite(layout.hills.toTexture());
+    this.treeLine = new Sprite(layout.treeLine.toTexture());
+    this.ground = new Sprite(layout.ground.toTexture());
 
-    const farHills = add(hills('#9ab4a0', '#aac4b0', 252, 208, 1), 0.6);
-    const nearHills = add(hills('#7ea870', '#92bc80', 262, 232, 4), 0.35);
-
-    // Tree line along the far edge of the pasture.
-    const treeLine = new Container();
-    const trunks = new PixelCanvas(WORLD_WIDTH, WORLD_HEIGHT);
-    for (let x = 6; x < WORLD_WIDTH; x += randomInt(rng, 26, 52)) {
-      const h = randomInt(rng, 14, 26);
-      trunks.rect(x, 262 - h + 8, 2, h - 6, '#5a4a3a');
-      const w = randomInt(rng, 18, 30);
-      const crown = new PixelCanvas(w, h);
-      blob(crown, [[w / 2, h * 0.55, w * 0.4], [w * 0.3, h * 0.65, w * 0.28], [w * 0.7, h * 0.62, w * 0.3]], x);
-      treeLine.addChild(sway(crown, x + 1 - w / 2, 262 - h - 2, 1, 0.3, 0.8));
-      this.ledges.push({ x0: x - 3, x1: x + 3, y: 262 - h, layer: 'far', kind: 'treetop', z: 0.88 });
+    for (const oak of layout.oaks) {
+      const sway = new SwayMesh(oak.art.toTexture(), { anchor: 'bottom', amplitude: oak.sway, frequency: 0.7 });
+      sway.mesh.position.set(oak.x, oak.y);
+      sway.mesh.zIndex = oak.baseY;
+      this.midground.addChild(sway.mesh);
+      this.swaying.push({ sway, haze: oak.haze, speed: 1 });
+      const sprite = new Sprite();
+      sprite.alpha = 0;
+      this.shadowLayer.addChild(sprite);
+      this.shadows.push({ oak, sprite, textures: new Map() });
     }
-    const treeTrunks = add(trunks, 0.3);
-
-    // The pasture, richer and more flowery towards the viewer.
-    const pasture = new PixelCanvas(WORLD_WIDTH, WORLD_HEIGHT);
-    const flowerColors = ['#f0e050', '#f8f8f8', '#e870a0', '#9a70e0', '#f09040'];
-    for (let y = 258; y < WORLD_HEIGHT; y++) {
-      const t = (y - 258) / 50;
-      for (let x = 0; x < WORLD_WIDTH; x++) {
-        const h = pixelHash(x, y, 71);
-        let color = t < 0.3 ? '#8ab868' : t < 0.65 ? '#7aac58' : '#6a9e4a';
-        if (h < 0.1) color = '#5a8e3e';
-        else if (h > 0.93) color = '#9ac878';
-        if (pixelHash(x, y, 72) < 0.006 + t * 0.02) color = flowerColors[Math.floor(pixelHash(x, y, 73) * flowerColors.length)];
-        pasture.px(x, y, color);
+    for (const piece of layout.standing) {
+      if (piece.sway > 0) {
+        const sway = new SwayMesh(piece.art.toTexture(), { anchor: 'bottom', amplitude: piece.sway });
+        sway.mesh.position.set(piece.x, piece.y);
+        sway.mesh.zIndex = piece.baseY;
+        this.midground.addChild(sway.mesh);
+        this.swaying.push({ sway, haze: piece.haze, speed: 1.3 });
+      } else {
+        const sprite = new Sprite(piece.art.toTexture());
+        sprite.position.set(piece.x, piece.y);
+        sprite.zIndex = piece.baseY;
+        this.midground.addChild(sprite);
+        this.still.push({ sprite, haze: piece.haze });
       }
     }
-    const pastureSprite = add(pasture, 0);
-    this.ledges.push({ x0: 0, x1: WORLD_WIDTH - 1, y: 297, layer: 'near', kind: 'ground', z: 0.66 });
-
-    // The old oak, with branches to perch on.
-    const oak = new PixelCanvas(WORLD_WIDTH, WORLD_HEIGHT);
-    const ox = 140;
-    for (let y = 150; y < 300; y++) {
-      for (let x = ox; x < ox + 16; x++) {
-        const u = (x - ox) / 16;
-        let color = u < 0.25 ? '#7a6250' : u > 0.75 ? '#463628' : '#5e4a3a';
-        if (pixelHash(Math.floor(x / 2), Math.floor(y / 4), 9) < 0.2) color = '#3a2c20';
-        oak.px(x, y, color);
-      }
-    }
-    oak.rect(ox - 4, 296, 24, 4, '#463628');
-    for (const [bx, by, len] of [
-      [ox + 16, 190, 26],
-      [ox - 24, 210, 24],
-    ] as const) {
-      oak.rect(bx, by, len, 3, '#5e4a3a');
-      oak.hline(bx, by, len, '#7a6250');
-      this.ledges.push({ x0: bx + 2, x1: bx + len - 3, y: by, layer: 'near', kind: 'branch', z: 0.58 });
-    }
-    this.trunks.push({ x: ox + 8, width: 16, top: 160, bottom: 296, layer: 'near' });
-    const oakSprite = add(oak, 0);
-    const crown = new PixelCanvas(150, 100);
-    blob(crown, [[75, 45, 40], [40, 60, 30], [110, 58, 32], [75, 72, 30], [55, 30, 26], [100, 32, 24]], 99);
-    const oakCrown = sway(crown, ox + 8 - 75, 100, 2.5, 0, 0.8);
-
-    // Fence, gate posts and the hen house.
-    const props = new PixelCanvas(WORLD_WIDTH, WORLD_HEIGHT);
-    for (let x = 470; x < WORLD_WIDTH; x += 28) {
-      props.rect(x, 276, 3, 22, '#8a7050');
-      props.vline(x, 276, 22, '#a88a64');
-      props.hline(x, 276, 3, '#c0a27a');
-      this.ledges.push({ x0: x, x1: x + 2, y: 276, layer: 'near', kind: 'post', z: 0.64 });
-    }
-    for (const ry of [282, 290]) {
-      props.rect(470, ry, WORLD_WIDTH - 470, 2, '#9a7e58');
-      props.hline(470, ry, WORLD_WIDTH - 470, '#b49670');
-    }
-    // Hen house: a little shed with a ramp.
-    const cx = COOP_X;
-    props.rect(cx, 282, 30, 16, '#a8483a');
-    props.rect(cx, 282, 30, 1, '#c8604c');
-    for (let i = 0; i < 18; i++) props.hline(cx - 3 + Math.floor(i / 2), 281 - i / 2 - 1, 36 - i, '#5a4a3a');
-    props.rect(cx + 11, 290, 7, 8, '#2a1a14');
-    for (let i = 0; i < 8; i++) props.px(cx + 18 + i, 297 - Math.floor(i / 2), '#8a7050');
-    this.ledges.push({ x0: cx + 2, x1: cx + 26, y: 272, layer: 'near', kind: 'roof', z: 0.64 });
-    const propsSprite = add(props, 0);
-
-    // Bushes the rabbits hide behind.
-    const bushLayer = new Container();
-    for (const bx of [235, 300, 590, 700]) {
-      const w = randomInt(rng, 26, 36);
-      const h = randomInt(rng, 14, 20);
-      const c = new PixelCanvas(w, h);
-      blob(c, [[w / 2, h * 0.6, w * 0.38], [w * 0.28, h * 0.72, w * 0.26], [w * 0.72, h * 0.7, w * 0.28]], bx);
-      bushLayer.addChild(sway(c, bx - w / 2, BANK_Y + 1 - h, 1, 0, 1));
-      this.bushes.push({ x: bx, y: BANK_Y, width: w });
+    for (const flower of layout.flowers) {
+      const sway = new SwayMesh(flower.art.toTexture(), { anchor: 'bottom', amplitude: flower.sway, frequency: 1.2 + Math.random() * 0.5 });
+      sway.mesh.position.set(flower.x, flower.y);
+      this.flowerLayer.addChild(sway.mesh);
+      this.flowerSways.push(sway);
     }
 
-    // The stream, side on: water, a pebbly bed and swaying weed.
-    const stream = new PixelCanvas(WORLD_WIDTH, WORLD_HEIGHT);
-    stream.rect(0, BANK_Y, WORLD_WIDTH, 4, '#6a5a3a');
-    for (let x = 0; x < WORLD_WIDTH; x++) {
-      stream.px(x, BANK_Y, pixelHash(x, 1, 3) < 0.5 ? '#5a8e3e' : '#4a7a34');
-      for (let y = WATER_TOP; y < WATER_BOTTOM; y++) {
-        const t = (y - WATER_TOP) / (WATER_BOTTOM - WATER_TOP);
-        stream.px(x, y, t < 0.15 ? '#6ab0c0' : t < 0.6 ? '#4a96aa' : '#3a7a8e');
-      }
-      for (let y = WATER_BOTTOM; y < WORLD_HEIGHT; y++) {
-        const h = pixelHash(x, y, 51);
-        stream.px(x, y, y < WATER_BOTTOM + 4 ? (h < 0.3 ? '#8a8070' : h < 0.55 ? '#a89a84' : '#6a6050') : h < 0.5 ? '#5a8e3e' : '#4a7a34');
-      }
-      // Pebbles on the bed.
-      if (pixelHash(x, 7, 8) < 0.12) stream.rect(x, WATER_BOTTOM - 2, 2 + Math.floor(pixelHash(x, 8, 2) * 3), 2, '#9a8e7a');
+    // The creek's surface lives in a canvas just big enough for it.
+    const { index } = layout.creek;
+    let minX = WORLD_WIDTH;
+    let maxX = 0;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = 0;
+    for (const i of index) {
+      const x = i % WORLD_WIDTH;
+      const y = Math.floor(i / WORLD_WIDTH);
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
     }
-    this.water = add(stream, 0);
-    const weed = new Container();
-    for (let x = 10; x < WORLD_WIDTH; x += randomInt(rng, 30, 70)) {
-      const h = randomInt(rng, 8, 16);
-      const c = new PixelCanvas(5, h);
-      for (let i = 0; i < 3; i++) {
-        for (let t = 0; t < h - i * 2; t++) c.px(1 + i + Math.round(Math.sin(t * 0.5 + i) * 0.6), h - 1 - t, i === 1 ? '#4a8a4a' : '#3a6a3a');
-      }
-      weed.addChild(sway(c, x, WATER_BOTTOM - h, 2, 0, 0.6));
-    }
-    const waterMask = new Graphics().rect(0, WATER_TOP, WORLD_WIDTH, WATER_BOTTOM - WATER_TOP).fill(0xffffff);
-    this.underwater.mask = waterMask;
-
-    // Reeds and wildflowers along both banks.
-    const front = new Container();
-    for (let x = 0; x < WORLD_WIDTH; x += randomInt(rng, 16, 34)) {
-      const c = tuft(rng, true);
-      front.addChild(sway(c, x - c.width / 2, BANK_Y + 2 - c.height, 2, 0, 1.4));
-    }
-    for (let x = 0; x < WORLD_WIDTH; x += randomInt(rng, 14, 28)) {
-      const c = tuft(rng, true);
-      front.addChild(sway(c, x - c.width / 2, WATER_BOTTOM + 14 - c.height, 2.5, 0, 1.4));
-    }
-
-    for (let i = 0; i < 40; i++) {
-      this.specks.push({ x: rng() * WORLD_WIDTH, y: WATER_TOP + 2 + rng() * (WATER_BOTTOM - WATER_TOP - 4), speed: 8 + rng() * 10 });
-    }
+    const w = Math.max(1, maxX - minX + 1);
+    const h = Math.max(1, maxY - minY + 1);
+    this.creekCanvas = new PixelCanvas(w, h);
+    this.creekImage = this.creekCanvas.ctx.createImageData(w, h);
+    this.creekOffset = Int32Array.from(index, (i) => ((Math.floor(i / WORLD_WIDTH) - minY) * w + (i % WORLD_WIDTH) - minX) * 4);
+    this.creekDither = Float32Array.from(index, (i) => bayer(i % WORLD_WIDTH, Math.floor(i / WORLD_WIDTH)));
+    this.creekTexture = createNearestTexture(this.creekCanvas.canvas);
+    this.creekSprite = new Sprite(this.creekTexture);
+    this.creekSprite.position.set(minX, minY);
 
     this.container.addChild(
       this.sky.container,
-      farHills,
-      nearHills,
-      treeTrunks,
-      treeLine,
+      this.hills,
       this.birdsFar,
-      pastureSprite,
-      this.cowsFar,
-      this.birdsMid,
+      this.ground,
+      this.treeLine,
+      this.creekSprite,
+      this.creekLife,
+      this.shadowLayer,
       this.weatherBack,
-      this.cowsNear,
-      oakSprite,
-      oakCrown,
-      propsSprite,
-      this.yard,
-      this.rabbitLayer,
-      bushLayer,
+      this.midground,
+      this.birdsMid,
       this.birdsNear,
-      this.water,
-      weed,
-      this.underwater,
-      waterMask,
-      this.surface,
-      front,
+      this.flowerLayer,
       this.nightLayer,
       this.weatherFront,
     );
@@ -284,40 +170,110 @@ export class MeadowScene implements WorldScene {
   update(dt: number, env: Environment): void {
     const { lighting, weather, time } = env;
     this.sky.update(dt, env);
-    for (const { sprite, haze } of this.layers) sprite.tint = lerpColor(lighting.ambient, lighting.haze, haze);
-    for (const { mesh, speed } of this.sways) {
-      mesh.update(time * speed, weather.wind);
-      mesh.mesh.tint = lerpColor(lighting.ambient, lighting.haze, this.swayHaze.get(mesh) ?? 0);
+    this.hills.tint = lerpColor(lighting.haze, lighting.ambient, 0.35);
+    this.treeLine.tint = lerpColor(lighting.ambient, lighting.haze, 0.2);
+    this.ground.tint = lighting.ambient;
+    for (const s of this.swaying) {
+      s.sway.update(time * s.speed, weather.wind);
+      s.sway.mesh.tint = lerpColor(lighting.ambient, lighting.haze, s.haze);
     }
-    this.underwater.tint = lighting.ambient;
+    for (const s of this.still) s.sprite.tint = lerpColor(lighting.ambient, lighting.haze, s.haze);
+    for (const f of this.flowerSways) f.update(time * 1.3, weather.wind);
+    this.flowerLayer.tint = lighting.ambient;
+    this.creekLife.tint = lighting.ambient;
+    this.updateShadows(env);
 
-    // The stream: sparkling ripples on the surface, drifting specks, bubbles.
-    const g = this.surface;
-    g.clear();
-    const highlight = lerpColor(multiplyColor(0xd8f0f4, lighting.ambient), 0xffffff, 0.15);
-    const flow = time * 12;
-    for (let x = 0; x < WORLD_WIDTH; x += 2) {
-      const wobble = Math.sin((x + flow) * 0.15) + Math.sin((x - flow * 0.6) * 0.07);
-      if (wobble > 1.1) g.rect(x, WATER_TOP, 2, 1).fill({ color: highlight, alpha: 0.9 });
-      else if (wobble < -1.3) g.rect(x, WATER_TOP + 1, 2, 1).fill({ color: scaleColor(highlight, 0.8), alpha: 0.5 });
-    }
-    const speck = multiplyColor(0xa8c8c8, lighting.ambient);
-    for (const s of this.specks) {
-      s.x += s.speed * dt;
-      s.y += Math.sin(time + s.x * 0.1) * 0.05;
-      if (s.x > WORLD_WIDTH) s.x -= WORLD_WIDTH;
-      g.rect(Math.round(s.x), Math.round(s.y), 1, 1).fill({ color: speck, alpha: 0.5 });
-    }
-    if (Math.random() < dt * 0.8) this.bubbles.push({ x: Math.random() * WORLD_WIDTH, y: WATER_BOTTOM - 3 });
-    for (let i = this.bubbles.length - 1; i >= 0; i--) {
-      const b = this.bubbles[i];
-      b.y -= 9 * dt;
-      b.x += Math.sin(b.y * 0.6) * 0.1;
-      if (b.y <= WATER_TOP + 1) {
-        this.bubbles.splice(i, 1);
-        continue;
-      }
-      g.rect(Math.round(b.x), Math.round(b.y), 1, 1).fill({ color: highlight, alpha: 0.8 });
+    this.creekTimer -= dt;
+    if (this.creekTimer <= 0) {
+      this.creekTimer = 1 / (CREEK_FPS * quality.scale);
+      this.drawCreek(env);
     }
   }
+
+  /** The oaks' shadows: thrown away from the sun, longer when it is low, gone under cloud or at night. */
+  private updateShadows(env: Environment): void {
+    const { sun } = env.lighting;
+    const strength = sun.visible ? Math.min(1, sun.elevation * 4) * (1 - env.weather.cloudCover) ** 1.5 : 0;
+    const step = Math.round((Math.max(0, Math.min(1, sun.progress)) - 0.5) * (SHADOW_STEPS - 1));
+    const progress = 0.5 + step / (SHADOW_STEPS - 1);
+    const cast = shadowCast(progress, Math.max(0.2, sun.elevation));
+    for (const s of this.shadows) {
+      s.sprite.alpha = strength * 0.42;
+      if (strength <= 0) continue;
+      let texture = s.textures.get(step);
+      if (!texture) {
+        texture = drawShadow(s.oak, cast.stretch);
+        s.textures.set(step, texture);
+      }
+      s.sprite.texture = texture;
+      const r = s.oak.crownRadius;
+      s.sprite.position.set(Math.round(s.oak.crownX + cast.shift * r - texture.width / 2), Math.round(s.oak.baseY - texture.height * 0.55));
+    }
+  }
+
+  /** The creek: sky-tinted water, ripples flowing towards us, and sun glints. */
+  private drawCreek(env: Environment): void {
+    const { lighting, time } = env;
+    const amb = lighting.ambient;
+    const deep = lerpColor(multiplyColor(0x2e5a5e, amb), lighting.skyTop, 0.25);
+    const sky = lerpColor(lighting.skyHorizon, lighting.skyTop, 0.4);
+    const shallow = lerpColor(multiplyColor(0x5a8a7a, amb), sky, 0.45);
+    const ripple = lerpColor(sky, 0xffffff, 0.3);
+    const sun = lighting.sun.visible && lighting.sun.elevation > 0.05 ? lerpColor(lighting.sun.color, 0xffffff, 0.5) : 0;
+    const shades = [deep, lerpColor(deep, shallow, 0.5), shallow, lerpColor(shallow, sky, 0.5)];
+    const { along, across, nearness } = this.layout.creek;
+    const half = meadowCreek.halfWidth;
+    const data = this.creekImage.data;
+    const flow = time * 30;
+    const rain = env.weather.kind === 'rain' ? env.weather.precipitation : 0;
+    for (let i = 0; i < this.creekOffset.length; i++) {
+      const k = this.creekOffset[i];
+      const u = across[i] / half;
+      const a = along[i];
+      // Deeper down the middle, paler where the banks shelve and reflect the sky.
+      let level = 1 - Math.abs(u) * 1.6 + Math.sin(a * 0.02 + u * 3) * 0.2;
+      const px = k >> 2;
+      level = 3 - level * 3 + this.creekDither[i] * 0.8;
+      let color = shades[Math.max(0, Math.min(3, Math.floor(level)))];
+      // Ripples streaming down towards us.
+      const w = Math.sin((a + flow) * 0.09 + Math.sin(u * 2.5 + a * 0.01) * 2);
+      if (w > 0.93) color = ripple;
+      // Raindrop rings.
+      if (rain > 0 && pixelHash(px, Math.floor(time * 8), 7) < rain * 0.02) color = ripple;
+      // Glints of sun dancing on the surface.
+      if (sun && pixelHash(px, Math.floor((a + flow) / 6), 3) > 0.985 - nearness[i] * 0.01) color = sun;
+      data[k] = color >> 16;
+      data[k + 1] = (color >> 8) & 255;
+      data[k + 2] = color & 255;
+      data[k + 3] = 255;
+    }
+    this.creekCanvas.ctx.putImageData(this.creekImage, 0, 0);
+    this.creekTexture.source.update();
+  }
+}
+
+/** A tree's shadow on the grass: a dithered pool the shape of its crown, stretched by a low sun. */
+function drawShadow(oak: MeadowOak, stretch: number): Texture {
+  const r = oak.crownRadius;
+  const rx = r * 0.95 * stretch;
+  // Lying on the ground, it is squashed by the view's foreshortening.
+  const ry = r * 0.3;
+  const w = Math.ceil(rx * 2) + 4;
+  const h = Math.ceil(ry * 2) + 4;
+  const p = new PixelBuffer(w, h);
+  const cx = w / 2;
+  const cy = h / 2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = (x + 0.5 - cx) / rx;
+      const dy = (y + 0.5 - cy) / ry;
+      // Lumpy, like the crown's clumps.
+      const d = dx * dx + dy * dy + (pixelHash(Math.floor(x / 3), Math.floor(y / 2), 5) - 0.5) * 0.3;
+      if (d > 1) continue;
+      // A dithered, softer rim.
+      if (d > 0.75 && bayer(x, y) > 0.5) continue;
+      p.set(x, y, 0x1a2a10);
+    }
+  }
+  return p.toTexture();
 }

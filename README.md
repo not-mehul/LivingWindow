@@ -269,6 +269,32 @@ point on the horizon, and the sea lies to the right.
   away to see sway are painted into the static layer, so the sprite count stays
   modest.
 
+**Redesign, part 4 — the meadows** ✅
+
+The meadows are rebuilt after their reference drawing, keeping the farm life.
+
+- **Laid out in depth** (`sim/meadowGeometry.ts`, unit tested). A two-track
+  path comes in from the lower left, swings right across the field and winds
+  away over a rise to the tree line. A creek meanders across the right of the
+  pasture towards the window. Both are smooth curves read back onto a ground
+  plane, so their widths converge with distance.
+- **Scenery.** Hazy hills sit behind a ragged two-row tree line of oaks,
+  broadleaves, poplars and spruces. The rolling pasture lightens on its rises
+  and has bare earth patches and scattered flowers. Big spreading field oaks
+  stand on the left, and their dithered shadows swing round with the sun: to
+  the right in the morning, short at noon, long in the evening, fading under
+  cloud. There's a red hen house with a fence by the creek, and a hedge along
+  the right. A bank of wildflowers nods in front of the window: poppies at
+  left, then daisies, cranesbill, bluebells, thistles and seed grasses.
+- **The creek** is animated water seen from above. It takes the sky's colour,
+  with ripples streaming towards you, sun glints and raindrop rings. Its trout
+  and minnows are dark shapes holding against the current; tap and they dart.
+- **Life in depth.** Cows wander and graze across the pasture, towards and
+  away from the window, round the oaks, the hen house and the creek. They lie
+  down at night. Hens peck about the yard and file in through the coop door
+  at dusk. Rabbits peek out of the hedge and the field bushes. Squirrels climb
+  the oaks, and birds perch on their limbs, the coop roof and the fence posts.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.

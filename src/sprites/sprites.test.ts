@@ -4,7 +4,7 @@ import { CAT_HEIGHT, CAT_WIDTH, drawCat, type CatPose } from './catSprites';
 import { PixelGrid } from './raster';
 import { drawDolphin, drawTurtle } from './beachSprites';
 import { drawDeer, drawSquirrel } from './forestSprites';
-import { drawChicken, drawCow, drawRabbit, drawStreamFish } from './meadowSprites';
+import { drawChicken, drawCow, drawRabbit, drawTopFish, TOP_FISH_HEADINGS } from './meadowSprites';
 import { drawPerson, drawStall, randomLook } from './streetSprites';
 
 const POSES: BirdPose[] = ['idle', 'idle-breathe', 'look-up', 'look-back', 'peck-reach', 'peck-down', 'chirp', 'hop', 'fly-up', 'fly-mid', 'fly-down', 'glide', 'sleep'];
@@ -100,7 +100,7 @@ describe('landscape creatures', () => {
     }
     for (const pose of ['stand', 'peck', 'walk', 'flap'] as const) expect(drawChicken(pose).isEmpty()).toBe(false);
     for (const pose of ['sit', 'hop-1', 'hop-2', 'peek'] as const) expect(drawRabbit(pose).isEmpty()).toBe(false);
-    expect(drawStreamFish('trout', 0).isEmpty()).toBe(false);
+    for (let h = 0; h < TOP_FISH_HEADINGS; h++) expect(drawTopFish('trout', h, 0).isEmpty()).toBe(false);
     expect(drawTurtle(1).isEmpty()).toBe(false);
     for (let f = 0; f < 4; f++) expect(drawDolphin(f).isEmpty()).toBe(false);
   });

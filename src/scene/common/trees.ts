@@ -1,6 +1,7 @@
 import { lerpColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import { pixelHash } from '../../sprites/raster';
+import { valueNoise } from './paint';
 
 /** Colours for a tree, darkest to lightest foliage plus bark and ink. */
 export interface TreePalette {
@@ -227,4 +228,121 @@ export function drawBroadleaf(height: number, seed: number, palette: TreePalette
     { x0: Math.round(cx + W * 0.14), x1: Math.round(cx + W * 0.28), y: Math.round(H * 0.46) },
   ];
   return { buffer: p, baseX: Math.round(cx), baseY: H - 1, tipX: Math.round(cx), tipY: Math.round(H * 0.06), perches };
+}
+
+/** An oak's trunk, for squirrels to climb and walkers to go round (within its buffer). */
+export interface OakTrunk {
+  width: number;
+  /** Where the trunk disappears into the crown. */
+  top: number;
+}
+
+/**
+ * A big field oak, as in the meadow drawing: a short, thick trunk flaring at
+ * the roots, forking into heavy limbs under a broad, spreading dome of leaf
+ * clumps, with dark hollows where the limbs show through.
+ */
+export function drawOak(height: number, seed: number, palette: TreePalette = BROADLEAF): DrawnTree & { trunk: OakTrunk } {
+  const H = Math.max(10, Math.round(height));
+  const W = Math.round(H * 1.25);
+  const pad = 2;
+  const p = new PixelBuffer(W + pad * 2, H + pad);
+  const cx = W / 2 + pad;
+  const base = H - 1;
+  const crownBottom = H * 0.6;
+  const trunkW = Math.max(3, H * 0.12);
+  const hash = (i: number, k: number) => pixelHash(i, k, seed);
+
+  // Limbs: tapering strokes, lit on their left.
+  const limb = (x0: number, y0: number, x1: number, y1: number, w0: number, w1: number) => {
+    const steps = Math.ceil(Math.hypot(x1 - x0, y1 - y0) * 1.5);
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      // A slight upward bow, like a real limb.
+      const x = x0 + (x1 - x0) * t;
+      const y = y0 + (y1 - y0) * t - Math.sin(Math.PI * t) * (y0 - y1) * 0.08;
+      const w = w0 + (w1 - w0) * t;
+      for (let j = 0; j < w; j++) {
+        const u = j / w;
+        let color = u < 0.3 ? palette.bark : palette.barkDark;
+        if (pixelHash(Math.round(x + j), Math.round(y / 3), seed + 5) < 0.12) color = palette.ink;
+        p.set(x - w / 2 + j, y, color);
+      }
+    }
+  };
+
+  // Crown clumps over a wide dome: a back layer, limbs, then a front layer with gaps.
+  const clumps: Array<[number, number, number, boolean]> = [];
+  const count = 20 + Math.round(H / 6);
+  for (let i = 0; i < count; i++) {
+    const a = hash(i, 1) * Math.PI;
+    const ring = Math.sqrt(hash(i, 2));
+    const x = cx + Math.cos(a) * W * 0.4 * ring * (hash(i, 3) < 0.5 ? -1 : 1);
+    const y = H * 0.3 - Math.sin(a) * H * 0.22 * ring + H * 0.06;
+    const r = W * (0.075 + hash(i, 4) * 0.06);
+    clumps.push([x, y, r, y > H * 0.33 && hash(i, 5) < 0.55]);
+  }
+  // Fill the lower skirt of the crown on each side, where it droops.
+  for (const side of [-1, 1]) clumps.push([cx + side * W * 0.36, H * 0.45, W * 0.12, true]);
+  const paintClump = (ccx: number, ccy: number, r: number, k: number) => {
+    for (let y = Math.floor(ccy - r); y <= ccy + r; y++) {
+      for (let x = Math.floor(ccx - r); x <= ccx + r; x++) {
+        const dx = (x + 0.5 - ccx) / r;
+        const dy = (y + 0.5 - ccy) / r;
+        const d = dx * dx + dy * dy;
+        if (d > 1 - pixelHash(x, y, seed + k) * 0.25) continue;
+        // Broken into little masses of leaves, lit from the upper left.
+        const light = -dx * 0.6 - dy * 0.9 + (1 - d) * 0.35 + (valueNoise(x, y, 2.5, seed + k) - 0.5) * 0.8;
+        let color = light > 0.6 ? palette.highlight : light > 0.2 ? palette.light : light > -0.3 ? palette.base : palette.dark;
+        if (d > 0.8 && dy > 0.1) color = palette.shadow;
+        if (pixelHash(x, y, seed + 9) < 0.07) color = palette.dark;
+        p.set(x, y, color);
+      }
+    }
+  };
+  const back = clumps.filter((c) => !c[3]).sort((a, b) => a[1] - b[1]);
+  const front = clumps.filter((c) => c[3]).sort((a, b) => a[1] - b[1]);
+  for (const [i, [x, y, r]] of back.entries()) paintClump(x, y, r, i);
+
+  // Trunk with a root flare, forking into limbs that reach into the crown.
+  for (let y = Math.floor(crownBottom); y <= base; y++) {
+    const t = (y - crownBottom) / (base - crownBottom);
+    const flare = t > 0.8 ? ((t - 0.8) / 0.2) ** 2 * trunkW * 0.9 : 0;
+    const w = trunkW + flare;
+    for (let j = 0; j < w; j++) {
+      const u = j / w;
+      let color = u < 0.25 ? palette.bark : u > 0.7 ? palette.barkDark : lerpColor(palette.bark, palette.barkDark, 0.5);
+      // Deep furrows in the bark.
+      if (pixelHash(Math.round(cx - w / 2 + j), Math.floor(y / 4), seed + 3) < 0.18) color = palette.ink;
+      p.set(cx - w / 2 + j, y, color);
+    }
+  }
+  const forkY = crownBottom + H * 0.04;
+  const limbs: Array<[number, number]> = [
+    [cx - W * 0.34, H * 0.36],
+    [cx - W * 0.14, H * 0.18],
+    [cx + W * 0.12, H * 0.2],
+    [cx + W * 0.36, H * 0.38],
+  ];
+  for (const [x, y] of limbs) limb(cx + (x - cx) * 0.06, forkY, x, y, trunkW * 0.6, Math.max(1, trunkW * 0.22));
+  // A low, near-level limb to perch on.
+  const perchY = Math.round(H * 0.5);
+  limb(cx + trunkW * 0.3, perchY + 4, cx + W * 0.3, perchY, trunkW * 0.4, Math.max(1, trunkW * 0.2));
+
+  for (const [i, [x, y, r]] of front.entries()) paintClump(x, y, r, 40 + i);
+  p.outline(palette.ink);
+
+  const perches = [
+    { x0: Math.round(cx + W * 0.12), x1: Math.round(cx + W * 0.28), y: perchY - 1 },
+    { x0: Math.round(cx - W * 0.3), x1: Math.round(cx - W * 0.18), y: Math.round(H * 0.34) },
+  ];
+  return {
+    buffer: p,
+    baseX: Math.round(cx),
+    baseY: base,
+    tipX: Math.round(cx),
+    tipY: Math.round(H * 0.06),
+    perches,
+    trunk: { width: Math.round(trunkW), top: Math.round(crownBottom) },
+  };
 }

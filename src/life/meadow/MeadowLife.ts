@@ -1,6 +1,6 @@
 import type { LandscapeDeps, SceneLife, SillBase } from '../../landscapes/types';
 import type { Environment } from '../../scene/Environment';
-import { FAR_COWS_Y, NEAR_COWS_Y, type MeadowScene } from '../../scene/meadow/MeadowScene';
+import type { MeadowScene } from '../../scene/meadow/MeadowScene';
 import { owlActivity } from '../../sim/wildlife';
 import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
 import { TrunkSquirrels } from '../forest/TrunkSquirrels';
@@ -49,20 +49,13 @@ export class MeadowLife implements SceneLife {
       canTap: deps.canTap,
       ecology: MEADOW_ECOLOGY,
     });
-    this.cows = new CowHerd(
-      [
-        { container: scene.cowsFar, y: FAR_COWS_Y, height: 12, haze: 0.25, x0: 40, x1: 800 },
-        { container: scene.cowsNear, y: NEAR_COWS_Y, height: 22, haze: 0, x0: 480, x1: 820 },
-      ],
-      deps.viewport,
-      deps.sound,
-    );
-    this.chickens = new Chickens(scene.yard, 300, deps.viewport, deps.sound);
-    this.rabbits = new Rabbits(scene.bushes, scene.rabbitLayer);
-    this.fish = new StreamFishes(scene.underwater);
+    this.cows = new CowHerd(scene.midground, scene.plane, scene.pasture, scene.layout.obstacles, deps.viewport, deps.sound);
+    this.chickens = new Chickens(scene.midground, scene.plane, scene.layout.coop, deps.viewport, deps.sound);
+    this.rabbits = new Rabbits(scene.bushes, scene.midground);
+    this.fish = new StreamFishes(scene.creekLife);
     this.eagle = new SoaringEagle(scene.birdsFar, deps.viewport, deps.sound);
     this.fireflies = new Fireflies(scene.nightLayer);
-    this.squirrels = new TrunkSquirrels(scene.trunks, { mid: scene.birdsNear, near: scene.birdsNear }, deps.viewport, deps.sound);
+    this.squirrels = new TrunkSquirrels(scene.trunks, { mid: scene.midground, near: scene.midground }, deps.viewport, deps.sound);
   }
 
   get ambienceLevel(): number {

@@ -179,44 +179,50 @@ export class RabbitSprites {
 
 export type FishKind = 'trout' | 'minnow';
 
-const FISH_FRAMES: Record<FishKind, string[][]> = {
-  trout: [
-    ['.1.......', '1122222.', '.233332e', '1122222.', '.1.......'],
-    ['1........', '.122222.', '1233332e', '.122222.', '1........'],
-  ],
-  minnow: [
-    ['1.....', '12222e', '1.....'],
-    ['.1....', '.2222e', '.1....'],
-  ],
+// --- Creek fish, seen from above ----------------------------------------
+
+/** Headings the creek fish are drawn at (they turn crisply between them). */
+export const TOP_FISH_HEADINGS = 16;
+
+const TOP_FISH_PALETTES: Record<FishKind, number[]> = {
+  // Dark backs against the creek bed, a paler flank and a glint.
+  trout: [0, 0x22302a, 0x3e4e40, 0x5e6e58, 0xc8d8d0],
+  minnow: [0, 0x2e3a3a, 0x4a5a5a, 0x6a7a78, 0xd8e4e4],
 };
 
-const FISH_PALETTES: Record<FishKind, number[]> = {
-  trout: [0, 0x4a5a3a, 0x7a8a5a, 0xd88a8a, 0, 0, 0x0c0c0c],
-  minnow: [0, 0x7a8a90, 0xb8c4c8, 0, 0, 0, 0x0c0c0c],
-};
-
-export function drawStreamFish(kind: FishKind, frame: 0 | 1): PixelGrid {
-  const rows = FISH_FRAMES[kind][frame];
-  const width = Math.max(...rows.map((r) => r.length));
-  const g = new PixelGrid(width, rows.length);
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      const c = row[x];
-      if (c === '.') continue;
-      g.set(x, y, c === 'e' ? 6 : Number(c));
-    }
-  });
+/**
+ * A fish from above, head towards `heading` (one of TOP_FISH_HEADINGS steps
+ * round from +x), its tail flicking between two frames.
+ */
+export function drawTopFish(kind: FishKind, heading: number, frame: 0 | 1): PixelGrid {
+  const length = kind === 'trout' ? 11 : 6;
+  const size = length + 3;
+  const g = new PixelGrid(size, size);
+  const a = (heading / TOP_FISH_HEADINGS) * Math.PI * 2;
+  const c = size / 2;
+  const ux = Math.cos(a);
+  const uy = Math.sin(a);
+  // Body: a slim spindle, darker along the spine.
+  g.ellipse(c + ux * 0.5, c + uy * 0.5, length * 0.38, kind === 'trout' ? 1.7 : 1.1, (_u, v) => (Math.abs(v) < 0.45 ? 1 : 2), a);
+  // Tail, flicking side to side.
+  const flick = (frame === 0 ? 1 : -1) * (kind === 'trout' ? 1.4 : 0.9);
+  const tx = c - ux * length * 0.42;
+  const ty = c - uy * length * 0.42;
+  g.line(tx, ty, tx - ux * 2 - uy * flick, ty - uy * 2 + ux * flick, 3);
+  // A glint of light off its back.
+  g.set(Math.floor(c + ux * length * 0.15), Math.floor(c + uy * length * 0.15), 4);
   return g;
 }
 
-export class StreamFishSprites {
+export class TopFishSprites {
   private readonly cache = new Map<string, Texture>();
 
-  get(kind: FishKind, frame: 0 | 1): Texture {
-    const key = `${kind}:${frame}`;
+  get(kind: FishKind, heading: number, frame: 0 | 1): Texture {
+    const h = ((Math.round(heading) % TOP_FISH_HEADINGS) + TOP_FISH_HEADINGS) % TOP_FISH_HEADINGS;
+    const key = `${kind}:${h}:${frame}`;
     let t = this.cache.get(key);
     if (!t) {
-      t = gridToTexture(drawStreamFish(kind, frame), FISH_PALETTES[kind]);
+      t = gridToTexture(drawTopFish(kind, h, frame), TOP_FISH_PALETTES[kind]);
       this.cache.set(key, t);
     }
     return t;
