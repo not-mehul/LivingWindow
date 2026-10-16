@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MIN_SCALE, perspectiveScale, spriteSizeAt } from './perspective';
+import { depthForScale, MIN_SCALE, perspectiveScale, spriteSizeAt } from './perspective';
 
 describe('perspective', () => {
   it('follows S(z) = Smin + (1 − Smin)(1 − z)²', () => {
@@ -23,5 +23,13 @@ describe('perspective', () => {
       expect(size).toBeGreaterThanOrEqual(4);
       previous = size;
     }
+  });
+});
+
+describe('depthForScale', () => {
+  it('inverts perspectiveScale', () => {
+    for (const z of [0, 0.2, 0.5, 0.8, 1]) expect(depthForScale(perspectiveScale(z))).toBeCloseTo(z);
+    expect(depthForScale(5)).toBe(0);
+    expect(depthForScale(0)).toBe(1);
   });
 });

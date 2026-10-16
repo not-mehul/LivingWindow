@@ -1,7 +1,6 @@
 import type { SceneLife, LandscapeDeps, SillBase } from '../../landscapes/types';
 import type { Environment } from '../../scene/Environment';
 import type { ForestScene } from '../../scene/forest/ForestScene';
-import { FAR_FLOOR_Y, MID_FLOOR_Y, NEAR_FLOOR_Y } from '../../scene/forest/forestGenerator';
 import { owlActivity } from '../../sim/wildlife';
 import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
 import { SillSquirrel } from '../SillSquirrel';
@@ -46,20 +45,8 @@ export class ForestLife implements SceneLife {
       canTap: deps.canTap,
       ecology: FOREST_ECOLOGY,
     });
-    this.deer = new DeerHerd(
-      [
-        { container: scene.deerFar, y: FAR_FLOOR_Y + 4, height: 18, speed: 5, haze: 0.45 },
-        { container: scene.deerMid, y: MID_FLOOR_Y - 3, height: 30, speed: 8, haze: 0.12 },
-      ],
-      deps.viewport,
-      deps.sound,
-    );
-    this.squirrels = new TrunkSquirrels(
-      scene.layout.trunks,
-      { mid: scene.deerMid, near: scene.birdsNear, midFloor: MID_FLOOR_Y - 14, nearFloor: NEAR_FLOOR_Y - 6 },
-      deps.viewport,
-      deps.sound,
-    );
+    this.deer = new DeerHerd(scene.midground, scene.plane, scene.clearing, deps.viewport, deps.sound);
+    this.squirrels = new TrunkSquirrels(scene.layout.trunks, { mid: scene.midground, near: scene.birdsNear }, deps.viewport, deps.sound);
     this.sillSquirrel = new SillSquirrel(deps.birdseed, deps.sound, deps.canTap);
     deps.layers.sillBack.addChild(this.sillSquirrel.container);
   }

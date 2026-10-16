@@ -62,7 +62,7 @@ export class MeadowLife implements SceneLife {
     this.fish = new StreamFishes(scene.underwater);
     this.eagle = new SoaringEagle(scene.birdsFar, deps.viewport, deps.sound);
     this.fireflies = new Fireflies(scene.nightLayer);
-    this.squirrels = new TrunkSquirrels(scene.trunks, { mid: scene.birdsNear, near: scene.birdsNear, midFloor: 297, nearFloor: 297 }, deps.viewport, deps.sound);
+    this.squirrels = new TrunkSquirrels(scene.trunks, { mid: scene.birdsNear, near: scene.birdsNear }, deps.viewport, deps.sound);
   }
 
   get ambienceLevel(): number {

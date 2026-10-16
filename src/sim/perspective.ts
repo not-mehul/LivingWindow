@@ -24,3 +24,12 @@ export function spriteSizeAt(z: number, relativeSize = 1): number {
 export function speedScaleAt(z: number): number {
   return perspectiveScale(z);
 }
+
+/**
+ * The depth z at which S(z) equals `scale` (the inverse of `perspectiveScale`),
+ * so perches laid out on a ground plane get matching bird sizes.
+ */
+export function depthForScale(scale: number): number {
+  const s = Math.min(1, Math.max(MIN_SCALE, scale));
+  return 1 - Math.sqrt((s - MIN_SCALE) / (1 - MIN_SCALE));
+}

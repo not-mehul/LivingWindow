@@ -1,45 +1,45 @@
-import { Container, Sprite } from 'pixi.js';
-import { WORLD_WIDTH } from '../../config';
+import { Sprite, type Container } from 'pixi.js';
 import { lerpColor } from '../../core/color';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
+import type { GroundPlane } from '../../sim/groundPlane';
+import { GroundWalker, type WalkArea } from '../../sim/groundWalker';
 import { deerActivity } from '../../sim/wildlife';
 import { DEER_WALK, DeerSpriteCache, type DeerKind, type DeerPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
 
-type DeerState = 'walk' | 'graze' | 'alert' | 'bound';
+type DeerState = 'walk' | 'graze' | 'alert' | 'bound' | 'leave';
 
 interface Deer {
   kind: DeerKind;
-  lane: Lane;
-  x: number;
-  dir: 1 | -1;
+  walker: GroundWalker;
   state: DeerState;
   timer: number;
   duration: number;
+  /** How long it has been out; it wanders off eventually. */
+  age: number;
   stride: number;
   sprite: Sprite;
-  /** A fawn trailing its mother keeps pace with her. */
+  /** A fawn trailing its mother keeps close to her. */
   follows: Deer | null;
+  /** Seconds spent dropping out of sight over the brow. */
+  sinking: number;
 }
 
-export interface Lane {
-  container: Container;
-  /** World y of the hooves. */
-  y: number;
-  /** Sprite height for an adult doe. */
-  height: number;
-  speed: number;
-  /** Mixed into the tint: distant deer fade into the haze. */
-  haze: number;
-}
+/** A doe's height (world px) at depth 1, i.e. right in front of the window. */
+const DOE_HEIGHT = 44;
+/** Walking pace, in ground px per second at depth 1. */
+const WALK_SPEED = 13;
+const BOUND_SPEED = 70;
+const SINK_SECONDS = 0.9;
 
 const r = (min: number, max: number) => min + Math.random() * (max - min);
 
 /**
- * Deer that wander through the trees in two lanes (behind the middle trunks
- * and between the middle and near trunks), browsing and looking up, and
- * bounding off at a fright.
+ * Deer on the clearing in front of the cabin. They come up from the valley
+ * or in from the trees at the sides, wander towards and away from the window
+ * (growing and shrinking with distance), browse, look up, and bound off for
+ * cover when startled.
  */
 export class DeerHerd {
   private readonly deer: Deer[] = [];
@@ -47,7 +47,9 @@ export class DeerHerd {
   private spawnTimer = 5;
 
   constructor(
-    private readonly lanes: Lane[],
+    private readonly container: Container,
+    private readonly plane: GroundPlane,
+    private readonly area: WalkArea,
     private readonly viewport: Viewport,
     private readonly sound: LifeSoundSink,
   ) {}
@@ -61,14 +63,15 @@ export class DeerHerd {
     for (const d of this.deer) this.bolt(d);
   }
 
-  /** A tap near a deer startles it (and its fawn). */
+  /** A tap on a deer startles it (and its fawn). */
   tap(worldX: number, worldY: number): boolean {
     for (const d of this.deer) {
-      const h = this.heightOf(d);
-      if (Math.abs(worldX - d.x) < h * 0.7 && worldY > d.lane.y - h && worldY < d.lane.y) {
+      const p = d.walker.point;
+      const h = this.heightOf(d, p.scale);
+      if (Math.abs(worldX - p.x) < h * 0.7 && worldY > p.y - h && worldY < p.y + 2) {
         this.bolt(d);
         for (const f of this.deer) if (f.follows === d) this.bolt(f);
-        this.sound('deer-snort', this.viewport.worldXToStereo(d.x), 0.6);
+        this.sound('deer-snort', this.viewport.worldXToStereo(p.x), 0.4 + 0.3 * (1 - p.scale));
         return true;
       }
     }
@@ -87,7 +90,7 @@ export class DeerHerd {
       this.spawnTimer = r(20, 60) / Math.max(0.05, activity);
       if (this.deer.length < 4 && activity > 0.05) this.spawn();
     }
-    const tint = env.lighting.ambient;
+    const { ambient, haze } = env.lighting;
     for (let i = this.deer.length - 1; i >= 0; i--) {
       const d = this.deer[i];
       if (this.step(d, dt)) {
@@ -95,89 +98,155 @@ export class DeerHerd {
         this.deer.splice(i, 1);
         continue;
       }
-      this.draw(d, lerpColor(tint, env.lighting.haze, d.lane.haze));
+      const depthFraction = (d.walker.depth - this.area.minDepth) / (this.area.maxDepth - this.area.minDepth);
+      this.draw(d, lerpColor(ambient, haze, Math.max(0, depthFraction) * 0.3));
     }
   }
 
   private spawn(): void {
-    const lane = this.lanes[Math.floor(Math.random() * this.lanes.length)];
-    const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
     const kind: DeerKind = Math.random() < 0.3 ? 'buck' : 'doe';
-    const x = dir > 0 ? -40 : WORLD_WIDTH + 40;
-    const mother = this.create(kind, lane, x, dir, null);
-    if (kind === 'doe' && Math.random() < 0.45) this.create('fawn', lane, x - dir * 26, dir, mother);
+    const { minDepth, maxDepth } = this.area;
+    let walker: GroundWalker;
+    if (Math.random() < 0.5) {
+      // Up from the valley, over the brow.
+      const depth = maxDepth;
+      walker = this.makeWalker(r(-0.35, 0.35) * this.plane.halfWidthAt(depth), depth, -Math.PI / 2 + r(-0.6, 0.6));
+    } else {
+      // In from the trees at one side.
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const depth = r(minDepth + (maxDepth - minDepth) * 0.25, maxDepth);
+      walker = this.makeWalker(side * (this.plane.halfWidthAt(depth) + 30 * depth), depth, side > 0 ? Math.PI : 0);
+    }
+    const mother = this.create(kind, walker, null);
+    if (kind === 'doe' && Math.random() < 0.45) {
+      const p = mother.walker;
+      this.create('fawn', this.makeWalker(p.gx - Math.cos(p.heading) * 24, p.depth, p.heading), mother);
+    }
   }
 
-  private create(kind: DeerKind, lane: Lane, x: number, dir: 1 | -1, follows: Deer | null): Deer {
+  private makeWalker(gx: number, depth: number, heading: number): GroundWalker {
+    // Spawning just off-screen sideways is allowed: the area's limit is only enforced while wandering.
+    const walker = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 60 * d }, gx, depth, heading);
+    walker.speed = WALK_SPEED;
+    walker.steering = this.wanderTarget();
+    return walker;
+  }
+
+  private create(kind: DeerKind, walker: GroundWalker, follows: Deer | null): Deer {
     const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
-    lane.container.addChild(sprite);
-    const deer: Deer = { kind, lane, x, dir, state: 'walk', timer: 0, duration: r(4, 12), stride: Math.random() * 4, sprite, follows };
+    this.container.addChild(sprite);
+    const deer: Deer = {
+      kind,
+      walker,
+      state: 'walk',
+      timer: 0,
+      duration: r(4, 12),
+      age: 0,
+      stride: Math.random() * 4,
+      sprite,
+      follows,
+      sinking: 0,
+    };
     this.deer.push(deer);
     return deer;
+  }
+
+  /**
+   * A spot somewhere on the clearing. Picked evenly by screen row rather
+   * than by depth, so deer come right up close as often as they keep to the
+   * far side.
+   */
+  private wanderTarget(): { kind: 'seek'; gx: number; depth: number } {
+    const near = this.plane.project(0, this.area.minDepth).y;
+    const far = this.plane.project(0, this.area.maxDepth).y;
+    const depth = this.plane.depthAtY(r(far + (near - far) * 0.05, near - (near - far) * 0.12));
+    const half = this.plane.halfWidthAt(depth) * 0.85;
+    return { kind: 'seek', gx: r(-half, half), depth };
   }
 
   /** Returns true once the deer has left. */
   private step(d: Deer, dt: number): boolean {
     d.timer += dt;
+    d.age += dt;
+    const w = d.walker;
     // Fawns copy their mother's mood and keep close.
     if (d.follows) {
       const m = d.follows;
       if (!this.deer.includes(m)) d.follows = null;
-      else {
-        if (m.state === 'bound' && d.state !== 'bound') this.bolt(d);
-        else if (d.state !== 'bound') {
-          const gap = (m.x - d.x) * m.dir;
-          d.state = gap > 30 ? 'walk' : m.state === 'walk' ? 'walk' : Math.random() < 0.5 ? 'graze' : d.state;
-          d.dir = m.dir;
-        }
+      else if (m.state === 'bound' && d.state !== 'bound') this.bolt(d);
+      else if (d.state !== 'bound') {
+        const behindX = m.walker.gx - Math.cos(m.walker.heading) * 22;
+        const far = w.distanceTo(behindX, m.walker.depth) > 18;
+        if (far) {
+          d.state = 'walk';
+          w.steering = { kind: 'seek', gx: behindX, depth: m.walker.depth };
+        } else if (m.state !== 'walk' && d.state === 'walk') {
+          d.state = Math.random() < 0.6 ? 'graze' : 'alert';
+          d.timer = 0;
+        } else if (m.state === 'leave') d.state = 'leave';
       }
     }
-    switch (d.state) {
-      case 'walk':
-      case 'bound': {
-        const speed = d.lane.speed * (d.state === 'bound' ? 4 : d.kind === 'fawn' ? 1.1 : 1);
-        d.x += d.dir * speed * dt;
-        d.stride += speed * dt;
-        if (d.x < -60 || d.x > WORLD_WIDTH + 60) return true;
-        break;
-      }
+
+    w.speed = d.state === 'bound' ? BOUND_SPEED : d.state === 'walk' || d.state === 'leave' ? WALK_SPEED * (d.kind === 'fawn' ? 1.15 : 1) : 0;
+    w.update(dt);
+    d.stride += w.speed * w.point.scale * dt;
+
+    if (d.state === 'bound' || d.state === 'leave') {
+      // Over the brow, it drops down the slope into the valley and out of sight.
+      if (w.steering.kind === 'seek' && w.depth >= this.area.maxDepth - 0.01) d.sinking += dt;
+      return w.gone || d.sinking > SINK_SECONDS;
     }
-    if (!d.follows && d.state !== 'bound' && d.timer >= d.duration) this.decide(d);
+    if (!d.follows) {
+      const arrived = d.state === 'walk' && w.steering.kind === 'seek' && w.distanceTo(w.steering.gx, w.steering.depth) < 6;
+      if (arrived || (d.state !== 'walk' && d.timer >= d.duration)) this.decide(d);
+    }
     return false;
   }
 
   private decide(d: Deer): void {
     d.timer = 0;
-    const roll = Math.random();
-    if (d.state === 'walk') {
-      d.state = roll < 0.7 ? 'graze' : 'alert';
-    } else if (d.state === 'graze') {
-      d.state = roll < 0.25 ? 'alert' : roll < 0.6 ? 'graze' : 'walk';
-    } else {
-      d.state = roll < 0.6 ? 'graze' : 'walk';
-      if (Math.random() < 0.15) d.dir = d.dir === 1 ? -1 : 1;
+    // After a while out in the open, they drift back into the trees.
+    if (d.age > r(70, 150)) {
+      d.state = 'leave';
+      this.exit(d);
+      return;
     }
-    d.duration = d.state === 'walk' ? r(4, 10) : d.state === 'graze' ? r(5, 14) : r(1.5, 4);
+    const roll = Math.random();
+    if (d.state === 'walk') d.state = roll < 0.7 ? 'graze' : 'alert';
+    else if (d.state === 'graze') d.state = roll < 0.25 ? 'alert' : roll < 0.55 ? 'graze' : 'walk';
+    else d.state = roll < 0.6 ? 'graze' : 'walk';
+    if (d.state === 'walk') d.walker.steering = this.wanderTarget();
+    d.duration = d.state === 'graze' ? r(5, 14) : r(1.5, 4);
+  }
+
+  /** Head for the nearest cover: the trees at a side, or back down into the valley. */
+  private exit(d: Deer): void {
+    const w = d.walker;
+    const sideways = Math.abs(w.gx) / this.plane.halfWidthAt(w.depth);
+    const towardsBrow = (w.depth - this.area.minDepth) / (this.area.maxDepth - this.area.minDepth);
+    if (towardsBrow > sideways) w.steering = { kind: 'seek', gx: w.gx * 1.1, depth: this.area.maxDepth };
+    else w.steering = { kind: 'exit', side: w.gx >= 0 ? 1 : -1 };
   }
 
   private bolt(d: Deer): void {
     if (d.state === 'bound') return;
     d.state = 'bound';
-    // Run for the nearest way out.
-    d.dir = d.x < WORLD_WIDTH / 2 ? -1 : 1;
+    this.exit(d);
   }
 
-  private heightOf(d: Deer): number {
-    const h = d.lane.height;
-    return d.kind === 'buck' ? Math.round(h * 1.22) : d.kind === 'fawn' ? Math.round(h * 0.68) : h;
+  private heightOf(d: Deer, scale: number): number {
+    const k = d.kind === 'buck' ? 1.22 : d.kind === 'fawn' ? 0.68 : 1;
+    // Even sizes only: sprites are generated per size, so this bounds the cache.
+    return Math.max(8, Math.round((DOE_HEIGHT * k * scale) / 2) * 2);
   }
 
   private pose(d: Deer): DeerPose {
     switch (d.state) {
       case 'walk':
-        return DEER_WALK[Math.floor(d.stride / 5) % 4];
+      case 'leave':
+        return DEER_WALK[Math.floor(d.stride / 4) % 4];
       case 'bound':
-        return Math.floor(d.stride / 14) % 2 === 0 ? 'bound-1' : 'bound-2';
+        return Math.floor(d.stride / 12) % 2 === 0 ? 'bound-1' : 'bound-2';
       case 'graze':
         return Math.floor(d.timer / 0.6) % 2 === 0 ? 'graze-1' : 'graze-2';
       case 'alert':
@@ -186,10 +255,17 @@ export class DeerHerd {
   }
 
   private draw(d: Deer, tint: number): void {
-    const bounce = d.state === 'bound' ? Math.round(Math.abs(Math.sin(d.stride / 9)) * d.lane.height * 0.25) : 0;
-    d.sprite.texture = this.sprites.get(d.kind, this.pose(d), this.heightOf(d));
-    d.sprite.scale.x = d.dir;
-    d.sprite.position.set(Math.round(d.x), d.lane.y - bounce);
+    const p = d.walker.point;
+    const h = this.heightOf(d, p.scale);
+    const bounce = d.state === 'bound' ? Math.round(Math.abs(Math.sin(d.stride / 8)) * h * 0.25) : 0;
+    d.sprite.texture = this.sprites.get(d.kind, this.pose(d), h);
+    d.sprite.scale.x = d.walker.facing;
+    const sink = (d.sinking / SINK_SECONDS) * h;
+    d.sprite.position.set(Math.round(p.x), Math.round(p.y + sink) - bounce);
+    // Hidden by the brow as it goes down the far side.
+    d.sprite.alpha = d.sinking > 0 ? Math.max(0, 1 - d.sinking / SINK_SECONDS) : 1;
+    // Sort among the trees by where the hooves touch the ground.
+    d.sprite.zIndex = p.y;
     d.sprite.tint = tint;
   }
 }

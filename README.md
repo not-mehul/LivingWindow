@@ -199,6 +199,31 @@ Rebuilt after a hand-drawn reference (the landscapes follow one at a time):
   and squirrel come and go from behind them.
 - Open sashes stay slim on ultrawide and portrait screens.
 
+**Redesign, part 2 — the forest valley** ✅
+
+The forest is rebuilt after its reference drawing. From a cabin on a wooded
+rise, the view opens between a gnarled oak (left) and a tall pine (right) onto a
+valley running away between two mountains.
+
+- **Depth, not bands.** The far range peeps through the V. The mountains have
+  sunny and shady flanks, ravines and a banded cliff face. Thousands of small
+  trees cover the slopes, shrinking and hazing with distance. Below sits a
+  clearing with a winding deer path, shrubs, and spruces and broadleaf trees
+  drawn to scale by their distance.
+- **True perspective for creatures.** A new ground plane (`sim/groundPlane.ts`)
+  and walker (`sim/groundWalker.ts`) let **deer wander towards and away from
+  the window**. They grow and shrink as they come and go and pass behind or in
+  front of trees by depth. They come up from the valley or in from the trees,
+  graze and look up, and when startled bound for the nearest cover, dropping
+  out of sight over the brow. Squirrels climb the oak, the pine and the
+  clearing's trees, and birds perch on treetops, boughs, logs and the clearing.
+- **Hand-drawn feel in pixels.** Spruces are built from whorls of drooping,
+  ragged branches with ink outlines, broadleaf trees from lit leaf clumps, and
+  the pine's boughs sag in layers. Textures use smooth value noise and ordered
+  dither (`scene/common/paint.ts`) instead of hard stripes.
+- Light shafts fall through the oak's leaves towards the valley, and the sun
+  sets into the V.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
@@ -285,6 +310,7 @@ src/
     input.ts                Pointer / wheel / keyboard input
     pixelTexture.ts         Helpers for drawing pixel art into crisp textures
     simplex.ts              Seedable 2D simplex noise
+    pixelBuffer.ts          RGBA buffer for large procedural art (with ink outline)
     quality.ts              Frame-time monitor and adaptive quality level
     wakeLock.ts             Screen Wake Lock (keep the display on)
     Emitter.ts, math.ts, random.ts, color.ts
@@ -301,7 +327,8 @@ src/
     woodArt.ts              Procedural plank / grain / knot painter
     BirdseedBowl.ts         The seed dish (taken in while the window is shut)
   sim/                      Pure behaviour logic (unit tested): bird and cat
-                            state machines, perspective, crowd and stall schedules
+                            state machines, perspective, crowd and stall schedules,
+                            groundPlane + groundWalker (creatures moving in depth)
   sprites/                  Procedural pixel-art generators (birds, cat, street)
   landscapes/               The four landscapes and the registry that builds them
   life/                     Living things: BirdSystem (any ecology), city, forest,
@@ -313,6 +340,8 @@ src/
     sky/Sky.ts              Gradient, stars, sun, moon, clouds
     city/ forest/ beach/ meadow/   The four landscapes' scenery
     common/SwayMesh.ts      Wind-swayed vertex meshes for trees and plants
+    common/trees.ts         Procedural conifers and broadleaf trees
+    common/paint.ts         Value noise, ordered dither and colour ramps
     weather/                Rain/snow particles, lightning, rain on the glass
   audio/
     AudioEngine.ts          Buses, window filter, limiter, playSpatialSound

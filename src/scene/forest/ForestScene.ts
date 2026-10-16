@@ -3,11 +3,13 @@ import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { lerpColor, scaleColor } from '../../core/color';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import { createRng } from '../../core/random';
+import type { GroundPlane } from '../../sim/groundPlane';
+import type { WalkArea } from '../../sim/groundWalker';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
-import { FAR_FLOOR_Y, FOREST_HORIZON, generateForest, MID_FLOOR_Y, NEAR_FLOOR_Y, type ForestLayout } from './forestGenerator';
+import { BROW_Y, CLEARING, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout } from './forestGenerator';
 
 const BAYER = [
   [0, 8, 2, 10],
@@ -31,7 +33,7 @@ function createRayTexture(width: number, height: number, slant: number): Texture
       img.data[k] = 255;
       img.data[k + 1] = 236;
       img.data[k + 2] = 180;
-      img.data[k + 3] = 90;
+      img.data[k + 3] = 80;
     }
   }
   c.ctx.putImageData(img, 0, 0);
@@ -59,33 +61,44 @@ interface Leaf {
   landed: number;
 }
 
+interface Tree {
+  sway: SwayMesh;
+  haze: number;
+}
+
 /**
- * Scene 4: the deep forest, seen from a cabin window. Layers of trunks at
- * three depths, crowns and canopy that sway in the wind, ferns, falling
- * leaves and shafts of sunlight through gaps in the canopy.
+ * Scene 4: the deep forest, from a cabin on a wooded rise. A gnarled oak and
+ * a tall pine frame a valley running away between two mountains; trees stand
+ * about a clearing where deer wander towards and away from the window.
  */
 export class ForestScene implements WorldScene {
   readonly container = new Container({ label: 'forest-scene' });
   readonly sky = new Sky({ horizonY: FOREST_HORIZON, seed: 77 });
   readonly horizonY = FOREST_HORIZON;
-  readonly groundY = [MID_FLOOR_Y - 14, NEAR_FLOOR_Y] as const;
+  readonly groundY = [BROW_Y, 340] as const;
   readonly weatherBack = new Container({ label: 'weather-back' });
   readonly weatherFront = new Container({ label: 'weather-front' });
-  /** Depth slots for creatures. */
+  readonly plane: GroundPlane = forestPlane;
+  readonly clearing: WalkArea = CLEARING;
+  /** Birds over the valley. */
   readonly birdsFar = new Container({ label: 'birds-far' });
-  readonly deerFar = new Container({ label: 'deer-far' });
+  /**
+   * Trees on the clearing, deer and squirrels, sorted by the y of their feet
+   * so a deer can pass behind one tree and in front of the next.
+   */
+  readonly midground = new Container({ label: 'midground', sortableChildren: true });
   readonly birdsMid = new Container({ label: 'birds-mid' });
-  readonly deerMid = new Container({ label: 'deer-mid' });
   readonly birdsNear = new Container({ label: 'birds-near' });
   readonly layout: ForestLayout;
 
   private readonly far: Sprite;
-  private readonly mid: Sprite;
+  private readonly mountains: Sprite;
+  private readonly valley: Sprite;
+  private readonly ground: Sprite;
   private readonly near: Sprite;
-  private readonly crowns: SwayMesh[] = [];
+  private readonly trees: Tree[] = [];
   private readonly canopy: SwayMesh[] = [];
   private readonly ferns: SwayMesh[] = [];
-  private readonly crownLayer = new Container();
   private readonly canopyLayer = new Container();
   private readonly fernLayer = new Container();
   private readonly rays: Sprite[] = [];
@@ -100,24 +113,34 @@ export class ForestScene implements WorldScene {
     const layout = generateForest();
     this.layout = layout;
     this.far = new Sprite(layout.far.toTexture());
-    this.mid = new Sprite(layout.mid.toTexture());
+    this.mountains = new Sprite(layout.mountains.toTexture());
+    this.valley = new Sprite(layout.valley.toTexture());
+    this.ground = new Sprite(layout.ground.toTexture());
     this.near = new Sprite(layout.near.toTexture());
 
-    const place = (list: typeof layout.crowns, into: SwayMesh[], layer: Container, anchor: 'bottom' | 'top', amplitude: number) => {
-      for (const item of list) {
-        const sway = new SwayMesh(item.canvas.toTexture(), { anchor, amplitude });
-        sway.mesh.position.set(Math.round(item.x), Math.round(item.y));
-        into.push(sway);
-        layer.addChild(sway.mesh);
-      }
-    };
-    place(layout.crowns, this.crowns, this.crownLayer, 'bottom', 3);
-    place(layout.canopy, this.canopy, this.canopyLayer, 'top', 4);
-    place(layout.ferns, this.ferns, this.fernLayer, 'bottom', 2);
+    for (const tree of layout.midTrees) {
+      const sway = new SwayMesh(tree.art.toTexture(), { anchor: 'bottom', amplitude: 1 + tree.art.height / 90 });
+      sway.mesh.position.set(tree.x, tree.y);
+      sway.mesh.zIndex = tree.baseY;
+      this.midground.addChild(sway.mesh);
+      this.trees.push({ sway, haze: tree.haze });
+    }
+    for (const piece of layout.canopy) {
+      const sway = new SwayMesh(piece.art.toTexture(), { anchor: 'top', amplitude: 3 });
+      sway.mesh.position.set(Math.round(piece.x), Math.round(piece.y));
+      this.canopy.push(sway);
+      this.canopyLayer.addChild(sway.mesh);
+    }
+    for (const piece of layout.ferns) {
+      const sway = new SwayMesh(piece.art.toTexture(), { anchor: 'bottom', amplitude: 2 });
+      sway.mesh.position.set(Math.round(piece.x), Math.round(piece.y));
+      this.ferns.push(sway);
+      this.fernLayer.addChild(sway.mesh);
+    }
 
     for (const [i, x] of layout.gaps.entries()) {
-      const ray = new Sprite({ texture: createRayTexture(18 + (i % 3) * 8, 300, 0.32), blendMode: 'add' });
-      ray.position.set(x, 20);
+      const ray = new Sprite({ texture: createRayTexture(16 + (i % 3) * 8, 250, 0.55), blendMode: 'add' });
+      ray.position.set(x, 10);
       ray.alpha = 0;
       this.rays.push(ray);
       this.rayLayer.addChild(ray);
@@ -132,19 +155,19 @@ export class ForestScene implements WorldScene {
     this.container.addChild(
       this.sky.container,
       this.far,
+      this.mountains,
+      this.valley,
       this.birdsFar,
-      this.deerFar,
-      this.mid,
-      this.crownLayer,
-      this.birdsMid,
       this.weatherBack,
-      this.deerMid,
+      this.ground,
+      this.midground,
+      this.birdsMid,
       this.near,
       this.birdsNear,
-      this.canopyLayer,
       this.rayLayer,
       this.leafLayer,
       this.fernLayer,
+      this.canopyLayer,
       this.weatherFront,
     );
   }
@@ -154,27 +177,33 @@ export class ForestScene implements WorldScene {
     this.sky.update(dt, env);
     const wind = weather.wind;
 
-    this.far.tint = lighting.haze;
-    this.mid.tint = lerpColor(lighting.ambient, lighting.haze, 0.2);
-    this.crownLayer.tint = lerpColor(lighting.ambient, lighting.haze, 0.15);
+    // Atmospheric perspective: the further away, the more it takes the sky's haze.
+    this.far.tint = lerpColor(lighting.haze, lighting.skyHorizon, 0.4);
+    this.mountains.tint = lerpColor(lighting.ambient, lighting.haze, 0.8);
+    this.valley.tint = lerpColor(lighting.ambient, lighting.haze, 0.45);
+    this.ground.tint = lerpColor(lighting.ambient, lighting.haze, 0.08);
+    for (const tree of this.trees) {
+      tree.sway.mesh.tint = lerpColor(lighting.ambient, lighting.haze, tree.haze);
+      tree.sway.update(time, wind);
+    }
     this.near.tint = lighting.ambient;
     // The canopy and undergrowth sit in shade.
-    const shade = scaleColor(lighting.ambient, 0.82);
+    const shade = scaleColor(lighting.ambient, 0.85);
     this.canopyLayer.tint = shade;
     this.fernLayer.tint = shade;
 
-    for (const sway of this.crowns) sway.update(time, wind);
     for (const sway of this.canopy) sway.update(time, wind);
     for (const sway of this.ferns) sway.update(time * 1.3, wind);
 
-    // Light shafts: strongest with a low, clear morning sun.
+    // Light shafts through the oak's leaves: strongest with a low, clear morning sun.
     const sun = lighting.sun;
     const clarity = (1 - weather.cloudCover) ** 2;
     const morning = lighting.hours > 6 && lighting.hours < 10 ? 1.4 : 1;
-    const strength = sun.visible ? Math.sqrt(Math.max(0, sun.elevation)) * clarity * morning : 0;
+    const strength = sun.visible ? Math.sqrt(Math.max(0, sun.elevation)) * clarity * morning * 0.8 : 0;
     const fromLeft = sun.progress < 0.5;
     this.rays.forEach((ray, i) => {
       ray.scale.x = fromLeft ? 1 : -1;
+      ray.x = fromLeft ? this.layout.gaps[i] : WORLD_WIDTH - this.layout.gaps[i];
       ray.alpha = Math.min(1, strength * (0.75 + 0.25 * Math.sin(time * 0.4 + i * 1.7)));
       ray.tint = sun.color;
     });
@@ -184,20 +213,22 @@ export class ForestScene implements WorldScene {
 
   private updateLeaves(dt: number, env: Environment): void {
     const wind = env.weather.wind;
-    const rate = 0.6 + 5 * Math.abs(wind);
+    const rate = 0.5 + 4 * Math.abs(wind);
     this.leafBudget += dt * rate;
-    while (this.leafBudget >= 1 && this.leaves.length < 80) {
+    while (this.leafBudget >= 1 && this.leaves.length < 70) {
       this.leafBudget -= 1;
       const texture = this.leafTextures[Math.floor(this.rng() * this.leafTextures.length)];
       const particle = new Particle({ texture, x: 0, y: 0 });
       this.leafLayer.addParticle(particle);
+      // Mostly from the oak's crown overhead, some from the trees on the clearing.
+      const fromOak = this.rng() < 0.6;
       this.leaves.push({
         particle,
-        x: this.rng() * WORLD_WIDTH,
-        y: 30 + this.rng() * 40,
+        x: fromOak ? this.rng() * 280 : 100 + this.rng() * 640,
+        y: fromOak ? 10 + this.rng() * 50 : 80 + this.rng() * 80,
         vy: 7 + this.rng() * 8,
         phase: this.rng() * Math.PI * 2,
-        floor: this.rng() < 0.5 ? MID_FLOOR_Y - 14 + this.rng() * 6 : NEAR_FLOOR_Y + this.rng() * 20,
+        floor: BROW_Y + 8 + this.rng() * 82,
         landed: 0,
       });
     }
@@ -230,5 +261,3 @@ export class ForestScene implements WorldScene {
     }
   }
 }
-
-export { FAR_FLOOR_Y, MID_FLOOR_Y, NEAR_FLOOR_Y };

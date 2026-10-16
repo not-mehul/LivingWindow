@@ -24,10 +24,9 @@ interface Squirrel {
 }
 
 export interface TrunkLayers {
+  /** Depth-sorted container for squirrels on the clearing's trees. */
   mid: Container;
   near: Container;
-  midFloor: number;
-  nearFloor: number;
 }
 
 const r = (min: number, max: number) => min + Math.random() * (max - min);
@@ -66,21 +65,25 @@ export class TrunkSquirrels {
   private spawn(): void {
     const trunk = this.trunks[Math.floor(Math.random() * this.trunks.length)];
     const near = trunk.layer === 'near';
-    const floor = near ? this.layers.nearFloor : this.layers.midFloor;
+    // Each tree stands on its own patch of ground.
+    const floor = trunk.bottom;
+    const size = trunk.squirrelSize ?? (near ? 13 : 8);
     const fromLeft = Math.random() < 0.5;
     const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
+    // Sorted with the tree it's on, just in front of it.
+    sprite.zIndex = trunk.bottom + 0.5;
     (near ? this.layers.near : this.layers.mid).addChild(sprite);
     this.squirrels.push({
       coat: Math.random() < 0.6 ? 'red' : 'grey',
       trunk,
-      x: trunk.x + (fromLeft ? -120 : 120),
+      x: trunk.x + (fromLeft ? -1 : 1) * size * 9,
       y: floor,
       target: trunk.x,
       state: 'run',
       timer: 0,
       dir: fromLeft ? 1 : -1,
       sprite,
-      size: near ? 13 : 8,
+      size,
       floor,
     });
   }
@@ -98,7 +101,7 @@ export class TrunkSquirrels {
         if (Math.abs(dx) < 0.5) {
           if (sq.state === 'leave') return true;
           sq.state = 'climb';
-          sq.target = sq.trunk.bottom - r(30, Math.min(220, sq.trunk.bottom - sq.trunk.top - 20));
+          sq.target = sq.trunk.bottom - r(sq.size * 2, Math.max(sq.size * 2, sq.trunk.bottom - sq.trunk.top - sq.size));
         }
         break;
       }
@@ -118,13 +121,13 @@ export class TrunkSquirrels {
           const atFloor = sq.y >= sq.floor - 1;
           if (atFloor) {
             sq.state = 'leave';
-            sq.target = sq.x + (Math.random() < 0.5 ? -200 : 200);
+            sq.target = sq.x + (Math.random() < 0.5 ? -1 : 1) * sq.size * 15;
           } else if (Math.random() < 0.35) {
             sq.state = 'climb';
             sq.target = sq.floor;
           } else {
             sq.state = 'climb';
-            sq.target = Math.max(sq.trunk.top + 20, Math.min(sq.floor, sq.y + r(-60, 40)));
+            sq.target = Math.max(sq.trunk.top + sq.size, Math.min(sq.floor, sq.y + r(-5, 3) * sq.size));
           }
         }
         break;
