@@ -4,7 +4,7 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import { createRng, randomInt, randomRange } from '../../core/random';
 import type { Ledge } from '../../life/types';
 import { depthForScale } from '../../sim/perspective';
-import { BEACH_HORIZON, beachPlane, shoreCoords } from '../../sim/shore';
+import { BEACH_HORIZON, beachPlane, shoreCoords, shoreXAtY } from '../../sim/shore';
 import { pixelHash } from '../../sprites/raster';
 import { ditherRamp, valueNoise } from '../common/paint';
 
@@ -27,7 +27,9 @@ export interface BeachLayout {
   land: PixelBuffer;
   /** All the sand, damp near the water, rippled, with the dune path. */
   sand: PixelBuffer;
-  /** Bushes, driftwood and the dune fence. */
+  /** Dense scrub, far dune plants and palm saplings, painted in once (they don't sway). */
+  scrub: PixelBuffer;
+  /** Driftwood and the dune fence. */
   props: PixelBuffer;
   /** Palms (they sway, rooted at the base). */
   palms: Placed[];
@@ -156,19 +158,23 @@ function drawGrass(rng: () => number, scale = 1): PixelBuffer {
 }
 
 /** A clump of wildflowers on the dune: daisies or purple sea-lavender. */
-function drawFlowers(rng: () => number, kind: 'daisy' | 'violet'): PixelBuffer {
-  const w = randomInt(rng, 24, 36);
-  const h = randomInt(rng, 16, 24);
+function drawFlowers(rng: () => number, kind: 'daisy' | 'violet', scale = 1): PixelBuffer {
+  const w = Math.max(8, Math.round(randomInt(rng, 24, 36) * scale));
+  const h = Math.max(6, Math.round(randomInt(rng, 16, 24) * scale));
   const p = new PixelBuffer(w, h);
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 12 * Math.min(1.4, scale + 0.3); i++) {
     const x = randomRange(rng, 2, w - 2);
     const top = randomRange(rng, 2, h * 0.6);
     for (let y = top; y < h; y++) p.set(x + Math.sin(y * 0.3 + i) * 0.6, y, i % 3 ? 0x6a8a44 : 0x4e6e36);
   }
-  for (let i = 0; i < randomInt(rng, 3, 6); i++) {
-    const x = Math.round(randomRange(rng, 4, w - 4));
-    const y = Math.round(randomRange(rng, 3, h * 0.55));
-    if (kind === 'daisy') {
+  const big = scale > 0.6;
+  for (let i = 0; i < randomInt(rng, 3, 6) * Math.min(1.5, scale + 0.4); i++) {
+    const x = Math.round(randomRange(rng, 3, w - 3));
+    const y = Math.round(randomRange(rng, 2, h * 0.55));
+    if (!big) {
+      p.set(x, y, kind === 'daisy' ? 0xf4f0e4 : 0xb08ad0);
+      p.set(x + 1, y, kind === 'daisy' ? 0xe8b830 : 0xe8d0f4);
+    } else if (kind === 'daisy') {
       for (const [dx, dy] of [[-2, 0], [2, 0], [0, -2], [0, 2], [-1, -1], [1, -1], [-1, 1], [1, 1]] as const) p.set(x + dx, y + dy, 0xf4f0e4);
       p.set(x, y, 0xe8b830);
     } else {
@@ -180,9 +186,16 @@ function drawFlowers(rng: () => number, kind: 'daisy' | 'violet'): PixelBuffer {
   return p;
 }
 
+/** Scrub greens, dark to light: dune bush, olive saltbush, glossy sea grape. */
+const BUSH_PALETTES = [
+  [0x3e5a2e, 0x4e6c36, 0x62803e, 0x7a964a],
+  [0x56602e, 0x6a7438, 0x808a44, 0x98a052],
+  [0x2a4428, 0x385a30, 0x4a7036, 0x628a42],
+];
+
 /** A leafy dune bush stamped into a buffer. */
-function stampBush(p: PixelBuffer, cx: number, baseY: number, h: number, seed: number, haze: number): void {
-  const pal = [0x3e5a2e, 0x4e6c36, 0x62803e, 0x7a964a].map((c) => lerpColor(c, HAZE, haze));
+function stampBush(p: PixelBuffer, cx: number, baseY: number, h: number, seed: number, haze: number, kind = 0): void {
+  const pal = BUSH_PALETTES[kind].map((c) => lerpColor(c, HAZE, haze));
   for (let k = 0; k < 3; k++) {
     const r = h * (k === 1 ? 0.55 : 0.42);
     const ccx = cx + (k - 1) * h * 0.55;
@@ -199,14 +212,27 @@ function stampBush(p: PixelBuffer, cx: number, baseY: number, h: number, seed: n
   }
 }
 
+/** A low, irregular scrub bush: wider than tall, a different shape each time, inked round. */
+function drawScrub(rng: () => number, h: number, haze: number, kind: number): PixelBuffer {
+  const w = h * (1.4 + rng() * 1.2);
+  const art = new PixelBuffer(Math.ceil(w * 1.3) + 4, Math.ceil(h) + 3);
+  const lobes = 2 + Math.floor(rng() * 3);
+  const seed = Math.floor(rng() * 1e6);
+  for (let k = 0; k < lobes; k++) {
+    stampBush(art, art.width / 2 + (k - (lobes - 1) / 2) * w * 0.3, art.height - 2, h * (0.6 + rng() * 0.4), seed + k, haze, kind);
+  }
+  art.outline(lerpColor(0x2e3e22, HAZE, haze));
+  return art;
+}
+
 export function generateBeach(seed = 2718): BeachLayout {
   const rng = createRng(seed);
   const ledges: Ledge[] = [];
 
   // --- The wooded point: forest and palms running down to the horizon ---
   const land = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
-  const landTop = (x: number) => 118 + (x / 450) ** 1.4 * 42 + Math.sin(x * 0.09) * 2 + (pixelHash(Math.floor(x / 3), 1, 7) - 0.5) * 3;
-  for (let x = 0; x < 452; x++) {
+  const landTop = (x: number) => 118 + (x / 370) ** 1.4 * 42 + Math.sin(x * 0.09) * 2 + (pixelHash(Math.floor(x / 3), 1, 7) - 0.5) * 3;
+  for (let x = 0; x < 372; x++) {
     const top = landTop(x);
     for (let y = Math.floor(top); y < 200; y++) {
       const depth = y - top;
@@ -231,14 +257,19 @@ export function generateBeach(seed = 2718): BeachLayout {
   for (let y = BEACH_HORIZON + 1; y < WORLD_HEIGHT; y++) {
     const s = beachPlane.scaleAtY(y);
     const hazeAmount = Math.max(0, 0.5 - s * 0.7);
-    for (let x = 0; x < WORLD_WIDTH; x++) {
-      const { depth, s: across } = shoreCoords(x, y);
-      if (y < landTop(Math.min(451, x)) + 30 && x < 452 && y < 200) {
-        // The far beach tucks under the wooded point.
-        if (y < landTop(x) + 2) continue;
-      }
+    const { depth } = shoreCoords(0, y);
+    const shoreX = shoreXAtY(y);
+    const stretch = 0.3 + s * 0.7;
+    const rowEdge = backEdge(depth);
+    const rowPath = pathS(depth);
+    const pathHalf = 24 + 8 * Math.sin(depth * 7);
+    // The sea covers everything beyond the waterline.
+    const xEnd = Math.min(WORLD_WIDTH, Math.ceil(shoreX + 2));
+    for (let x = 0; x < xEnd; x++) {
+      const across = (x - shoreX) * depth;
+      // The far beach tucks under the wooded point.
+      if (y < 200 && x < 372 && y < landTop(x) + 2) continue;
       const gx = (x - beachPlane.vanishX) * depth;
-      const stretch = 0.3 + s * 0.7;
       let level = 0.55 + (valueNoise(x, y / stretch, 6 + 20 * s, 21) - 0.5) * 0.5;
       // Wind ripples, fading with distance.
       if (depth < 3.5 && Math.sin(depth * 700 * 0.09 + gx * 0.03 + Math.sin(gx * 0.01) * 2) > 0.9) level -= 0.18;
@@ -246,7 +277,7 @@ export function generateBeach(seed = 2718): BeachLayout {
       // Damp sand near the water, darker the closer it gets.
       if (across > -70) color = ditherRamp(damp, 0.2 + (-across / 70) * 0.8 + (valueNoise(x, y, 7, 3) - 0.5) * 0.3, x, y);
       // Grassy dunes up the beach: sandy hollows between clumps of marram.
-      const edge = backEdge(depth) + (valueNoise(x, y, 9, 77) - 0.5) * 50;
+      const edge = rowEdge + (valueNoise(x, y, 9, 77) - 0.5) * 50;
       if (across < edge) {
         const into = Math.min(1, (edge - across) / 160);
         // Soft dune ridges: lit faces and shaded hollows.
@@ -257,7 +288,7 @@ export function generateBeach(seed = 2718): BeachLayout {
         if (grassy > 0.92 - into * 0.2) color = ditherRamp(duneGrass, (grassy - 0.6) * 2 + (pixelHash(x, y, 74) - 0.5) * 0.3, x, y);
       }
       // The dune path: soft, pale, trodden sand with footprints.
-      const pathOff = Math.abs(across - pathS(depth)) - (24 + 8 * Math.sin(depth * 7));
+      const pathOff = Math.abs(across - rowPath) - pathHalf;
       if (pathOff < 0 && depth < 3.2) {
         // Trodden sand, scuffed with footprints, with a darker edge where it's been kicked up.
         color = pathOff > -5 * depth ? dry[1] : ditherRamp(dry, 0.72, x, y);
@@ -268,6 +299,59 @@ export function generateBeach(seed = 2718): BeachLayout {
       if (h < 0.004 * s) color = h < 0.002 * s ? 0xf8f0e4 : 0xe0a28a;
       sand.set(x, y, lerpColor(color, HAZE, hazeAmount));
     }
+  }
+
+  // --- Scrub: thick, overlapping bushes deep in the dunes, under the palms ---
+  // Everything in this layer is painted far to near, so nearer bushes overlap.
+  const scrub = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
+  const stamps: Array<{ y: number; paint: () => void }> = [];
+  const scrubRng = createRng(seed + 5);
+  // Bushes of a size and kind are drawn a few times over and reused: there are thousands.
+  const bushCache = new Map<string, PixelBuffer[]>();
+  const cachedScrub = (h: number, haze: number, kind: number): PixelBuffer => {
+    const key = `${kind}:${Math.round(h)}:${Math.round(haze * 20)}`;
+    const variants = bushCache.get(key) ?? [];
+    bushCache.set(key, variants);
+    if (variants.length < 4) variants.push(drawScrub(scrubRng, Math.round(h), haze, kind));
+    return variants[Math.floor(scrubRng() * variants.length)];
+  };
+  for (let y = BEACH_HORIZON + 3; y < 298; y += Math.max(1, 2.5 * beachPlane.scaleAtY(y) + 0.5)) {
+    const scale = beachPlane.scaleAtY(y);
+    const haze = Math.max(0, 0.5 - scale * 0.7);
+    for (let x = scrubRng() * 6; x < WORLD_WIDTH; x += 4 + 14 * scale + scrubRng() * 10 * scale) {
+      const { depth, s: across } = shoreCoords(x, y);
+      // Ground px back from the open sand into the dunes.
+      const inland = backEdge(depth) - across;
+      if (inland < 30) continue;
+      if (depth < 3.2 && Math.abs(across - pathS(depth)) < 30 + 20 * scale) continue;
+      // Thick masses with sandy gaps between, thicker further in.
+      const thick = Math.min(1, inland / 400);
+      if (valueNoise(x, y / (0.3 + scale * 0.7), 14 + 30 * scale, 91) < 0.6 - thick * 0.3) continue;
+      const h = (8 + scrubRng() * 13) * (0.3 + scale) * (0.8 + thick * 0.6);
+      const species = valueNoise(x, y, 40, 93);
+      const kind = species < 0.35 ? 1 : species > 0.68 ? 2 : 0;
+      const bx = x;
+      const by = y;
+      if (scale < 0.4) {
+        // Far off, just a blob of colour: stamp it straight in.
+        const bseed = Math.floor(x * 7 + y * 131);
+        stamps.push({ y, paint: () => stampBush(scrub, bx, by, h, bseed, haze, kind) });
+      } else {
+        const art = cachedScrub(h, haze, kind);
+        stamps.push({ y, paint: () => scrub.draw(art, bx - art.width / 2, by - art.height + 2) });
+      }
+    }
+  }
+  // Young palms coming up through the scrub.
+  for (let i = 0; i < 9; i++) {
+    const y = randomRange(scrubRng, BEACH_HORIZON + 22, 262);
+    const x = randomRange(scrubRng, 20, 480);
+    const { depth, s: across } = shoreCoords(x, y);
+    if (backEdge(depth) - across < 80) continue;
+    const scale = beachPlane.scaleAtY(y);
+    const haze = Math.max(0, 0.5 - scale * 0.7);
+    const sapling = drawPalm(randomRange(scrubRng, 50, 90) * scale, randomRange(scrubRng, -14, 14) * scale, 900 + i);
+    stamps.push({ y, paint: () => scrub.draw(sapling.art, x - sapling.baseX, y - sapling.baseY, (c) => lerpColor(c, HAZE, haze)) });
   }
 
   // --- Driftwood and an old dune fence ---
@@ -325,6 +409,10 @@ export function generateBeach(seed = 2718): BeachLayout {
     [150, 226, 300, 34],
     [84, 238, 330, -30],
     [24, 262, 360, 40],
+    [262, 234, 240, 30],
+    [118, 250, 300, -22],
+    [390, 224, 110, -10],
+    [318, 262, 140, 16],
     [205, 300, 380, 150],
     [70, 318, 420, 60],
   ];
@@ -353,59 +441,84 @@ export function generateBeach(seed = 2718): BeachLayout {
     dune.set(x, Math.floor(top), dry[4]);
   }
   dune.outline(0x8a744e);
+  // Scrub along the bank's crest, inked so it stands out against the sand.
+  for (const [x, h, kind] of [
+    [118, 22, 0],
+    [262, 18, 2],
+    [372, 16, 1],
+    [452, 14, 0],
+  ] as const) {
+    const art = drawScrub(rng, h, 0, kind);
+    dune.draw(art, x - art.width / 2, duneTop(x) - art.height + 6);
+  }
   const tufts: Placed[] = [];
-  for (let x = 6; x < 460; x += randomInt(rng, 16, 34)) {
-    const art = drawGrass(rng, 1.7);
-    const baseY = Math.round(duneTop(x) + randomInt(rng, 2, 8));
-    tufts.push({ art, x: x - art.width / 2, y: baseY - art.height, baseY });
+  const addTuft = (art: PixelBuffer, x: number, baseY: number) => tufts.push({ art, x: Math.round(x - art.width / 2), y: Math.round(baseY - art.height + 1), baseY: Math.round(baseY) });
+  for (let x = 4; x < 466; x += randomInt(rng, 9, 20)) addTuft(drawGrass(rng, randomRange(rng, 1.4, 2.1)), x, duneTop(x) + randomInt(rng, 2, 9));
+  // Big hero clumps of marram at the front, as in the drawing.
+  for (const [x, baseY, scale] of [
+    [178, 352, 2.9],
+    [396, 350, 3.1],
+    [612, 342, 2.5],
+  ] as const) {
+    addTuft(drawGrass(rng, scale), x - 8, baseY);
+    addTuft(drawGrass(rng, scale * 0.8), x + 10, baseY + 2);
   }
   for (const [x, kind] of [
-    [30, 'daisy'],
-    [92, 'daisy'],
-    [160, 'violet'],
+    [12, 'daisy'],
+    [44, 'violet'],
+    [70, 'daisy'],
+    [104, 'daisy'],
+    [140, 'violet'],
+    [176, 'daisy'],
     [230, 'daisy'],
-    [320, 'violet'],
+    [290, 'violet'],
+    [330, 'daisy'],
+    [430, 'violet'],
   ] as const) {
-    const art = drawFlowers(rng, kind);
-    const baseY = Math.round(duneTop(x) + 6);
-    tufts.push({ art, x: x - art.width / 2, y: baseY - art.height, baseY });
+    addTuft(drawFlowers(rng, kind, 1.1), x, duneTop(x) + 7 + randomInt(rng, 0, 6));
   }
-  // Marram grass and bushes dot the dunes, sized by distance (off the path).
+  // Marram, bushes and flowers fill the dunes, sized by distance (off the path).
+  // The far ones are too small to see sway: they are painted into the scrub.
   const plantRng = createRng(seed + 3);
   let placedPlants = 0;
   let bushes = 0;
-  for (let attempt = 0; attempt < 1200 && placedPlants < 110; attempt++) {
-    const y = randomRange(plantRng, BEACH_HORIZON + 14, 300);
+  for (let attempt = 0; attempt < 3000 && placedPlants < 200; attempt++) {
+    const y = randomRange(plantRng, BEACH_HORIZON + 8, 300);
     const x = randomRange(plantRng, 0, WORLD_WIDTH);
     const { depth, s: across } = shoreCoords(x, y);
     if (across > backEdge(depth) - 10) continue;
-    if (Math.abs(across - pathS(depth)) < 34) continue;
+    if (depth < 3.2 && Math.abs(across - pathS(depth)) < 34) continue;
     const scale = beachPlane.scaleAtY(y);
     const haze = Math.max(0, 0.5 - scale * 0.7);
     // Lusher further up the dunes, under the palms.
     const lush = Math.min(1, (backEdge(depth) - across) / 300);
+    const roll = plantRng();
     let art: PixelBuffer;
-    if (bushes >= 26 || plantRng() < 0.8 - lush * 0.3) {
+    if (roll < 0.1 + lush * 0.06) {
+      art = drawFlowers(plantRng, plantRng() < 0.5 ? 'daisy' : 'violet', Math.max(0.3, scale * 1.2));
+    } else if (bushes >= 60 || roll < 0.72 - lush * 0.3) {
       // Marram: tall, varied clumps.
-      art = drawGrass(plantRng, Math.max(0.35, scale * (1 + plantRng() * 0.8)));
+      art = drawGrass(plantRng, Math.max(0.3, scale * (1 + plantRng() * 0.8) * (1 + lush * 0.4)));
     } else {
-      // Low, irregular scrub: wider than tall, a different shape each time.
-      const h = (10 + plantRng() * 18) * scale;
-      const w = h * (1.4 + plantRng() * 1.2);
-      art = new PixelBuffer(Math.ceil(w * 1.3) + 4, Math.ceil(h) + 3);
-      const lobes = 2 + Math.floor(plantRng() * 3);
-      for (let k = 0; k < lobes; k++) {
-        stampBush(art, art.width / 2 + (k - (lobes - 1) / 2) * w * 0.3, art.height - 2, h * (0.6 + plantRng() * 0.4), Math.floor(x) + k, haze);
-      }
-      art.outline(0x2e3e22);
+      art = drawScrub(plantRng, (10 + plantRng() * 18) * scale * (1 + lush * 0.6), haze, Math.floor(plantRng() * 3));
       bushes++;
     }
-    tufts.push({ art, x: Math.round(x - art.width / 2), y: Math.round(y - art.height + 1), baseY: Math.round(y) });
+    if (scale < 0.35) {
+      const px = Math.round(x - art.width / 2);
+      const py = Math.round(y - art.height + 1);
+      stamps.push({ y, paint: () => scrub.draw(art, px, py, (c) => lerpColor(c, HAZE, haze)) });
+      continue;
+    }
+    addTuft(art, x, y);
     placedPlants++;
   }
+  stamps.sort((a, b) => a.y - b.y);
+  for (const stamp of stamps) stamp.paint();
+  // Ink round the far masses (the near bushes carry their own).
+  scrub.outline(lerpColor(0x2e3e22, HAZE, 0.3));
   tufts.sort((a, b) => a.baseY - b.baseY);
   ledges.push({ x0: 120, x1: 440, y: 290, layer: 'near', kind: 'sand', z: birdZ(290) });
   ledges.push({ x0: 300, x1: 560, y: 250, layer: 'mid', kind: 'sand', z: birdZ(250) });
 
-  return { land, sand, props, palms, dune, tufts, ledges };
+  return { land, sand, scrub, props, palms, dune, tufts, ledges };
 }

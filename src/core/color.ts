@@ -14,9 +14,14 @@ export function pack(r: number, g: number, b: number): number {
 }
 
 export function lerpColor(a: number, b: number, t: number): number {
-  const [ar, ag, ab] = channels(a);
-  const [br, bg, bb] = channels(b);
-  return pack(ar + (br - ar) * t, ag + (bg - ag) * t, ab + (bb - ab) * t);
+  // Hot in scenery painting: no arrays, no closures.
+  const ar = (a >> 16) & 255;
+  const ag = (a >> 8) & 255;
+  const ab = a & 255;
+  const r = Math.max(0, Math.min(255, Math.round(ar + (((b >> 16) & 255) - ar) * t)));
+  const g = Math.max(0, Math.min(255, Math.round(ag + (((b >> 8) & 255) - ag) * t)));
+  const bl = Math.max(0, Math.min(255, Math.round(ab + ((b & 255) - ab) * t)));
+  return (r << 16) | (g << 8) | bl;
 }
 
 /** Relative luminance in [0, 1] (Rec. 709 weights on sRGB values). */

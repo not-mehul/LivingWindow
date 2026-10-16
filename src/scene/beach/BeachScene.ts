@@ -63,6 +63,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
 
   private readonly land: Sprite;
   private readonly sand: Sprite;
+  private readonly scrub: Sprite;
   private readonly props: Sprite;
   private readonly dune: Sprite;
   private readonly water: Sprite;
@@ -86,6 +87,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     this.waves = new WaveModel(createRng(31));
     this.land = new Sprite(this.layout.land.toTexture());
     this.sand = new Sprite(this.layout.sand.toTexture());
+    this.scrub = new Sprite(this.layout.scrub.toTexture());
     this.props = new Sprite(this.layout.props.toTexture());
     this.dune = new Sprite(this.layout.dune.toTexture());
 
@@ -117,6 +119,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
       this.sky.container,
       this.land,
       this.sand,
+      this.scrub,
       this.water,
       this.fishLayer,
       this.horizonLayer,
@@ -163,6 +166,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     this.sky.update(dt, env);
     this.land.tint = lerpColor(lighting.haze, lighting.ambient, 0.3);
     this.sand.tint = lighting.ambient;
+    this.scrub.tint = lighting.ambient;
     this.props.tint = lighting.ambient;
     this.dune.tint = lighting.ambient;
     this.tuftLayer.tint = lighting.ambient;

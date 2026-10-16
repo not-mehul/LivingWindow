@@ -254,6 +254,21 @@ point on the horizon, and the sea lies to the right.
   and back to the sea. The fish school swims in the shallows beyond the
   breakers, where a gull dives on it. Dolphins breach far out on the sea side.
 
+**Redesign, part 3b — a curving bay, thicker dunes** ✅
+
+- **A bay.** The waterline is now a smooth arc set by a few screen points and
+  joined by a monotone cubic. It enters at the lower right, sweeps up and to the
+  left, and curls round along the horizon under the far headland. The sea,
+  surf, wet sand, dunes, path and every creature follow it unchanged.
+- **Thick vegetation.** A belt of overlapping, inked scrub (dune bush, olive
+  saltbush and glossy sea grape) fills the dunes under the palms, hazier with
+  distance and with sandy gaps between the masses. Palm saplings come up
+  through it. About 200 swaying marram clumps, bushes and flowers sit in front,
+  four more palms join the grove, and the front dune bank gets denser grass,
+  big marram clumps, more flowers and bushes along its crest. Plants too far
+  away to see sway are painted into the static layer, so the sprite count stays
+  modest.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.

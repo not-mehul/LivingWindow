@@ -49,13 +49,41 @@ export class PixelBuffer {
   /** Colour every empty pixel touching the drawing: an ink outline round its silhouette. */
   outline(color: string | number): void {
     const edge: number[] = [];
-    for (let y = 0; y < this.height; y++) {
-      for (let x = 0; x < this.width; x++) {
-        if (this.isSet(x, y)) continue;
-        if (this.isSet(x - 1, y) || this.isSet(x + 1, y) || this.isSet(x, y - 1) || this.isSet(x, y + 1)) edge.push(x, y);
+    const { data: d, width: w, height: h } = this;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const k = (y * w + x) * 4 + 3;
+        if (d[k] > 0) continue;
+        if ((x > 0 && d[k - 4] > 0) || (x < w - 1 && d[k + 4] > 0) || (y > 0 && d[k - w * 4] > 0) || (y < h - 1 && d[k + w * 4] > 0)) edge.push(x, y);
       }
     }
     for (let i = 0; i < edge.length; i += 2) this.set(edge[i], edge[i + 1], color);
+  }
+
+  /** Copy another buffer's drawn pixels in at (x, y), optionally recolouring each one. */
+  draw(src: PixelBuffer, x: number, y: number, recolor?: (color: number) => number): void {
+    x = Math.round(x);
+    y = Math.round(y);
+    const s = src.data;
+    const d = this.data;
+    for (let j = Math.max(0, -y); j < Math.min(src.height, this.height - y); j++) {
+      for (let i = Math.max(0, -x); i < Math.min(src.width, this.width - x); i++) {
+        const k = (j * src.width + i) * 4;
+        if (s[k + 3] === 0) continue;
+        const o = ((y + j) * this.width + x + i) * 4;
+        if (recolor) {
+          const c = recolor((s[k] << 16) | (s[k + 1] << 8) | s[k + 2]);
+          d[o] = c >> 16;
+          d[o + 1] = (c >> 8) & 0xff;
+          d[o + 2] = c & 0xff;
+        } else {
+          d[o] = s[k];
+          d[o + 1] = s[k + 1];
+          d[o + 2] = s[k + 2];
+        }
+        d[o + 3] = s[k + 3];
+      }
+    }
   }
 
   /** Read a pixel back as 0xRRGGBB (alpha ignored); -1 where empty. */
