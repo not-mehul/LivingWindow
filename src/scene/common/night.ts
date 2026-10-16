@@ -1,5 +1,5 @@
 import { Container, Sprite } from 'pixi.js';
-import { scaleColor } from '../../core/color';
+import { lerpColor, scaleColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Lighting } from '../lighting';
 
@@ -50,27 +50,44 @@ export function nightVariant(src: PixelBuffer, g: NightGrade): PixelBuffer {
 
 /**
  * A static layer that cross-fades from its daylight art (tinted for the hour
- * as before) to its moonlit version as night falls.
+ * as before) to its glowing dusk-and-dawn version, then to its moonlit one.
  */
 export class DayNightSprite {
   readonly container = new Container();
   readonly day: Sprite;
+  readonly dusk: Sprite | null;
   readonly night: Sprite;
 
-  constructor(art: PixelBuffer, grade: NightGrade) {
+  /** Grades for the moonlit night and (optionally) the glow of dusk and dawn. */
+  constructor(art: PixelBuffer, grade: NightGrade, twilight?: NightGrade) {
     this.day = new Sprite(art.toTexture());
+    this.dusk = twilight ? new Sprite(nightVariant(art, twilight).toTexture()) : null;
     this.night = new Sprite(nightVariant(art, grade).toTexture());
     this.night.alpha = 0;
-    this.container.addChild(this.day, this.night);
+    this.container.addChild(this.day);
+    if (this.dusk) {
+      this.dusk.alpha = 0;
+      this.container.addChild(this.dusk);
+    }
+    this.container.addChild(this.night);
   }
 
-  /** `dayTint` is what the layer was tinted before; at night the moonlit art takes over, dimmed under cloud. */
-  update(dayTint: number, lighting: Pick<Lighting, 'nightness' | 'moonlight'>): void {
+  /** `dayTint` is what the layer was tinted before; at dusk and dawn, then at night, the graded art takes over, dimmed under cloud. */
+  update(dayTint: number, lighting: Pick<Lighting, 'nightness' | 'twilight' | 'moonlight' | 'ambient'>): void {
     this.day.tint = dayTint;
     const n = lighting.nightness;
+    const t = this.dusk ? lighting.twilight : 0;
     this.night.visible = n > 0.001;
     this.night.alpha = n;
-    this.day.visible = n < 0.999;
     this.night.tint = scaleColor(0xffffff, 0.62 + 0.38 * lighting.moonlight);
+    if (this.dusk) {
+      // Once dusk has faded in it carries the scene until the night art covers it.
+      const alpha = Math.min(1, t + n);
+      this.dusk.visible = alpha > 0.001 && n < 0.999;
+      this.dusk.alpha = alpha;
+      // Under cloud (which also dims the moon) the glow is greyer and dimmer.
+      this.dusk.tint = lerpColor(scaleColor(0xffffff, 0.7 + 0.3 * lighting.moonlight), lighting.ambient, 0.2);
+    }
+    this.day.visible = n + t < 0.999;
   }
 }

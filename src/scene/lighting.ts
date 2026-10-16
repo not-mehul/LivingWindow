@@ -31,6 +31,11 @@ export interface Lighting {
    * moonlit version by this. Zero through the day and twilight.
    */
   nightness: number;
+  /**
+   * The glow of dusk and dawn, 0..1: peaks while the sun is at or just below
+   * the horizon and hands over to `nightness` as it gets dark.
+   */
+  twilight: number;
   /** How bright the moonlight is, 0..1 (cloud and storm dim it). */
   moonlight: number;
   stars: number;
@@ -184,6 +189,7 @@ export function computeLighting(
   // By moonlight the night isn't murky: things lift towards a cool, readable blue.
   const nightness = smoothstep(clamp((darkness - 0.55) / 0.4, 0, 1));
   const moonlight = clamp(1 - cloud * 0.55 - storm * 0.3, 0, 1);
+  const twilight = smoothstep(clamp((darkness - 0.12) / 0.26, 0, 1)) * (1 - nightness);
   const ambient = lerpColor(dimmed, MOONLIGHT, nightness * 0.6 * moonlight);
   const haze = lerpColor(ambient, skyHorizon, 0.38);
   const cloudTint = scaleColor(desaturate(key.cloud, cloud * 0.5), 1 - cloud * 0.3 - storm * 0.3);
@@ -201,6 +207,7 @@ export function computeLighting(
     cloudTint,
     darkness,
     nightness,
+    twilight,
     moonlight,
     stars: key.stars * (1 - cloud) * (1 - cloud),
     sun: {

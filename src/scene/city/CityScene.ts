@@ -18,6 +18,13 @@ const NIGHT: Record<CityLayerName, NightGrade> = {
   near: { desaturate: 0.6, tint: [0.27, 0.4, 0.48], lift: [6, 12, 20] },
 };
 
+/** Dusk and dawn, after the drawing: faces lit a warm pink-lavender, the distance a hazy violet. */
+const DUSK: Record<CityLayerName, NightGrade> = {
+  far: { desaturate: 0.55, tint: [0.5, 0.44, 0.64], lift: [12, 8, 24] },
+  mid: { desaturate: 0.45, tint: [0.62, 0.52, 0.7], lift: [8, 4, 18] },
+  near: { desaturate: 0.4, tint: [0.8, 0.66, 0.8], lift: [6, 0, 16] },
+};
+
 /** How bright each layer's lit windows read: distance dims them. */
 const WINDOW_BRIGHTNESS: Record<CityLayerName, number> = { far: 0.45, mid: 0.8, near: 1 };
 
@@ -62,13 +69,13 @@ export class CityScene implements WorldScene {
     const sprites = {} as Record<CityLayerName, DayNightSprite>;
     const lightsByLayer = {} as Record<CityLayerName, WindowLights>;
     for (const layer of city.layers) {
-      sprites[layer.name] = new DayNightSprite(layer.art, NIGHT[layer.name]);
+      sprites[layer.name] = new DayNightSprite(layer.art, NIGHT[layer.name], DUSK[layer.name]);
       const lights = new WindowLights(layer.windows, rng, WINDOW_BRIGHTNESS[layer.name]);
       lightsByLayer[layer.name] = lights;
       this.lights.push(lights);
     }
     this.layers = sprites;
-    this.over = new DayNightSprite(city.over, NIGHT.near);
+    this.over = new DayNightSprite(city.over, NIGHT.near, DUSK.near);
     this.glow = new Sprite(city.streetGlow.toTexture());
     this.glow.blendMode = 'add';
     this.neon = new Sprite(city.neon.toTexture());

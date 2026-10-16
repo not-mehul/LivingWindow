@@ -15,6 +15,10 @@ describe('computeLighting', () => {
     expect(midnight.darkness).toBeGreaterThan(0.9);
     expect(midnight.nightness).toBeGreaterThan(0.9);
     expect(noon.nightness).toBe(0);
+    expect(noon.twilight).toBe(0);
+    expect(midnight.twilight).toBeLessThan(0.1);
+    expect(computeLighting(18.8, clear).twilight).toBeGreaterThan(0.6);
+    expect(computeLighting(5.9, clear).twilight).toBeGreaterThan(0.6);
     // Moonlit, not murky: the night lifts towards a readable blue.
     expect(luminance(midnight.ambient)).toBeGreaterThan(0.3);
     expect(luminance(midnight.skyTop)).toBeLessThan(0.1);

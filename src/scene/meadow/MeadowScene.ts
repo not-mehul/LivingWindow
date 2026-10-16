@@ -28,6 +28,13 @@ const NIGHT: Record<'hills' | 'trees' | 'pasture', NightGrade> = {
   pasture: { desaturate: 0.72, tint: [0.3, 0.34, 0.56], lift: [8, 10, 24] },
 };
 const NIGHT_TREES = 0x3e5078;
+
+/** Dusk and dawn, after the drawing: soft, muted greens under a pink sky, the distance going blue. */
+const DUSK: typeof NIGHT = {
+  hills: { desaturate: 0.45, tint: [0.66, 0.7, 0.86], lift: [8, 8, 20] },
+  trees: { desaturate: 0.35, tint: [0.66, 0.74, 0.8], lift: [6, 6, 16] },
+  pasture: { desaturate: 0.3, tint: [0.76, 0.76, 0.84], lift: [4, 4, 12] },
+};
 const NIGHT_FLOWERS = 0x8088bc;
 
 /** Rebuild the creek's surface at this rate. */
@@ -98,9 +105,9 @@ export class MeadowScene implements WorldScene {
     this.ledges = layout.ledges;
     this.trunks = layout.trunks;
     this.bushes = layout.bushes;
-    this.hills = new DayNightSprite(layout.hills, NIGHT.hills);
-    this.treeLine = new DayNightSprite(layout.treeLine, NIGHT.trees);
-    this.ground = new DayNightSprite(layout.ground, NIGHT.pasture);
+    this.hills = new DayNightSprite(layout.hills, NIGHT.hills, DUSK.hills);
+    this.treeLine = new DayNightSprite(layout.treeLine, NIGHT.trees, DUSK.trees);
+    this.ground = new DayNightSprite(layout.ground, NIGHT.pasture, DUSK.pasture);
 
     for (const oak of layout.oaks) {
       const sway = new SwayMesh(oak.art.toTexture(), { anchor: 'bottom', amplitude: oak.sway, frequency: 0.7 });

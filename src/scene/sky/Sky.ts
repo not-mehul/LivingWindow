@@ -253,7 +253,8 @@ export class Sky {
     this.twinkles = starTextures.twinkle.map((t) => new Sprite(t));
 
     const glow = createGlowTexture(56);
-    this.sunGlow = new Sprite({ texture: glow, anchor: 0.5, blendMode: 'add' });
+    // The sun's own wider glow, for when it sits low in a dusk sky.
+    this.sunGlow = new Sprite({ texture: createGlowTexture(96), anchor: 0.5, blendMode: 'add' });
     this.nightColors = options.nightColors;
     const crescent = options.moonPhase === 'crescent';
     // The moon's halo: wide and bright at full moon, as in the night drawings.
@@ -301,9 +302,13 @@ export class Sky {
       sprite.alpha = lighting.stars * (0.55 + 0.45 * Math.sin(time * (0.9 + i * 0.37) + i * 2.1));
     });
 
-    this.placeBody(this.sun, this.sunGlow, lighting.sun, 205);
+    // The sun rises and sets well inside the panorama, as in the dusk drawings,
+    // and looks bigger near the horizon, in a wide glow.
+    this.placeBody(this.sun, this.sunGlow, lighting.sun, 205, 150);
+    const low = 1 - lighting.sun.elevation;
+    this.sun.scale.set(low > 0.8 ? 2 : 1);
     this.sun.alpha = lighting.sun.visible ? 1 - weather.cloudCover * 0.85 : 0;
-    this.sunGlow.alpha = lighting.sun.glow;
+    this.sunGlow.alpha = lighting.sun.glow * (0.45 + 0.55 * low * low);
     this.placeBody(this.moon, this.moonGlow, lighting.moon, 170);
     this.moon.alpha = lighting.moon.visible ? lighting.moon.glow : 0;
     this.moonGlow.alpha = lighting.moon.glow * this.moonHaloStrength;
@@ -311,10 +316,10 @@ export class Sky {
     this.updateClouds(dt, env);
   }
 
-  private placeBody(body: Sprite, glow: Sprite, state: CelestialBody, arcHeight: number): void {
+  private placeBody(body: Sprite, glow: Sprite, state: CelestialBody, arcHeight: number, inset = 70): void {
     body.visible = glow.visible = state.visible;
     if (!state.visible) return;
-    const x = Math.round(lerp(70, WORLD_WIDTH - 70, state.progress));
+    const x = Math.round(lerp(inset, WORLD_WIDTH - inset, state.progress));
     const y = Math.round(this.horizonY + 8 - state.elevation * arcHeight);
     body.position.set(x, y);
     glow.position.set(x, y);

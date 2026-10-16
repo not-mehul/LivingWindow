@@ -346,6 +346,21 @@ look straight down a market street in one-point perspective.
   neon halo; and the night market throws a warm amber glow up off the street
   and onto the shopfronts.
 
+**Dusk and dawn — after the twilight drawings** ✅
+
+- **A third look between day and night.** `lighting.twilight` peaks while the
+  sun is at or just below the horizon. Each landscape's still layers fade to a
+  dusk-and-dawn version graded once at load, and then to the moonlit one as it
+  gets dark. The grades are tuned from the references:
+  - blue-grey mountains over cool, deep greens in the forest;
+  - rosy sand and near-silhouette palms and scrub at the beach;
+  - soft, muted greens with a blue distance in the meadows;
+  - pink-lavender faces and a violet distance in the city.
+- **The sun** now rises and sets well inside the panorama, looks bigger on the
+  horizon, and sits in a wide glow.
+- **The beach's sea** turns a deep navy-violet at dusk and dawn, its crests
+  and foam catching the pink of the sky.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.

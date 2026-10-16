@@ -30,6 +30,15 @@ const NIGHT: Record<'land' | 'sand' | 'scrub' | 'props', NightGrade> = {
 };
 const NIGHT_PLANTS = 0x4c5c66;
 
+/** Dusk and dawn, after the drawing: rosy sand, the palms and scrub near silhouettes against the glow. */
+const DUSK: typeof NIGHT = {
+  land: { desaturate: 0.5, tint: [0.42, 0.36, 0.44], lift: [10, 8, 18] },
+  sand: { desaturate: 0.3, tint: [0.92, 0.72, 0.8], lift: [0, 0, 12] },
+  scrub: { desaturate: 0.5, tint: [0.72, 0.62, 0.7], lift: [6, 4, 12] },
+  props: { desaturate: 0.4, tint: [0.78, 0.62, 0.7], lift: [4, 2, 10] },
+};
+const DUSK_PLANTS = 0x7a6470;
+
 const WATER_TOP = BEACH_HORIZON + 1;
 const WATER_HEIGHT = WORLD_HEIGHT - WATER_TOP;
 /** Rebuild the water texture at this rate (it's the heaviest per-frame work). */
@@ -96,11 +105,11 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     this.layout = generateBeach();
     this.ledges = this.layout.ledges;
     this.waves = new WaveModel(createRng(31));
-    this.land = new DayNightSprite(this.layout.land, NIGHT.land);
-    this.sand = new DayNightSprite(this.layout.sand, NIGHT.sand);
-    this.scrub = new DayNightSprite(this.layout.scrub, NIGHT.scrub);
-    this.props = new DayNightSprite(this.layout.props, NIGHT.props);
-    this.dune = new DayNightSprite(this.layout.dune, NIGHT.sand);
+    this.land = new DayNightSprite(this.layout.land, NIGHT.land, DUSK.land);
+    this.sand = new DayNightSprite(this.layout.sand, NIGHT.sand, DUSK.sand);
+    this.scrub = new DayNightSprite(this.layout.scrub, NIGHT.scrub, DUSK.scrub);
+    this.props = new DayNightSprite(this.layout.props, NIGHT.props, DUSK.props);
+    this.dune = new DayNightSprite(this.layout.dune, NIGHT.sand, DUSK.sand);
 
     this.waterImage = this.waterCanvas.ctx.createImageData(WORLD_WIDTH, WATER_HEIGHT);
     this.waterTexture = createNearestTexture(this.waterCanvas.canvas);
@@ -181,7 +190,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     this.props.update(lighting.ambient, lighting);
     this.dune.update(lighting.ambient, lighting);
     // By moonlight the palms and grasses are dark grey-green against pale sand.
-    const plants = lerpColor(lighting.ambient, NIGHT_PLANTS, lighting.nightness * 0.85);
+    const plants = lerpColor(lerpColor(lighting.ambient, DUSK_PLANTS, lighting.twilight * 0.6), NIGHT_PLANTS, lighting.nightness * 0.85);
     this.tuftLayer.tint = plants;
     for (const palm of this.palms) {
       palm.sway.mesh.tint = lerpColor(plants, lighting.haze, palm.haze);
@@ -217,14 +226,17 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     // By moonlight: a deep navy sea with silvery crests and bright white foam, as in the night drawing.
     const n = lighting.nightness;
     const moon = n * lighting.moonlight;
-    const seaFar = lerpColor(lerpColor(lighting.skyHorizon, multiplyColor(0x2a6496, amb), 0.55), 0x1a2450, n);
-    const seaNear = lerpColor(lerpColor(lighting.skyHorizon, multiplyColor(0x2a8cae, amb), 0.12), 0x24366a, n);
-    const shallow = lerpColor(multiplyColor(0x4ec6c2, amb), 0x3a5888, n);
-    const crest = lerpColor(lerpColor(seaNear, multiplyColor(0xe2f2f4, amb), 0.6), 0x8a9ccc, moon);
-    const ripple = lerpColor(lerpColor(seaNear, multiplyColor(0xbfe2ea, amb), 0.45), 0x5a6ca4, n);
-    const foam = lerpColor(lerpColor(multiplyColor(0xf6f8f6, amb), 0xffffff, 0.15 + 0.2 * (1 - lighting.darkness)), 0xe4ecf8, moon);
-    const sheet = lerpColor(lerpColor(multiplyColor(0xd8c08a, amb), multiplyColor(0x9ad4d4, amb), 0.6), 0x7686b0, n);
-    const wet = lerpColor(multiplyColor(0x9a7c50, amb), 0x50506a, n);
+    // At dusk and dawn: a deep navy-violet sea, its crests and foam catching the pink of the sky.
+    const t = lighting.twilight;
+    const grade = (day: number, dusk: number, night: number, nightAmount = n) => lerpColor(lerpColor(day, dusk, t), night, nightAmount);
+    const seaFar = grade(lerpColor(lighting.skyHorizon, multiplyColor(0x2a6496, amb), 0.55), 0x2c2a5c, 0x1a2450);
+    const seaNear = grade(lerpColor(lighting.skyHorizon, multiplyColor(0x2a8cae, amb), 0.12), 0x34346c, 0x24366a);
+    const shallow = grade(multiplyColor(0x4ec6c2, amb), 0x5a5280, 0x3a5888);
+    const crest = grade(lerpColor(seaNear, multiplyColor(0xe2f2f4, amb), 0.6), 0xc898ac, 0x8a9ccc, moon);
+    const ripple = grade(lerpColor(seaNear, multiplyColor(0xbfe2ea, amb), 0.45), 0x7a6890, 0x5a6ca4);
+    const foam = grade(lerpColor(multiplyColor(0xf6f8f6, amb), 0xffffff, 0.15 + 0.2 * (1 - lighting.darkness)), 0xf4d4d4, 0xe4ecf8, moon);
+    const sheet = grade(lerpColor(multiplyColor(0xd8c08a, amb), multiplyColor(0x9ad4d4, amb), 0.6), 0xb08a98, 0x7686b0);
+    const wet = grade(multiplyColor(0x9a7c50, amb), 0x7a5a5e, 0x50506a);
     const surf = [0, 1, 2, 3].map((k) => lerpColor(shallow, foam, 0.95 - k * 0.16));
 
     // Glitter path under the sun (or the moon, faintly).

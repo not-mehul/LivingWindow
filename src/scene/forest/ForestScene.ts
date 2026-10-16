@@ -73,6 +73,15 @@ const NIGHT: Record<'far' | 'mountains' | 'valley' | 'wood', NightGrade> = {
 };
 const NIGHT_FOLIAGE = 0x58808c;
 
+/** Dusk and dawn, after the drawing: blue-grey mountains against the glow, cool deep greens. */
+const DUSK: typeof NIGHT = {
+  far: { desaturate: 0.6, tint: [0.66, 0.74, 0.98], lift: [10, 12, 30] },
+  mountains: { desaturate: 0.6, tint: [0.66, 0.74, 0.96], lift: [8, 10, 26] },
+  valley: { desaturate: 0.45, tint: [0.66, 0.76, 0.9], lift: [6, 8, 20] },
+  wood: { desaturate: 0.4, tint: [0.66, 0.74, 0.8], lift: [4, 4, 12] },
+};
+const DUSK_FOLIAGE = 0x6a7c84;
+
 interface Tree {
   sway: SwayMesh;
   haze: number;
@@ -126,11 +135,11 @@ export class ForestScene implements WorldScene {
   constructor() {
     const layout = generateForest();
     this.layout = layout;
-    this.far = new DayNightSprite(layout.far, NIGHT.far);
-    this.mountains = new DayNightSprite(layout.mountains, NIGHT.mountains);
-    this.valley = new DayNightSprite(layout.valley, NIGHT.valley);
-    this.ground = new DayNightSprite(layout.ground, NIGHT.wood);
-    this.near = new DayNightSprite(layout.near, NIGHT.wood);
+    this.far = new DayNightSprite(layout.far, NIGHT.far, DUSK.far);
+    this.mountains = new DayNightSprite(layout.mountains, NIGHT.mountains, DUSK.mountains);
+    this.valley = new DayNightSprite(layout.valley, NIGHT.valley, DUSK.valley);
+    this.ground = new DayNightSprite(layout.ground, NIGHT.wood, DUSK.wood);
+    this.near = new DayNightSprite(layout.near, NIGHT.wood, DUSK.wood);
 
     for (const tree of [...layout.midTrees, ...layout.floorPlants]) {
       const sway = new SwayMesh(tree.art.toTexture(), { anchor: 'bottom', amplitude: 1 + tree.art.height / 90 });
@@ -197,7 +206,7 @@ export class ForestScene implements WorldScene {
     this.valley.update(lerpColor(lighting.ambient, lighting.haze, 0.45), lighting);
     this.ground.update(lerpColor(lighting.ambient, lighting.haze, 0.08), lighting);
     // By moonlight the trees go a deep teal, the distant ones paler and bluer.
-    const foliage = lerpColor(lighting.ambient, NIGHT_FOLIAGE, lighting.nightness * 0.65);
+    const foliage = lerpColor(lerpColor(lighting.ambient, DUSK_FOLIAGE, lighting.twilight * 0.65), NIGHT_FOLIAGE, lighting.nightness * 0.65);
     for (const tree of this.trees) {
       tree.sway.mesh.tint = lerpColor(foliage, lighting.haze, tree.haze);
       tree.sway.update(time, wind);
