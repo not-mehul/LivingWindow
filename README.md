@@ -227,6 +227,33 @@ right) onto a valley running away between two mountains.
   ordered dither (`scene/common/paint.ts`). Light shafts fall through the oak's
   leaves.
 
+**Redesign, part 3 — the beach** ✅
+
+The beach is rebuilt after its reference drawing. Palms lean in from the left
+over grassy dunes and a winding sand path, a wide beach runs away to a wooded
+point on the horizon, and the sea lies to the right.
+
+- **A shoreline in perspective** (`sim/shore.ts`, unit tested). The waterline
+  sweeps from the lower right to a point on the horizon, laid out on a ground
+  plane, so the beach, surf and sea all converge correctly. Everything about
+  the sea is measured in shore coordinates: along the beach, and across it from
+  the waterline.
+- **The sea runs parallel to the shore.** Swells roll in as crests with darker
+  faces. Lines of white surf lie along the shallows, and breakers churn into
+  foam and lace before washing up the sand as a thin sheet that leaves it wet,
+  drying slowly. Turquoise shallows deepen to blue, wind ripples drift across
+  the open water, and a glitter path follows the sun or moon. The renderer
+  works from precomputed colour ramps per row and still halves its frame rate
+  on slow devices.
+- **Dunes and palms.** Feathery coconut palms have ringed, curving trunks and
+  sway in the wind. The dunes are sandy, with clumps of marram and low scrub
+  sized by distance, sorted among the palms. There are driftwood logs, an old
+  fence, shells, and wildflowers on the front dune.
+- **Life along the waterline.** Sandpipers chase the edge of every wave up and
+  down the beach, shrinking with distance. Turtles crawl straight up the sand
+  and back to the sea. The fish school swims in the shallows beyond the
+  breakers, where a gull dives on it. Dolphins breach far out on the sea side.
+
 ## Getting started
 
 Requires Node.js 22.12 or newer.
@@ -331,7 +358,8 @@ src/
     BirdseedBowl.ts         The seed dish (taken in while the window is shut)
   sim/                      Pure behaviour logic (unit tested): bird and cat
                             state machines, perspective, crowd and stall schedules,
-                            groundPlane + groundWalker (creatures moving in depth)
+                            groundPlane + groundWalker (creatures moving in depth),
+                            shore (the beach's shoreline geometry)
   sprites/                  Procedural pixel-art generators (birds, cat, street)
   landscapes/               The four landscapes and the registry that builds them
   life/                     Living things: BirdSystem (any ecology), city, forest,

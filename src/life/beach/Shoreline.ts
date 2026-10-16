@@ -1,11 +1,11 @@
 import { Sprite } from 'pixi.js';
-import { WORLD_WIDTH } from '../../config';
 import { lerpColor } from '../../core/color';
 import { lerp } from '../../core/math';
 import type { Viewport } from '../../core/Viewport';
 import { birdActivity } from '../../audio/soundscapes/schedules';
 import type { BeachScene } from '../../scene/beach/BeachScene';
-import { BEACH_HORIZON, BREAK_Y, SHORE_Y, fishColor } from '../../scene/beach/BeachScene';
+import { BEACH_HORIZON, fishColor } from '../../scene/beach/BeachScene';
+import { BREAK_S, shorePoint, shoreXAtY } from '../../sim/shore';
 import type { Environment } from '../../scene/Environment';
 import { School } from '../../sim/boids';
 import { BirdSpriteCache, FLAP_CYCLE, type BirdPose } from '../../sprites/birdSprites';
@@ -17,15 +17,20 @@ const r = (min: number, max: number) => min + Math.random() * (max - min);
 // --- Sandpipers: chasing the waves up and down the wet sand ---------------
 
 interface Piper {
-  x: number;
-  y: number;
+  /** How far along the beach (ground-plane depth). */
+  depth: number;
+  /** Ground px across the shore from the still waterline (negative = up the sand). */
+  s: number;
+  /** How far up from the water's edge it likes to stay. */
   offset: number;
   sprite: Sprite;
   peck: number;
+  /** Drift along the beach (depth per second). */
   drift: number;
 }
 
-const PIPER_SIZE = 9;
+/** A sandpiper's height right in front of the window (it shrinks with distance). */
+const PIPER_SIZE = 12;
 
 export class Sandpipers {
   private readonly pipers: Piper[] = [];
@@ -38,6 +43,12 @@ export class Sandpipers {
     private readonly sound: LifeSoundSink,
   ) {}
 
+  /** Bring a little flock in now. */
+  summon(): void {
+    this.leave();
+    this.arrive();
+  }
+
   update(dt: number, env: Environment): void {
     const active = birdActivity(env.lighting.hours) > 0.2 && env.weather.lightning < 0.3 && !(env.weather.kind === 'rain' && env.weather.precipitation > 0.5);
     this.presenceTimer -= dt;
@@ -49,14 +60,15 @@ export class Sandpipers {
     if (!active && this.pipers.length > 0) this.leave();
 
     for (const p of this.pipers) {
-      // Stay a little way up the sand from the water's edge.
-      const target = this.scene.waterlineAt(p.x) + p.offset;
-      const dy = target - p.y;
-      const running = Math.abs(dy) > 1.5;
-      p.y += Math.sign(dy) * Math.min(Math.abs(dy), 34 * dt);
-      p.drift += (Math.random() - 0.5) * dt * 6;
-      p.drift = Math.max(-6, Math.min(6, p.drift));
-      p.x += p.drift * dt;
+      // Keep just up the sand from the water's edge, running as it rushes in and drains.
+      const target = -(this.scene.reachAt(p.depth) + p.offset);
+      const diff = target - p.s;
+      const running = Math.abs(diff) > 3;
+      p.s += Math.sign(diff) * Math.min(Math.abs(diff), 80 * dt);
+      p.drift += (Math.random() - 0.5) * dt * 0.12;
+      p.drift = Math.max(-0.08, Math.min(0.08, p.drift));
+      p.depth = Math.max(1.35, Math.min(4, p.depth + p.drift * dt));
+      const pt = shorePoint(p.depth, p.s);
       let pose: BirdPose;
       if (running) {
         pose = Math.floor(performance.now() / 70) % 2 === 0 ? 'idle' : 'hop';
@@ -65,24 +77,29 @@ export class Sandpipers {
         p.peck += dt;
         pose = p.peck % 0.6 < 0.2 ? 'peck-down' : p.peck % 0.6 < 0.3 ? 'peck-reach' : 'idle';
       }
-      p.sprite.texture = this.sprites.get('sandpiper', pose, PIPER_SIZE);
-      p.sprite.scale.x = p.drift >= 0 ? 1 : -1;
-      p.sprite.position.set(Math.round(p.x), Math.round(p.y));
+      p.sprite.texture = this.sprites.get('sandpiper', pose, Math.max(4, Math.round(PIPER_SIZE * pt.scale)));
+      // Heading away along the beach means heading left on screen.
+      p.sprite.scale.x = p.drift > 0 ? -1 : 1;
+      p.sprite.position.set(Math.round(pt.x), Math.round(pt.y));
+      p.sprite.zIndex = pt.y;
       p.sprite.tint = env.lighting.ambient;
     }
     if (this.pipers.length > 0 && Math.random() < dt * 0.15) {
       const p = this.pipers[Math.floor(Math.random() * this.pipers.length)];
-      this.sound('sandpiper-peep', this.viewport.worldXToStereo(p.x), 0.6);
+      this.sound('sandpiper-peep', this.viewport.worldXToStereo(shorePoint(p.depth, p.s).x), 0.6);
     }
   }
 
   private arrive(): void {
-    const centre = this.viewport.panX + this.viewport.layout.visibleWorldWidth * r(0.25, 0.75);
+    // Somewhere along the shore that's in view.
+    const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth - 20;
+    let depth = r(1.5, 3.2);
+    for (let i = 0; i < 10 && shorePoint(depth, 0).x > right; i++) depth = r(1.5, 3.4);
     for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
       const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
       this.scene.shoreLayer.addChild(sprite);
-      const x = centre + r(-30, 30);
-      this.pipers.push({ x, y: this.scene.waterlineAt(x) + 4, offset: r(2, 7), sprite, peck: Math.random(), drift: r(-3, 3) });
+      const d = depth + r(-0.15, 0.15);
+      this.pipers.push({ depth: d, s: -(this.scene.reachAt(d) + 6), offset: r(4, 14), sprite, peck: Math.random(), drift: r(-0.04, 0.04) });
     }
   }
 
@@ -93,6 +110,13 @@ export class Sandpipers {
 }
 
 // --- A gull hunting the school ---------------------------------------------
+
+/** The school's patch of shallows: this far along the beach... */
+const SCHOOL_DEPTH0 = 1.7;
+const SCHOOL_DEPTHS = 1.6;
+const SCHOOL_U = 400;
+/** ...and this far out beyond the breakers (ground px). */
+const SCHOOL_V = 60;
 
 type HuntPhase = 'approach' | 'circle' | 'dive' | 'rise';
 
@@ -118,7 +142,13 @@ export class FishAndGulls {
     private readonly viewport: Viewport,
     private readonly sound: LifeSoundSink,
   ) {
-    this.school = new School(26, { x0: 80, x1: WORLD_WIDTH - 80, y0: BREAK_Y - 12, y1: SHORE_Y - 3 });
+    // The school swims in shore coordinates: u along the beach, v out from the breakers.
+    this.school = new School(26, { x0: 0, x1: SCHOOL_U, y0: 0, y1: SCHOOL_V });
+  }
+
+  /** World position of a point in the school's (u, v) space. */
+  private toWorld(u: number, v: number): { x: number; y: number; scale: number } {
+    return shorePoint(SCHOOL_DEPTH0 + (u / SCHOOL_U) * SCHOOL_DEPTHS, BREAK_S + 6 + v);
   }
 
   /** Send a gull after the fish now. */
@@ -146,7 +176,8 @@ export class FishAndGulls {
     if (alpha < 0.05) return;
     const color = fishColor(env.lighting.ambient);
     for (const f of this.school.fish) {
-      g.rect(Math.round(f.x), Math.round(f.y), 2, 1).fill({ color, alpha });
+      const p = this.toWorld(f.x, f.y);
+      g.rect(Math.round(p.x), Math.round(p.y), p.scale > 0.45 ? 2 : 1, 1).fill({ color, alpha });
     }
   }
 
@@ -161,7 +192,8 @@ export class FishAndGulls {
 
   private stepHunter(h: Hunter, dt: number, env: Environment): void {
     h.t += dt;
-    const target = this.school.centre;
+    const centre = this.school.centre;
+    const target = this.toWorld(centre.x, centre.y);
     let pose: BirdPose = 'glide';
     switch (h.phase) {
       case 'approach': {
@@ -193,7 +225,7 @@ export class FishAndGulls {
         pose = 'fly-down';
         if (p >= 1) {
           this.scene.splash(h.x, target.y, 1.4);
-          this.school.scare(h.x, target.y);
+          this.school.scare(centre.x, centre.y);
           this.sound('splash', this.viewport.worldXToStereo(h.x), 0.65);
           h.phase = 'rise';
           h.t = 0;
@@ -225,9 +257,25 @@ export class FishAndGulls {
 
 type TurtlePhase = 'emerge' | 'crawl-up' | 'rest' | 'crawl-down' | 'submerge';
 
+interface Turtle {
+  depth: number;
+  /** Ground px across the shore (positive = in the water). */
+  s: number;
+  /** How far up the sand it will nest/rest. */
+  target: number;
+  phase: TurtlePhase;
+  t: number;
+  sprite: Sprite;
+}
+
+/** A turtle's length right in front of the window (it shrinks with distance). */
+const TURTLE_LENGTH = 30;
+/** Crawling pace, ground px per second. */
+const CRAWL = 5;
+
 export class Turtles {
   private readonly sprites = new TurtleSprites();
-  private turtle: { x: number; y: number; target: number; phase: TurtlePhase; t: number; dir: 1 | -1; sprite: Sprite } | null = null;
+  private turtle: Turtle | null = null;
   private timer = r(120, 240);
 
   constructor(
@@ -245,41 +293,37 @@ export class Turtles {
       this.timer -= dt * (env.lighting.darkness > 0.5 ? 2 : 1);
       if (this.timer <= 0) {
         this.timer = r(300, 600);
-        const x = this.viewport.panX + this.viewport.layout.visibleWorldWidth * r(0.2, 0.8);
+        const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth - 30;
+        let depth = r(1.5, 2.6);
+        for (let i = 0; i < 10 && shorePoint(depth, 0).x > right; i++) depth = r(1.6, 3);
         const sprite = new Sprite({ anchor: { x: 0.5, y: 1 }, alpha: 0 });
         this.scene.shoreLayer.addChild(sprite);
-        this.turtle = { x, y: SHORE_Y - 2, target: r(318, 328), phase: 'emerge', t: 0, dir: Math.random() < 0.5 ? 1 : -1, sprite };
+        this.turtle = { depth, s: 10, target: -r(110, 170), phase: 'emerge', t: 0, sprite };
       }
       return;
     }
     const tt = this.turtle;
     tt.t += dt;
-    const crawl = 1.8;
     switch (tt.phase) {
       case 'emerge':
         tt.sprite.alpha = Math.min(1, tt.t / 2);
-        tt.y += crawl * 0.5 * dt;
+        tt.s -= CRAWL * 0.5 * dt;
         if (tt.t > 2) [tt.phase, tt.t] = ['crawl-up', 0];
         break;
       case 'crawl-up':
-        tt.y += crawl * dt;
-        tt.x += tt.dir * crawl * 0.6 * dt;
-        if (tt.y >= tt.target) [tt.phase, tt.t] = ['rest', 0];
+        tt.s -= CRAWL * dt;
+        if (tt.s <= tt.target) [tt.phase, tt.t] = ['rest', 0];
         break;
       case 'rest':
-        if (tt.t > r(25, 50)) {
-          [tt.phase, tt.t] = ['crawl-down', 0];
-          tt.dir = tt.dir === 1 ? -1 : 1;
-        }
+        if (tt.t > r(25, 50)) [tt.phase, tt.t] = ['crawl-down', 0];
         break;
       case 'crawl-down':
-        tt.y -= crawl * dt;
-        tt.x += tt.dir * crawl * 0.6 * dt;
-        if (tt.y <= this.scene.waterlineAt(tt.x) + 2) [tt.phase, tt.t] = ['submerge', 0];
+        tt.s += CRAWL * dt;
+        if (tt.s >= -this.scene.reachAt(tt.depth)) [tt.phase, tt.t] = ['submerge', 0];
         break;
       case 'submerge':
         tt.sprite.alpha = Math.max(0, 1 - tt.t / 2);
-        tt.y -= crawl * 0.5 * dt;
+        tt.s += CRAWL * 0.5 * dt;
         if (tt.t > 2) {
           tt.sprite.destroy();
           this.turtle = null;
@@ -288,9 +332,12 @@ export class Turtles {
         break;
     }
     const moving = tt.phase === 'crawl-up' || tt.phase === 'crawl-down';
-    tt.sprite.texture = this.sprites.frame(moving ? Math.floor(tt.t * 2.5) : 0);
-    tt.sprite.scale.x = tt.dir;
-    tt.sprite.position.set(Math.round(tt.x), Math.round(tt.y));
+    const p = shorePoint(tt.depth, tt.s);
+    tt.sprite.texture = this.sprites.frame(moving ? Math.floor(tt.t * 2.5) : 0, TURTLE_LENGTH * p.scale);
+    // Up the sand is leftwards on screen; back to the sea is rightwards.
+    tt.sprite.scale.x = tt.phase === 'crawl-down' || tt.phase === 'submerge' ? 1 : -1;
+    tt.sprite.position.set(Math.round(p.x), Math.round(p.y));
+    tt.sprite.zIndex = p.y;
     tt.sprite.tint = env.lighting.ambient;
   }
 }
@@ -327,7 +374,11 @@ export class Dolphins {
       if (this.timer <= 0 && env.lighting.darkness < 0.6) {
         this.timer = r(60, 180);
         this.surfacings = 2 + Math.floor(Math.random() * 3);
-        this.spawnPod(this.viewport.panX + this.viewport.layout.visibleWorldWidth * r(0.15, 0.85));
+        // Out at sea: right of where the shore meets the horizon, and in view.
+        const seaStart = shoreXAtY(BEACH_HORIZON + 4) + 20;
+        const left = Math.max(seaStart, this.viewport.panX + 10);
+        const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth - 40;
+        this.spawnPod(right > left ? r(left, right) : seaStart);
       }
       return;
     }
@@ -344,7 +395,7 @@ export class Dolphins {
       done = false;
       b.sprite.visible = true;
       b.sprite.texture = this.sprites.frames[frame];
-      b.sprite.position.set(Math.round(b.x + frame * 2), BEACH_HORIZON + 9);
+      b.sprite.position.set(Math.round(b.x + frame * 2), BEACH_HORIZON + 5);
       b.sprite.tint = frame === 3 ? lerpColor(tint, 0xffffff, 0.5) : tint;
     }
     if (done) {
