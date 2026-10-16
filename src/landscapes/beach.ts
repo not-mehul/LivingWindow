@@ -1,7 +1,7 @@
 import { BeachSoundscape } from '../audio/soundscapes/BeachSoundscape';
 import { BeachLife } from '../life/beach/BeachLife';
 import { BeachScene } from '../scene/beach/BeachScene';
-import { BEACH_THEME } from '../window/palette';
+import { RUSTIC_THEME } from '../window/palette';
 import type { Landscape, LandscapeDeps } from './types';
 
 /** Scene 3: the beach, from a weathered beach house. */
@@ -11,7 +11,7 @@ export function createBeach(deps: LandscapeDeps): Landscape {
     id: 'beach',
     scene,
     life: new BeachLife(scene, deps),
-    theme: BEACH_THEME,
+    theme: RUSTIC_THEME,
     createSoundscape: (engine, bed) => new BeachSoundscape(engine, scene, bed),
   };
 }

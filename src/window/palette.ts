@@ -25,13 +25,39 @@ export const GLASS = {
   edgeShadeAlpha: 0.22,
 } as const;
 
+/** The seed dish: unglazed terracotta. */
 export const CERAMIC = {
-  outline: '#22303c',
-  shadow: '#3f6278',
-  base: '#5f8fa8',
-  light: '#86b6c9',
-  rim: '#c9e4ec',
-  inside: '#2c3f4f',
+  outline: '#3a1a0e',
+  shadow: '#7e3a1e',
+  base: '#a8552e',
+  light: '#c8744a',
+  rim: '#df9a6c',
+  inside: '#5a2814',
+} as const;
+
+/** The potted plant on the sill. */
+export const PLANT = {
+  potOutline: '#3a1a0e',
+  potShadow: '#7e3a1e',
+  pot: '#a8552e',
+  potLight: '#c8744a',
+  potRim: '#df9a6c',
+  soil: '#3a2616',
+  leafOutline: '#1e2e14',
+  leafDark: '#3e5a28',
+  leaf: '#5a7a36',
+  leafLight: '#7e9a4a',
+  leafVein: '#a4b866',
+} as const;
+
+/** The linen curtain. */
+export const LINEN = {
+  outline: '#5a4a3c',
+  shadow: '#9a8a76',
+  dark: '#b8a890',
+  base: '#d4c6ae',
+  light: '#e6dac4',
+  highlight: '#f2ead8',
 } as const;
 
 export const SEED = {
@@ -116,3 +142,28 @@ export const FARMHOUSE_THEME: FrameTheme = {
   wallPattern: 'plaster',
   chipped: '#8a6a4a',
 };
+
+/** The window from the reference: oiled, weathered oak with iron fittings. */
+export const RUSTIC_THEME: FrameTheme = {
+  id: 'rustic',
+  wood: {
+    outline: '#24140b',
+    shadow: '#4a2c18',
+    dark: '#6a4225',
+    base: '#8a5a33',
+    light: '#a8743f',
+    highlight: '#c4925a',
+    shine: '#ddb47c',
+  },
+  wall: { base: '#6e4a2c', light: '#82593a', dark: '#563820', trim: '#3a2414' },
+  wallPattern: 'boards',
+};
+
+/** Iron hinges and handles. */
+export const IRON = {
+  outline: '#1a1a1e',
+  dark: '#3a3a40',
+  base: '#5e5e66',
+  light: '#8a8a92',
+  shine: '#b8b8c0',
+} as const;

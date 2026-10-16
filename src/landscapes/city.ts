@@ -1,7 +1,7 @@
 import { CitySoundscape } from '../audio/soundscapes/CitySoundscape';
 import { CityLife } from '../life/CityLife';
 import { CityScene } from '../scene/city/CityScene';
-import { CITY_THEME } from '../window/palette';
+import { RUSTIC_THEME } from '../window/palette';
 import type { Landscape, LandscapeDeps } from './types';
 
 /** Scene 1: the downtown city rooftop. */
@@ -21,7 +21,7 @@ export function createCity(deps: LandscapeDeps): Landscape {
     id: 'city',
     scene,
     life,
-    theme: CITY_THEME,
+    theme: RUSTIC_THEME,
     createSoundscape: (engine, bed) => new CitySoundscape(engine, bed),
   };
 }

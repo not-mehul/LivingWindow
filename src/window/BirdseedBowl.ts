@@ -3,22 +3,23 @@ import { clamp, snapToDevicePixel } from '../core/math';
 import { PixelCanvas } from '../core/pixelTexture';
 import { createRng } from '../core/random';
 import type { BirdseedStage, BirdseedState } from '../state/BirdseedState';
+import { BowlPresence } from './bowlPresence';
 import { CERAMIC, SEED } from './palette';
 import type { SillSurface } from './WindowFrame';
 
+/** A shallow, unglazed terracotta dish. */
 const BOWL_ROWS = [
-  '....oooooooooooooo....',
-  '..oorrrrrrrrrrrrrroo..',
-  '.orriiiiiiiiiiiiiirro.',
-  'orliiiiiiiiiiiiiiiilro',
-  'olrrrrrrrrrrrrrrrrrrlo',
-  'olbbbbbbbbbbbbbbbbbbso',
-  '.olbbbbbbbbbbbbbbbbso.',
-  '.olbbbbbbbbbbbbbbbsso.',
-  '..olbbbbbbbbbbbbbsso..',
-  '...oosbbbbbbbbbssoo...',
-  '.....oossssssssoo.....',
-  '......oooooooooo......',
+  '........oooooooooooooooooo........',
+  '....ooorrrrrrrrrrrrrrrrrrrrooo....',
+  '...oorrriiiiiiiiiiiiiiiiiirrroo...',
+  '.orriiiiiiiiiiiiiiiiiiiiiiiiiirro.',
+  'olriiiiiiiiiiiiiiiiiiiiiiiiiiiirlo',
+  'olrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrlo',
+  '.olbbbbbbbbbbbbbbbbbbbbbbbbbbbbso.',
+  '.oolbbbbbbbbbbbbbbbbbbbbbbbbbssoo.',
+  '....oolbbbbbbbbbbbbbbbbbbbssoo....',
+  '.....oossssssssssssssssssssoo.....',
+  '.......oooooooooooooooooooo.......',
 ] as const;
 
 const BOWL_PALETTE = {
@@ -35,24 +36,26 @@ const BOWL_WIDTH = BOWL_ROWS[0].length;
 export const BOWL_HALF_WIDTH = BOWL_WIDTH / 2;
 /** Extra rows above the bowl for the heaped seed mound. */
 const HEADROOM = 4;
+// (Dish rows 2–4 are its inside; row 5 is the front of the rim.)
 const TEX_HEIGHT = BOWL_ROWS.length + HEADROOM;
 const SEED_COLORS = [SEED.dark, SEED.base, SEED.base, SEED.light, SEED.pale];
 
 /** Horizontal extents of seed per texture row, by fill stage (row offsets from bowl top). */
 const SEED_SPANS: Record<Exclude<BirdseedStage, 0>, Array<[row: number, from: number, to: number]>> = {
-  1: [[3, 7, 14]],
+  1: [[4, 10, 23]],
   2: [
-    [2, 5, 16],
-    [3, 3, 18],
+    [3, 6, 27],
+    [4, 4, 29],
   ],
   3: [
-    [-3, 9, 12],
-    [-2, 6, 15],
-    [-1, 4, 17],
-    [0, 3, 18],
-    [1, 3, 18],
-    [2, 3, 18],
-    [3, 3, 18],
+    [-3, 13, 20],
+    [-2, 10, 23],
+    [-1, 7, 26],
+    [0, 5, 28],
+    [1, 4, 29],
+    [2, 4, 29],
+    [3, 4, 29],
+    [4, 3, 30],
   ],
 };
 
@@ -69,7 +72,7 @@ function createBowlTextures(): Record<BirdseedStage, Texture> {
       }
       if (stage === 3) {
         // Rim stays visible in front of the heaped seed.
-        c.stamp(0, HEADROOM + 4, [BOWL_ROWS[4]], BOWL_PALETTE);
+        c.stamp(0, HEADROOM + 5, [BOWL_ROWS[5]], BOWL_PALETTE);
       }
     }
     return c.toTexture();
@@ -106,6 +109,7 @@ export class BirdseedBowl {
   private bump = 1;
   private bumpKind: 'fill' | 'wiggle' = 'fill';
   private surface: SillSurface | null = null;
+  private readonly presence = new BowlPresence(true);
 
   constructor(
     private readonly state: BirdseedState,
@@ -134,12 +138,26 @@ export class BirdseedBowl {
     return { x: this.container.x, y: this.surface?.y ?? this.container.y };
   }
 
-  /** Fill the bowl (with a little pouring animation). */
-  pour(): void {
+  /** Whether the bowl is on the sill (it's taken in while the window is shut). */
+  get present(): boolean {
+    return this.presence.present;
+  }
+
+  /** Take the bowl in (before the sashes close) or set it back out. */
+  setPresent(present: boolean): void {
+    this.presence.setPresent(present);
+  }
+
+  /**
+   * Fill the bowl (with a little pouring animation). Returns false when the
+   * bowl isn't out on the sill, so there is nothing to pour into.
+   */
+  pour(): boolean {
+    if (!this.presence.present) return false;
     if (!this.state.fill()) {
       this.bumpKind = 'wiggle';
       this.bump = 0;
-      return;
+      return true;
     }
     this.bumpKind = 'fill';
     // Negative progress delays the settle until most of the seed has landed.
@@ -157,6 +175,7 @@ export class BirdseedBowl {
         color: Number.parseInt(color.slice(1), 16),
       });
     }
+    return true;
   }
 
   layout(surface: SillSurface, devicePixelRatio: number): void {
@@ -174,6 +193,12 @@ export class BirdseedBowl {
   }
 
   update(deltaSeconds: number): void {
+    this.presence.update(deltaSeconds);
+    this.container.visible = this.presence.visible;
+    this.container.alpha = this.presence.alpha;
+    this.container.eventMode = this.presence.present ? 'static' : 'none';
+    // Lifted a few art pixels while it's being taken in or set down.
+    this.container.pivot.y = this.presence.lift;
     this.updateBump(deltaSeconds);
     this.updateSeeds(deltaSeconds);
   }

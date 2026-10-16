@@ -26,7 +26,8 @@ import { WindowState } from './state/WindowState';
 import { Overlay } from './ui/Overlay';
 import { BirdseedBowl } from './window/BirdseedBowl';
 import { WindowFrame } from './window/WindowFrame';
-import { WindowSash } from './window/WindowSash';
+import { CasementSashes } from './window/CasementSashes';
+import { SillDecor } from './window/SillDecor';
 
 /** Cap the backing-store density: beyond 3× the extra pixels are invisible. */
 const MAX_DEVICE_PIXEL_RATIO = 3;
@@ -128,17 +129,25 @@ async function boot(): Promise<void> {
   // --- Screen-space window -----------------------------------------------
   const frame = new WindowFrame();
   const toggleWindow = () => windowState.toggle();
-  const sash = new WindowSash(windowState, () => {
+  const glass = new GlassWeather(atlas);
+  const sashes = new CasementSashes(windowState, glass.container, () => {
     if (!viewport.didDrag) toggleWindow();
   });
-  const glass = new GlassWeather(atlas);
-  sash.glassLayer.addChild(glass.container);
   const bowl = new BirdseedBowl(birdseed, () => !viewport.didDrag);
+  const decor = new SillDecor(birdseed);
+  // The sashes would sweep the bowl off the sill: it's taken in as they
+  // start to close and set back out once the window is fully open.
+  windowState.on('toggle', ({ open }) => {
+    if (!open) bowl.setPresent(false);
+  });
+  windowState.on('settled', ({ open }) => {
+    if (open) bowl.setPresent(true);
+  });
   /** Foreground (z = 0) layer on the sill: visitors behind the bowl, the bowl, then birds. */
   const sillLayer = new Container({ label: 'sill-layer' });
   const sillBack = new Container({ label: 'sill-back' });
   const sillFront = new Container({ label: 'sill-front' });
-  sillLayer.addChild(sillBack, bowl.container, sillFront);
+  sillLayer.addChild(decor.back, sillBack, bowl.container, sillFront);
   /** Creatures flying close to the window, drawn in screen space outside the glass. */
   const nearLayer = new Container({ label: 'near-flight' });
   nearLayer.eventMode = 'none';
@@ -147,17 +156,27 @@ async function boot(): Promise<void> {
   /** Darkens the view while switching landscapes. */
   const fade = new Sprite({ texture: Texture.WHITE, tint: 0x0c0a12, alpha: 0 });
 
-  app.stage.addChild(viewport.view, nearLayer, sash.container, frame.container, frame.sillContainer, sillLayer, roomFlash, fade);
+  app.stage.addChild(
+    viewport.view,
+    nearLayer,
+    sashes.container,
+    frame.container,
+    frame.sillContainer,
+    sillLayer,
+    decor.front,
+    roomFlash,
+    fade,
+  );
   // The stage itself is hit-testable so it can show a grab cursor when the
-  // view can be panned; interactive children (sash rail, bowl) override it.
+  // view can be panned; interactive children (sashes, bowl) override it.
   app.stage.eventMode = 'static';
   app.stage.hitArea = app.screen;
   // Purely decorative layers must opt out, or (under a static stage) their
-  // full-screen bounds would swallow taps meant for the sash and bowl.
-  for (const decorative of [viewport.view, frame.container, frame.sillContainer, roomFlash, fade]) {
+  // full-screen bounds would swallow taps meant for the sashes and bowl.
+  for (const decorative of [viewport.view, frame.container, frame.sillContainer, decor.back, decor.front, roomFlash, fade]) {
     decorative.eventMode = 'none';
   }
-  const interior = [sash.container, frame.container, frame.sillContainer, bowl.container];
+  const interior = [sashes.container, frame.container, frame.sillContainer, bowl.container, decor.back, decor.front];
 
   // --- Landscapes ------------------------------------------------------------
   const mounted = new Map<LandscapeId, Promise<Mounted>>();
@@ -204,7 +223,7 @@ async function boot(): Promise<void> {
     viewport.world.removeChildren();
     viewport.world.addChild(next.landscape.scene.container, next.lightning.overlay);
     frame.setTheme(next.landscape.theme);
-    sash.setTheme(next.landscape.theme);
+    sashes.setTheme(next.landscape.theme);
     audio?.setSoundscape(next.landscape.createSoundscape, next.landscape.id);
     current = next;
   };
@@ -241,9 +260,10 @@ async function boot(): Promise<void> {
   const layout = () => {
     const l = viewport.layout;
     frame.layout(l);
-    sash.layout(l, frame.innerTop, frame.sillSurface);
-    glass.layout(sash.glassRect);
+    sashes.layout(frame.clearOpening, l.devicePixelRatio);
+    glass.layout(sashes.glassRect);
     bowl.layout(frame.sillSurface, l.devicePixelRatio);
+    decor.layout(l, frame.sillSurface, bowl.container.x);
     roomFlash.width = fade.width = l.screenWidth;
     roomFlash.height = fade.height = l.screenHeight;
   };
@@ -308,7 +328,7 @@ async function boot(): Promise<void> {
     overlay.attachAudio(system);
     windowState.on('toggle', ({ open, durationSeconds }) => {
       system.engine.setWindowOpen(open, durationSeconds);
-      system.engine.playUi('window-slide');
+      system.engine.playUi('window-creak');
     });
     windowState.on('settled', ({ open }) => {
       if (!open) system.engine.playUi('window-thunk');
@@ -338,7 +358,7 @@ async function boot(): Promise<void> {
       surface: frame.sillSurface,
       bowlX: bowlSillX(),
       bowlHalfWidth: BOWL_HALF_WIDTH,
-      windowOpen: windowState.isOpen && !windowState.isAnimating,
+      windowOpen: windowState.isOpen && !windowState.isAnimating && bowl.present,
     });
     lightning.update(dt);
     glass.update(dt, env, windowState.openness);
@@ -372,14 +392,16 @@ async function boot(): Promise<void> {
     }
 
     viewport.update(dt);
-    sash.update();
+    sashes.update();
     bowl.update(dt);
+    decor.update(env.time, env.weather.wind, windowState.openness);
   };
 
   app.ticker.add((ticker) => {
     quality.sample(ticker.deltaMS);
     simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS));
     viewport.render(app.renderer);
+    sashes.render(app.renderer);
     overlay.tick();
     app.stage.cursor = viewport.isDragging ? 'grabbing' : viewport.isPannable ? 'grab' : 'default';
   });
@@ -391,6 +413,8 @@ async function boot(): Promise<void> {
         viewport,
         windowState,
         birdseed,
+        bowl,
+        sashes,
         clock,
         weather,
         glass,

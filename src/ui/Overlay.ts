@@ -227,6 +227,7 @@ export class Overlay {
     this.element.addEventListener('focusout', () => this.scheduleHide());
 
     windowState.on('toggle', () => this.refresh());
+    windowState.on('settled', () => this.refresh());
     birdseed.on('change', () => this.refresh());
     viewport.on('layout', () => this.refresh());
     clock.on('pause', () => this.refreshClock(true));
@@ -311,8 +312,10 @@ export class Overlay {
     const percent = Math.round(birdseed.level * 100);
     this.seedFill.style.width = `${percent}%`;
     this.seedMeter.setAttribute('aria-valuenow', String(percent));
-    this.seedButton.disabled = birdseed.isFull;
-    this.seedButton.textContent = birdseed.isFull ? 'Bowl is full' : 'Add birdseed';
+    // The bowl is taken in while the window is shut.
+    const bowlOut = windowState.isOpen && !windowState.isAnimating;
+    this.seedButton.disabled = birdseed.isFull || !bowlOut;
+    this.seedButton.textContent = !bowlOut ? 'Open window to feed' : birdseed.isFull ? 'Bowl is full' : 'Add birdseed';
 
     const touch = window.matchMedia('(pointer: coarse)').matches;
     this.panHint.hidden = !viewport.isPannable;

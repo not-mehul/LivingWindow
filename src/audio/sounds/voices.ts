@@ -179,6 +179,44 @@ const windowSlide: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return duration;
 };
 
+/** Iron hinges turning: a dry, rising squeal with a woody groan underneath. */
+const windowCreak: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  const duration = 0.9;
+  // The squeal: a sawtooth whose pitch wanders as the hinge sticks and slips.
+  const [osc, amp] = tone(ctx, 'sawtooth', out);
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.Q.value = 6;
+  band.frequency.value = 1400 * rate;
+  osc.disconnect();
+  osc.connect(band).connect(amp);
+  const start = rand(520, 640) * rate;
+  osc.frequency.setValueAtTime(start, when);
+  for (let t = 0.06; t < duration; t += 0.06) {
+    osc.frequency.linearRampToValueAtTime(start * (1 + t * 0.5) * rand(0.94, 1.06), when + t);
+  }
+  amp.gain.setValueAtTime(0, when);
+  for (let t = 0.03; t < duration; t += 0.045) {
+    amp.gain.linearRampToValueAtTime(gain * 0.09 * rand(0.2, 1), when + t);
+  }
+  amp.gain.linearRampToValueAtTime(0, when + duration);
+  osc.start(when);
+  osc.stop(when + duration + 0.05);
+  // Wood flexing against wood.
+  const src = ctx.createBufferSource();
+  src.buffer = noise.get('brown');
+  const low = ctx.createBiquadFilter();
+  low.type = 'lowpass';
+  low.frequency.value = 380 * rate;
+  const groan = ctx.createGain();
+  groan.gain.setValueAtTime(0, when);
+  groan.gain.linearRampToValueAtTime(gain * 0.35, when + 0.2);
+  groan.gain.linearRampToValueAtTime(0, when + duration);
+  src.connect(low).connect(groan).connect(out);
+  src.start(when, Math.random() * 5, duration + 0.05);
+  return duration;
+};
+
 const windowThunk: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   const [osc, amp] = tone(ctx, 'sine', out);
   osc.frequency.setValueAtTime(120 * rate, when);
@@ -492,6 +530,7 @@ export const SYNTH_VOICES = {
   'seed-pour': seedPour,
   'window-slide': windowSlide,
   'window-thunk': windowThunk,
+  'window-creak': windowCreak,
   'car-horn': carHorn,
   'cat-meow': catMeow,
   'cat-purr': catPurr,

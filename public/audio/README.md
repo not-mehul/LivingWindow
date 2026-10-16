@@ -14,7 +14,7 @@ Anything listed replaces its synthesized version; anything left out keeps the sy
     "wing-flap": [],
     "glass-tap": [],
     "seed-pour": [],
-    "window-slide": [],
+    "window-creak": [],
     "window-thunk": [],
     "car-horn": []
   },
@@ -37,7 +37,7 @@ Anything listed replaces its synthesized version; anything left out keeps the sy
 - **Sound ids**: `sparrow-chirp`, `pigeon-coo`, `crow-caw`, `woodpecker-drum`,
   `jay-call`, `chickadee-call`, `finch-song`, `bluebird-song`, `robin-song`,
   `gull-cry`, `sandpiper-peep`, `owl-hoot`, `eagle-cry`, `wing-flap`,
-  `glass-tap`, `seed-pour`, `window-slide`, `window-thunk`, `car-horn`,
+  `glass-tap`, `seed-pour`, `window-creak`, `window-thunk`, `car-horn`,
   `cat-meow`, `cat-purr`, `squirrel-chatter`, `deer-snort`, `cow-moo`,
   `chicken-cluck`, `splash`.
 - **One-shots** with several variants are picked at random, and every play

@@ -38,7 +38,8 @@ export class SwayMesh {
     this.frequency = options.frequency ?? 0.9 + Math.random() * 0.4;
   }
 
-  update(time: number, wind: number): void {
+  /** `scale` (0..1) damps the whole motion, e.g. indoors with the window shut. */
+  update(time: number, wind: number, scale = 1): void {
     const positions = this.mesh.geometry.positions;
     const strength = 0.25 + Math.min(1, Math.abs(wind)) * 0.75;
     const t = time * this.frequency + this.phase;
@@ -48,7 +49,7 @@ export class SwayMesh {
       const free = this.anchor === 'bottom' ? 1 - along : along;
       const bend = free ** 1.6;
       // A steady lean downwind plus a swaying oscillation.
-      const offset = Math.round(this.amplitude * bend * (wind * 0.6 + wave * strength));
+      const offset = Math.round(this.amplitude * scale * bend * (wind * 0.6 + wave * strength));
       for (let i = 0; i < this.cols; i++) {
         const k = (j * this.cols + i) * 2;
         positions[k] = this.base[k] + offset;

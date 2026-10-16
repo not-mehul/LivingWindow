@@ -112,9 +112,8 @@ for the full vision and roadmap.
 
 - **Four landscapes**, switched with the chips at the top of the panel or `1`–`4`
   (City, Meadows, Beach, Forest) with a short fade; the choice is remembered.
-  Each has its own window: an apartment, a farmhouse, a weathered beach house and
-  a log cabin. Each also has its own birds and soundscape; the clock, weather,
-  lighting, rain-on-glass, sill and birdseed are shared.
+  Each has its own birds and soundscape; the window, clock, weather, lighting,
+  rain-on-glass, sill and birdseed are shared.
 - **13 bird species** from the same generator, now driven by per-landscape
   "ecologies": pigeons, sparrows and crows downtown; robins, bluebirds, finches
   and sparrows in the meadows; seagulls at the beach; chickadees, jays,
@@ -158,7 +157,7 @@ for the full vision and roadmap.
   fullscreen without browser chrome on Android and iOS.
 - **Lighter start**: each landscape is a separately loaded chunk (preloaded
   when you hover its chip). The initial bundle dropped from ~506 KB to
-  ~120 KB (~38 KB gzipped).
+  ~140 KB (~44 KB gzipped).
 - **Adaptive quality**: if frames stay slow for a few seconds, the rain-on-glass
   drop count, precipitation density and sea animation rate are halved. They
   come back once the device keeps up again. Force a level with `?quality=low` or
@@ -177,6 +176,28 @@ then, and the panel flickers on when it reappears. All of this motion is off
 under `prefers-reduced-motion`. The palette lives in the `--hud-*` custom
 properties at the top of `src/style.css`. The pixel-art window and scenes are
 unchanged.
+
+**Redesign, part 1 — the rustic casement window** ✅
+
+Rebuilt after a hand-drawn reference (the landscapes follow one at a time):
+
+- **Timber casement**: a heavy head beam and plank posts, with knots, grain,
+  cracks and nails, and the wall's depth showing inside them. Two sashes, each
+  with two panes, a glazing bar, iron butt hinges and a D-handle, **swing
+  outward** on their hinges in true perspective. Tap a sash (or the meeting
+  stiles when shut), press `W`, or use the panel. Hinges creak, and the latch
+  thunks shut.
+- **Rain and snow on the glass** run on the closed pane and swing with the
+  sashes.
+- **Deep sill** with a worn top. A **terracotta seed dish** sits on it, among
+  spilled seed that pours add to and visiting birds tidy up.
+- **The dish is taken in while the window is shut**: it lifts away as the
+  sashes start to close and comes back once they're open. Feeding is paused
+  until then (the panel reads "Open window to feed").
+- A **potted plant** on the left of the sill and a **linen curtain** on the
+  right stir in the breeze while the window is open. Visitors such as the cat
+  and squirrel come and go from behind them.
+- Open sashes stay slim on ultrawide and portrait screens.
 
 ## Getting started
 
@@ -201,7 +222,7 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | ------------------------------ | --------------------- |
 | Drag / swipe, scroll, `←` `→`  | Look around (when the view is cropped) |
 | `1` `2` `3` `4`                | City / Meadows / Beach / Forest |
-| Click the sash's bottom rail, `W` | Open / close the window |
+| Tap a sash (or the closed window's middle), `W` | Open / close the window |
 | Click the bowl, `B`            | Add birdseed          |
 | `Space`                        | Pause / resume time   |
 | `[` `]`                        | Scrub time ∓30 minutes |
@@ -273,9 +294,12 @@ src/
     Clock.ts, timeOfDay.ts  Simulated clock, day phases and presets
     Weather.ts              Markov + noise weather engine, lightning events
   window/
-    WindowFrame.ts          Wall, nine-slice frame and windowsill
-    WindowSash.ts           Sliding glass pane (with a glass layer for rain, Step 2)
-    BirdseedBowl.ts         Interactive bowl on the sill
+    WindowFrame.ts          Wall, timber frame and windowsill
+    casement.ts             Swinging-sash perspective maths (unit tested)
+    CasementSashes.ts       The two hinged sashes, with rain mapped onto their glass
+    SillDecor.ts            Potted plant, curtain and spilled seed
+    woodArt.ts              Procedural plank / grain / knot painter
+    BirdseedBowl.ts         The seed dish (taken in while the window is shut)
   sim/                      Pure behaviour logic (unit tested): bird and cat
                             state machines, perspective, crowd and stall schedules
   sprites/                  Procedural pixel-art generators (birds, cat, street)

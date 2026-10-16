@@ -25,7 +25,7 @@ export const MIN_VISIBLE_HEIGHT_FRACTION = 0.8;
 export const VERTICAL_FOCUS = 0.55;
 
 /** Seconds for the glass sash to slide open or shut (matches the audio filter sweep). */
-export const WINDOW_TRANSITION_SECONDS = 0.6;
+export const WINDOW_TRANSITION_SECONDS = 1.1;
 
 /** Milliseconds of inactivity before the overlay UI fades out. */
 export const UI_HIDE_DELAY_MS = 3000;
