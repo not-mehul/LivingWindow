@@ -3,7 +3,7 @@ import { lerpColor } from '../../core/color';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import type { GroundPlane } from '../../sim/groundPlane';
-import { GroundWalker, type WalkArea } from '../../sim/groundWalker';
+import { GroundWalker, type Obstacle, type WalkArea } from '../../sim/groundWalker';
 import { deerActivity } from '../../sim/wildlife';
 import { DEER_WALK, DeerSpriteCache, type DeerKind, type DeerPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
@@ -36,10 +36,10 @@ const SINK_SECONDS = 0.9;
 const r = (min: number, max: number) => min + Math.random() * (max - min);
 
 /**
- * Deer on the clearing in front of the cabin. They come up from the valley
- * or in from the trees at the sides, wander towards and away from the window
- * (growing and shrinking with distance), browse, look up, and bound off for
- * cover when startled.
+ * Deer in the wood in front of the cabin. They come up from the valley or in
+ * from the sides and wander between the trunks, towards and away from the
+ * window (growing and shrinking with distance, passing behind nearer trees
+ * and ferns), browse, look up, and bound off for cover when startled.
  */
 export class DeerHerd {
   private readonly deer: Deer[] = [];
@@ -50,6 +50,8 @@ export class DeerHerd {
     private readonly container: Container,
     private readonly plane: GroundPlane,
     private readonly area: WalkArea,
+    /** Trunks to walk round. */
+    private readonly obstacles: readonly Obstacle[],
     private readonly viewport: Viewport,
     private readonly sound: LifeSoundSink,
   ) {}
@@ -128,6 +130,7 @@ export class DeerHerd {
     // Spawning just off-screen sideways is allowed: the area's limit is only enforced while wandering.
     const walker = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 60 * d }, gx, depth, heading);
     walker.speed = WALK_SPEED;
+    walker.obstacles = this.obstacles;
     walker.steering = this.wanderTarget();
     return walker;
   }
@@ -159,9 +162,16 @@ export class DeerHerd {
   private wanderTarget(): { kind: 'seek'; gx: number; depth: number } {
     const near = this.plane.project(0, this.area.minDepth).y;
     const far = this.plane.project(0, this.area.maxDepth).y;
-    const depth = this.plane.depthAtY(r(far + (near - far) * 0.05, near - (near - far) * 0.12));
-    const half = this.plane.halfWidthAt(depth) * 0.85;
-    return { kind: 'seek', gx: r(-half, half), depth };
+    let depth = 1;
+    let gx = 0;
+    // Somewhere on open ground, not inside a trunk or a spruce's skirt.
+    for (let tries = 0; tries < 20; tries++) {
+      depth = this.plane.depthAtY(r(far + (near - far) * 0.05, near - (near - far) * 0.12));
+      const half = this.plane.halfWidthAt(depth) * 0.85;
+      gx = r(-half, half);
+      if (!GroundWalker.blocked(this.obstacles, gx, depth, 6)) break;
+    }
+    return { kind: 'seek', gx, depth };
   }
 
   /** Returns true once the deer has left. */
@@ -198,7 +208,9 @@ export class DeerHerd {
     }
     if (!d.follows) {
       const arrived = d.state === 'walk' && w.steering.kind === 'seek' && w.distanceTo(w.steering.gx, w.steering.depth) < 6;
-      if (arrived || (d.state !== 'walk' && d.timer >= d.duration)) this.decide(d);
+      // Never circle a trunk for ever: give up on a target after a while.
+      if (d.state === 'walk' && d.timer > 40) d.timer = d.duration = 0;
+      if (arrived || d.duration === 0 || (d.state !== 'walk' && d.timer >= d.duration)) this.decide(d);
     }
     return false;
   }

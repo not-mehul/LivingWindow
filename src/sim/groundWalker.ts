@@ -8,6 +8,14 @@ export interface WalkArea {
   halfWidth: (depth: number) => number;
 }
 
+/** Something to walk round: a tree trunk's footprint, as a circle on the ground. */
+export interface Obstacle {
+  gx: number;
+  depth: number;
+  /** Radius in ground px (at depth 1), including room for the walker's body. */
+  r: number;
+}
+
 export type Steering =
   | { kind: 'wander' }
   /** Head for a ground point. */
@@ -28,6 +36,8 @@ export class GroundWalker {
   heading: number;
   speed = 0;
   steering: Steering = { kind: 'wander' };
+  /** Trunks and rocks to steer round; the walker is never left standing inside one. */
+  obstacles: readonly Obstacle[] = [];
   private turnRate = 0;
 
   constructor(
@@ -71,12 +81,55 @@ export class GroundWalker {
     } else {
       this.turnToward(s.side > 0 ? 0 : Math.PI, 3, dt);
     }
+    if (this.speed > 0) this.avoid(dt);
     this.gx += Math.cos(this.heading) * this.speed * dt;
     this.depth += (Math.sin(this.heading) * this.speed * dt) / FOCAL;
     this.depth = Math.min(this.area.maxDepth, Math.max(this.area.minDepth, this.depth));
     if (s.kind !== 'exit') {
       const limit = this.area.halfWidth(this.depth);
       this.gx = Math.min(limit, Math.max(-limit, this.gx));
+    }
+    // Last, so no limit can put it back inside a trunk.
+    this.pushOut();
+  }
+
+  /** Whether a ground point lies inside any obstacle. */
+  static blocked(obstacles: readonly Obstacle[], gx: number, depth: number, margin = 0): boolean {
+    return obstacles.some((o) => Math.hypot(gx - o.gx, (depth - o.depth) * FOCAL) < o.r + margin);
+  }
+
+  /** Turn away from a trunk in the way ahead. */
+  private avoid(dt: number): void {
+    const fx = Math.cos(this.heading);
+    const fz = Math.sin(this.heading);
+    const lookAhead = 18 + this.speed * 0.9;
+    let steer = 0;
+    let closest = Infinity;
+    for (const o of this.obstacles) {
+      const rx = o.gx - this.gx;
+      const rz = (o.depth - this.depth) * FOCAL;
+      const along = rx * fx + rz * fz;
+      if (along <= 0 || along > lookAhead + o.r) continue;
+      // Positive when the obstacle is to the left of the direction of travel.
+      const lateral = fx * rz - fz * rx;
+      if (Math.abs(lateral) >= o.r + 3 || along >= closest) continue;
+      closest = along;
+      steer = lateral >= 0 ? -1 : 1;
+    }
+    if (steer !== 0) this.heading += steer * 3.2 * dt;
+  }
+
+  /** Never end a step inside an obstacle: slide out to its edge. */
+  private pushOut(): void {
+    for (const o of this.obstacles) {
+      const dx = this.gx - o.gx;
+      const dz = (this.depth - o.depth) * FOCAL;
+      const d = Math.hypot(dx, dz);
+      if (d >= o.r) continue;
+      const nx = d > 1e-6 ? dx / d : 1;
+      const nz = d > 1e-6 ? dz / d : 0;
+      this.gx = o.gx + nx * o.r;
+      this.depth = o.depth + (nz * o.r) / FOCAL;
     }
   }
 

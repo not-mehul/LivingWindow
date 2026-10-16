@@ -70,17 +70,53 @@ export interface DrawnTree {
  * trees get an ink outline like the reference drawing; tiny ones stay soft.
  */
 export function drawConifer(height: number, seed: number, palette: TreePalette = CONIFER, ink = height >= 16): DrawnTree {
+  return paintConifer(height, seed, palette, ink, { widthRatio: 0.46, crownEnd: 0.9, trunkRatio: 0.08 });
+}
+
+/**
+ * A tall old pine: a long bare trunk with plated bark, and a narrower crown
+ * of drooping whorls over only its top part. In front of the window these are
+ * the trunks deer walk between.
+ */
+export function drawTallPine(height: number, seed: number, palette: TreePalette = CONIFER, ink = height >= 16): DrawnTree {
+  return paintConifer(height, seed, palette, ink, { widthRatio: 0.34, crownEnd: 0.46, trunkRatio: 0.16, plated: true });
+}
+
+interface ConiferShape {
+  /** Crown width as a fraction of the height. */
+  widthRatio: number;
+  /** Where the lowest boughs end, as a fraction of the height. */
+  crownEnd: number;
+  /** Trunk width as a fraction of the crown width. */
+  trunkRatio: number;
+  /** Reddish, plated bark lit on the left (old pines). */
+  plated?: boolean;
+}
+
+function paintConifer(height: number, seed: number, palette: TreePalette, ink: boolean, shape: ConiferShape): DrawnTree {
   const H = Math.max(4, Math.round(height));
-  const W = Math.max(3, Math.round(H * 0.46)) | 1;
+  const W = Math.max(3, Math.round(H * shape.widthRatio)) | 1;
   const pad = ink ? 1 : 0;
   const p = new PixelBuffer(W + pad * 2, H + pad);
   const cx = W / 2 + pad;
   const crownTop = Math.max(2, Math.round(H * 0.03));
-  const crownBottom = Math.round(H * 0.9);
-  // Trunk, mostly hidden by the boughs.
-  const trunkWidth = Math.max(1, Math.round(W * 0.08));
-  for (let y = Math.round(H * 0.3); y < H; y++) {
-    for (let i = 0; i < trunkWidth; i++) p.set(cx - trunkWidth / 2 + i, y, i === 0 ? palette.bark : palette.barkDark);
+  const crownBottom = Math.round(H * shape.crownEnd);
+  // Trunk: mostly hidden by the boughs on a spruce, long and bare on an old pine.
+  const trunkWidth = Math.max(1, Math.round(W * shape.trunkRatio));
+  for (let y = Math.round(H * 0.15); y < H; y++) {
+    // A slight flare at the foot.
+    const flare = y > H * 0.94 ? Math.round((y - H * 0.94) * 0.5) : 0;
+    const w = trunkWidth + flare * 2;
+    for (let i = 0; i < w; i++) {
+      const u = (i + 0.5) / w;
+      let color = u < 0.3 ? palette.bark : palette.barkDark;
+      if (shape.plated && w >= 3) {
+        if (u < 0.25) color = lerpColor(palette.bark, 0xffffff, 0.12);
+        else if (u > 0.7) color = lerpColor(palette.barkDark, 0x000000, 0.2);
+        if (y % 5 === 0 && pixelHash(Math.floor(i / 2), Math.floor(y / 5), seed) < 0.5) color = palette.barkDark;
+      }
+      p.set(cx - w / 2 + i, y, color);
+    }
   }
   // Whorl heights: denser towards the top, with a little irregularity.
   const whorls: number[] = [];

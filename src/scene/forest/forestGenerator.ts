@@ -4,11 +4,11 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import { createRng, randomInt, randomRange } from '../../core/random';
 import type { Ledge } from '../../life/types';
 import { GroundPlane } from '../../sim/groundPlane';
-import type { WalkArea } from '../../sim/groundWalker';
+import type { Obstacle, WalkArea } from '../../sim/groundWalker';
 import { depthForScale } from '../../sim/perspective';
 import { pixelHash } from '../../sprites/raster';
 import { ditherRamp, valueNoise } from '../common/paint';
-import { BROADLEAF, CONIFER, drawBroadleaf, drawConifer, hazePalette, type TreePalette } from '../common/trees';
+import { BROADLEAF, CONIFER, drawBroadleaf, drawConifer, drawTallPine, hazePalette, type TreePalette } from '../common/trees';
 
 /**
  * The deep forest, after the reference drawing: from a cabin on a wooded
@@ -21,16 +21,20 @@ import { BROADLEAF, CONIFER, drawBroadleaf, drawConifer, hazePalette, type TreeP
 export const FOREST_HORIZON = 200;
 /** Depth 1 lands at y = 340 (the foot of the view). */
 export const FOREST_EYE = 140;
-/** Far edge of the clearing in front of the cabin; beyond it the land drops into the valley. */
+/** Far edge of the wood in front of the cabin; beyond it the land drops into the valley. */
 export const BROW_Y = 256;
 export const forestPlane = new GroundPlane(FOREST_HORIZON, FOREST_EYE);
 
-/** Where deer may walk: the clearing, from just beyond the sill out to the brow. */
-export const CLEARING: WalkArea = {
+/** Where deer may walk: the forest floor, from just beyond the sill out to the brow, among the trunks. */
+export const FOREST_FLOOR: WalkArea = {
   minDepth: forestPlane.depthAtY(334),
-  maxDepth: forestPlane.depthAtY(BROW_Y + 4),
+  maxDepth: forestPlane.depthAtY(BROW_Y + 6),
   halfWidth: (depth) => forestPlane.halfWidthAt(depth) + 40,
 };
+
+/** The small sunlit glade the deer path crosses (screen ellipse). */
+const GLADE = { x: 440, y: 306, rx: 90, ry: 28 };
+const inGlade = (x: number, y: number, grow = 0) => ((x - GLADE.x) / (GLADE.rx + grow)) ** 2 + ((y - GLADE.y) / (GLADE.ry + grow * 0.3)) ** 2 < 1;
 
 /** Bird sprite scale relative to the ground plane (a robin beside a deer). */
 const BIRD_SCALE = 0.34;
@@ -69,8 +73,12 @@ export interface ForestLayout {
   valley: PixelBuffer;
   /** The clearing in front of the cabin. */
   ground: PixelBuffer;
-  /** Trees standing on the clearing and the brow (they sway, and deer pass between them). */
+  /** Trees standing in the wood and along the brow (they sway, and deer pass between them). */
   midTrees: MidTree[];
+  /** Ferns and shrubs on the forest floor, sorted with the trees and deer. */
+  floorPlants: MidTree[];
+  /** Trunk footprints on the ground plane, for deer to walk round. */
+  obstacles: Obstacle[];
   /** The framing oak and pine trunks, logs and undergrowth. */
   near: PixelBuffer;
   /** Pine boughs and oak foliage hanging into the top of the view (they sway). */
@@ -445,101 +453,152 @@ export function generateForest(seed = 3141): ForestLayout {
     }
   }
 
-  // --- The clearing: grass, moss and a deer path, textured by depth ---
+  // --- The forest floor: moss, earth and leaf litter, with a small sunlit glade ---
   const ground = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
   const brow = (x: number) => BROW_Y + Math.sin(x * 0.012 + 1) * 5 + Math.sin(x * 0.031) * 2.5;
   const grass = [0x4e6e34, 0x5a7c3a, 0x668a42, 0x76984a, 0x86a656];
-  const pathAt = (depth: number) => -40 + Math.sin(depth * 2.4) * 46;
+  const floor = [0x34421f, 0x3e4e26, 0x4a5a2c, 0x566832, 0x627438];
+  const pathAt = (depth: number) => 20 + Math.sin(depth * 2.4) * 40;
   for (let y = Math.floor(BROW_Y - 8); y < WORLD_HEIGHT; y++) {
     const s = forestPlane.scaleAtY(y);
     const depth = forestPlane.depthAtY(y);
     const hazeAmount = Math.max(0, 0.45 - s * 0.5);
     const pathCentre = forestPlane.project(pathAt(depth), depth).x;
-    const pathHalf = 9 * s + 1;
+    const pathHalf = 8 * s + 1;
+    const stretch = 0.35 + s * 0.65;
     for (let x = 0; x < WORLD_WIDTH; x++) {
       if (y < brow(x)) continue;
-      // Soft patches of grass, their size growing with nearness (perspective).
-      const patch = valueNoise(x, y / (0.35 + s * 0.65), 6 + 18 * s, 19) * 0.75 + pixelHash(x, y, 21) * 0.25;
-      let color = ditherRamp(grass, patch, x, y);
-      // Grass blades: a lit tip here and there, taller with nearness.
-      if (pixelHash(x, y, 23) < 0.05 + 0.1 * s) color = grass[4];
-      if (valueNoise(x, y / (0.35 + s * 0.65), 5 + 9 * s, 24) < 0.22) color = 0x46622e;
-      // Leaf litter and the trodden path.
-      const onPath = Math.abs(x - pathCentre) < pathHalf - pixelHash(x, y, 25) * 1.5;
-      if (onPath) color = pixelHash(x, y, 27) < 0.3 ? 0x8a6a46 : 0x9a7a52;
-      else if (pixelHash(x, y, 29) < 0.025) color = pixelHash(x, y, 31) < 0.5 ? 0xb07a3a : 0xc8963e;
-      if (y - brow(x) < 1.5) color = 0x3e5a2c;
+      const patch = valueNoise(x, y / stretch, 6 + 18 * s, 19) * 0.75 + pixelHash(x, y, 21) * 0.25;
+      // Sunlit grass in the glade, fraying into the shaded floor at its edge.
+      const glade = inGlade(x, y, (valueNoise(x, y, 9, 33) - 0.5) * 40);
+      let color = ditherRamp(glade ? grass : floor, patch, x, y);
+      if (glade) {
+        if (pixelHash(x, y, 23) < 0.05 + 0.1 * s) color = grass[4];
+      } else {
+        // Bare earth, moss cushions and fallen leaves.
+        const earth = valueNoise(x, y / stretch, 8 + 14 * s, 37);
+        if (earth > 0.7) color = earth > 0.8 ? 0x6a5638 : 0x5a4a30;
+        if (valueNoise(x, y / stretch, 4 + 8 * s, 41) > 0.78) color = 0x6a8a3a;
+        if (pixelHash(x, y, 29) < 0.07) color = pixelHash(x, y, 31) < 0.4 ? 0xa86a30 : pixelHash(x, y, 32) < 0.5 ? 0xc8963e : 0x7a4a26;
+      }
+      // The trodden deer path.
+      if (Math.abs(x - pathCentre) < pathHalf - pixelHash(x, y, 25) * 1.5) color = pixelHash(x, y, 27) < 0.3 ? 0x7a5e3e : 0x8a6c48;
+      if (y - brow(x) < 1.5) color = 0x30401e;
       ground.set(x, y, lerpColor(color, HAZE, hazeAmount));
     }
   }
 
-  // Low shrubs round the edges of the clearing and under the trees.
-  for (const [i, [x, y]] of (
-    [
-      [150, 304],
-      [214, 280],
-      [318, 292],
-      [372, 266],
-      [446, 262],
-      [514, 266],
-      [556, 294],
-      [604, 278],
-      [690, 306],
-      [742, 288],
-    ] as const
-  ).entries()) {
-    const s = forestPlane.scaleAtY(y);
-    const pal = hazePalette(BROADLEAF, HAZE, Math.max(0, 0.5 - s * 0.6));
-    for (let k = 0; k < 3; k++) {
-      const h = (20 + 10 * pixelHash(i, k, 47)) * s;
-      stampBlob(ground, x + (k - 1) * h * 0.55, y + (k === 1 ? 1 : 0), h, pal, i * 7 + k);
-    }
-  }
-
-  // --- Trees standing on the clearing and along the brow ---
+  // --- Trees: a whole wood scattered over the ground plane ---
   const midTrees: MidTree[] = [];
-  const trees: Array<[x: number, baseY: number, kind: 'c' | 'b', size: number]> = [
-    [196, 272, 'c', 300],
-    [248, 262, 'b', 230],
-    [292, 286, 'c', 280],
-    [130, 300, 'c', 320],
-    [352, 260, 'c', 120],
-    [410, 264, 'b', 105],
-    [470, 258, 'c', 125],
-    [524, 262, 'c', 115],
-    [622, 262, 'b', 240],
-    [575, 284, 'c', 290],
-    [668, 274, 'c', 300],
-    [722, 298, 'c', 330],
-  ];
-  trees.sort((a, b) => a[1] - b[1]);
-  for (const [i, [x, baseY, kind, size]] of trees.entries()) {
-    const s = forestPlane.scaleAtY(baseY);
-    const haze = Math.max(0, Math.min(0.5, 0.75 - s));
-    const pal = hazePalette(kind === 'c' ? CONIFER : BROADLEAF, HAZE, haze * 0.6);
-    const tree = kind === 'c' ? drawConifer(size * s, seed + i * 13, pal) : drawBroadleaf(size * s, seed + i * 13, pal);
-    const left = Math.round(x - tree.baseX);
-    const top = Math.round(baseY - tree.baseY);
-    midTrees.push({ art: tree.buffer, x: left, y: top, baseY, haze: haze * 0.4 });
-    const tipZ = depthForScale(BIRD_SCALE * s);
-    ledges.push({ x0: left + tree.tipX - 1, x1: left + tree.tipX + 1, y: top + tree.tipY, layer: 'mid', kind: 'treetop', z: tipZ });
-    for (const perch of tree.perches) {
-      ledges.push({ x0: left + perch.x0, x1: left + perch.x1, y: top + perch.y, layer: 'mid', kind: 'branch', z: tipZ });
+  const floorPlants: MidTree[] = [];
+  const obstacles: Obstacle[] = [];
+  const PINE: TreePalette = { ...CONIFER, bark: 0x8a5a3c, barkDark: 0x5a3626 };
+  const treeRng = createRng(seed + 5);
+  // Near the middle, treetops must stay below the valley so the vista stays open.
+  const vistaLimit = (x: number) => {
+    const d = Math.abs(x - 440);
+    return d < 150 ? 212 : 212 - (d - 150) * 1.6;
+  };
+  /** Pines in the front rows of the middle hold their crowns above the view: just trunks cross the vista. */
+  const PINE_CROWN_BOTTOM = 16;
+  const MAX_FRONT_PINES = 4;
+  let frontPines = 0;
+  type Kind = 'spruce' | 'broad' | 'pine';
+  const placed: Array<{ x: number; y: number; r: number; s: number; kind: Kind; height: number; seed: number }> = [];
+  for (let attempt = 0; attempt < 3000 && placed.length < 44; attempt++) {
+    const y = BROW_Y + 2 + treeRng() * 80;
+    const x = 40 + treeRng() * 780;
+    const s = forestPlane.scaleAtY(y);
+    if (inGlade(x, y, 24)) continue;
+    const roll = treeRng();
+    const nearRow = y > 298;
+    const middle = Math.abs(x - 440) < 170;
+    let kind: Kind;
+    if (nearRow && middle) {
+      if (frontPines >= MAX_FRONT_PINES) continue;
+      kind = 'pine';
     }
-    if (kind === 'b' && size * s > 60) {
+    else if (nearRow) kind = roll < 0.45 ? 'pine' : roll < 0.75 ? 'broad' : 'spruce';
+    else kind = roll < 0.55 ? 'spruce' : roll < 0.82 ? 'broad' : 'pine';
+    const real =
+      kind === 'pine' ? 380 + treeRng() * 120 : kind === 'spruce' ? 230 + treeRng() * 110 : (nearRow ? 160 : 200) + treeRng() * (nearRow ? 60 : 90);
+    let height = real * s;
+    if (kind === 'pine' && nearRow && middle) {
+      // Tall enough that its crown clears the valley.
+      height = Math.max(height, (y - PINE_CROWN_BOTTOM) / 0.54);
+    } else if (nearRow && middle) {
+      continue;
+    } else {
+      // Respect the vista: draw a younger, shorter tree, or none at all.
+      const room = y - vistaLimit(x);
+      if (height > room) {
+        if (room < 30 * s || kind === 'pine') continue;
+        height = room;
+      }
+    }
+    // Spacing: a footprint that grows with size; trees at clearly different depths may overlap on screen.
+    const r = (kind === 'pine' ? height * (nearRow && middle ? 0.11 : 0.07) : kind === 'spruce' ? height * 0.2 : height * 0.16) + 3;
+    if (placed.some((p) => Math.abs(p.x - x) < (p.r + r) * 0.85 && Math.abs(p.y - y) < 8 + 10 * s)) continue;
+    placed.push({ x, y, r, s, kind, height, seed: Math.floor(treeRng() * 1e6) });
+    if (nearRow && middle) frontPines++;
+  }
+  placed.sort((a, b) => a.y - b.y);
+  for (const t of placed) {
+    const haze = Math.max(0, Math.min(0.5, 0.75 - t.s));
+    const base = t.kind === 'broad' ? BROADLEAF : t.kind === 'pine' ? PINE : CONIFER;
+    const pal = hazePalette(base, HAZE, haze * 0.6);
+    const tree =
+      t.kind === 'spruce' ? drawConifer(t.height, t.seed, pal) : t.kind === 'broad' ? drawBroadleaf(t.height, t.seed, pal) : drawTallPine(t.height, t.seed, pal);
+    const left = Math.round(t.x - tree.baseX);
+    const top = Math.round(t.y - tree.baseY);
+    midTrees.push({ art: tree.buffer, x: left, y: top, baseY: Math.round(t.y), haze: haze * 0.4 });
+    const tipZ = depthForScale(BIRD_SCALE * t.s);
+    if (top + tree.tipY > 4) {
+      ledges.push({ x0: left + tree.tipX - 1, x1: left + tree.tipX + 1, y: top + tree.tipY, layer: 'mid', kind: 'treetop', z: tipZ });
+    }
+    for (const perch of tree.perches) {
+      if (top + perch.y > 4) ledges.push({ x0: left + perch.x0, x1: left + perch.x1, y: top + perch.y, layer: 'mid', kind: 'branch', z: tipZ });
+    }
+    // Its footprint for the deer: a spruce's low skirt, or just a trunk.
+    const footprintPx = t.kind === 'spruce' ? t.height * 0.13 : t.kind === 'pine' ? t.height * 0.04 : t.height * 0.05;
+    const { gx, depth } = forestPlane.unproject(t.x, t.y);
+    obstacles.push({ gx, depth, r: footprintPx / t.s + 10 });
+    if (t.kind !== 'spruce' && t.height > 60) {
       trunks.push({
-        x,
-        width: Math.max(3, Math.round(size * s * 0.06)),
-        top: Math.round(baseY - size * s * 0.38),
-        bottom: baseY,
+        x: Math.round(t.x),
+        width: Math.max(3, Math.round(t.kind === 'pine' ? t.height * 0.054 : t.height * 0.06)),
+        top: Math.round(t.y - t.height * (t.kind === 'pine' ? 0.5 : 0.38)),
+        bottom: Math.round(t.y),
         layer: 'mid',
-        squirrelSize: Math.max(5, Math.round(16 * s)),
+        squirrelSize: Math.max(5, Math.round(16 * t.s)),
       });
     }
   }
-  // Robins hop about the clearing.
-  for (const y of [268, 290, 314]) {
-    ledges.push({ x0: 110, x1: 730, y, layer: 'mid', kind: 'ground', z: birdZ(y) });
+
+  // Ferns and shrubs on the floor, sorted among the trunks (deer pass behind them).
+  const plantRng = createRng(seed + 9);
+  for (let attempt = 0; attempt < 400 && floorPlants.length < 30; attempt++) {
+    const y = BROW_Y + 6 + plantRng() * 70;
+    const x = 30 + plantRng() * 800;
+    if (inGlade(x, y, -10)) continue;
+    const s = forestPlane.scaleAtY(y);
+    const haze = Math.max(0, 0.5 - s * 0.6);
+    let art: PixelBuffer;
+    if (plantRng() < 0.55) {
+      art = drawFern(plantRng, Math.max(0.35, s * 1.1));
+    } else {
+      const h = (22 + plantRng() * 12) * s;
+      art = new PixelBuffer(Math.ceil(h * 1.6) + 2, Math.ceil(h) + 2);
+      const pal = hazePalette(BROADLEAF, HAZE, haze);
+      for (let k = 0; k < 3; k++) stampBlob(art, art.width / 2 + (k - 1) * h * 0.45, art.height - 1 - (k === 1 ? 0 : 1), h * (k === 1 ? 1 : 0.8), pal, Math.floor(x) + k);
+      art.outline(BROADLEAF.ink);
+    }
+    floorPlants.push({ art, x: Math.round(x - art.width / 2), y: Math.round(y - art.height + 1), baseY: Math.round(y), haze: haze * 0.5 });
+  }
+
+  // Robins hop about the glade and the floor.
+  for (const y of [272, 292, 306, 320]) {
+    ledges.push({ x0: 120, x1: 720, y, layer: 'mid', kind: 'ground', z: birdZ(y) });
   }
 
   // --- Near: the framing oak and pine, logs and undergrowth ---
@@ -555,27 +614,47 @@ export function generateForest(seed = 3141): ForestLayout {
       near.set(x, y, color);
     }
   }
-  // The oak at left: a massive trunk forking into limbs that leave the top of the view.
+  // The oak at left: a massive, gnarled trunk forking into limbs that leave the top of the view.
   for (let y = 0; y < WORLD_HEIGHT; y++) {
-    const flare = y > 300 ? (y - 300) * 0.35 : 0;
-    const cx = 62 + Math.sin(y / 70) * 5;
-    const half = 21 + (y / WORLD_HEIGHT) * 6 + flare;
+    const flare = y > 286 ? (y - 286) ** 1.25 * 0.55 : 0;
+    const cx = 58 + Math.sin(y / 70) * 6 + Math.sin(y / 23) * 1.5;
+    const half = 38 + (y / WORLD_HEIGHT) * 8 + flare;
     for (let x = Math.floor(cx - half); x <= cx + half; x++) {
       const u = (x + 0.5 - (cx - half)) / (half * 2);
-      let color = u < 0.2 ? OAK_BARK.light : u > 0.72 ? OAK_BARK.dark : OAK_BARK.base;
-      const lane = Math.floor((x + Math.sin(y * 0.08) * 1.5) / 3);
-      if (pixelHash(lane, Math.floor(y / 9), 61) < 0.25) color = u > 0.5 ? OAK_BARK.deep : OAK_BARK.dark;
-      if (u > 0.8 && y > 150 && pixelHash(x, y, 63) < 0.5) color = MOSS;
+      let color = u < 0.18 ? OAK_BARK.light : u > 0.7 ? OAK_BARK.dark : OAK_BARK.base;
+      // Deep, wavy furrows in the bark.
+      const lane = Math.floor((x + Math.sin(y * 0.06 + x * 0.05) * 2.5) / 4);
+      if (pixelHash(lane, Math.floor(y / 11), 61) < 0.28) color = u > 0.5 ? OAK_BARK.deep : OAK_BARK.dark;
+      if (u > 0.76 && y > 120 && valueNoise(x, y, 6, 63) > 0.45) color = MOSS;
       near.set(x, y, color);
     }
   }
-  limb(near, [[70, 128], [118, 84], [160, 46], [196, -12]], 22, 10, OAK_BARK, 65);
-  limb(near, [[56, 112], [26, 66], [-14, 30]], 20, 12, OAK_BARK, 67);
-  limb(near, [[74, 176], [128, 160], [190, 150], [244, 156]], 16, 5, OAK_BARK, 69);
-  // A knot hole.
-  for (let j = -5; j <= 5; j++) for (let k = -3; k <= 3; k++) if (j * j / 25 + (k * k) / 9 <= 1) near.set(60 + k, 230 + j, j * j / 25 + (k * k) / 9 < 0.5 ? 0x1a140e : OAK_BARK.deep);
-  ledges.push({ x0: 140, x1: 236, y: 146, layer: 'near', kind: 'branch', z: 0.5 });
-  trunks.push({ x: 62, width: 44, top: 90, bottom: NEAR_FLOOR, layer: 'near', squirrelSize: 14 });
+  limb(near, [[84, 150], [150, 104], [222, 66], [300, 30], [384, -16]], 34, 12, OAK_BARK, 65);
+  limb(near, [[66, 104], [94, 46], [116, -16]], 28, 16, OAK_BARK, 66);
+  limb(near, [[40, 124], [8, 74], [-32, 38]], 30, 16, OAK_BARK, 67);
+  limb(near, [[90, 200], [160, 182], [230, 172], [296, 178]], 22, 7, OAK_BARK, 69);
+  // Knot holes.
+  for (const [kx, ky, kr] of [
+    [50, 244, 7],
+    [76, 150, 4],
+  ] as const) {
+    for (let j = -kr - 2; j <= kr + 2; j++) {
+      for (let k = -kr; k <= kr; k++) {
+        const d = (j * j) / ((kr + 2) * (kr + 2)) + (k * k) / (kr * kr);
+        if (d <= 1) near.set(kx + k, ky + j, d < 0.5 ? 0x1a140e : OAK_BARK.deep);
+      }
+    }
+  }
+  ledges.push({ x0: 170, x1: 280, y: 168, layer: 'near', kind: 'branch', z: 0.48 });
+  trunks.push({ x: 58, width: 80, top: 110, bottom: NEAR_FLOOR, layer: 'near', squirrelSize: 15 });
+  // The oak and the framing pine are obstacles too.
+  for (const [x, r] of [
+    [58, 60],
+    [784, 22],
+  ] as const) {
+    const { gx, depth } = forestPlane.unproject(x, 338);
+    obstacles.push({ gx, depth, r });
+  }
 
   // The pine at right: a straight, plated trunk (its boughs are separate, swaying pieces).
   for (let y = 0; y < WORLD_HEIGHT; y++) {
@@ -630,13 +709,13 @@ export function generateForest(seed = 3141): ForestLayout {
     if (i === 2 || i === 4) ledges.push({ x0: 776 - length * 0.7, x1: 770, y: y + 4, layer: 'near', kind: 'branch', z: 0.48 });
   }
   const gaps: number[] = [];
-  for (let i = 0; i < 4; i++) {
-    const w = 120;
-    const h = 70;
+  for (let i = 0; i < 8; i++) {
+    const w = 130;
+    const h = 84 - Math.max(0, i - 4) * 10;
     const foliage = new PixelBuffer(w, h);
     const pal = BROADLEAF;
-    for (let c = 0; c < 9; c++) {
-      const r = randomRange(rng, 12, 22);
+    for (let c = 0; c < 11; c++) {
+      const r = randomRange(rng, 12, 24);
       const cx = randomRange(rng, r, w - r);
       const cy = randomRange(rng, r * 0.6, h - r);
       for (let y = Math.floor(cy - r); y <= cy + r; y++) {
@@ -651,9 +730,10 @@ export function generateForest(seed = 3141): ForestLayout {
       }
     }
     foliage.outline(pal.ink);
-    const x = -30 + i * 72;
-    canopy.push({ art: foliage, x, y: -18 + (i % 2) * 14 });
-    gaps.push(x + 60);
+    // Along the oak's limbs, thinning out towards the middle of the view.
+    const x = -40 + i * 54;
+    canopy.push({ art: foliage, x, y: -26 + (i % 2) * 16 - Math.max(0, i - 4) * 6 });
+    if (i % 2 === 1) gaps.push(x + 70);
   }
 
   // --- Ferns and wildflowers along the front ---
@@ -675,5 +755,5 @@ export function generateForest(seed = 3141): ForestLayout {
     ferns.push({ art, x: x - art.width / 2, y: 324 - art.height + randomInt(rng, 0, 3) });
   }
 
-  return { far, mountains, valley, ground, midTrees, near, canopy, ferns, trunks, ledges, gaps };
+  return { far, mountains, valley, ground, midTrees, floorPlants, obstacles, near, canopy, ferns, trunks, ledges, gaps };
 }

@@ -45,7 +45,7 @@ export class ForestLife implements SceneLife {
       canTap: deps.canTap,
       ecology: FOREST_ECOLOGY,
     });
-    this.deer = new DeerHerd(scene.midground, scene.plane, scene.clearing, deps.viewport, deps.sound);
+    this.deer = new DeerHerd(scene.midground, scene.plane, scene.floorArea, scene.layout.obstacles, deps.viewport, deps.sound);
     this.squirrels = new TrunkSquirrels(scene.layout.trunks, { mid: scene.midground, near: scene.birdsNear }, deps.viewport, deps.sound);
     this.sillSquirrel = new SillSquirrel(deps.birdseed, deps.sound, deps.canTap);
     deps.layers.sillBack.addChild(this.sillSquirrel.container);

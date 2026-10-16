@@ -9,7 +9,7 @@ import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
-import { BROW_Y, CLEARING, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout } from './forestGenerator';
+import { BROW_Y, FOREST_FLOOR, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout } from './forestGenerator';
 
 const BAYER = [
   [0, 8, 2, 10],
@@ -67,9 +67,10 @@ interface Tree {
 }
 
 /**
- * Scene 4: the deep forest, from a cabin on a wooded rise. A gnarled oak and
- * a tall pine frame a valley running away between two mountains; trees stand
- * about a clearing where deer wander towards and away from the window.
+ * Scene 4: the deep forest, from a cabin on a wooded rise. A great gnarled oak
+ * and a tall pine frame a valley running away between two mountains; in the
+ * wood in front, deer wander between the trunks, towards and away from the
+ * window.
  */
 export class ForestScene implements WorldScene {
   readonly container = new Container({ label: 'forest-scene' });
@@ -79,7 +80,8 @@ export class ForestScene implements WorldScene {
   readonly weatherBack = new Container({ label: 'weather-back' });
   readonly weatherFront = new Container({ label: 'weather-front' });
   readonly plane: GroundPlane = forestPlane;
-  readonly clearing: WalkArea = CLEARING;
+  /** Where deer roam: the whole floor of the wood, among the trunks. */
+  readonly floorArea: WalkArea = FOREST_FLOOR;
   /** Birds over the valley. */
   readonly birdsFar = new Container({ label: 'birds-far' });
   /**
@@ -118,7 +120,7 @@ export class ForestScene implements WorldScene {
     this.ground = new Sprite(layout.ground.toTexture());
     this.near = new Sprite(layout.near.toTexture());
 
-    for (const tree of layout.midTrees) {
+    for (const tree of [...layout.midTrees, ...layout.floorPlants]) {
       const sway = new SwayMesh(tree.art.toTexture(), { anchor: 'bottom', amplitude: 1 + tree.art.height / 90 });
       sway.mesh.position.set(tree.x, tree.y);
       sway.mesh.zIndex = tree.baseY;

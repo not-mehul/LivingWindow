@@ -202,27 +202,30 @@ Rebuilt after a hand-drawn reference (the landscapes follow one at a time):
 **Redesign, part 2 — the forest valley** ✅
 
 The forest is rebuilt after its reference drawing. From a cabin on a wooded
-rise, the view opens between a gnarled oak (left) and a tall pine (right) onto a
-valley running away between two mountains.
+rise, you look through a wood (a great gnarled oak at left, a tall pine at
+right) onto a valley running away between two mountains.
 
-- **Depth, not bands.** The far range peeps through the V. The mountains have
-  sunny and shady flanks, ravines and a banded cliff face. Thousands of small
-  trees cover the slopes, shrinking and hazing with distance. Below sits a
-  clearing with a winding deer path, shrubs, and spruces and broadleaf trees
-  drawn to scale by their distance.
-- **True perspective for creatures.** A new ground plane (`sim/groundPlane.ts`)
-  and walker (`sim/groundWalker.ts`) let **deer wander towards and away from
-  the window**. They grow and shrink as they come and go and pass behind or in
-  front of trees by depth. They come up from the valley or in from the trees,
-  graze and look up, and when startled bound for the nearest cover, dropping
-  out of sight over the brow. Squirrels climb the oak, the pine and the
-  clearing's trees, and birds perch on treetops, boughs, logs and the clearing.
+- **A real wood, in depth.** About 40 trees are scattered over a ground plane
+  (`sim/groundPlane.ts`), sized and hazed by distance: spruces, broadleafs and
+  tall old pines. In the middle, the front pines lift their crowns out of view,
+  so their bare trunks frame the valley. Further back only young trees stand
+  there, keeping the valley, the far range and the sunset visible. The floor is
+  moss, earth and leaf litter with ferns and shrubs, and a small sunlit glade
+  where the deer path crosses.
+- **Mountains:** sunny and shady flanks, ravines and a banded cliff face, with
+  thousands of small trees down the slopes shrinking into the haze.
+- **Deer walk between the trunks.** A ground walker (`sim/groundWalker.ts`) lets
+  them wander towards and away from the window, growing and shrinking. They
+  steer round every trunk's footprint and never stand inside one. They pass
+  behind nearer trunks and ferns and in front of further ones. They come up
+  from the valley or in from the sides, graze and look up, and when startled
+  bound for cover, dropping out of sight over the brow.
+- Squirrels climb the oak, the pine and the wood's trunks. Birds perch on
+  treetops, boughs, logs and the forest floor.
 - **Hand-drawn feel in pixels.** Spruces are built from whorls of drooping,
-  ragged branches with ink outlines, broadleaf trees from lit leaf clumps, and
-  the pine's boughs sag in layers. Textures use smooth value noise and ordered
-  dither (`scene/common/paint.ts`) instead of hard stripes.
-- Light shafts fall through the oak's leaves towards the valley, and the sun
-  sets into the V.
+  ragged branches with ink outlines. Textures use smooth value noise and
+  ordered dither (`scene/common/paint.ts`). Light shafts fall through the oak's
+  leaves.
 
 ## Getting started
 
