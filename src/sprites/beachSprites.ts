@@ -192,3 +192,183 @@ export class DolphinSprites {
     return gridToTexture(grid, palette.colors);
   });
 }
+
+// --- Crabs ------------------------------------------------------------------
+
+/**
+ * A ghost crab seen from the front, `size` px wide: a squarish shell, eyes up
+ * on stalks, claws held up, legs splayed either side (frames 0–3 scuttle).
+ * `hidden` shows just its eyes peeping from its burrow.
+ */
+export function drawCrab(frame: number, size: number, hidden = false): Drawn {
+  const W = Math.max(5, Math.round(size));
+  const H = Math.max(3, Math.round(W * 0.62));
+  const g = new PixelGrid(W, H);
+  const s = W / 16;
+  const palette = new Palette();
+  const shell = palette.ramp(0xe0c49a, 0.8);
+  const leg = palette.ramp(0x8a6a4a);
+  const claw = palette.ramp(0xf0e4d0, 0.6);
+  const eye = palette.add(0x1a1410);
+  const hole = palette.add(0x5a4430);
+  const cx = W / 2;
+  if (hidden) {
+    // A dark burrow mouth with two eyes on their stalks just showing.
+    g.ellipse(cx, H - 1, 3.5 * s + 0.5, 1.2, hole);
+    g.set(Math.floor(cx - 1.2 * s), H - 3, eye);
+    g.set(Math.floor(cx + 1.2 * s), H - 3, eye);
+    g.set(Math.floor(cx - 1.2 * s), H - 2, shell[2]);
+    g.set(Math.floor(cx + 1.2 * s), H - 2, shell[2]);
+    return { grid: g, palette };
+  }
+  const f = ((frame % 4) + 4) % 4;
+  // Legs: four a side, splayed, stepping in turn.
+  for (const side of [-1, 1]) {
+    for (let k = 0; k < 3; k++) {
+      const lift = (f + k + (side > 0 ? 2 : 0)) % 4 < 2 ? 0 : 1;
+      const y0 = H - 4 * s + k * 0.8 * s;
+      limb(g, [[cx + side * 2.6 * s, y0], [cx + side * (5.8 + k * 0.9) * s, y0 - 1.6 * s - lift], [cx + side * (7.2 + k * 0.6) * s, H - 0.5]], Math.max(1, 0.9 * s), Math.max(1, 0.7 * s), leg, { bias: k === 2 ? -0.6 : 0, max: 3 });
+    }
+  }
+  // Shell.
+  shadedEllipse(g, cx, H - 4.6 * s, 3.6 * s, 2.4 * s, shell, { dither: false, min: 1 });
+  // Claws, held up and forward on short arms, pale-tipped.
+  for (const side of [-1, 1]) {
+    limb(g, [[cx + side * 2.4 * s, H - 5 * s], [cx + side * 3.6 * s, H - 6.6 * s]], Math.max(1, 1 * s), Math.max(1, 0.9 * s), leg, { max: 3 });
+    shadedEllipse(g, cx + side * 3.8 * s, H - 7.4 * s, Math.max(0.7, 1.5 * s), Math.max(0.7, 1.2 * s), claw, { dither: false, min: 1 });
+  }
+  // Eyes on stalks.
+  for (const side of [-1, 1]) {
+    g.set(Math.floor(cx + side * 1.4 * s), Math.floor(H - 7.6 * s), shell[3]);
+    g.set(Math.floor(cx + side * 1.4 * s), Math.floor(H - 8.4 * s), eye);
+  }
+  return { grid: g, palette };
+}
+
+/** A hermit crab in a borrowed whelk shell, `size` px wide, legs walking (frames 0–1), or tucked away (`withdrawn`). */
+export function drawHermitCrab(frame: number, size: number, withdrawn = false): Drawn {
+  const W = Math.max(5, Math.round(size));
+  const H = Math.max(4, Math.round(W * 0.8));
+  const g = new PixelGrid(W, H);
+  const s = W / 14;
+  const palette = new Palette();
+  const shellR = palette.ramp(0xe0c8a8, 0.9);
+  const band = palette.ramp(0xa86a4a);
+  const crab = palette.ramp(0xd0583a);
+  const eye = palette.add(0x1a1410);
+  // The spiral shell: a fat whorl tapering to its tip at the back.
+  shadedEllipse(g, 6 * s, H - 4.6 * s, 4.4 * s, 4 * s, shellR, { dither: false, min: 1 });
+  limb(g, [[4 * s, H - 6 * s], [1.2 * s, H - 8.5 * s]], 3.6 * s, 1.2 * s, shellR, { bias: 0.3 });
+  if (W >= 8) {
+    // The spiral's bands.
+    for (let a = 0; a < 5.5; a += 0.25) {
+      const rr = (1 + a * 0.55) * s;
+      g.set(Math.floor(6 * s + Math.cos(a * 1.9) * rr * 0.9), Math.floor(H - 4.8 * s + Math.sin(a * 1.9) * rr * 0.8), band[1]);
+    }
+  }
+  if (!withdrawn) {
+    // Legs and a big claw out of the shell's mouth, eyes up.
+    const step = frame % 2 === 0 ? 0 : 1;
+    for (let k = 0; k < 2; k++) limb(g, [[9.5 * s, H - 2.5 * s], [(11 + k * 1.5 + step * 0.5) * s, H - 0.5]], Math.max(1, 0.9 * s), Math.max(1, 0.8 * s), crab, { bias: k === 0 ? -0.6 : 0 });
+    shadedEllipse(g, 11.5 * s, H - 3.6 * s, Math.max(0.7, 1.6 * s), Math.max(0.7, 1.2 * s), crab, { dither: false });
+    g.set(Math.floor(10.2 * s), Math.floor(H - 6 * s), eye);
+  }
+  if (W >= 10) selOut(g, palette, { bottomHeavy: true });
+  return { grid: g, palette };
+}
+
+// --- Pelican -----------------------------------------------------------------
+
+export type PelicanPose = 'glide' | 'flap-up' | 'flap-down' | 'dive' | 'float';
+
+/**
+ * A brown pelican, `size` px across, facing right: a heavy body, long broad
+ * wings with dark flight feathers, the long bill and pouch, and a pale head.
+ * Gliding, flapping, plunging bill-first with wings folded back, or
+ * floating on the swell.
+ */
+export function drawPelican(pose: PelicanPose, size: number): Drawn {
+  const W = Math.max(8, Math.round(size));
+  const H = Math.max(5, Math.round(W * 0.6));
+  const g = new PixelGrid(W, H);
+  const s = W / 40;
+  const P = (x: number, y: number): readonly [number, number] => [x * s, y * s];
+  const palette = new Palette();
+  const body = palette.ramp(0x8a8278);
+  const flight = palette.ramp(0x3a3634);
+  const head = palette.ramp(0xeee4c8, 0.6);
+  const bill = palette.ramp(0xc8a060);
+  const eye = palette.add(0x141010);
+  if (pose === 'dive') {
+    // Folded into an arrow, bill first, plunging steeply.
+    limb(g, [P(10, 2), P(20, 12), P(26, 20)], 7 * s, 5 * s, body);
+    limb(g, [P(6, 1), P(14, 9)], 4 * s, 2 * s, flight, { bias: -0.5 });
+    shadedEllipse(g, 27 * s, 20 * s, 2.6 * s, 2.4 * s, head, { dither: false });
+    limb(g, [P(28, 21), P(33, 23.5)], 2.4 * s, 1.2 * s, bill);
+  } else if (pose === 'float') {
+    // Sitting on the water, bill tucked down on its chest.
+    shadedEllipse(g, 18 * s, 18 * s, 11 * s, 5 * s, body, { dither: false, min: 1 });
+    limb(g, [P(10, 15), P(22, 14)], 4 * s, 3 * s, flight, { bias: -0.3 });
+    limb(g, [P(26, 15), P(28, 9)], 3 * s, 2.6 * s, head);
+    shadedEllipse(g, 28.5 * s, 8 * s, 2.6 * s, 2.2 * s, head, { dither: false });
+    limb(g, [P(30, 8.5), P(36, 13)], 2.2 * s, 1.2 * s, bill);
+  } else {
+    const wingY = pose === 'flap-up' ? -9 : pose === 'flap-down' ? 7 : -1;
+    // Far wing, body, near wing.
+    limb(g, [P(18, 11), P(13, 11 + wingY * 0.6), P(4, 10 + wingY)], 5 * s, 2.5 * s, flight, { bias: -1 });
+    shadedEllipse(g, 19 * s, 12.5 * s, 10 * s, 3.6 * s, body, { dither: false, min: 1 });
+    limb(g, [P(20, 12), P(16, 13 + wingY * 0.7), P(6, 14 + wingY)], 6 * s, 2.8 * s, body, { bias: 0.4 });
+    limb(g, [P(14, 13 + wingY * 0.8), P(6, 14 + wingY)], 3 * s, 2.2 * s, flight, { bias: 0 });
+    // Neck folded back, head forward, the long bill resting on the chest.
+    shadedEllipse(g, 29 * s, 10.5 * s, 2.8 * s, 2.4 * s, head, { dither: false });
+    limb(g, [P(31, 11), P(39, 12.5)], 2.2 * s, 1.1 * s, bill);
+    limb(g, [P(31, 12.3), P(37, 13.4)], 1.4 * s, 0.8 * s, bill, { bias: -0.8 });
+  }
+  if (W >= 16) {
+    const ex = pose === 'dive' ? 27.5 : pose === 'float' ? 29 : 29.6;
+    const ey = pose === 'dive' ? 19.5 : pose === 'float' ? 7.6 : 10;
+    g.set(Math.floor(ex * s), Math.floor(ey * s), eye);
+    selOut(g, palette, { bottomHeavy: true });
+  }
+  return { grid: g, palette };
+}
+
+// --- Jellyfish and hatchlings -------------------------------------------------
+
+/** A moon jellyfish seen from above, `size` px across: a translucent bell with four pale rings, pulsing (frames 0–2). */
+export function drawJellyfish(frame: number, size: number): Drawn {
+  const N = Math.max(3, Math.round(size));
+  const g = new PixelGrid(N, N);
+  const palette = new Palette();
+  const bell = palette.ramp(0xb8c8e8, 0.6);
+  const ring = palette.add(0xe8d0f0);
+  const c = (N - 1) / 2;
+  const squeeze = [1, 0.82, 0.9][((frame % 3) + 3) % 3];
+  g.ellipse(c + 0.5, c + 0.5, (N / 2) * squeeze, (N / 2) * (2 - squeeze) * 0.5 + N * 0.02, (u, v) => (u * u + v * v > 0.7 ? bell[1] : bell[3]));
+  if (N >= 5) {
+    // The four gonad rings in the middle.
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) g.set(Math.round(c + dx * N * 0.13), Math.round(c + dy * N * 0.13), ring);
+  }
+  return { grid: g, palette };
+}
+
+/** A turtle hatchling scrambling for the sea, seen from above, `size` px long, flippers rowing (frames 0–1). */
+export function drawHatchling(frame: number, size: number): Drawn {
+  const N = Math.max(3, Math.round(size));
+  const g = new PixelGrid(N + 2, N);
+  const palette = new Palette();
+  const shell = palette.ramp(0x3a3428);
+  const flipper = palette.ramp(0x2a261e);
+  const c = (N + 1) / 2;
+  const f = frame % 2;
+  // Flippers out front and behind, alternating.
+  for (const side of [-1, 1]) {
+    const fy = side < 0 ? N * 0.3 : N * 0.65;
+    g.set(Math.floor(c - (N / 2) * (f === 0 ? 1 : 0.8)), Math.floor(fy), flipper[2]);
+    g.set(Math.ceil(c + (N / 2) * (f === 0 ? 0.8 : 1)), Math.floor(fy), flipper[2]);
+  }
+  shadedEllipse(g, c, N / 2, Math.max(0.8, N * 0.3), Math.max(0.8, N * 0.42), shell, { dither: false });
+  // Head at the front (top).
+  g.set(Math.floor(c), 0, flipper[3]);
+  return { grid: g, palette };
+}

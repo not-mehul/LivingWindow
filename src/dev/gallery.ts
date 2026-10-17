@@ -2,7 +2,7 @@ import type { Drawn } from '../sprites/kit';
 import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonPose } from '../sprites/people';
 import type { PixelGrid } from '../sprites/raster';
 import { drawBird, SPECIES, type SpeciesId } from '../sprites/birdSprites';
-import { DOLPHIN_FRAMES, drawDolphinSized, drawTurtleSized } from '../sprites/beachSprites';
+import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
 import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type RabbitPose } from '../sprites/meadowSprites';
 import { drawBat, drawBear, drawButterfly, drawFox, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind } from '../sprites/wildSprites';
@@ -154,6 +154,17 @@ function sections(): Section[] {
       ([0, 1, 2] as const).map((f) => ({ label: `crawl ${f}`, draw: () => drawTurtleSized(f, 40) })),
       Array.from({ length: DOLPHIN_FRAMES }, (_, f) => ({ label: `breach ${f}`, draw: () => drawDolphinSized(f) })),
       Array.from({ length: DOLPHIN_FRAMES }, (_, f) => ({ label: `breach ${f}`, draw: () => drawDolphinSized(f, 28) })),
+    ],
+  });
+
+  out.push({
+    title: 'Shore creatures',
+    rows: [
+      [6, 9, 12, 16, 22].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `crab ${n}/${f}`, draw: () => drawCrab(f, n) })).concat([{ label: 'hid', draw: () => drawCrab(0, n, true) }])),
+      [6, 9, 12, 16].flatMap((n) => [0, 1].map((f) => ({ label: `hermit ${n}/${f}`, draw: () => drawHermitCrab(f, n) })).concat([{ label: 'in', draw: () => drawHermitCrab(0, n, true) }])),
+      [16, 24, 36, 48].flatMap((n) => (['glide', 'flap-up', 'flap-down', 'dive', 'float'] as PelicanPose[]).map((pose) => ({ label: `${pose} ${n}`, draw: () => drawPelican(pose, n) }))),
+      [3, 5, 8, 12].flatMap((n) => [0, 1, 2].map((f) => ({ label: `jelly ${n}/${f}`, draw: () => drawJellyfish(f, n) }))),
+      [3, 4, 6, 8].flatMap((n) => [0, 1].map((f) => ({ label: `hatch ${n}/${f}`, draw: () => drawHatchling(f, n) }))),
     ],
   });
 

@@ -151,6 +151,18 @@ export class FishAndGulls {
     return shorePoint(SCHOOL_DEPTH0 + (u / SCHOOL_U) * SCHOOL_DEPTHS, BREAK_S + 6 + v);
   }
 
+  /** Where the school is now (world px), for anything hunting it. */
+  get schoolPoint(): { x: number; y: number; scale: number } {
+    const c = this.school.centre;
+    return this.toWorld(c.x, c.y);
+  }
+
+  /** Scatter the school (something plunged in among them). */
+  scatterSchool(): void {
+    const c = this.school.centre;
+    this.school.scare(c.x, c.y);
+  }
+
   /** Send a gull after the fish now. */
   summonHunter(): void {
     this.huntTimer = 0;

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { drawBird, SPECIES, type BirdPose, type SpeciesId } from './birdSprites';
 import { CAT_HEIGHT, CAT_WIDTH, drawCat, type CatPose } from './catSprites';
 import { PixelGrid } from './raster';
-import { DOLPHIN_FRAMES, drawDolphinSized, drawTurtleSized } from './beachSprites';
+import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized } from './beachSprites';
 import { drawDeerSized, drawSquirrelSized } from './forestSprites';
 import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
 import { drawBusker, drawPerson, randomLook } from './people';
@@ -220,5 +220,19 @@ describe('wild creatures', () => {
     for (const kind of ['monarch', 'white', 'blue', 'brimstone'] as const) for (const n of [4, 6, 9, 14]) for (const f of [0, 1, 2]) expect(drawButterfly(kind, f, n).grid.isEmpty()).toBe(false);
     for (const n of [5, 8, 13]) for (const f of [0, 1]) expect(drawWoodpeckerCling(f, n).grid.isEmpty()).toBe(false);
     for (const kind of ['fly-agaric', 'bolete', 'cluster'] as const) for (const n of [3, 6, 10]) expect(drawMushroom(kind, n).grid.isEmpty()).toBe(false);
+  });
+});
+
+describe('shore creatures', () => {
+  it('draws crabs, hermit crabs, pelicans, jellyfish and hatchlings at every size', () => {
+    for (const n of [5, 8, 12, 20]) {
+      for (let f = 0; f < 4; f++) expect(drawCrab(f, n).grid.isEmpty()).toBe(false);
+      expect(drawCrab(0, n, true).grid.isEmpty()).toBe(false);
+      for (const f of [0, 1]) expect(drawHermitCrab(f, n).grid.isEmpty()).toBe(false);
+      expect(drawHermitCrab(0, n, true).grid.isEmpty()).toBe(false);
+    }
+    for (const n of [8, 16, 34, 48]) for (const pose of ['glide', 'flap-up', 'flap-down', 'dive', 'float'] as const) expect(drawPelican(pose, n).grid.isEmpty()).toBe(false);
+    for (const n of [3, 6, 10]) for (let f = 0; f < 3; f++) expect(drawJellyfish(f, n).grid.isEmpty()).toBe(false);
+    for (const n of [3, 5, 8]) for (const f of [0, 1]) expect(drawHatchling(f, n).grid.isEmpty()).toBe(false);
   });
 });

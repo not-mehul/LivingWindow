@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bioluminescenceLevel,
+  bioluminescenceNight,
+  crabActivity,
+  hatchlingNight,
+  hatchlingTime,
+  hermitActivity,
+  pelicanActivity,
   batActivity,
   bearActivity,
   butterflyActivity,
@@ -148,5 +155,32 @@ describe('woods and fields', () => {
     expect(mushroomLevel(0.5)).toBeGreaterThan(0);
     expect(mushroomLevel(6)).toBe(1);
     expect(mushroomLevel(30)).toBe(0);
+  });
+});
+
+describe('the shore', () => {
+  it('brings crabs out at dusk and night, hermit crabs on dull days', () => {
+    expect(crabActivity(20)).toBeGreaterThan(crabActivity(13));
+    expect(hermitActivity(13, 1)).toBeGreaterThan(hermitActivity(13, 0));
+    expect(pelicanActivity(8)).toBe(1);
+    expect(pelicanActivity(22)).toBe(0);
+  });
+
+  it('lights the surf on some nights, only in the dark', () => {
+    let nights = 0;
+    for (let i = 0; i < 1000; i++) if (bioluminescenceNight(`d${i}`)) nights++;
+    expect(nights).toBeGreaterThan(180);
+    expect(nights).toBeLessThan(320);
+    expect(bioluminescenceLevel(0.2, 0)).toBe(0);
+    expect(bioluminescenceLevel(1, 0)).toBeGreaterThan(bioluminescenceLevel(1, 1));
+  });
+
+  it('hatches a nest on a few nights, late in the evening', () => {
+    let nights = 0;
+    for (let i = 0; i < 1000; i++) if (hatchlingNight(`d${i}`)) nights++;
+    expect(nights).toBeGreaterThan(110);
+    expect(nights).toBeLessThan(230);
+    expect(hatchlingTime(23)).toBe(true);
+    expect(hatchlingTime(12)).toBe(false);
   });
 });

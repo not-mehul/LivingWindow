@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { lerpColor } from '../../core/color';
 import type { Environment } from '../../scene/Environment';
 import { glowTexture } from '../../scene/common/glow';
+import { NightKey } from '../../sim/nights';
 import { fireworksNight, fireworksTime } from '../../sim/wildlife';
 import type { LifeSoundSink } from '../types';
 
@@ -58,8 +59,7 @@ export class Fireworks {
   private readonly sparks: Spark[] = [];
   private readonly booms: Array<{ delay: number; x: number }> = [];
   private launchTimer = 0;
-  private evening = 0;
-  private lastHours = -1;
+  private readonly night: NightKey;
   private tonight = false;
   private forced = 0;
 
@@ -67,8 +67,9 @@ export class Fireworks {
     private readonly sound: LifeSoundSink,
     private readonly pan: (x: number) => number,
     /** Names this real day, so the same nights have shows (a date). */
-    private readonly dayKey: () => string = () => new Date().toDateString(),
+    dayKey?: () => string,
   ) {
+    this.night = new NightKey(dayKey);
     this.gfx.blendMode = 'add';
     this.container.addChild(this.gfx);
   }
@@ -89,12 +90,8 @@ export class Fireworks {
 
   update(dt: number, env: Environment): void {
     const h = env.lighting.hours;
-    // A new evening each time the clock passes noon: decide whether it has a show.
-    if (this.lastHours < 0 || (this.lastHours < 12 && h >= 12)) {
-      if (this.lastHours >= 0) this.evening++;
-      this.tonight = fireworksNight(`${this.dayKey()}#${this.evening}`);
-    }
-    this.lastHours = h;
+    // A new evening each time the clock passes noon: does it have a show?
+    this.tonight = fireworksNight(this.night.update(h));
     if (this.forced > 0) this.forced -= dt;
     const clearEnough = env.weather.precipitation < 0.3 && env.weather.lightning < 0.2;
     const showing = this.forced > 0 || (this.tonight && fireworksTime(h) && clearEnough && env.lighting.darkness > 0.5);

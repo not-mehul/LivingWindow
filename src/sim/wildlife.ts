@@ -199,3 +199,49 @@ export function mushroomLevel(hoursSinceRain: number): number {
   if (hoursSinceRain < 12) return 1;
   return Math.max(0, 1 - (hoursSinceRain - 12) / 8);
 }
+
+// --- The shore ------------------------------------------------------------
+
+/** Ghost crabs come out of their burrows at dusk and through the night; a few by day. */
+export function crabActivity(hours: number): number {
+  const h = wrap(hours);
+  if ((h >= 18 && h < 23) || (h >= 4 && h < 7.5)) return 1;
+  if (h >= 23 || h < 4) return 0.7;
+  return 0.25;
+}
+
+/** Hermit crabs trundle over the dry sand at either end of the day, and on dull days. */
+export function hermitActivity(hours: number, cloudCover: number): number {
+  const h = wrap(hours);
+  if ((h >= 6 && h < 9) || (h >= 17 && h < 21)) return 1;
+  if (h >= 9 && h < 17) return 0.35 + 0.45 * cloudCover;
+  return 0.3;
+}
+
+/** Pelicans fish the swell by day, most in the morning and evening. */
+export function pelicanActivity(hours: number): number {
+  const h = wrap(hours);
+  if (h < 6.5 || h >= 19) return 0;
+  return (h < 10 || h >= 16) ? 1 : 0.5;
+}
+
+/** About one night in four, a bloom in the water makes the breaking surf glow blue. */
+export function bioluminescenceNight(key: string): boolean {
+  return hash01(`bio:${key}`) < 0.25;
+}
+
+/** How brightly the bloom shows: only when it's properly dark, best under a weak moon. */
+export function bioluminescenceLevel(darkness: number, moonlight: number): number {
+  return Math.max(0, Math.min(1, (darkness - 0.7) * 3.3)) * (1 - 0.5 * moonlight);
+}
+
+/** About one night in six, a turtle nest at the foot of the dune hatches. */
+export function hatchlingNight(key: string): boolean {
+  return hash01(`hatch:${key}`) < 0.17;
+}
+
+/** Hatchlings dig out late in the evening, when the sand has cooled. */
+export function hatchlingTime(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 21.5 || h < 1.5;
+}

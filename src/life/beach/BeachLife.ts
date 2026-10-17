@@ -2,6 +2,7 @@ import type { LandscapeDeps, SceneLife, SillBase } from '../../landscapes/types'
 import type { BeachScene } from '../../scene/beach/BeachScene';
 import type { Environment } from '../../scene/Environment';
 import { BirdSystem, type BirdEcology } from '../BirdSystem';
+import { Bioluminescence, Crabs, Hatchlings, HermitCrabs, Jellyfish, Pelican } from './ShoreCreatures';
 import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
 
 export const BEACH_ECOLOGY: BirdEcology = {
@@ -11,13 +12,24 @@ export const BEACH_ECOLOGY: BirdEcology = {
   perchPreference: (_species, kind) => (kind === 'post' ? 3 : kind === 'log' ? 1.5 : 1.2),
 };
 
-/** Gulls, sandpipers, a fish school in the shallows, turtles and dolphins. */
+/**
+ * Gulls, sandpipers, a fish school in the shallows, turtles and dolphins;
+ * crabs at the water's edge and hermit crabs on the dry sand; a pelican
+ * fishing; jellyfish; and on some nights a glowing sea or a hatching nest.
+ */
 export class BeachLife implements SceneLife {
   readonly birds: BirdSystem;
   readonly sandpipers: Sandpipers;
   readonly sea: FishAndGulls;
   readonly turtles: Turtles;
   readonly dolphins: Dolphins;
+  readonly crabs: Crabs;
+  readonly hermits: HermitCrabs;
+  readonly pelican: Pelican;
+  readonly jellyfish: Jellyfish;
+  readonly hatchlings: Hatchlings;
+  readonly glow: Bioluminescence;
+  private readonly deps: LandscapeDeps;
 
   constructor(scene: BeachScene, deps: LandscapeDeps) {
     this.birds = new BirdSystem({
@@ -35,6 +47,13 @@ export class BeachLife implements SceneLife {
     this.sea = new FishAndGulls(scene, deps.viewport, deps.sound);
     this.turtles = new Turtles(scene, deps.viewport);
     this.dolphins = new Dolphins(scene, deps.viewport);
+    this.crabs = new Crabs(scene);
+    this.hermits = new HermitCrabs(scene);
+    this.pelican = new Pelican(scene, this.sea, deps.viewport, deps.sound);
+    this.jellyfish = new Jellyfish(scene);
+    this.hatchlings = new Hatchlings(scene);
+    this.glow = new Bioluminescence(scene);
+    this.deps = deps;
   }
 
   get ambienceLevel(): number {
@@ -42,7 +61,10 @@ export class BeachLife implements SceneLife {
   }
 
   tap(screenX: number, screenY: number): boolean {
-    return this.birds.tap(screenX, screenY);
+    if (this.birds.tap(screenX, screenY)) return true;
+    if (!this.deps.canTap()) return false;
+    const world = this.deps.viewport.screenToWorld(screenX, screenY);
+    return this.hermits.tap(world.x, world.y) || this.crabs.scare(world.x, world.y);
   }
 
   startleAll(probability: number): void {
@@ -59,5 +81,11 @@ export class BeachLife implements SceneLife {
     this.sea.update(dt, env);
     this.turtles.update(dt, env);
     this.dolphins.update(dt, env);
+    this.crabs.update(dt, env);
+    this.hermits.update(dt, env);
+    this.pelican.update(dt, env);
+    this.jellyfish.update(dt, env);
+    this.hatchlings.update(dt, env);
+    this.glow.update(env);
   }
 }

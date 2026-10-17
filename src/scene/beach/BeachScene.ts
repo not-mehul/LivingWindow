@@ -73,6 +73,10 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   readonly birdsNear = new Container({ label: 'birds-near' });
   /** Fish under the shallows, dolphins at the horizon, splashes. */
   readonly fishLayer = new Graphics();
+  /** Jellyfish drifting in the shallows, over the water and under the shore life. */
+  readonly seaLife = new Container({ label: 'sea-life' });
+  /** How brightly the surf glows blue tonight (0 most nights): a bloom in the water, set by the shore life. */
+  bioluminescence = 0;
   readonly horizonLayer = new Container({ label: 'horizon-life' });
   readonly splashLayer = new Graphics();
   /** Turtles and shorebirds on the sand, sorted by depth. */
@@ -142,6 +146,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
       this.scrub.container,
       this.water,
       this.fishLayer,
+      this.seaLife,
       this.horizonLayer,
       this.birdsFar,
       this.shoreLayer,
@@ -238,6 +243,10 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     const sheet = grade(lerpColor(multiplyColor(0xd8c08a, amb), multiplyColor(0x9ad4d4, amb), 0.6), 0xb08a98, 0x7686b0);
     const wet = grade(multiplyColor(0x9a7c50, amb), 0x7a5a5e, 0x50506a);
     const surf = [0, 1, 2, 3].map((k) => lerpColor(shallow, foam, 0.95 - k * 0.16));
+    // On a bloom night, the churning water sparks electric blue.
+    const bio = this.bioluminescence;
+    const BIO = [0x2a5aff, 0x3aa8ff, 0x7ae8ff];
+    const glow = (x: number, y: number, chance: number): number => (bio > 0 && pixelHash(x, y + this.tick * 3, 77) < chance * bio ? BIO[(x + y + this.tick) % 3] : 0);
 
     // Glitter path under the sun (or the moon, faintly).
     const body = lighting.sun.visible && lighting.sun.elevation > 0.02 ? lighting.sun : lighting.moon.visible ? lighting.moon : null;
@@ -309,7 +318,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
           if (s < SHALLOWS_S) {
             for (let n = 0; n < 4; n++) {
               const off = s - lines[n];
-              if (off > -lineHalf[n] && off < lineHalf[n] && pixelHash(Math.floor(x / 2), y + n * 31, (this.tick >> 3) + n) > 0.2 + n * 0.14) color = surf[n];
+              if (off > -lineHalf[n] && off < lineHalf[n] && pixelHash(Math.floor(x / 2), y + n * 31, (this.tick >> 3) + n) > 0.2 + n * 0.14) color = glow(x, y, 0.35 - n * 0.06) || surf[n];
             }
           }
           // Breakers churning into foam, trailing lace behind them.
@@ -318,8 +327,8 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
             const thick = thicks[i];
             const seed = Math.floor(breakers[i].seed);
             if (off > -thick && off < thick) {
-              if (pixelHash(x, y + this.tick, seed) > 0.22 + (Math.abs(off) / thick) * 0.4) color = foam;
-            } else if (off > thick && off < thick + 30 && pixelHash(x, y, seed + (this.tick >> 2)) > 0.9) color = foam;
+              if (pixelHash(x, y + this.tick, seed) > 0.22 + (Math.abs(off) / thick) * 0.4) color = glow(x, y, 0.75) || foam;
+            } else if (off > thick && off < thick + 30 && pixelHash(x, y, seed + (this.tick >> 2)) > 0.9) color = glow(x, y, 0.5) || foam;
           }
           // Sun or moon glitter: short sparkles fanning out towards us.
           if (glintStrength > 0.05 && row > 0) {
@@ -330,7 +339,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
         } else if (-s < reach) {
           // The thin sheet of a wave washing up the sand, edged with lacy foam.
           const atEdge = reach + s < 3 * depth;
-          put(x, row, atEdge && pixelHash(x, y, this.tick >> 1) > 0.3 ? foam : sheet, atEdge ? 255 : 215);
+          put(x, row, atEdge && pixelHash(x, y, this.tick >> 1) > 0.3 ? glow(x, y, 0.6) || foam : sheet, atEdge ? 255 : 215);
         } else if (-s < wetTo) {
           // Darker wet sand, drying back from its top edge.
           if ((wetTo + s) / Math.max(1, wetTo) > dither * 0.5) put(x, row, wet, 225);
