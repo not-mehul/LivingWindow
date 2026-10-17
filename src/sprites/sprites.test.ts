@@ -5,7 +5,8 @@ import { PixelGrid } from './raster';
 import { DOLPHIN_FRAMES, drawDolphinSized, drawTurtleSized } from './beachSprites';
 import { drawDeerSized, drawSquirrelSized } from './forestSprites';
 import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
-import { drawPerson, randomLook } from './people';
+import { drawBusker, drawPerson, randomLook } from './people';
+import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from './vehicleSprites';
 import { drawStallLightsSized, drawStallSized, STALL_STAGES, type StallKind } from './streetSprites';
 
 const POSES: BirdPose[] = ['idle', 'idle-breathe', 'look-up', 'look-back', 'peck-reach', 'peck-down', 'chirp', 'hop', 'fly-up', 'fly-mid', 'fly-down', 'glide', 'sleep'];
@@ -85,6 +86,45 @@ describe('other sprites', () => {
             }
           }
         }
+      }
+    }
+  });
+
+  it('draws the street traffic coming and going at every size, with its lamps inside the sprite', () => {
+    const look = randomRiderLook(() => 0.4);
+    for (const h of [5, 8, 12, 18, 26, 40]) {
+      for (const facing of ['front', 'back'] as const) {
+        const all = [
+          drawRider('bike', look, facing, 0, h),
+          drawRider('bike', look, facing, 1, h),
+          drawRider('scooter', look, facing, 0, h),
+          drawSweeper(facing, 0, h),
+          drawTaxi(facing, h),
+          drawPushcart(facing, 1, h),
+        ];
+        for (const v of all) {
+          expect(v.grid.isEmpty()).toBe(false);
+          expect(v.lamps.length).toBeGreaterThan(0);
+          for (const lamp of v.lamps) {
+            expect(lamp.x).toBeGreaterThanOrEqual(-1);
+            expect(lamp.x).toBeLessThanOrEqual(v.grid.width + 1);
+            expect(lamp.y).toBeGreaterThanOrEqual(-1);
+            expect(lamp.y).toBeLessThanOrEqual(v.grid.height + 1);
+          }
+        }
+      }
+    }
+  });
+
+  it('draws the busker with a guitar at every size', () => {
+    const look = randomLook(() => 0.6);
+    for (const h of [4, 10, 16, 30]) {
+      for (const f of [0, 1]) {
+        const busker = drawBusker(look, f, h).grid;
+        const plain = drawPerson(look, 'front', 'stand', 0, false, h).grid;
+        expect(busker.isEmpty()).toBe(false);
+        // The guitar adds pixels over the plain figure.
+        expect([...busker.data].some((v, i) => v !== plain.data[i])).toBe(true);
       }
     }
   });

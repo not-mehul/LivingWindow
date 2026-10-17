@@ -55,12 +55,12 @@ interface Stall {
 }
 
 /** A person's height (world px) right in front of the view, at depth 1. */
-const PERSON_HEIGHT_AT_1 = 30;
+export const PERSON_HEIGHT_AT_1 = 30;
 /** A stall's height at depth 1. */
 const STALL_HEIGHT_AT_1 = 36;
 /** The street's ends: people walk off into the distance, or out of view under the sill. */
-const FAR_END = 9.5;
-const NEAR_END = 0.95;
+export const FAR_END = 9.5;
+export const NEAR_END = 0.95;
 
 export interface StreetLifeOptions {
   /** Doorways along the street, at the building lines. */
@@ -103,6 +103,11 @@ export class StreetLife {
   constructor(private readonly options: StreetLifeOptions) {
     this.rng = options.rng ?? Math.random;
     this.createStalls();
+  }
+
+  /** The stalls open right now: what they sell and where they stand. */
+  openStalls(): Array<{ kind: StallKind; gx: number; depth: number }> {
+    return this.stalls.filter((s) => stallProgress(s.shift, this.hours, s.offset) >= 1).map(({ kind, gx, depth }) => ({ kind, gx, depth }));
   }
 
   /** Whether stall `i` (in the order of `stallSpots`) has its lights on. */
@@ -165,7 +170,7 @@ export class StreetLife {
   private baseTint = 0xffffff;
 
   /** The tint for something standing at a point of the street: the hour's light, warmed where a lamp or stall shines. */
-  private tintAt(gx: number, depth: number): number {
+  tintAt(gx: number, depth: number): number {
     const light = this.options.lightAt?.(gx, depth) ?? 0;
     if (light <= 0.01) return this.baseTint;
     return lerpColor(this.baseTint, 0xffd8a0, Math.min(0.85, light * 0.75));

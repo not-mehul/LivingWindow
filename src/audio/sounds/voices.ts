@@ -521,6 +521,49 @@ const splash: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return 0.5;
 };
 
+/** Chords the busker cycles through (semitones above the root). */
+const CHORDS = [
+  [0, 7, 12, 16, 19],
+  [5, 12, 17, 21, 24],
+  [7, 14, 19, 23, 26],
+  [-3, 4, 9, 12, 16],
+];
+let chord = 0;
+
+const guitarStrum: SynthVoice = (ctx, out, when, gain, rate) => {
+  // A plucked chord, strummed down the strings: bright attack, warm decay.
+  const notes = CHORDS[chord++ % CHORDS.length];
+  const root = 110 * rate;
+  const tone = ctx.createBiquadFilter();
+  tone.type = 'lowpass';
+  tone.frequency.setValueAtTime(3200, when);
+  tone.frequency.exponentialRampToValueAtTime(900, when + 1.2);
+  tone.connect(out);
+  notes.forEach((semi, i) => {
+    const t = when + i * rand(0.012, 0.022);
+    const osc = ctx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = root * 2 ** (semi / 12);
+    const amp = ctx.createGain();
+    envelope(amp.gain, t, 0.003, (0.12 * gain) / (1 + i * 0.15), rand(1.2, 1.8));
+    osc.connect(amp).connect(tone);
+    osc.start(t);
+    osc.stop(t + 2);
+  });
+  return 2;
+};
+
+const fireworkPop: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  // The boom of the burst, rolling off between the buildings, then a crackle of sparks.
+  noiseBurst(ctx, noise, out, when, 0.9, { type: 'lowpass', frequency: 220 * rate, Q: 0.8 }, 0.75 * gain, 0.004);
+  noiseBurst(ctx, noise, out, when, 0.25, { type: 'bandpass', frequency: 700 * rate, Q: 1 }, 0.3 * gain, 0.002);
+  const crackles = 6 + Math.floor(Math.random() * 10);
+  for (let i = 0; i < crackles; i++) {
+    noiseBurst(ctx, noise, out, when + rand(0.35, 1.4), 0.03, { type: 'highpass', frequency: 2600 }, rand(0.04, 0.12) * gain, 0.001);
+  }
+  return 1.6;
+};
+
 export const SYNTH_VOICES = {
   'sparrow-chirp': sparrowChirp,
   'pigeon-coo': pigeonCoo,
@@ -548,5 +591,7 @@ export const SYNTH_VOICES = {
   'deer-snort': deerSnort,
   'cow-moo': cowMoo,
   'chicken-cluck': chickenCluck,
+  'guitar-strum': guitarStrum,
+  'firework-pop': fireworkPop,
   splash,
 } satisfies Record<string, SynthVoice>;

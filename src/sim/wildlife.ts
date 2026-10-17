@@ -53,3 +53,87 @@ export function fireflyLevel(hours: number, darkness: number, raining: boolean):
   const h = ((hours % 24) + 24) % 24;
   return h >= 19 || h < 2 ? Math.min(1, (darkness - 0.5) * 2.5) : 0.3;
 }
+
+// --- The city's rhythm ---------------------------------------------------
+
+const wrap = (hours: number) => ((hours % 24) + 24) % 24;
+
+/** How many delivery riders are out on the street: busy at lunch and dinner, busier still in the rain. */
+export function deliveryRiders(hours: number, raining: boolean): number {
+  const h = wrap(hours);
+  if (h < 7 || h >= 23) return 0;
+  const near = (c: number, w: number) => Math.max(0, 1 - Math.abs(h - c) / w);
+  const base = 1 + 2 * Math.max(near(12.5, 1.5), near(19.5, 2));
+  return Math.round(base + (raining ? 1 : 0));
+}
+
+/** The street sweeper does its rounds at first light. */
+export function sweeperOut(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 5.5 && h < 8;
+}
+
+/** A late-night food cart is pushed along after the market closes. */
+export function foodCartOut(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 23.5 || h < 2;
+}
+
+/** Taxis creep up the empty street in the small hours. */
+export function taxiHours(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 1 && h < 5;
+}
+
+/** A busker plays under a street lamp through the evening, unless it's raining. */
+export function buskerOut(hours: number, raining: boolean): boolean {
+  const h = wrap(hours);
+  return !raining && h >= 19 && h < 23;
+}
+
+/** Window cleaners work the glass tower through the working day. */
+export function windowCleanersOut(hours: number, raining: boolean): boolean {
+  const h = wrap(hours);
+  return !raining && h >= 9 && h < 16;
+}
+
+/** The rooftop gardener waters in the cool of the morning and the evening. */
+export function gardenerOut(hours: number, raining: boolean): boolean {
+  const h = wrap(hours);
+  return !raining && ((h >= 7 && h < 9) || (h >= 18 && h < 20));
+}
+
+/** Someone feeds the pigeons on the terrace mid-morning and mid-afternoon. */
+export function pigeonFeederOut(hours: number, raining: boolean): boolean {
+  const h = wrap(hours);
+  return !raining && ((h >= 9.5 && h < 10.5) || (h >= 15 && h < 16));
+}
+
+/** The advertising blimp only goes up on fair days. */
+export function blimpOut(hours: number, clear: boolean): boolean {
+  const h = wrap(hours);
+  return clear && h >= 10 && h < 17;
+}
+
+/** A stable hash of a string to 0..1. */
+function hash01(key: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  h ^= h >>> 13;
+  h = Math.imul(h, 0x5bd1e995);
+  return ((h ^ (h >>> 15)) >>> 0) / 4294967296;
+}
+
+/** Whether a given night (named by `key`, e.g. the date and the evening's number) has fireworks: about one night in five. */
+export function fireworksNight(key: string): boolean {
+  return hash01(`fireworks:${key}`) < 0.2;
+}
+
+/** Fireworks go up over the skyline for an hour from nine. */
+export function fireworksTime(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 21 && h < 22;
+}

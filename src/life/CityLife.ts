@@ -5,6 +5,11 @@ import type { CityScene } from '../scene/city/CityScene';
 import type { Environment } from '../scene/Environment';
 import type { BirdseedState } from '../state/BirdseedState';
 import { BirdSystem } from './BirdSystem';
+import { Fireworks } from './city/Fireworks';
+import { Performers } from './city/Performers';
+import { Rooftops } from './city/Rooftops';
+import { SkyTraffic } from './city/SkyTraffic';
+import { Traffic } from './city/Traffic';
 import { RooftopCat } from './RooftopCat';
 import { StreetLife } from './StreetLife';
 import type { LifeSoundSink, SillState } from './types';
@@ -22,11 +27,20 @@ export interface CityLifeOptions {
   canTap: () => boolean;
 }
 
-/** Everything alive in the downtown scene: birds, people, stalls and the cat. */
+/**
+ * Everything alive in the downtown scene: birds, people, stalls and the cat;
+ * riders, the sweeper, the noodle cart and taxis in the street; life on the
+ * rooftops; traffic in the sky; the busker; and fireworks on some nights.
+ */
 export class CityLife implements SceneLife {
   readonly birds: BirdSystem;
   readonly street: StreetLife;
   readonly cat: RooftopCat;
+  readonly traffic: Traffic;
+  readonly rooftops: Rooftops;
+  readonly sky: SkyTraffic;
+  readonly fireworks: Fireworks;
+  readonly performers: Performers;
 
   constructor(options: CityLifeOptions) {
     const { scene } = options;
@@ -51,6 +65,24 @@ export class CityLife implements SceneLife {
     scene.stallLight = (i) => this.street.stallLit(i);
     scene.street.addChild(this.street.container);
     scene.streetLights.addChild(this.street.lightsContainer);
+    const tintAt = (gx: number, depth: number) => this.street.tintAt(gx, depth);
+    const pan = (x: number) => options.viewport.worldXToStereo(x);
+    this.traffic = new Traffic({ container: this.street.container, lights: scene.streetLights, laneHalf: scene.laneHalf, project: scene.project, tintAt });
+    this.performers = new Performers({
+      container: this.street.container,
+      lights: scene.streetLights,
+      project: scene.project,
+      tintAt,
+      openStalls: () => this.street.openStalls(),
+      sound: options.sound,
+      pan,
+    });
+    this.rooftops = new Rooftops({ summonPigeons: (x, y, n) => void this.birds.summonToPerchNear(x, y, 'pigeon', n) });
+    scene.roofLife.addChild(this.rooftops.container);
+    this.sky = new SkyTraffic();
+    this.fireworks = new Fireworks(options.sound, pan);
+    scene.skyLife.addChild(this.sky.container, this.fireworks.container);
+    scene.birdsMid.addChild(this.sky.nearContainer);
     this.cat = new RooftopCat(options.sound, options.canTap);
     options.catSlot.addChild(this.cat.container);
   }
@@ -76,5 +108,10 @@ export class CityLife implements SceneLife {
     this.cat.update(dt, env, state, this.birds.sillBirds());
     this.birds.update(dt, env, { ...state, catX: this.cat.position, catStalking: this.cat.isStalking });
     this.street.update(dt, env);
+    this.traffic.update(dt, env);
+    this.performers.update(dt, env);
+    this.rooftops.update(dt, env);
+    this.sky.update(dt, env);
+    this.fireworks.update(dt, env);
   }
 }

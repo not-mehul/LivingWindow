@@ -281,6 +281,23 @@ export class BirdSystem {
     return true;
   }
 
+  /** Bring a few birds down to a perch near a world point (e.g. where someone scatters crumbs). Returns how many came. */
+  summonToPerchNear(x: number, y: number, species: SpeciesId, count: number): number {
+    const sill = this.sill;
+    if (!sill) return 0;
+    const perch = this.perches
+      .filter((p) => p.ledge.x0 <= x + 40 && p.ledge.x1 >= x - 40 && Math.abs(p.ledge.y - y) < 12)
+      .sort((a, b) => Math.abs(a.ledge.y - y) - Math.abs(b.ledge.y - y))[0];
+    if (!perch) return 0;
+    let n = 0;
+    for (let i = 0; i < count && perch.occupants.size < perch.capacity && this.birds.length < MAX_BIRDS; i++) {
+      const px = Math.max(perch.ledge.x0, Math.min(perch.ledge.x1, Math.round(x + (this.rng() - 0.5) * 50)));
+      this.createBird(species, sill, { kind: 'perch', perch, x: px });
+      n++;
+    }
+    return n;
+  }
+
   // --- Director -------------------------------------------------------
 
   private activity(env: Environment): number {

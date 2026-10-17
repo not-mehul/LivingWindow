@@ -425,3 +425,33 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
 export function personKey(id: number, facing: PersonFacing, pose: PersonPose, frame: number, umbrella: boolean, height: number): string {
   return `${id}:${facing}:${pose}:${pose === 'walk' ? frame % 4 : 0}:${umbrella ? 1 : 0}:${height}`;
 }
+
+/**
+ * A busker facing us with a guitar slung across them, `height` px tall;
+ * `frame` (0–1) moves the strumming hand.
+ */
+export function drawBusker(look: PersonLook, frame: number, height: number): Drawn {
+  const drawn = drawPerson(look, 'front', 'stand', 0, false, height);
+  const { grid: g, palette } = drawn;
+  const h = Math.max(3, Math.round(height));
+  const u = h / 7;
+  const cx = g.width / 2;
+  const wood = palette.ramp(0xb07a40);
+  const ink = palette.add(0x241c18);
+  const skin = palette.ramp(look.skin);
+  if (h < 11) {
+    g.set(Math.floor(cx), Math.floor(3.3 * u), wood[2]);
+    return drawn;
+  }
+  // The neck, up across the chest to the left; the body at the right hip.
+  const bx = cx + 0.4 * u;
+  const by = 3.35 * u;
+  limb(g, [[bx - 0.2 * u, by - 0.2 * u], [cx - 1.25 * u, 2.25 * u]], Math.max(1, 0.3 * u), Math.max(1, 0.25 * u), wood, { bias: -1, max: 1 });
+  shadedEllipse(g, bx, by, 0.78 * u, 0.66 * u, wood, { dither: false, min: 1 });
+  g.set(Math.floor(bx - 0.1 * u), Math.floor(by - 0.05 * u), ink);
+  // The strumming hand over the sound hole, and the fretting hand up the neck.
+  const strum = frame % 2 === 0 ? -0.25 : 0.2;
+  g.set(Math.floor(bx + 0.15 * u), Math.floor(by + strum * u), skin[3]);
+  g.set(Math.floor(cx - 1.15 * u), Math.floor(2.3 * u), skin[2]);
+  return drawn;
+}

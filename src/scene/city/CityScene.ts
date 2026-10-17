@@ -51,6 +51,10 @@ export class CityScene implements WorldScene {
   readonly birdsFar = new Container({ label: 'birds-far' });
   readonly birdsMid = new Container({ label: 'birds-mid' });
   readonly birdsNear = new Container({ label: 'birds-near' });
+  /** Planes, the helicopter, the blimp and fireworks: over the city, in front of the distant skyline but behind the nearer towers. */
+  readonly skyLife = new Container({ label: 'sky-life' });
+  /** People and things on the rooftops round us. */
+  readonly roofLife = new Container({ label: 'roof-life' });
   /** People and stalls in the street, sorted by where they stand. */
   readonly street = new Container({ label: 'street' });
   readonly streetLights = new Container({ label: 'street-emissive' });
@@ -111,6 +115,7 @@ export class CityScene implements WorldScene {
       this.sky.container,
       sprites.far.container,
       lightsByLayer.far.sprite,
+      this.skyLife,
       this.birdsFar,
       sprites.mid.container,
       lightsByLayer.mid.sprite,
@@ -120,6 +125,7 @@ export class CityScene implements WorldScene {
       sprites.near.container,
       lightsByLayer.near.sprite,
       nearLife.graphics,
+      this.roofLife,
       this.poolLayer,
       this.street,
       this.lamps.container,

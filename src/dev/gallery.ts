@@ -1,10 +1,11 @@
 import type { Drawn } from '../sprites/kit';
-import { drawPerson, randomLook, type PersonFacing, type PersonPose } from '../sprites/people';
+import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonPose } from '../sprites/people';
 import type { PixelGrid } from '../sprites/raster';
 import { drawBird, SPECIES, type SpeciesId } from '../sprites/birdSprites';
 import { DOLPHIN_FRAMES, drawDolphinSized, drawTurtleSized } from '../sprites/beachSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
 import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type RabbitPose } from '../sprites/meadowSprites';
+import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from '../sprites/vehicleSprites';
 import { drawStallLightsSized, drawStallSized, STALL_LIGHT_PALETTE, type StallKind } from '../sprites/streetSprites';
 
 /**
@@ -59,6 +60,22 @@ function sections(): Section[] {
     stalls.push(row);
   }
   out.push({ title: 'Stalls', rows: stalls });
+
+  const riders = [0, 1, 2].map((i) => randomRiderLook(seeded(i * 31 + 7)));
+  const vehicles: Item[][] = [];
+  for (const kind of ['bike', 'scooter'] as const) {
+    const row: Item[] = [];
+    for (const h of [8, 12, 18, 26, 34]) for (const facing of ['front', 'back'] as const) row.push({ label: `${kind[0]}${facing[0]}${h}`, draw: () => drawRider(kind, riders[h % 3], facing, 0, h) });
+    row.push({ label: 'pedal', draw: () => drawRider(kind, riders[0], 'back', 1, 34) });
+    vehicles.push(row);
+  }
+  vehicles.push(
+    [10, 16, 24, 34].flatMap((h) => (['front', 'back'] as const).map((facing) => ({ label: `sweep ${facing[0]}${h}`, draw: () => drawSweeper(facing, h % 2, h) }))),
+    [8, 12, 18, 26].flatMap((h) => (['front', 'back'] as const).map((facing) => ({ label: `taxi ${facing[0]}${h}`, draw: () => drawTaxi(facing, h) }))),
+    [10, 16, 24, 32].flatMap((h) => (['front', 'back'] as const).map((facing) => ({ label: `cart ${facing[0]}${h}`, draw: () => drawPushcart(facing, 0, h) }))),
+  );
+  vehicles.push([10, 16, 22, 30, 40].flatMap((h) => [0, 1].map((f) => ({ label: `busker ${h}/${f}`, draw: () => drawBusker(looks[2], f, h) }))));
+  out.push({ title: 'Vehicles', rows: vehicles });
 
   const cows: Item[][] = [];
   const cowPoses: CowPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'lie'];
