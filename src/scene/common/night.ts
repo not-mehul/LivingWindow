@@ -25,20 +25,30 @@ export function gradeColor(color: number, g: NightGrade): number {
   return (ch(r, 0) << 16) | (ch(gr, 1) << 8) | ch(b, 2);
 }
 
+/** Some pixels of a layer (marked in `mask`) graded differently from the rest, e.g. the street's paving. */
+export interface GradeOverride {
+  mask: Uint8Array;
+  night: NightGrade;
+  dusk?: NightGrade;
+}
+
 /** A moonlit copy of a layer's art (same shape, graded colours). */
-export function nightVariant(src: PixelBuffer, g: NightGrade): PixelBuffer {
+export function nightVariant(src: PixelBuffer, g: NightGrade, override?: { mask: Uint8Array; grade: NightGrade }): PixelBuffer {
   const out = new PixelBuffer(src.width, src.height);
   const s = src.data;
   const d = out.data;
   // Many pixels share a colour: cache the graded ones.
   const cache = new Map<number, number>();
+  const altCache = new Map<number, number>();
   for (let k = 0; k < s.length; k += 4) {
     if (s[k + 3] === 0) continue;
     const c = (s[k] << 16) | (s[k + 1] << 8) | s[k + 2];
-    let n = cache.get(c);
+    const alt = override !== undefined && override.mask[k >> 2] === 1;
+    const map = alt ? altCache : cache;
+    let n = map.get(c);
     if (n === undefined) {
-      n = gradeColor(c, g);
-      cache.set(c, n);
+      n = gradeColor(c, alt && override ? override.grade : g);
+      map.set(c, n);
     }
     d[k] = n >> 16;
     d[k + 1] = (n >> 8) & 255;
@@ -58,11 +68,13 @@ export class DayNightSprite {
   readonly dusk: Sprite | null;
   readonly night: Sprite;
 
-  /** Grades for the moonlit night and (optionally) the glow of dusk and dawn. */
-  constructor(art: PixelBuffer, grade: NightGrade, twilight?: NightGrade) {
+  /** Grades for the moonlit night and (optionally) the glow of dusk and dawn, with an optional override for some pixels. */
+  constructor(art: PixelBuffer, grade: NightGrade, twilight?: NightGrade, override?: GradeOverride) {
     this.day = new Sprite(art.toTexture());
-    this.dusk = twilight ? new Sprite(nightVariant(art, twilight).toTexture()) : null;
-    this.night = new Sprite(nightVariant(art, grade).toTexture());
+    this.dusk = twilight
+      ? new Sprite(nightVariant(art, twilight, override ? { mask: override.mask, grade: override.dusk ?? twilight } : undefined).toTexture())
+      : null;
+    this.night = new Sprite(nightVariant(art, grade, override ? { mask: override.mask, grade: override.night } : undefined).toTexture());
     this.night.alpha = 0;
     this.container.addChild(this.day);
     if (this.dusk) {

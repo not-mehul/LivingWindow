@@ -1,11 +1,11 @@
-import { Graphics } from 'pixi.js';
+import { Container, Sprite, type Texture } from 'pixi.js';
+import { lerpColor } from '../../core/color';
+import { PixelBuffer } from '../../core/pixelBuffer';
+import { bayer } from '../common/paint';
+import type { StreetLampSpot } from './cityGenerator';
 
 interface Lamp {
-  x: number;
-  y: number;
-  /** Where its light falls on the street, and how near it is (1 = at the foot of the view). */
-  groundY: number;
-  scale: number;
+  spot: StreetLampSpot;
   /** Darkness level at which this lamp's sensor trips. */
   threshold: number;
   on: boolean;
@@ -13,43 +13,94 @@ interface Lamp {
   flicker: number;
   flickerLit: boolean;
   flickerTimer: number;
+  /** How brightly it is shining now, 0..1 (its pool of light follows this). */
+  level: number;
+  glow: Sprite;
+  cone: Sprite;
 }
 
-const BAYER_4 = [
-  [0, 8, 2, 10],
-  [12, 4, 14, 6],
-  [3, 11, 1, 9],
-  [15, 7, 13, 5],
-];
+/** A soft, dithered halo round a lamp's glass (drawn additively), sized for its distance. */
+function haloTexture(radius: number, color: number): Texture {
+  const size = radius * 2 + 1;
+  const p = new PixelBuffer(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const d = Math.hypot(x - radius, y - radius) / (radius + 0.5);
+      if (d >= 1) continue;
+      const level = (1 - d) ** 2 * 4;
+      let step = Math.floor(level);
+      if (level - step > bayer(x, y)) step++;
+      if (step <= 0) continue;
+      p.set(x, y, lerpColor(0x000000, color, Math.min(1, step / 4)));
+    }
+  }
+  // A hot core.
+  p.set(radius, radius, 0xffffff);
+  return p.toTexture();
+}
+
+/** A faint, dithered beam from a lamp's glass down to its pool on the paving (drawn additively). */
+function coneTexture(height: number, topHalf: number, bottomHalf: number, color: number): Texture {
+  const width = Math.ceil(bottomHalf) * 2 + 1;
+  const cx = width / 2;
+  const p = new PixelBuffer(width, Math.max(1, height));
+  const ramp = [0, lerpColor(0, color, 0.08), lerpColor(0, color, 0.15), lerpColor(0, color, 0.23)];
+  for (let y = 0; y < height; y++) {
+    const t = y / Math.max(1, height - 1);
+    const half = topHalf + (bottomHalf - topHalf) * t;
+    for (let x = 0; x < width; x++) {
+      const u = Math.abs(x + 0.5 - cx) / half;
+      if (u >= 1) continue;
+      // Brightest just under the lamp, thinning out towards the ground and the beam's edges.
+      const level = (1 - t * 0.65) * (1 - u * u) * 3.2;
+      let step = Math.floor(level);
+      if (level - step > bayer(x, y)) step++;
+      step = Math.min(3, step);
+      if (step > 0) p.set(x, y, ramp[step]);
+    }
+  }
+  return p.toTexture();
+}
 
 /**
- * Sodium street lamps that flicker on one by one as darkness falls and cast
- * a dithered pool of light on the sidewalk below.
+ * Street lamps that flicker on one by one as darkness falls: their glass
+ * glows in a soft halo over a faint beam of light. (Their pools of light on
+ * the paving are drawn by the scene, following each lamp's `level`.) Sodium-amber down by the market,
+ * a whiter light further up the street.
  */
 export class StreetLamps {
-  readonly graphics = new Graphics();
+  readonly container = new Container({ label: 'lamp-glow' });
   private readonly lamps: Lamp[];
-  private dirty = true;
 
   constructor(
-    positions: ReadonlyArray<{ x: number; y: number; groundY: number; scale: number }>,
+    spots: readonly StreetLampSpot[],
     private readonly rng: () => number,
   ) {
-    this.lamps = positions.map(({ x, y, groundY, scale }) => ({
-      x,
-      y,
-      groundY,
-      scale,
-      threshold: 0.42 + rng() * 0.16,
-      on: false,
-      flicker: 0,
-      flickerLit: false,
-      flickerTimer: 0,
-    }));
+    const textures = new Map<string, Texture>();
+    this.lamps = spots.map((spot) => {
+      const color = spot.depth < 5 ? 0xffb860 : 0xffe2b8;
+      const radius = Math.max(2, Math.round(9 * spot.scale));
+      const key = `${radius}:${color}`;
+      let texture = textures.get(key);
+      if (!texture) textures.set(key, (texture = haloTexture(radius, color)));
+      const glow = new Sprite({ texture, anchor: 0.5, blendMode: 'add' });
+      glow.position.set(spot.x, spot.y);
+      glow.visible = false;
+      const cone = new Sprite({ texture: coneTexture(spot.groundY - spot.y, Math.max(1, 3 * spot.scale), 30 * spot.scale, color), anchor: { x: 0.5, y: 0 } });
+      cone.position.set(spot.x, spot.y);
+      cone.blendMode = 'add';
+      cone.visible = false;
+      this.container.addChild(cone, glow);
+      return { spot, threshold: 0.42 + rng() * 0.16, on: false, flicker: 0, flickerLit: false, flickerTimer: 0, level: 0, glow, cone };
+    });
+  }
+
+  /** How brightly lamp `i` is shining, 0..1. */
+  level(i: number): number {
+    return this.lamps[i]?.level ?? 0;
   }
 
   update(dt: number, darkness: number, emissive: number): void {
-    this.graphics.alpha = emissive;
     for (const lamp of this.lamps) {
       const wantOn = lamp.on ? darkness > lamp.threshold - 0.05 : darkness > lamp.threshold;
       if (wantOn && !lamp.on) {
@@ -59,7 +110,6 @@ export class StreetLamps {
       } else if (!wantOn && lamp.on) {
         lamp.on = false;
         lamp.flicker = 0;
-        this.dirty = true;
       }
       if (lamp.flicker > 0) {
         lamp.flicker -= dt;
@@ -67,48 +117,13 @@ export class StreetLamps {
         if (lamp.flickerTimer <= 0 || lamp.flicker <= 0) {
           lamp.flickerLit = lamp.flicker <= 0 ? true : !lamp.flickerLit;
           lamp.flickerTimer = 0.04 + this.rng() * 0.16;
-          this.dirty = true;
         }
       }
-    }
-    if (this.dirty) this.redraw();
-  }
-
-  private redraw(): void {
-    this.dirty = false;
-    const g = this.graphics;
-    g.clear();
-    for (const lamp of this.lamps) {
       const lit = lamp.on && (lamp.flicker <= 0 || lamp.flickerLit);
-      if (!lit) continue;
-      const head = Math.max(1, Math.round(3 * lamp.scale));
-      g.rect(lamp.x - head, lamp.y, head * 2, Math.max(1, head - 1)).fill(0xffe7a8);
-      g.rect(lamp.x - head, lamp.y + Math.max(1, head - 1), head * 2, 1).fill({ color: 0xffd27a, alpha: 0.6 });
-      // A faint dithered cone, densest just under the lamp, ending in a
-      // brighter pool on the pavement (which lies flat, so it's squashed).
-      const height = lamp.groundY - lamp.y;
-      for (let dy = 2; dy < height; dy++) {
-        const half = 1 + Math.floor(dy * 0.5);
-        const fall = 1 - dy / height;
-        for (let dx = -half; dx <= half; dx++) {
-          const edge = 1 - Math.abs(dx) / (half + 1);
-          const threshold = (BAYER_4[(lamp.y + dy) & 3][(lamp.x + dx) & 3] + 0.5) / 16;
-          if (fall * edge * 0.42 > threshold) {
-            g.rect(lamp.x + dx, lamp.y + dy, 1, 1).fill({ color: 0xffd890, alpha: 0.22 });
-          }
-        }
-      }
-      // The pool on the pavement: a dithered ellipse, squashed because it lies flat.
-      const rx = 2 + height * 0.7;
-      const ry = Math.max(1, height * 0.2);
-      for (let dy = -Math.ceil(ry); dy <= Math.ceil(ry); dy++) {
-        for (let dx = -Math.ceil(rx); dx <= Math.ceil(rx); dx++) {
-          const d = (dx / rx) ** 2 + (dy / ry) ** 2;
-          if (d > 1) continue;
-          const threshold = (BAYER_4[(lamp.groundY + dy) & 3][(lamp.x + dx) & 3] + 0.5) / 16;
-          if ((1 - d) * 0.9 > threshold) g.rect(lamp.x + dx, lamp.groundY + dy, 1, 1).fill({ color: d < 0.3 ? 0xffe2a8 : 0xffd890, alpha: 0.3 });
-        }
-      }
+      // Sodium lamps warm up rather than snapping on.
+      lamp.level += ((lit ? emissive : 0) - lamp.level) * Math.min(1, dt * (lit ? 3 : 8));
+      lamp.glow.visible = lamp.cone.visible = lamp.level > 0.02;
+      lamp.glow.alpha = lamp.cone.alpha = lamp.level;
     }
   }
 }

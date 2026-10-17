@@ -57,22 +57,65 @@ export interface StreetLampSpot {
   /** Where its pool of light falls on the street. */
   groundY: number;
   scale: number;
+  /** On the ground plane, under the lamp head. */
+  gx: number;
+  depth: number;
 }
+
+/** A pool of light thrown on the street (and the shopfronts beside it) by one source. */
+export interface LightPool {
+  /** Where its art sits in the world. */
+  x: number;
+  y: number;
+  /** Additive light: black is no light, brighter is more. */
+  art: PixelBuffer;
+  /** What casts it, so it can follow the source: a night stall or a street lamp, by index. */
+  source: 'stall' | 'lamp';
+  index: number;
+}
+
+/** A sign's neon tubes and halo, lit after dark (each sign flickers on its own). */
+export interface NeonSign {
+  x: number;
+  y: number;
+  art: PixelBuffer;
+  /** A worn-out tube that stutters on and off. */
+  broken: boolean;
+}
+
+export interface StallSpot {
+  gx: number;
+  depth: number;
+  shift: 'day' | 'night';
+}
+
+/** How bright a light pool is at a ground point, for a source at (gx, depth) and a reach in ground px. */
+export function poolFalloff(gx: number, depth: number, sgx: number, sdepth: number, reach: number): number {
+  const d = Math.hypot(gx - sgx, (depth - sdepth) * FOCAL) / reach;
+  return d >= 1 ? 0 : (1 - d * d) ** 1.6;
+}
+
+/** Light pool reach (ground px) for each kind of source. */
+export const POOL_REACH = { stall: 70, lamp: 58 } as const;
 
 export interface CityLayout {
   layers: CityLayer[];
   /** Things hanging over the street (the skybridge, signs, awnings): drawn over the people beyond them. */
   over: PixelBuffer;
-  /** Neon on the signs and billboards (lit after dark), with a soft halo. */
-  neon: PixelBuffer;
-  /** The warm glow the night market throws up off the street and onto the shopfronts. */
-  streetGlow: PixelBuffer;
+  /** Neon on each sign and billboard (lit after dark), with a soft halo. */
+  signs: NeonSign[];
+  /** Pools of warm light from the night stalls and street lamps. */
+  pools: LightPool[];
+  /** Which pixels are the street's paving (graded darker at night, so the pools of light read). */
+  streetMask: Uint8Array;
+  /** Windows on things hanging over the street (the skybridge). */
+  overWindows: WindowRecord[];
   ledges: Ledge[];
   lamps: StreetLampSpot[];
   /** Doorways on the street, on the ground plane (gx at the building line). */
   doors: Array<{ gx: number; depth: number }>;
-  /** Where market stalls set up, along both sides of the street. */
-  stallSpots: Array<{ gx: number; depth: number }>;
+  /** Where market stalls set up, along both sides of the street, day and night ones alternating. */
+  stallSpots: StallSpot[];
 }
 
 type Material = 'brick' | 'beige' | 'glass' | 'concrete' | 'stone' | 'roof' | 'metal' | 'sign' | 'awning' | 'bridge' | 'pipe';
@@ -141,6 +184,11 @@ export function generateCity(seed = 20261015): CityLayout {
   const S = STREET_HALF;
   const ledges: Ledge[] = [];
   const doors: CityLayout['doors'] = [];
+  // The market's pitches, either side of the lane: day and night stalls take turns along each side.
+  const stallSpots: StallSpot[] = [];
+  [1.35, 1.75, 2.3, 2.75, 3.3, 3.9, 4.6, 5.4].forEach((depth, i) => {
+    stallSpots.push({ gx: -S + 22, depth, shift: i % 2 === 0 ? 'day' : 'night' }, { gx: S - 22, depth: depth + 0.18, shift: i % 2 === 0 ? 'night' : 'day' });
+  });
 
   // --- The street canyon: buildings shoulder to shoulder either side ---
   const left: Array<[d0: number, d1: number, h: number, m: Material]> = [
@@ -269,16 +317,6 @@ export function generateCity(seed = 20261015): CityLayout {
     const out = gx < 0 ? 1 : -1;
     add(boxFrom(gx, gx + out * 16, depth, depth + 0.015, h0, h1), 'sign', { neon });
   }
-  for (const [d0, d1] of [
-    [0.6, 1.4],
-    [1.6, 2.2],
-    [2.6, 3.2],
-    [3.6, 4.4],
-    [5, 5.9],
-  ] as const) {
-    add(boxFrom(-S, -S + 12, d0, d1, 22, 26), 'awning', { stripes: [0xd8503e, 0xf0e4d0] });
-    add(boxFrom(S - 12, S, d0 + 0.5, d1 + 0.5, 22, 26), 'awning', { stripes: [0x3e6ab0, 0xf0e4d0] });
-  }
 
   // --- Our own roof: a parapet curving across the lower right, and its floor ---
   {
@@ -311,21 +349,18 @@ export function generateCity(seed = 20261015): CityLayout {
     near: new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT),
   };
   const neon = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
+  /** Which sign each neon pixel belongs to. */
+  const neonOwner = new Int32Array(WORLD_WIDTH * WORLD_HEIGHT).fill(-1);
   const over = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
-  const streetGlow = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
-  const glowAt = (x: number, y: number, level: number) => {
-    if (level <= 0) return;
-    // Dithered, so it stays pixel art; brighter towards amber-white at its heart.
-    if (level > bayer(x, y)) streetGlow.set(x, y, level > 0.6 ? 0xe88a34 : 0xb05418);
-  };
+  const streetMask = new Uint8Array(WORLD_WIDTH * WORLD_HEIGHT);
   // Boxes that hang over the street, so people further off pass behind them.
-  const overhangs = new Set(buildings.filter((b) => b.material === 'bridge' || b.material === 'awning' || (b.material === 'sign' && Math.abs(b.box.gx) < STREET_HALF + 20) || (b.material === 'pipe' && Math.abs(b.box.gx) < 1)).map((b) => b.id));
+  const overhangs = new Set(buildings.filter((b) => b.material === 'bridge' || (b.material === 'sign' && Math.abs(b.box.gx) < STREET_HALF + 20) || (b.material === 'pipe' && Math.abs(b.box.gx) < 1)).map((b) => b.id));
   const owner = new Int32Array(WORLD_WIDTH * WORLD_HEIGHT).fill(-1);
   const zbuf = new Float32Array(WORLD_WIDTH * WORLD_HEIGHT).fill(Number.POSITIVE_INFINITY);
   /** Which face each pixel shows (for inking the edges between faces). */
   const faces = new Uint8Array(WORLD_WIDTH * WORLD_HEIGHT);
   const FACE_CODE: Record<string, number> = { front: 1, back: 2, left: 3, right: 4, top: 5, bottom: 6 };
-  const windowPixels = new Map<string, { band: CityLayerName; pixels: number[] }>();
+  const windowPixels = new Map<string, { band: CityLayerName | 'over'; pixels: number[] }>();
 
   // Bucket boxes by the screen cells they can cover, so each ray only tries a few.
   const CELL = 24;
@@ -357,57 +392,89 @@ export function generateCity(seed = 20261015): CityLayout {
       const best: Hit | null = hitBy ? castBox(hitBy.prepared, aRay, bRay) : null;
       const i = y * WORLD_WIDTH + x;
       if (best && hitBy) {
+        const overhang = overhangs.has(hitBy.id);
         const band = bandOf(best.depth);
         const { color, window, glow } = shadeBuilding(hitBy, best, x, y);
-        (overhangs.has(hitBy.id) ? over : bands[band]).set(x, y, haze(color, best.depth));
+        (overhang ? over : bands[band]).set(x, y, haze(color, best.depth));
         owner[i] = hitBy.id;
         zbuf[i] = best.depth;
         faces[i] = FACE_CODE[best.face];
         if (window) {
-          let w = windowPixels.get(window);
-          if (!w) windowPixels.set(window, (w = { band, pixels: [] }));
+          // Windows on overhangs light up above them, not hidden underneath.
+          const key = overhang ? `over:${window}` : window;
+          let w = windowPixels.get(key);
+          if (!w) windowPixels.set(key, (w = { band: overhang ? 'over' : band, pixels: [] }));
           w.pixels.push(i);
         }
-        if (glow !== null) neon.set(x, y, glow);
-        // Shopfronts and the lower walls catch the market's light.
-        const side = best.face === 'left' || best.face === 'right';
-        if (side && hitBy.box.depth < 12 && Math.abs(hitBy.box.gx) < STREET_HALF + 400 && best.h < 70) {
-          glowAt(x, y, (1 - best.h / 70) * 0.75 * (1 - best.depth / 12));
+        if (glow !== null) {
+          neon.set(x, y, glow);
+          neonOwner[i] = hitBy.id;
         }
       } else if (bRay > 0) {
-        // The street (or an alley's floor) far below.
+        // The street (or an alley's floor) far below. It all sits in the near band, so it grades as one piece.
         const depth = CITY_EYE / bRay;
         const color = shadeStreet(aRay * depth, depth, x, y);
-        bands[bandOf(depth)].set(x, y, haze(color, depth));
+        bands.near.set(x, y, haze(color, depth));
         zbuf[i] = depth;
-        // The lane between the stalls glows at night, fading off into the distance.
-        if (Math.abs(aRay * depth) < STREET_HALF && depth < 11) glowAt(x, y, 0.85 * (1 - depth / 11) ** 0.7 * (1 - Math.abs(aRay * depth) / (STREET_HALF * 1.6)));
+        if (Math.abs(aRay * depth) <= STREET_HALF) streetMask[i] = 1;
       }
     }
   }
 
-  // --- A soft halo round the neon ---
+  // --- Each sign's neon, with a soft two-ring halo, cut out on its own so it can flicker on its own ---
+  const signs: NeonSign[] = [];
   {
-    const halo: Array<[number, number, number]> = [];
-    for (let y = 2; y < WORLD_HEIGHT - 2; y++) {
-      for (let x = 2; x < WORLD_WIDTH - 2; x++) {
+    const R = 3;
+    const halo: Array<[number, number, number, number]> = [];
+    for (let y = R; y < WORLD_HEIGHT - R; y++) {
+      for (let x = R; x < WORLD_WIDTH - R; x++) {
         if (neon.get(x, y) >= 0) continue;
         let best = -1;
-        let dist = 9;
-        for (let dy = -2; dy <= 2; dy++) {
-          for (let dx = -2; dx <= 2; dx++) {
-            const c = neon.get(x + dx, y + dy);
+        let who = -1;
+        let dist = R * R + 1;
+        for (let dy = -R; dy <= R; dy++) {
+          for (let dx = -R; dx <= R; dx++) {
+            const k = (y + dy) * WORLD_WIDTH + x + dx;
             const d = dx * dx + dy * dy;
-            if (c >= 0 && d < dist) {
+            if (neonOwner[k] >= 0 && d < dist) {
               dist = d;
-              best = c;
+              best = neon.get(x + dx, y + dy);
+              who = neonOwner[k];
             }
           }
         }
-        if (best >= 0 && (dist <= 2 || bayer(x, y) < 0.5)) halo.push([x, y, scaleColor(best, dist <= 2 ? 0.45 : 0.25)]);
+        if (best < 0) continue;
+        // Bright close in, then a dithered outer ring fading out.
+        const level = dist <= 2 ? 0.42 : dist <= 5 ? 0.24 : 0.12;
+        if (dist <= 2 || bayer(x, y) < (dist <= 5 ? 0.75 : 0.45)) halo.push([x, y, scaleColor(best, level), who]);
       }
     }
-    for (const [x, y, c] of halo) neon.set(x, y, c);
+    for (const [x, y, c, who] of halo) {
+      neon.set(x, y, c);
+      neonOwner[y * WORLD_WIDTH + x] = who;
+    }
+    const bounds = new Map<number, { x0: number; y0: number; x1: number; y1: number }>();
+    for (let i = 0; i < neonOwner.length; i++) {
+      const o = neonOwner[i];
+      if (o < 0) continue;
+      const x = i % WORLD_WIDTH;
+      const y = Math.floor(i / WORLD_WIDTH);
+      const r = bounds.get(o);
+      if (!r) bounds.set(o, { x0: x, y0: y, x1: x, y1: y });
+      else {
+        r.x0 = Math.min(r.x0, x);
+        r.y0 = Math.min(r.y0, y);
+        r.x1 = Math.max(r.x1, x);
+        r.y1 = Math.max(r.y1, y);
+      }
+    }
+    let k = 0;
+    for (const [o, r] of bounds) {
+      const art = new PixelBuffer(r.x1 - r.x0 + 1, r.y1 - r.y0 + 1);
+      for (let y = r.y0; y <= r.y1; y++) for (let x = r.x0; x <= r.x1; x++) if (neonOwner[y * WORLD_WIDTH + x] === o) art.set(x - r.x0, y - r.y0, neon.get(x, y));
+      // One tired old tube buzzes on and off.
+      signs.push({ x: r.x0, y: r.y0, art, broken: k++ === 2 });
+    }
   }
 
   // --- Ink along every edge, like the drawing's line work: between buildings, faces, sky and street ---
@@ -512,8 +579,92 @@ export function generateCity(seed = 20261015): CityLayout {
     }
   }
 
+  // --- Shop awnings: sloped canvas over the shopfronts (kept clear of the stalls and lamps) ---
+  const lampDepths = [1.3, 2.05, 2.85, 3.9, 5.1, 6.6, 8.6];
+  {
+    const awn = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
+    const awnDepth = new Float32Array(WORLD_WIDTH * WORLD_HEIGHT).fill(Number.POSITIVE_INFINITY);
+    const awnRng = createRng(seed + 7);
+    const STRIPES: Array<[number, number]> = [
+      [0xd8503e, 0xf0e4d0],
+      [0x3e6ab0, 0xf0e4d0],
+      [0x3c8a5a, 0xf0e4d0],
+      [0xe0a030, 0x7a3e2a],
+      [0x8a4a8a, 0xf0e4d0],
+    ];
+    const splat = (gx: number, depth: number, h: number, color: number) => {
+      const p = projectPoint(gx, depth, h);
+      const x = Math.floor(p.x);
+      const y = Math.floor(p.y);
+      if (x < 0 || y < 0 || x >= WORLD_WIDTH || y >= WORLD_HEIGHT) return;
+      const i = y * WORLD_WIDTH + x;
+      if (zbuf[i] < depth - 0.02 || awnDepth[i] <= depth) return;
+      awnDepth[i] = depth;
+      awn.set(x, y, color);
+    };
+    for (const side of [-1, 1]) {
+      for (let d0 = 0.55, len = 0; d0 < 6.2; d0 += len + 0.02 + awnRng() * 0.04) {
+        // Each shop's canopy runs 50–90 ground px along its front.
+        len = 0.07 + awnRng() * 0.06;
+        const d1 = d0 + len;
+        const clash = stallSpots.some((sp) => Math.sign(sp.gx) === side && sp.depth > d0 - 0.17 && sp.depth < d1 + 0.12) || lampDepths.some((ld) => ld > d0 - 0.05 && ld < d1 + 0.05);
+        if (clash || awnRng() < 0.25) continue;
+        const [ca, cb] = STRIPES[Math.floor(awnRng() * STRIPES.length)];
+        const wall = side * S;
+        const out = side * (S - 17);
+        const H_TOP = 36;
+        const H_LOW = 25;
+        // Seen from this high, an awning is steeply foreshortened along the street: stripe it only where
+        // each stripe still gets a couple of pixels, else it's plain canvas with a contrasting valance.
+        const spanY = projectPoint(wall, d0, H_TOP).y - projectPoint(wall, d1, H_TOP).y;
+        const stripes = Math.floor(spanY / 2.2);
+        const scallops = Math.max(1, Math.round(spanY / 2.2));
+        const stepsT = Math.ceil(24 / d0) + 2;
+        const stepsQ = Math.ceil(((80 + 200) * len) / (d0 * d0) * 2) + 4;
+        for (let a = 0; a <= stepsQ; a++) {
+          const q = a / stepsQ;
+          const depth = d0 + len * q;
+          const stripe = stripes >= 2 ? Math.min(stripes - 1, Math.floor(q * stripes)) : 0;
+          const base = stripe % 2 === 0 ? ca : cb;
+          // The sloping canvas: shaded under the wall, catching the light towards its edge.
+          for (let b = 0; b <= stepsT; b++) {
+            const t = b / stepsT;
+            splat(wall + (out - wall) * t, depth, H_TOP + (H_LOW - H_TOP) * t, scaleColor(base, 0.78 + 0.28 * t));
+          }
+          // The scalloped valance hanging from its outer edge.
+          const frac = q * scallops - Math.floor(q * scallops);
+          const drop = 5 - 2.5 * Math.abs(frac - 0.5) * 2;
+          const trim = stripes >= 2 ? base : cb;
+          for (let v = 0; v <= drop; v += Math.min(0.5, depth * 0.6)) splat(out, depth - 0.0005, H_LOW - v, scaleColor(trim, 0.86));
+          // Its shadow on the pavement below.
+          for (let b = 0; b <= stepsT; b++) {
+            const p = projectPoint(wall + (out - wall - side * 3) * (b / stepsT), depth, 0);
+            const x = Math.floor(p.x);
+            const y = Math.floor(p.y);
+            if (x < 0 || y < 0 || x >= WORLD_WIDTH || y >= WORLD_HEIGHT || !streetMask[y * WORLD_WIDTH + x]) continue;
+            const c = near.get(x, y);
+            if (c >= 0) near.set(x, y, scaleColor(c, 0.8));
+          }
+        }
+      }
+    }
+    // Ink round each awning, then hang them over the street.
+    const ink: number[] = [];
+    for (let y = 1; y < WORLD_HEIGHT - 1; y++) {
+      for (let x = 1; x < WORLD_WIDTH - 1; x++) {
+        const i = y * WORLD_WIDTH + x;
+        if (awn.isSet(x, y)) continue;
+        const nd = Math.min(awnDepth[i - 1], awnDepth[i + 1], awnDepth[i - WORLD_WIDTH], awnDepth[i + WORLD_WIDTH]);
+        if (Number.isFinite(nd) && zbuf[i] >= nd - 0.02) ink.push(i);
+      }
+    }
+    for (const i of ink) awn.set(i % WORLD_WIDTH, Math.floor(i / WORLD_WIDTH), 0x3a2a24);
+    over.draw(awn, 0, 0);
+  }
+
   // --- Windows, as lights to switch on after dark ---
   const windows: Record<CityLayerName, WindowRecord[]> = { far: [], mid: [], near: [] };
+  const overWindows: WindowRecord[] = [];
   for (const { band, pixels } of windowPixels.values()) {
     let x0 = WORLD_WIDTH;
     let y0 = WORLD_HEIGHT;
@@ -529,36 +680,119 @@ export function generateCity(seed = 20261015): CityLayout {
     }
     const w = x1 - x0 + 1;
     const h = y1 - y0 + 1;
-    windows[band].push({ x: x0, y: y0, w, h, mask: pixels.length === w * h ? undefined : pixels });
+    (band === 'over' ? overWindows : windows[band]).push({ x: x0, y: y0, w, h, mask: pixels.length === w * h ? undefined : pixels });
   }
 
-  // --- Street lamps along both kerbs, and the market's pitches ---
+  // --- Street lamps along both kerbs: iron poles and lanterns, hidden by whatever stands in front ---
   const lamps: StreetLampSpot[] = [];
-  for (const depth of [1.3, 2.05, 2.85, 3.9, 5.1, 6.6, 8.6]) {
+  const paint = (target: PixelBuffer, x: number, y: number, depth: number, color: number) => {
+    x = Math.round(x);
+    y = Math.round(y);
+    if (x < 0 || y < 0 || x >= WORLD_WIDTH || y >= WORLD_HEIGHT || zbuf[y * WORLD_WIDTH + x] < depth - 0.03) return;
+    target.set(x, y, color);
+  };
+  for (const depth of lampDepths) {
     for (const side of [-1, 1]) {
       const gx = side * (S - 8);
-      const head = projectPoint(gx - side * 7, depth, 36);
-      const ground = projectPoint(gx - side * 7, depth, 0);
-      lamps.push({ x: Math.round(head.x), y: Math.round(head.y), groundY: Math.round(ground.y), scale: 1 / depth });
-      const pole = projectPoint(gx, depth, 0);
-      const poleTop = projectPoint(gx, depth, 38);
+      const headGx = gx - side * 7;
       const target = bands[bandOf(depth)];
-      const w = Math.max(1, Math.round(2 / depth));
-      for (let y = Math.round(poleTop.y); y <= Math.round(pole.y); y++) for (let k = 0; k < w; k++) target.set(Math.round(pole.x) + k, y, 0x3a3c40);
-      for (let t = 0; t <= 1; t += 0.1) target.set(Math.round(poleTop.x + (head.x - poleTop.x) * t), Math.round(poleTop.y + (head.y - poleTop.y) * t), 0x3a3c40);
+      const scale = 1 / depth;
+      const pole = projectPoint(gx, depth, 0);
+      const poleTop = projectPoint(gx, depth, 40);
+      const w = Math.max(1, Math.round(2.4 / depth));
+      for (let y = Math.round(poleTop.y); y <= Math.round(pole.y); y++) for (let k = 0; k < w; k++) paint(target, pole.x + k, y, depth, k === 0 ? 0x5a5e66 : 0x2e3036);
+      // The arm reaching out over the street.
+      for (let t = 0; t <= 1; t += 0.05) {
+        const p = projectPoint(gx + (headGx - gx) * t, depth, 40 + Math.sin(t * Math.PI) * 2);
+        paint(target, p.x, p.y, depth, 0x2e3036);
+      }
+      // A lantern: a dark hood over a pale glass that glows after dark.
+      const head = projectPoint(headGx, depth, 37);
+      const hoodW = Math.max(2, Math.round(9 * scale));
+      const hoodH = Math.max(1, Math.round(2.5 * scale));
+      const glassW = Math.max(1, Math.round(6 * scale));
+      const glassH = Math.max(1, Math.round(4 * scale));
+      for (let y = 0; y < hoodH; y++) for (let x = 0; x < hoodW - y * 2; x++) paint(target, head.x - hoodW / 2 + y + x, head.y - hoodH + y, depth, 0x26282e);
+      for (let y = 0; y < glassH; y++) for (let x = 0; x < glassW; x++) paint(target, head.x - glassW / 2 + x, head.y + y, depth, x === 0 ? 0xc8c0a8 : 0xe0d8c0);
+      const ground = projectPoint(headGx, depth, 0);
+      lamps.push({ x: Math.round(head.x), y: Math.round(head.y + glassH / 2), groundY: Math.round(ground.y), scale, gx: headGx, depth });
       ledges.push({ x0: Math.round(Math.min(poleTop.x, head.x)), x1: Math.round(Math.max(poleTop.x, head.x)), y: Math.round(poleTop.y) - 1, layer: bandOf(depth), kind: 'lamp', z: birdZ(depth) });
     }
   }
-  const stallSpots: CityLayout['stallSpots'] = [];
-  for (const depth of [1.35, 1.75, 2.3, 2.75, 3.3, 3.9, 4.6, 5.4]) {
-    stallSpots.push({ gx: -S + 22, depth }, { gx: S - 22, depth: depth + 0.18 });
-  }
+
+  // --- Pools of light from the night stalls and the lamps, on the paving and the shopfronts beside it ---
+  const pools: LightPool[] = [];
+  const RAMPS = {
+    stall: [0, 0x1c0e04, 0x3c1e08, 0x62300e, 0x8e4816, 0xbc6820, 0xe8922e],
+    lamp: [0, 0x1a1408, 0x362a12, 0x58441c, 0x7c6026, 0xa48034, 0xcca044],
+  } as const;
+  const makePool = (source: 'stall' | 'lamp', index: number, sgx: number, sdepth: number, strength: number) => {
+    const reach = POOL_REACH[source];
+    let x0 = WORLD_WIDTH;
+    let y0 = WORLD_HEIGHT;
+    let x1 = 0;
+    let y1 = 0;
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      const depth = (sdepth * FOCAL + Math.sin(a) * reach) / FOCAL;
+      if (depth < 0.2) continue;
+      for (const h of [0, 80]) {
+        const p = projectPoint(sgx + Math.cos(a) * reach, depth, h);
+        x0 = Math.min(x0, p.x);
+        x1 = Math.max(x1, p.x);
+        y0 = Math.min(y0, p.y);
+        y1 = Math.max(y1, p.y);
+      }
+    }
+    x0 = Math.max(0, Math.floor(x0));
+    y0 = Math.max(0, Math.floor(y0));
+    x1 = Math.min(WORLD_WIDTH - 1, Math.ceil(x1));
+    y1 = Math.min(WORLD_HEIGHT - 1, Math.ceil(y1));
+    if (x1 < x0 || y1 < y0) return;
+    const art = new PixelBuffer(x1 - x0 + 1, y1 - y0 + 1);
+    const ramp = RAMPS[source];
+    // Each pool dithers on its own offset, so overlapping pools don't stack into one pattern.
+    const ox = index * 3 + (source === 'lamp' ? 1 : 0);
+    const oy = index * 2;
+    let lit = false;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = y * WORLD_WIDTH + x;
+        const d = zbuf[i];
+        const gx = (x + 0.5 - CITY_VANISH_X) * d;
+        let f = 0;
+        if (owner[i] < 0 && streetMask[i]) f = poolFalloff(gx, d, sgx, sdepth, reach);
+        else if (owner[i] >= 0 && !overhangs.has(owner[i])) {
+          // The shopfronts beside the street catch it too, fading up the wall.
+          const b = buildings[owner[i]];
+          const facing = (b.shops === 'right' && faces[i] === 4) || (b.shops === 'left' && faces[i] === 3);
+          const h = CITY_EYE - (y + 0.5 - CITY_HORIZON) * d;
+          if (facing && h < 80) f = poolFalloff(gx, d, sgx, sdepth, reach * 1.1) * (1 - h / 80) ** 1.2 * 0.85;
+        }
+        const level = f * strength * (ramp.length - 1);
+        if (level <= 0.05) continue;
+        let step = Math.floor(level);
+        if (level - step > bayer(x + ox, y + oy)) step++;
+        step = Math.min(ramp.length - 1, step);
+        if (step === 0) continue;
+        art.set(x - x0, y - y0, ramp[step]);
+        lit = true;
+      }
+    }
+    if (lit) pools.push({ x: x0, y: y0, art, source, index });
+  };
+  stallSpots.forEach((spot, i) => {
+    if (spot.shift === 'night') makePool('stall', i, spot.gx * 0.8, spot.depth, 1);
+  });
+  lamps.forEach((lamp, i) => makePool('lamp', i, lamp.gx, lamp.depth, 0.85));
 
   return {
     layers: (['far', 'mid', 'near'] as const).map((name) => ({ name, art: bands[name], windows: windows[name] })),
     over,
-    neon,
-    streetGlow,
+    overWindows,
+    signs,
+    pools,
+    streetMask,
     ledges,
     lamps,
     doors,
@@ -694,7 +928,7 @@ function shadeBuilding(b: Building, hit: Hit, x: number, y: number): { color: nu
     // Too far to make out windows: floors as faint bands, lit windows as scattered dots.
     const row = Math.floor(t / b.floor);
     if (floorPx >= 1.4 && t - row * b.floor < b.floor * 0.45) color = scaleColor(b.body, b.material === 'glass' ? 1.12 : 0.88);
-    if (pixelHash(x, y, b.seed) < 0.22) window = `${b.id}:${hit.face}:g${Math.floor(pixelHash(x, y, b.seed + 1) * 8)}`;
+    if (pixelHash(x, y, b.seed) < 0.12) window = `${b.id}:${hit.face}:g${Math.floor(pixelHash(x, y, b.seed + 1) * 8)}`;
     if (b.material === 'glass') color = lerpColor(color, 0x9ab8d4, Math.max(0, 0.4 - t / (box.h1 * 2)));
     return { color: scaleColor(color, light), window, glow };
   }
@@ -754,8 +988,12 @@ function shadeStreet(gx: number, depth: number, x: number, y: number): number {
   let level = 0.55 + (valueNoise(gx, z, 30, 3) - 0.5) * 0.4;
   // Shade towards the walls, where the sun doesn't reach.
   level -= Math.max(0, (a - 56) / 24) * 0.3;
-  // Paving joints, while they're big enough to see.
-  if (depth < 3.5 && ((z % 26) < depth * 0.9 || ((gx + 400) % 22) < depth * 0.9)) level -= 0.15;
+  // Paving joints, while they're big enough to see: a row is a joint if a joint line falls inside it
+  // (testing the row's whole span along the street, so they don't flicker in and out with distance).
+  const zTop = (CITY_EYE / Math.max(0.5, y - CITY_HORIZON)) * FOCAL;
+  const zBottom = (CITY_EYE / (y + 1 - CITY_HORIZON)) * FOCAL;
+  const crossJoint = zTop - zBottom < 13 && Math.floor(zTop / 26) !== Math.floor(zBottom / 26);
+  if (depth < 4 && (crossJoint || ((gx + 400) % 22) < depth)) level -= 0.15;
   // Kerbs and gutters either side of the lane.
   if (Math.abs(a - 62) < depth * 0.8) return 0x8a7a64;
   return ditherRamp([0xa8885e, 0xb89668, 0xc8a676, 0xd8b686, 0xe4c494], level, x, y);

@@ -41,7 +41,14 @@ export class CityLife implements SceneLife {
       sound: options.sound,
       canTap: options.canTap,
     });
-    this.street = new StreetLife({ doors: scene.city.doors, stallSpots: scene.city.stallSpots, laneHalf: scene.laneHalf, project: scene.project });
+    this.street = new StreetLife({
+      doors: scene.city.doors,
+      stallSpots: scene.city.stallSpots,
+      laneHalf: scene.laneHalf,
+      project: scene.project,
+      lightAt: (gx, depth) => scene.lightAt(gx, depth),
+    });
+    scene.stallLight = (i) => this.street.stallLit(i);
     scene.street.addChild(this.street.container);
     scene.streetLights.addChild(this.street.lightsContainer);
     this.cat = new RooftopCat(options.sound, options.canTap);

@@ -1,5 +1,4 @@
-import { Container, Sprite, type Texture } from 'pixi.js';
-import { drawPixelTexture } from '../core/pixelTexture';
+import { Container, Sprite } from 'pixi.js';
 import { lerpColor } from '../core/color';
 import { FOCAL } from '../sim/groundPlane';
 import type { Environment } from '../scene/Environment';
@@ -47,7 +46,8 @@ interface Stall {
   offset: number;
   sprite: Sprite;
   lights: Sprite | null;
-  glow: Sprite | null;
+  /** Whether its bulbs are on (its pool of light on the street follows this). */
+  lit: boolean;
   vendor: Person | null;
 }
 
@@ -59,39 +59,17 @@ const STALL_HEIGHT_AT_1 = 36;
 const FAR_END = 9.5;
 const NEAR_END = 0.95;
 
-/** A warm, dithered pool of light thrown by a night-market stall. */
-function createGlowTexture(): Texture {
-  const width = 44;
-  const height = 22;
-  return drawPixelTexture(width, height, (c) => {
-    const bayer = [
-      [0, 8, 2, 10],
-      [12, 4, 14, 6],
-      [3, 11, 1, 9],
-      [15, 7, 13, 5],
-    ];
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const dx = (x - width / 2 + 0.5) / (width / 2);
-        const dy = (y - height + 3) / height;
-        const d = Math.sqrt(dx * dx + dy * dy * 1.2);
-        if (d >= 1) continue;
-        const level = (1 - d) ** 1.4;
-        if (level * 1.1 > (bayer[y & 3][x & 3] + 0.5) / 16) c.px(x, y, level > 0.55 ? '#ffd890' : '#ffb060');
-      }
-    }
-  });
-}
-
 export interface StreetLifeOptions {
   /** Doorways along the street, at the building lines. */
   doors: Array<{ gx: number; depth: number }>;
-  /** Where the market stalls set up. */
-  stallSpots: Array<{ gx: number; depth: number }>;
+  /** Where the market stalls set up, and whether each is a day or a night stall. */
+  stallSpots: Array<{ gx: number; depth: number; shift: MarketShift }>;
   /** Half-width of the lane people walk in (ground px). */
   laneHalf: number;
   /** Screen position of a point on the street. */
   project: (gx: number, depth: number) => { x: number; y: number };
+  /** How much lamp and stall light falls on a point of the street (0 in the dark, ~1 in a pool's heart). */
+  lightAt?: (gx: number, depth: number) => number;
   rng?: () => number;
 }
 
@@ -122,6 +100,11 @@ export class StreetLife {
   constructor(private readonly options: StreetLifeOptions) {
     this.rng = options.rng ?? Math.random;
     this.createStalls();
+  }
+
+  /** Whether stall `i` (in the order of `stallSpots`) has its lights on. */
+  stallLit(i: number): number {
+    return this.stalls[i]?.lit ? 1 : 0;
   }
 
   /** Share of the maximum crowd currently on the street, 0..1 (for crowd murmur). */
@@ -158,22 +141,31 @@ export class StreetLife {
       if (walker) this.headIndoors(walker);
     }
 
-    // After dark, people are lit by shop windows and street lamps.
-    const tint = lerpColor(lighting.ambient, 0xffe2b8, lighting.darkness * 0.55);
-    this.updateStalls(lighting.hours, lighting.emissive, tint);
+    // After dark there's a little spill from the shop windows everywhere, and real warmth in the pools of light.
+    this.baseTint = lerpColor(lighting.ambient, 0xffe2b8, lighting.darkness * 0.18);
+    this.updateStalls(lighting.hours, lighting.emissive);
 
     for (let i = this.people.length - 1; i >= 0; i--) {
       const p = this.people[i];
       if (p.vendor) {
-        p.sprite.tint = tint;
+        p.sprite.tint = this.tintAt(p.gx, p.depth);
         continue;
       }
       if (this.walk(p, dt, raining)) {
         this.removePerson(i);
         continue;
       }
-      this.draw(p, tint);
+      this.draw(p);
     }
+  }
+
+  private baseTint = 0xffffff;
+
+  /** The tint for something standing at a point of the street: the hour's light, warmed where a lamp or stall shines. */
+  private tintAt(gx: number, depth: number): number {
+    const light = this.options.lightAt?.(gx, depth) ?? 0;
+    if (light <= 0.01) return this.baseTint;
+    return lerpColor(this.baseTint, 0xffd8a0, Math.min(0.85, light * 0.75));
   }
 
   private laneSpot(): number {
@@ -296,14 +288,14 @@ export class StreetLife {
     return Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / depth));
   }
 
-  private draw(p: Person, tint: number): void {
+  private draw(p: Person): void {
     const frame = p.browse > 0 ? 'stand' : Math.floor(p.stride) % 2 === 0 ? 'walk-a' : 'walk-b';
     p.sprite.texture = this.personSprites.get(p.look, p.id, frame, p.umbrella, this.heightAt(p.depth));
     p.sprite.scale.x = p.dir;
     const pt = this.options.project(p.gx, p.depth);
     p.sprite.position.set(Math.round(pt.x), Math.round(pt.y));
     p.sprite.zIndex = pt.y;
-    p.sprite.tint = tint;
+    p.sprite.tint = this.tintAt(p.gx, p.depth);
   }
 
   private removePerson(index: number): void {
@@ -316,13 +308,10 @@ export class StreetLife {
   // --- Stalls ---------------------------------------------------------
 
   private createStalls(): void {
-    const glowTexture = createGlowTexture();
-    const spots = [...this.options.stallSpots];
-    spots.forEach(({ gx, depth }, i) => {
-      // Alternate day and night stalls along the street.
-      const shift: MarketShift = i % 2 === 0 ? 'day' : 'night';
+    const counts: Record<MarketShift, number> = { day: 0, night: 0 };
+    this.options.stallSpots.forEach(({ gx, depth, shift }) => {
       const kinds = shift === 'day' ? DAY_STALLS : NIGHT_STALLS;
-      const kind = kinds[Math.floor(i / 2) % kinds.length];
+      const kind = kinds[counts[shift]++ % kinds.length];
       const height = Math.max(4, Math.round(STALL_HEIGHT_AT_1 / depth));
       const at = this.options.project(gx, depth);
       const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
@@ -334,14 +323,7 @@ export class StreetLife {
       this.container.addChild(sprite);
       const lightsTexture = this.stallSprites.lights(kind, height);
       let lights: Sprite | null = null;
-      let glow: Sprite | null = null;
       if (lightsTexture) {
-        glow = new Sprite({ texture: glowTexture, anchor: { x: 0.5, y: 1 } });
-        glow.position.set(Math.round(at.x), Math.round(at.y) + 2);
-        glow.scale.set(height / 16);
-        glow.blendMode = 'add';
-        glow.visible = false;
-        this.lightsContainer.addChild(glow);
         lights = new Sprite({ texture: lightsTexture, anchor: { x: 0.5, y: 1 } });
         lights.position.set(Math.round(at.x), Math.round(at.y));
         if (gx > 0) lights.scale.x = -1;
@@ -349,11 +331,11 @@ export class StreetLife {
         lights.visible = false;
         this.lightsContainer.addChild(lights);
       }
-      this.stalls.push({ kind, shift, gx, depth, offset: (this.rng() - 0.5) * 0.6, sprite, lights, glow, vendor: null });
+      this.stalls.push({ kind, shift, gx, depth, offset: (this.rng() - 0.5) * 0.6, sprite, lights, lit: false, vendor: null });
     });
   }
 
-  private updateStalls(hours: number, emissive: number, tint: number): void {
+  private updateStalls(hours: number, emissive: number): void {
     this.hours = hours;
     for (const stall of this.stalls) {
       const progress = stallProgress(stall.shift, hours, stall.offset);
@@ -363,15 +345,14 @@ export class StreetLife {
       if (visible) {
         const stage = progress >= 1 ? STALL_STAGES - 1 : Math.min(STALL_STAGES - 2, Math.floor(progress * (STALL_STAGES - 1)));
         stall.sprite.texture = this.stallSprites.get(stall.kind, stage, height);
-        stall.sprite.tint = tint;
+        stall.sprite.tint = this.tintAt(stall.gx, stall.depth);
       }
-      if (stall.lights && stall.glow) {
-        const lit = progress >= 1;
-        stall.lights.visible = stall.glow.visible = lit;
-        // Bulbs shimmer a little; the glow only shows once it's dark.
+      if (stall.lights) {
+        stall.lit = progress >= 1;
+        stall.lights.visible = stall.lit;
+        // Bulbs shimmer a little.
         const shimmer = 0.85 + 0.15 * Math.sin(performance.now() / 300 + stall.depth * 40);
         stall.lights.alpha = Math.min(1, emissive * 1.3) * shimmer;
-        stall.glow.alpha = Math.max(0, emissive - 0.3) * 0.5;
       }
       // A vendor minds the stall while it's up, behind the counter (on the wall side).
       if (progress > 0.3 && !stall.vendor) {
