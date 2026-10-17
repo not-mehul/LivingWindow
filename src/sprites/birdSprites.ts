@@ -290,8 +290,9 @@ function spanWing(shape: Array<[number, number]>, span: number): Array<[number, 
 /**
  * Draw one frame of a bird facing right into an N×N grid. Shapes are
  * authored in a 48-unit box and scaled, then detailed according to size:
- * full markings and an outline when large, flat colours when medium, a
- * single-colour silhouette when tiny.
+ * full markings and an outline when large, flat colours when medium, and
+ * a simple two-tone figure when tiny (dark wings and tail, the body in its
+ * own colour with a pale underside, beak and legs).
  */
 export function drawBird(speciesId: SpeciesId, pose: BirdPose, size: number): PixelGrid {
   const sp = SPECIES[speciesId];
@@ -310,11 +311,44 @@ export function drawBird(speciesId: SpeciesId, pose: BirdPose, size: number): Pi
   }
 
   if (!medium) {
-    grid.flatten(C.Dark);
+    farFigure(grid);
   } else if (detailed) {
     grid.outline(C.Outline);
   }
   return grid;
+}
+
+/** Reduce a tiny bird to a few tones that still read: dark wings, body colour, pale belly, beak and legs. */
+function farFigure(grid: PixelGrid): void {
+  const out = new Uint8Array(grid.data.length);
+  let beakRow = -1;
+  let beakX = -1;
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const c = grid.get(x, y);
+      if (!c) continue;
+      let v: number;
+      if (c === C.Leg || c === C.Beak) v = c;
+      else if (c === C.Wing || c === C.WingDark || c === C.Dark || c === C.Outline || c === C.Eye) v = C.Dark;
+      else if (c === C.Head || c === C.Cap) {
+        v = C.Head;
+        if (x > beakX) [beakX, beakRow] = [x, y];
+      } else v = C.Body;
+      out[y * grid.width + x] = v;
+    }
+  }
+  // The underside of the body catches the light.
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const i = y * grid.width + x;
+      if (out[i] !== C.Body) continue;
+      const below = y + 1 < grid.height ? out[i + grid.width] : 0;
+      if (below === 0 || below === C.Leg) out[i] = C.Belly;
+    }
+  }
+  grid.data.set(out);
+  // A beak in front of the head, when it isn't drawn already.
+  if (beakX >= 0 && !grid.data.includes(C.Beak) && beakX + 1 < grid.width && grid.get(beakX + 1, beakRow) === 0) grid.set(beakX + 1, beakRow, C.Beak);
 }
 
 function drawProfileBird(

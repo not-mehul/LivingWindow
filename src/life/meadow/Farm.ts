@@ -25,6 +25,8 @@ interface Cow {
 
 /** A cow's height (world px) at depth 1, just in front of the window. */
 const COW_HEIGHT = 58;
+/** A hen's height at depth 1. */
+const HEN_HEIGHT = 22;
 /** Ambling pace, ground px per second at depth 1. */
 const WALK_SPEED = 9;
 
@@ -275,7 +277,10 @@ export class Chickens {
             hen.pose = 'walk';
             hen.target = this.yardSpot();
             hen.timer = r(1.5, 4);
-          } else if (roll < 0.9) {
+          } else if (roll < 0.86) {
+            hen.pose = 'scratch';
+            hen.timer = r(0.4, 1);
+          } else if (roll < 0.92) {
             hen.pose = 'flap';
             hen.timer = 0.4;
             this.sound('chicken-cluck', this.viewport.worldXToStereo(this.plane.project(hen.gx, hen.depth).x), 0.66);
@@ -298,8 +303,9 @@ export class Chickens {
         } else if (out) hen.pose = 'stand';
       }
       const p = this.plane.project(hen.gx, hen.depth);
-      const frame: ChickenPose = hen.pose === 'walk' && Math.floor(performance.now() / 160) % 2 === 0 ? 'stand' : hen.pose;
-      hen.sprite.texture = this.sprites.get(hen.coat, frame);
+      const frame: ChickenPose = hen.pose === 'walk' && Math.floor(performance.now() / 160) % 2 === 0 ? 'walk-2' : hen.pose;
+      // Sized by how far off it stands, like the cows.
+      hen.sprite.texture = this.sprites.get(hen.coat, frame, Math.max(6, Math.min(22, HEN_HEIGHT * p.scale)));
       hen.sprite.scale.x = hen.dir;
       hen.sprite.position.set(Math.round(p.x), Math.round(p.y));
       hen.sprite.zIndex = p.y;

@@ -11,6 +11,7 @@ import {
   randomLook,
   STALL_STAGES,
   StallSpriteCache,
+  type PersonFacing,
   type PersonLook,
   type StallKind,
 } from '../sprites/streetSprites';
@@ -28,6 +29,8 @@ interface Person {
   goalIsDoor: boolean;
   /** Which way they face on screen. */
   dir: 1 | -1;
+  /** Seen from the front (coming towards us), the back (walking away) or the side (crossing). */
+  facing: PersonFacing;
   umbrella: boolean;
   umbrellaIn: number | null;
   hurrying: boolean;
@@ -193,6 +196,7 @@ export class StreetLife {
       goal: { gx: this.laneSpot(), depth: away ? FAR_END + 0.5 : NEAR_END - 0.1 },
       goalIsDoor: false,
       dir: this.rng() < 0.5 ? 1 : -1,
+      facing: away ? 'back' : 'front',
       umbrella: raining && this.rng() < 0.85,
       umbrellaIn: null,
       hurrying: false,
@@ -260,7 +264,12 @@ export class StreetLife {
       const stall = this.stalls.find((s) => stallProgress(s.shift, this.hours, s.offset) >= 1 && Math.abs(s.depth - p.depth) * FOCAL < 3 && Math.sign(s.gx) === Math.sign(p.gx || 1));
       if (stall) {
         p.browsed = true;
-        if (this.rng() < (stall.shift === 'night' ? 0.55 : 0.3)) p.browse = 2 + this.rng() * 8;
+        if (this.rng() < (stall.shift === 'night' ? 0.55 : 0.3)) {
+          p.browse = 2 + this.rng() * 8;
+          // Turn to the stall.
+          p.facing = 'side';
+          p.dir = stall.gx > p.gx ? 1 : -1;
+        }
       }
     }
 
@@ -280,7 +289,9 @@ export class StreetLife {
     // Face the way they're moving across the screen (walking straight up the street, keep the last way).
     const screenDx = p.gx / p.depth - before;
     if (Math.abs(screenDx) > 0.002) p.dir = screenDx > 0 ? 1 : -1;
-    p.stride += step / p.depth * 0.28;
+    // Mostly crossing: side on; otherwise we see their faces or their backs.
+    p.facing = Math.abs(sx) > Math.abs(dz) * 1.2 ? 'side' : dz > 0 ? 'back' : 'front';
+    p.stride += (step / p.depth) * 0.45;
     return false;
   }
 
@@ -289,8 +300,8 @@ export class StreetLife {
   }
 
   private draw(p: Person): void {
-    const frame = p.browse > 0 ? 'stand' : Math.floor(p.stride) % 2 === 0 ? 'walk-a' : 'walk-b';
-    p.sprite.texture = this.personSprites.get(p.look, p.id, frame, p.umbrella, this.heightAt(p.depth));
+    const pose = p.browse > 0 ? 'browse' : 'walk';
+    p.sprite.texture = this.personSprites.get(p.look, p.id, p.facing, pose, Math.floor(p.stride) % 4, p.umbrella, this.heightAt(p.depth));
     p.sprite.scale.x = p.dir;
     const pt = this.options.project(p.gx, p.depth);
     p.sprite.position.set(Math.round(pt.x), Math.round(pt.y));
@@ -366,6 +377,7 @@ export class StreetLife {
           goal: { gx, depth: stall.depth },
           goalIsDoor: false,
           dir: stall.gx > 0 ? -1 : 1,
+          facing: 'side',
           umbrella: false,
           umbrellaIn: null,
           hurrying: false,
@@ -375,7 +387,7 @@ export class StreetLife {
           sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }),
           vendor: true,
         };
-        vendor.sprite.texture = this.personSprites.get(vendor.look, vendor.id, 'stand', false, this.heightAt(stall.depth));
+        vendor.sprite.texture = this.personSprites.get(vendor.look, vendor.id, 'side', 'stand', 0, false, this.heightAt(stall.depth));
         const at = this.options.project(gx, stall.depth);
         vendor.sprite.position.set(Math.round(at.x), Math.round(at.y) - 1);
         vendor.sprite.scale.x = vendor.dir;

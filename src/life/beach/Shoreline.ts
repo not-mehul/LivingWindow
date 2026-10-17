@@ -9,7 +9,7 @@ import { BREAK_S, shorePoint, shoreXAtY } from '../../sim/shore';
 import type { Environment } from '../../scene/Environment';
 import { School } from '../../sim/boids';
 import { BirdSpriteCache, FLAP_CYCLE, type BirdPose } from '../../sprites/birdSprites';
-import { DolphinSprites, TurtleSprites } from '../../sprites/beachSprites';
+import { DOLPHIN_FRAMES, DolphinSprites, TurtleSprites } from '../../sprites/beachSprites';
 import type { LifeSoundSink } from '../types';
 
 const r = (min: number, max: number) => min + Math.random() * (max - min);
@@ -175,10 +175,23 @@ export class FishAndGulls {
     const alpha = 0.6 * (1 - env.lighting.darkness * 0.85);
     if (alpha < 0.05) return;
     const color = fishColor(env.lighting.ambient);
-    for (const f of this.school.fish) {
+    const flank = lerpColor(color, 0xb8d0d8, 0.45);
+    const flash = lerpColor(color, 0xffffff, 0.75);
+    const time = performance.now() / 1000;
+    this.school.fish.forEach((f, i) => {
       const p = this.toWorld(f.x, f.y);
-      g.rect(Math.round(p.x), Math.round(p.y), p.scale > 0.45 ? 2 : 1, 1).fill({ color, alpha });
-    }
+      const x = Math.round(p.x);
+      const y = Math.round(p.y);
+      // A little fish shape: dark back, paler flank, a tail flicking behind (it faces the way it swims).
+      const dir = f.vx >= 0 ? 1 : -1;
+      const big = p.scale > 0.45;
+      const len = big ? 3 : 2;
+      for (let k = 0; k < len; k++) g.rect(x + dir * k, y, 1, 1).fill({ color, alpha });
+      if (big) g.rect(x + dir, y + 1, 1, 1).fill({ color: flank, alpha: alpha * 0.8 });
+      g.rect(x - dir, y + (Math.floor(time * 6 + i) % 2), 1, 1).fill({ color, alpha: alpha * 0.7 });
+      // As a fish turns, its side catches the light for a moment.
+      if (Math.abs(f.vy) > Math.abs(f.vx) * 0.8 || Math.sin(time * 1.7 + i * 2.3) > 0.985) g.rect(x + dir, y, 1, 1).fill({ color: flash, alpha: Math.min(1, alpha * 1.4) });
+    });
   }
 
   private startHunt(): void {
@@ -269,7 +282,7 @@ interface Turtle {
 }
 
 /** A turtle's length right in front of the window (it shrinks with distance). */
-const TURTLE_LENGTH = 30;
+const TURTLE_LENGTH = 36;
 /** Crawling pace, ground px per second. */
 const CRAWL = 5;
 
@@ -351,7 +364,7 @@ interface Breach {
   sprite: Sprite;
 }
 
-const BREACH_FRAME = 0.22;
+const BREACH_FRAME = 0.17;
 
 export class Dolphins {
   private readonly sprites = new DolphinSprites();
@@ -387,7 +400,7 @@ export class Dolphins {
     for (const b of this.pod) {
       b.t += dt;
       const frame = Math.floor((b.t - b.delay) / BREACH_FRAME);
-      if (frame < 0 || frame > 3) {
+      if (frame < 0 || frame >= DOLPHIN_FRAMES) {
         b.sprite.visible = false;
         if (frame < 0) done = false;
         continue;
@@ -396,10 +409,10 @@ export class Dolphins {
       b.sprite.visible = true;
       b.sprite.texture = this.sprites.frames[frame];
       b.sprite.position.set(Math.round(b.x + frame * 2), BEACH_HORIZON + 5);
-      b.sprite.tint = frame === 3 ? lerpColor(tint, 0xffffff, 0.5) : tint;
+      b.sprite.tint = tint;
     }
     if (done) {
-      const nextX = this.pod[0].x + 26;
+      const nextX = this.pod[0].x + 34;
       for (const b of this.pod) b.sprite.destroy();
       this.pod.length = 0;
       if (--this.surfacings > 0) this.spawnPod(nextX, 0.8);
@@ -412,7 +425,7 @@ export class Dolphins {
       const sprite = new Sprite({ anchor: { x: 0, y: 1 } });
       sprite.visible = false;
       this.scene.horizonLayer.addChild(sprite);
-      this.pod.push({ x: x + i * 11, delay: pause + i * 0.35, t: 0, sprite });
+      this.pod.push({ x: x + i * 15, delay: pause + i * 0.35, t: 0, sprite });
     }
   }
 }

@@ -445,7 +445,8 @@ async function boot(): Promise<void> {
   }
 }
 
-boot().catch((error: unknown) => {
+if (location.hash.startsWith('#gallery')) void import('./dev/gallery').then((m) => m.showGallery());
+else boot().catch((error: unknown) => {
   console.error(error);
   document.body.insertAdjacentHTML(
     'beforeend',
