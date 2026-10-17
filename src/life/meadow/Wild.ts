@@ -1,10 +1,10 @@
-import { Container, Graphics, Sprite } from 'pixi.js';
+import { Container, Sprite } from 'pixi.js';
 import { WORLD_WIDTH } from '../../config';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import { FOCAL } from '../../sim/groundPlane';
 import { meadowCreek, meadowPlane } from '../../sim/meadowGeometry';
-import { fireflyLevel, rabbitActivity } from '../../sim/wildlife';
+import { rabbitActivity } from '../../sim/wildlife';
 import { BirdSpriteCache } from '../../sprites/birdSprites';
 import { RABBIT_HOP, RabbitSprites, TOP_FISH_HEADINGS, TopFishSprites, type FishKind, type RabbitPose } from '../../sprites/meadowSprites';
 import type { LifeSoundSink } from '../types';
@@ -271,57 +271,6 @@ export class SoaringEagle {
       this.sprite.destroy();
       this.sprite = null;
       this.timer = r(90, 200);
-    }
-  }
-}
-
-// --- Fireflies ------------------------------------------------------------
-
-interface Firefly {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  phase: number;
-  on: number;
-  off: number;
-}
-
-export class Fireflies {
-  private readonly flies: Firefly[] = [];
-
-  constructor(private readonly graphics: Graphics) {
-    graphics.blendMode = 'add';
-    for (let i = 0; i < 34; i++) {
-      this.flies.push({ x: r(0, WORLD_WIDTH), y: r(meadowPlane.horizonY + 30, 330), vx: r(-3, 3), vy: r(-1, 1), phase: Math.random() * 4, on: r(0.3, 0.6), off: r(1, 4) });
-    }
-  }
-
-  update(dt: number, env: Environment): void {
-    const g = this.graphics;
-    g.clear();
-    const level = fireflyLevel(env.lighting.hours, env.lighting.darkness, env.weather.kind === 'rain' && env.weather.precipitation > 0.05);
-    if (level <= 0) return;
-    const count = Math.round(this.flies.length * level);
-    for (let i = 0; i < count; i++) {
-      const f = this.flies[i];
-      f.phase += dt;
-      if (f.phase > f.on + f.off) f.phase = 0;
-      f.vx += r(-6, 6) * dt;
-      f.vy += r(-4, 4) * dt;
-      f.vx = Math.max(-5, Math.min(5, f.vx));
-      f.vy = Math.max(-2, Math.min(2, f.vy));
-      f.x = (f.x + f.vx * dt + WORLD_WIDTH) % WORLD_WIDTH;
-      f.y = Math.max(meadowPlane.horizonY + 20, Math.min(334, f.y + f.vy * dt));
-      if (f.phase > f.on) continue;
-      // Glow swells and fades within each flash.
-      const glow = Math.sin((f.phase / f.on) * Math.PI);
-      const x = Math.round(f.x);
-      const y = Math.round(f.y);
-      g.rect(x - 1, y - 1, 3, 3).fill({ color: 0x8ac83a, alpha: glow * 0.3 });
-      g.rect(x - 1, y, 3, 1).fill({ color: 0xc8f05a, alpha: glow * 0.6 });
-      g.rect(x, y - 1, 1, 3).fill({ color: 0xc8f05a, alpha: glow * 0.6 });
-      g.rect(x, y, 1, 1).fill({ color: 0xf4ffa0, alpha: glow });
     }
   }
 }

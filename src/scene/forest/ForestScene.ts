@@ -111,6 +111,10 @@ export class ForestScene implements WorldScene {
    */
   readonly midground = new Container({ label: 'midground', sortableChildren: true });
   readonly birdsMid = new Container({ label: 'birds-mid' });
+  /** Elk on the far slopes, in front of the mountains and behind the wooded valley. */
+  readonly slopeLife = new Container({ label: 'slope-life' });
+  /** Fireflies and eyes in the dark: over the clearing's plants, behind the framing trunks. */
+  readonly nightLife = new Container({ label: 'night-life' });
   readonly birdsNear = new Container({ label: 'birds-near' });
   readonly layout: ForestLayout;
 
@@ -179,11 +183,13 @@ export class ForestScene implements WorldScene {
       this.sky.container,
       this.far.container,
       this.mountains.container,
+      this.slopeLife,
       this.valley.container,
       this.birdsFar,
       this.weatherBack,
       this.ground.container,
       this.midground,
+      this.nightLife,
       this.birdsMid,
       this.near.container,
       this.birdsNear,

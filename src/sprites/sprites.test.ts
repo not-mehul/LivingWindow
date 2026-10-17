@@ -7,6 +7,7 @@ import { drawDeerSized, drawSquirrelSized } from './forestSprites';
 import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
 import { drawBusker, drawPerson, randomLook } from './people';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from './vehicleSprites';
+import { drawBat, drawBear, drawButterfly, drawFox, drawMushroom, drawWoodpeckerCling } from './wildSprites';
 import { drawStallLightsSized, drawStallSized, STALL_STAGES, type StallKind } from './streetSprites';
 
 const POSES: BirdPose[] = ['idle', 'idle-breathe', 'look-up', 'look-back', 'peck-reach', 'peck-down', 'chirp', 'hop', 'fly-up', 'fly-mid', 'fly-down', 'glide', 'sleep'];
@@ -196,5 +197,28 @@ describe('landscape creatures', () => {
     }
     for (const w of [8, 14, 20, 36, 54]) for (const f of [0, 1, 2] as const) expect(drawTurtleSized(f, w).grid.isEmpty()).toBe(false);
     for (let f = 0; f < DOLPHIN_FRAMES; f++) expect(drawDolphinSized(f).grid.isEmpty()).toBe(false);
+  });
+});
+
+describe('wild creatures', () => {
+  it('draws the fox in every pose and size, feet on the ground', () => {
+    for (const h of [6, 10, 16, 22, 30]) {
+      for (const pose of ['trot-1', 'trot-2', 'trot-3', 'trot-4', 'sniff', 'sit', 'crouch', 'pounce', 'run-1', 'run-2'] as const) {
+        const { grid } = drawFox(pose, h);
+        expect(grid.isEmpty(), `${pose} ${h}`).toBe(false);
+        expect(grid.height).toBe(h);
+      }
+    }
+  });
+
+  it('draws hares, bats, bears, butterflies, woodpeckers and mushrooms', () => {
+    for (const h of [8, 14, 22]) for (const pose of ['sit', 'alert', 'hop-1', 'peek'] as const) expect(drawRabbitSized(pose, h, 'hare').grid.isEmpty()).toBe(false);
+    // A hare's black-tipped ears make it differ from a rabbit.
+    expect([...drawRabbitSized('sit', 20, 'hare').grid.data].join()).not.toBe([...drawRabbitSized('sit', 20).grid.data].join());
+    for (const n of [4, 8, 14]) for (const f of [0, 1, 2]) expect(drawBat(f, n).grid.isEmpty()).toBe(false);
+    for (const h of [6, 12, 24]) for (const pose of ['walk-1', 'walk-3', 'sniff'] as const) expect(drawBear(pose, h).grid.isEmpty()).toBe(false);
+    for (const kind of ['monarch', 'white', 'blue', 'brimstone'] as const) for (const n of [4, 6, 9, 14]) for (const f of [0, 1, 2]) expect(drawButterfly(kind, f, n).grid.isEmpty()).toBe(false);
+    for (const n of [5, 8, 13]) for (const f of [0, 1]) expect(drawWoodpeckerCling(f, n).grid.isEmpty()).toBe(false);
+    for (const kind of ['fly-agaric', 'bolete', 'cluster'] as const) for (const n of [3, 6, 10]) expect(drawMushroom(kind, n).grid.isEmpty()).toBe(false);
   });
 });

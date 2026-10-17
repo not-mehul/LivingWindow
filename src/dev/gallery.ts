@@ -5,6 +5,7 @@ import { drawBird, SPECIES, type SpeciesId } from '../sprites/birdSprites';
 import { DOLPHIN_FRAMES, drawDolphinSized, drawTurtleSized } from '../sprites/beachSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
 import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type RabbitPose } from '../sprites/meadowSprites';
+import { drawBat, drawBear, drawButterfly, drawFox, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind } from '../sprites/wildSprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from '../sprites/vehicleSprites';
 import { drawStallLightsSized, drawStallSized, STALL_LIGHT_PALETTE, type StallKind } from '../sprites/streetSprites';
 
@@ -76,6 +77,21 @@ function sections(): Section[] {
   );
   vehicles.push([10, 16, 22, 30, 40].flatMap((h) => [0, 1].map((f) => ({ label: `busker ${h}/${f}`, draw: () => drawBusker(looks[2], f, h) }))));
   out.push({ title: 'Vehicles', rows: vehicles });
+
+  const foxPoses: FoxPose[] = ['trot-1', 'trot-2', 'trot-3', 'trot-4', 'sniff', 'sit', 'crouch', 'pounce', 'run-1', 'run-2'];
+  out.push({
+    title: 'Wild',
+    rows: [
+      [8, 12, 16, 20, 28, 36].map((h) => ({ label: `fox ${h}`, draw: () => drawFox('trot-1', h) })),
+      foxPoses.map((pose) => ({ label: pose, draw: () => drawFox(pose, 26) })),
+      [10, 14, 20].flatMap((h) => (['sit', 'alert', 'hop-1', 'hop-2'] as const).map((pose) => ({ label: `hare ${pose} ${h}`, draw: () => drawRabbitSized(pose, h, 'hare') }))),
+      [6, 8, 12, 16].flatMap((n) => [0, 1, 2].map((f) => ({ label: `bat ${n}/${f}`, draw: () => drawBat(f, n) }))),
+      [8, 12, 18, 24].flatMap((h) => (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'sniff'] as BearPose[]).map((pose) => ({ label: `bear ${pose} ${h}`, draw: () => drawBear(pose, h) }))),
+      (['monarch', 'white', 'blue', 'brimstone'] as ButterflyKind[]).flatMap((kind) => [4, 6, 9].flatMap((n) => [0, 1, 2].map((f) => ({ label: `${kind[0]}${n}/${f}`, draw: () => drawButterfly(kind, f, n) })))),
+      [6, 8, 12, 16].flatMap((n) => [0, 1].map((f) => ({ label: `wp ${n}/${f}`, draw: () => drawWoodpeckerCling(f, n) }))),
+      (['fly-agaric', 'bolete', 'cluster'] as MushroomKind[]).flatMap((kind) => [3, 5, 8, 12].map((n) => ({ label: `${kind} ${n}`, draw: () => drawMushroom(kind, n) }))),
+    ],
+  });
 
   const cows: Item[][] = [];
   const cowPoses: CowPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'lie'];

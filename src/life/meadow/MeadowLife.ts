@@ -1,11 +1,14 @@
+import { WORLD_WIDTH } from '../../config';
 import type { LandscapeDeps, SceneLife, SillBase } from '../../landscapes/types';
 import type { Environment } from '../../scene/Environment';
 import type { MeadowScene } from '../../scene/meadow/MeadowScene';
+import { meadowPlane } from '../../sim/meadowGeometry';
 import { owlActivity } from '../../sim/wildlife';
 import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
+import { Fireflies } from '../common/Fireflies';
 import { TrunkSquirrels } from '../forest/TrunkSquirrels';
 import { Chickens, CowHerd } from './Farm';
-import { Fireflies, Rabbits, SoaringEagle, StreamFishes } from './Wild';
+import { Rabbits, SoaringEagle, StreamFishes } from './Wild';
 
 export const MEADOW_ECOLOGY: BirdEcology = {
   mix: (hours) => {
@@ -54,7 +57,7 @@ export class MeadowLife implements SceneLife {
     this.rabbits = new Rabbits(scene.bushes, scene.midground);
     this.fish = new StreamFishes(scene.creekLife);
     this.eagle = new SoaringEagle(scene.birdsFar, deps.viewport, deps.sound);
-    this.fireflies = new Fireflies(scene.nightLayer);
+    this.fireflies = new Fireflies(scene.nightLayer, { x0: 0, x1: WORLD_WIDTH, y0: meadowPlane.horizonY + 20, y1: 334 });
     this.squirrels = new TrunkSquirrels(scene.trunks, { mid: scene.midground, near: scene.midground }, deps.viewport, deps.sound);
   }
 

@@ -278,13 +278,17 @@ export const RABBIT_HOP: readonly RabbitPose[] = ['hop-1', 'hop-2', 'hop-3'];
  * tail, a dark eye with a glint. Sitting, sitting up alert, washing its
  * face, hopping (three frames), or just its head peeking from cover.
  */
-export function drawRabbitSized(pose: RabbitPose, height: number): Drawn {
+export function drawRabbitSized(pose: RabbitPose, height: number, species: 'rabbit' | 'hare' = 'rabbit'): Drawn {
   const H = Math.max(5, Math.round(height));
   const W = Math.round(H * 1.3);
   const g = new PixelGrid(W, H);
   const s = H / 16;
   const palette = new Palette();
-  const fur = palette.ramp(0x9a7c60);
+  const hare = species === 'hare';
+  // A hare is tawnier, with longer, black-tipped ears.
+  const fur = palette.ramp(hare ? 0xae8456 : 0x9a7c60);
+  const tips = hare ? palette.ramp(0x2a2018) : null;
+  const earLen = hare ? 8 : 6.5;
   const belly = palette.ramp(0xd8c8b0, 0.7);
   const ear = palette.ramp(0xd89890);
   const white = palette.ramp(0xf4f0ea, 0.5);
@@ -305,12 +309,12 @@ export function drawRabbitSized(pose: RabbitPose, height: number): Drawn {
   };
   if (pose === 'peek') {
     // Just a head and ears above the cover's edge.
-    drawRabbitHead(g, s, 12, 12.5, -0.2, { fur, ear, eyeInk, glint }, big);
+    drawRabbitHead(g, s, 12, 12.5, -0.2, { fur, ear, eyeInk, glint, earLen, tips }, big);
   } else {
     const sh = shapes[pose];
     const [bx, by, brx, bry, ba] = sh.body;
     // Far ear behind the head.
-    rabbitEar(g, s, sh.head, sh.ears - 0.25, fur, ear, true);
+    rabbitEar(g, s, sh.head, sh.ears - 0.25, fur, ear, true, earLen, tips);
     // Hind leg (when stretched out), then the body, the haunch, the belly.
     if (sh.hind) limb(g, [[sh.hind[0][0] * s, sh.hind[0][1] * s], [sh.hind[1][0] * s, sh.hind[1][1] * s]], 2.4 * s, 1.6 * s, fur, { bias: -0.6 });
     shadedEllipse(g, bx * s, by * s, brx * s, bry * s, fur, { dither, angle: ba });
@@ -324,25 +328,36 @@ export function drawRabbitSized(pose: RabbitPose, height: number): Drawn {
     limb(g, [[sh.front[0][0] * s, sh.front[0][1] * s], [sh.front[1][0] * s, sh.front[1][1] * s]], 1.6 * s, 1.3 * s, fur, { bias: 0.2 });
     // Cotton tail.
     shadedEllipse(g, sh.tail[0] * s, sh.tail[1] * s, Math.max(0.7, 1.4 * s), Math.max(0.7, 1.3 * s), white, { dither: false });
-    drawRabbitHead(g, s, sh.head[0], sh.head[1], sh.ears, { fur, ear, eyeInk, glint }, big);
+    drawRabbitHead(g, s, sh.head[0], sh.head[1], sh.ears, { fur, ear, eyeInk, glint, earLen, tips }, big);
   }
   if (big) selOut(g, palette, { bottomHeavy: true });
   return { grid: g, palette };
 }
 
-function rabbitEar(g: PixelGrid, s: number, head: Pt, angle: number, fur: Ramp, inner: Ramp, far: boolean): void {
+function rabbitEar(g: PixelGrid, s: number, head: Pt, angle: number, fur: Ramp, inner: Ramp, far: boolean, len = 6.5, tips: Ramp | null = null): void {
   // Ears sweep up and back from the crown; `angle` 0 is straight up, negative leans back.
-  const len = 6.5;
   const bx = head[0] - 1;
   const by = head[1] - 1.2;
   const tip: Pt = [(bx + Math.sin(angle) * len) * s, (by - Math.cos(angle) * len) * s];
   limb(g, [[bx * s, by * s], tip], 1.8 * s, 1.2 * s, fur, { bias: far ? -1 : 0 });
+  if (tips) {
+    const k = len - 1.6;
+    limb(g, [[(bx + Math.sin(angle) * k) * s, (by - Math.cos(angle) * k) * s], tip], 1.3 * s, 1.1 * s, tips, { bias: far ? -1 : 0 });
+  }
   if (!far && s >= 0.8) limb(g, [[(bx + 0.2) * s, (by - 0.8) * s], [(bx + Math.sin(angle) * (len - 1.5)) * s, (by - Math.cos(angle) * (len - 1.5)) * s]], 0.8 * s, 0.6 * s, inner, { max: 3 });
 }
 
-function drawRabbitHead(g: PixelGrid, s: number, hx: number, hy: number, ears: number, r: { fur: Ramp; ear: Ramp; eyeInk: number; glint: number }, big: boolean): void {
+function drawRabbitHead(
+  g: PixelGrid,
+  s: number,
+  hx: number,
+  hy: number,
+  ears: number,
+  r: { fur: Ramp; ear: Ramp; eyeInk: number; glint: number; earLen: number; tips: Ramp | null },
+  big: boolean,
+): void {
   shadedEllipse(g, hx * s, hy * s, 2.9 * s, 2.5 * s, r.fur, { dither: false, angle: 0.25 });
-  rabbitEar(g, s, [hx, hy], ears, r.fur, r.ear, false);
+  rabbitEar(g, s, [hx, hy], ears, r.fur, r.ear, false, r.earLen, r.tips);
   // Eye with a glint, and a pink nose.
   const ex = Math.floor((hx + 0.4) * s);
   const ey = Math.floor((hy - 0.6) * s);
@@ -358,12 +373,12 @@ function drawRabbitHead(g: PixelGrid, s: number, hx: number, hy: number, ears: n
 export class RabbitSprites {
   private readonly cache = new Map<string, Texture>();
 
-  get(pose: RabbitPose, height: number): Texture {
+  get(pose: RabbitPose, height: number, species: 'rabbit' | 'hare' = 'rabbit'): Texture {
     const h = evenSize(height, 6);
-    const key = `${pose}:${h}`;
+    const key = `${species}:${pose}:${h}`;
     let t = this.cache.get(key);
     if (!t) {
-      const { grid, palette } = drawRabbitSized(pose, h);
+      const { grid, palette } = drawRabbitSized(pose, h, species);
       t = gridToTexture(grid, palette.colors);
       this.cache.set(key, t);
     }

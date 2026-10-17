@@ -564,6 +564,31 @@ const fireworkPop: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return 1.6;
 };
 
+const foxBark: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  // A fox's hoarse "wow-wow": two or three harsh, rising-falling yelps.
+  const yelps = 2 + Math.floor(Math.random() * 2);
+  let t = when;
+  for (let i = 0; i < yelps; i++) {
+    const band = ctx.createBiquadFilter();
+    band.type = 'bandpass';
+    band.Q.value = 3;
+    band.frequency.value = 1400 * rate;
+    band.connect(out);
+    const [osc, amp] = tone(ctx, 'sawtooth', band);
+    const f = rand(520, 640) * rate;
+    const length = rand(0.14, 0.2);
+    osc.frequency.setValueAtTime(f * 0.8, t);
+    osc.frequency.linearRampToValueAtTime(f * 1.25, t + length * 0.35);
+    osc.frequency.exponentialRampToValueAtTime(f * 0.7, t + length);
+    envelope(amp.gain, t, 0.01, 0.28 * gain, length);
+    osc.start(t);
+    osc.stop(t + length + 0.05);
+    noiseBurst(ctx, noise, band, t, length * 0.8, { type: 'highpass', frequency: 900 }, 0.08 * gain, 0.005);
+    t += length + rand(0.18, 0.32);
+  }
+  return t - when;
+};
+
 export const SYNTH_VOICES = {
   'sparrow-chirp': sparrowChirp,
   'pigeon-coo': pigeonCoo,
@@ -593,5 +618,6 @@ export const SYNTH_VOICES = {
   'chicken-cluck': chickenCluck,
   'guitar-strum': guitarStrum,
   'firework-pop': fireworkPop,
+  'fox-bark': foxBark,
   splash,
 } satisfies Record<string, SynthVoice>;

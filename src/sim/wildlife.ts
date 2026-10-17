@@ -137,3 +137,65 @@ export function fireworksTime(hours: number): boolean {
   const h = wrap(hours);
   return h >= 21 && h < 22;
 }
+
+// --- The woods and fields after dark, and their small life ------------------
+
+/** Foxes hunt at dusk, through the night and at dawn, and are rarely seen by day. */
+export function foxActivity(hours: number): number {
+  const h = wrap(hours);
+  const near = (c: number, w: number) => Math.max(0, 1 - Math.abs(h - c) / w);
+  return Math.max(h >= 21 || h < 5 ? 0.45 : 0.06, near(6, 1.6), near(19.8, 1.8));
+}
+
+/** Bats hunt insects at dusk and into the night, and again before dawn; never in rain. */
+export function batActivity(hours: number, raining: boolean): number {
+  if (raining) return 0;
+  const h = wrap(hours);
+  if (h >= 19.3 && h < 22) return 1;
+  if (h >= 22 || h < 3) return 0.4;
+  if (h >= 4 && h < 5.4) return 0.6;
+  return 0;
+}
+
+/** Butterflies fly in warm sunshine. */
+export function butterflyActivity(hours: number, cloudCover: number, raining: boolean): number {
+  const h = wrap(hours);
+  if (raining || h < 8.5 || h >= 18) return 0;
+  const ramp = Math.min(1, (h - 8.5) / 1.5, (18 - h) / 1.5);
+  return Math.max(0, ramp * (1 - cloudCover * 0.85));
+}
+
+/** Woodpeckers drum through the morning, less into the afternoon. */
+export function woodpeckerActivity(hours: number): number {
+  const h = wrap(hours);
+  if (h >= 6.5 && h < 13) return 1;
+  if (h >= 13 && h < 18) return 0.4;
+  return 0;
+}
+
+/** Eyes shine in the undergrowth only when it's properly dark. */
+export function nightEyesLevel(darkness: number): number {
+  return Math.max(0, Math.min(1, (darkness - 0.72) * 4));
+}
+
+/** A black bear wanders through the valley now and then, mostly in the morning and evening. */
+export function bearActivity(hours: number): number {
+  const h = wrap(hours);
+  if ((h >= 6 && h < 9) || (h >= 17 && h < 20)) return 1;
+  if (h >= 9 && h < 17) return 0.3;
+  return 0;
+}
+
+/** Elk graze the far slopes in the early light. */
+export function elkOut(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 5 && h < 7.8;
+}
+
+/** How many mushrooms are up (0..1), given the hours since a good rain: they push up, stand a day, and go over. */
+export function mushroomLevel(hoursSinceRain: number): number {
+  if (!Number.isFinite(hoursSinceRain) || hoursSinceRain < 0) return 0;
+  if (hoursSinceRain < 1.5) return hoursSinceRain / 1.5;
+  if (hoursSinceRain < 12) return 1;
+  return Math.max(0, 1 - (hoursSinceRain - 12) / 8);
+}

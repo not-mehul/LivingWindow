@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  batActivity,
+  bearActivity,
+  butterflyActivity,
+  elkOut,
+  foxActivity,
+  mushroomLevel,
+  nightEyesLevel,
+  woodpeckerActivity,
   blimpOut,
   buskerOut,
   chickensOut,
@@ -101,5 +109,44 @@ describe('city rhythm', () => {
     expect(fireworksNight('2026-10-17#3')).toBe(fireworksNight('2026-10-17#3'));
     expect(fireworksTime(21.5)).toBe(true);
     expect(fireworksTime(23)).toBe(false);
+  });
+});
+
+describe('woods and fields', () => {
+  it('has foxes about at dusk, dawn and night more than by day', () => {
+    expect(foxActivity(19.8)).toBeGreaterThan(0.9);
+    expect(foxActivity(6)).toBeGreaterThan(0.9);
+    expect(foxActivity(1)).toBeGreaterThan(foxActivity(13));
+  });
+
+  it('flies bats at dusk but not by day or in the rain', () => {
+    expect(batActivity(20, false)).toBe(1);
+    expect(batActivity(20, true)).toBe(0);
+    expect(batActivity(13, false)).toBe(0);
+  });
+
+  it('flies butterflies in sunshine only', () => {
+    expect(butterflyActivity(13, 0, false)).toBeGreaterThan(0.9);
+    expect(butterflyActivity(13, 1, false)).toBeLessThan(0.2);
+    expect(butterflyActivity(13, 0, true)).toBe(0);
+    expect(butterflyActivity(21, 0, false)).toBe(0);
+  });
+
+  it('keeps woodpeckers, bears and elk to their hours, and eyes to the dark', () => {
+    expect(woodpeckerActivity(9)).toBe(1);
+    expect(woodpeckerActivity(22)).toBe(0);
+    expect(bearActivity(7)).toBe(1);
+    expect(bearActivity(2)).toBe(0);
+    expect(elkOut(6)).toBe(true);
+    expect(elkOut(12)).toBe(false);
+    expect(nightEyesLevel(0.2)).toBe(0);
+    expect(nightEyesLevel(1)).toBe(1);
+  });
+
+  it('brings mushrooms up after rain and lets them go over', () => {
+    expect(mushroomLevel(Infinity)).toBe(0);
+    expect(mushroomLevel(0.5)).toBeGreaterThan(0);
+    expect(mushroomLevel(6)).toBe(1);
+    expect(mushroomLevel(30)).toBe(0);
   });
 });
