@@ -125,6 +125,7 @@ export class ForestScene implements WorldScene {
   private readonly ground: DayNightSprite;
   private readonly near: DayNightSprite;
   private readonly trees: Tree[] = [];
+  private readonly stills: Array<{ sprite: Sprite; haze: number }> = [];
   private readonly canopy: SwayMesh[] = [];
   private readonly ferns: SwayMesh[] = [];
   private readonly canopyLayer = new Container();
@@ -148,8 +149,18 @@ export class ForestScene implements WorldScene {
 
     const leafy = (piece: Placed, seed: number) =>
       piece.leaves && piece.leaves.length ? rustleTextures(piece.art, piece.leaves, seed) : undefined;
-    const midMeshes: SwayMesh[] = [];
+    const midMeshes: Array<SwayMesh | undefined> = [];
     for (const [i, tree] of [...layout.midTrees, ...layout.floorPlants].entries()) {
+      if (tree.still) {
+        // Bare trunks, rocks and things far off: drawn still, tinted like the rest.
+        const sprite = new Sprite(tree.art.toTexture());
+        sprite.position.set(tree.x, tree.y);
+        sprite.zIndex = tree.baseY;
+        this.midground.addChild(sprite);
+        this.stills.push({ sprite, haze: tree.haze });
+        midMeshes.push(undefined);
+        continue;
+      }
       const sway = new SwayMesh(tree.art.toTexture(), { anchor: 'bottom', amplitude: 1 + tree.art.height / 90, rustle: leafy(tree, i) });
       sway.mesh.position.set(tree.x, tree.y);
       sway.mesh.zIndex = tree.baseY;
@@ -247,6 +258,7 @@ export class ForestScene implements WorldScene {
       tree.sway.mesh.tint = lerpColor(foliage, lighting.haze, tree.haze);
       tree.sway.update(time, wind);
     }
+    for (const still of this.stills) still.sprite.tint = lerpColor(foliage, lighting.haze, still.haze);
     this.near.update(lighting.ambient, lighting);
     // The canopy and undergrowth sit in shade.
     const shade = scaleColor(foliage, 0.85);

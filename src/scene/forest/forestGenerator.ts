@@ -9,6 +9,7 @@ import { depthForScale } from '../../sim/perspective';
 import { pixelHash } from '../../sprites/raster';
 import { ditherRamp, valueNoise } from '../common/paint';
 import { BROADLEAF, CONIFER, drawBroadleaf, drawConifer, drawTallPine, hazePalette, type TreePalette } from '../common/trees';
+import { drawBirch, drawCanopyClump, drawFoxglove, drawMossStrand, drawRock, drawShrub, drawSnag, drawTrunkColumn, type BarkKind } from './forestFlora';
 
 /**
  * The deep forest, after the reference drawing: from a cabin on a wooded
@@ -79,6 +80,8 @@ export interface MidTree extends Placed {
   baseY: number;
   /** How much of the haze tint this tree takes (further = more). */
   haze: number;
+  /** It doesn't sway (a bare trunk column, a rock, something too far off to see move). */
+  still?: boolean;
 }
 
 export interface ForestLayout {
@@ -309,6 +312,8 @@ function limb(
   }
 }
 
+/** The deep wood's shade, which far trunks fade into (darker and greener than the valley's haze). */
+const WOOD_HAZE = 0x6e8c84;
 const OAK_BARK = { light: 0x8a7258, base: 0x6a5440, dark: 0x4a3a2c, deep: 0x2e241c };
 const PINE_BARK = { light: 0x9a6a4a, base: 0x7a4e36, dark: 0x543424, deep: 0x342016 };
 const MOSS = 0x6a8a3a;
@@ -382,6 +387,7 @@ function drawFern(rng: () => number, scale: number): PixelBuffer {
 }
 
 const FERN_LEAVES = [0x3e6a34, 0x88b064, 0x5e8c46, 0x3a5e30];
+const HOLLY_LEAVES = [0x1e3a24, 0x2a4e2e, 0x3a6a3a, 0x5a8a50];
 
 /** A clump of wildflowers: stems and leaves with daisies or purple blooms. */
 function drawFlowers(rng: () => number, kind: 'daisy' | 'violet'): PixelBuffer {
@@ -413,7 +419,7 @@ function drawFlowers(rng: () => number, kind: 'daisy' | 'violet'): PixelBuffer {
 
 // --- Layout -----------------------------------------------------------------
 
-export function generateForest(seed = 3141): ForestLayout {
+export function generateForest(seed = 3141, date = new Date()): ForestLayout {
   const rng = createRng(seed);
   const ledges: Ledge[] = [];
   const trunks: Trunk[] = [];
@@ -512,76 +518,116 @@ export function generateForest(seed = 3141): ForestLayout {
     }
   }
 
-  // --- Trees: a whole wood scattered over the ground plane ---
+  // --- The wood: trunks in receding rows, trees with their crowns in view, and the floor's plants ---
   const midTrees: MidTree[] = [];
   const floorPlants: MidTree[] = [];
   const obstacles: Obstacle[] = [];
   const attachments: Attachment[] = [];
   const PINE: TreePalette = { ...CONIFER, bark: 0x8a5a3c, barkDark: 0x5a3626 };
-  const treeRng = createRng(seed + 5);
+  const month = date.getMonth();
   // Near the middle, treetops must stay below the valley so the vista stays open.
   const vistaLimit = (x: number) => {
     const d = Math.abs(x - 440);
     return d < 150 ? 212 : 212 - (d - 150) * 1.6;
   };
-  /** Pines in the front rows of the middle hold their crowns above the view: just trunks cross the vista. */
-  const PINE_CROWN_BOTTOM = 16;
-  const MAX_FRONT_PINES = 4;
-  let frontPines = 0;
-  type Kind = 'spruce' | 'broad' | 'pine';
-  const placed: Array<{ x: number; y: number; r: number; s: number; kind: Kind; height: number; seed: number }> = [];
-  for (let attempt = 0; attempt < 3000 && placed.length < 44; attempt++) {
-    const y = BROW_Y + 2 + treeRng() * 80;
-    const x = 40 + treeRng() * 780;
+  /** The narrow gap onto the valley that nothing tall may cross. */
+  const inVista = (x: number) => Math.abs(x - 440) < 72;
+  const hazeAtY = (y: number) => Math.max(0, Math.min(0.55, 0.78 - forestPlane.scaleAtY(y)));
+  type Spot = { x: number; y: number; r: number };
+  const taken: Spot[] = [];
+  const clear = (x: number, y: number, r: number) => !taken.some((t) => Math.abs(t.x - x) < (t.r + r) * 0.9 && Math.abs(t.y - y) < 6 + 10 * forestPlane.scaleAtY(y));
+  const addTrunk = (trunk: Trunk, index: number | null, x: number) => {
+    trunks.push(trunk);
+    if (index !== null) attachments.push({ target: trunk, group: 'mid', index, x, y: 0 });
+  };
+
+  // Columns: trunks rising out of the top of the view (their crowns are the canopy overhead), in three rows
+  // that grow slimmer and mistier with distance, leaving the vista open between the two great pines.
+  const colRng = createRng(seed + 4);
+  const columns: Array<{ x: number; y: number; width: number; kind: BarkKind }> = [
+    { x: 352, y: 334, width: 30, kind: 'pine' },
+    { x: 530, y: 330, width: 28, kind: 'pine' },
+  ];
+  const bands = [
+    { y0: 316, y1: 336, w0: 20, w1: 30, count: 5 },
+    { y0: 288, y1: 314, w0: 10, w1: 18, count: 9 },
+    { y0: 264, y1: 286, w0: 4, w1: 9, count: 14 },
+  ];
+  const kinds: BarkKind[] = ['pine', 'pine', 'pine', 'oak', 'oak', 'beech', 'pine', 'birch', 'oak'];
+  for (const b of bands) {
+    let placedHere = 0;
+    for (let attempt = 0; attempt < 400 && placedHere < b.count; attempt++) {
+      const x = 96 + colRng() * 690;
+      const y = b.y0 + colRng() * (b.y1 - b.y0);
+      const width = b.w0 + colRng() * (b.w1 - b.w0);
+      if (Math.abs(x - 440) < 96 + width || inGlade(x, y, 20)) continue;
+      if (columns.some((c) => Math.abs(c.x - x) < (c.width + width) * 0.8 + 6 && Math.abs(c.y - y) < 18)) continue;
+      columns.push({ x, y, width, kind: kinds[Math.floor(colRng() * kinds.length)] });
+      placedHere++;
+    }
+  }
+  columns.sort((a, b) => a.y - b.y);
+  for (const c of columns) {
+    const haze = hazeAtY(c.y) * 0.9;
+    const roll = colRng();
+    const col = drawTrunkColumn(c.kind, c.width, c.y + 6, Math.floor(colRng() * 1e6), haze, WOOD_HAZE, {
+      ivy: c.kind !== 'birch' && roll < 0.3,
+      fungus: c.kind === 'beech' && roll > 0.6,
+      stubs: roll > 0.45,
+    });
+    midTrees.push({ art: col.buffer, x: Math.round(c.x - col.baseX), y: Math.round(c.y - col.baseY), baseY: Math.round(c.y), haze: haze * 0.35, still: true });
+    taken.push({ x: c.x, y: c.y, r: c.width / 2 + 4 });
+    const { gx, depth } = forestPlane.unproject(c.x, c.y);
+    obstacles.push({ gx, depth, r: (c.width / 2 + 3) / forestPlane.scaleAtY(c.y) + 8 });
+    if (c.width >= 6) {
+      addTrunk({ x: Math.round(c.x), width: Math.round(c.width), top: 6, bottom: Math.round(c.y), layer: 'mid', squirrelSize: Math.max(5, Math.round(16 * forestPlane.scaleAtY(c.y))) }, null, 0);
+    }
+  }
+
+  // Trees with their crowns in view: spruces, broadleaves, silver birches and the odd dead snag.
+  const treeRng = createRng(seed + 5);
+  type Kind = 'spruce' | 'broad' | 'pine' | 'birch' | 'snag';
+  const crowned: Array<{ x: number; y: number; s: number; kind: Kind; height: number; seed: number }> = [];
+  for (let attempt = 0; attempt < 4000 && crowned.length < 64; attempt++) {
+    const y = BROW_Y + 2 + treeRng() * 72;
+    const x = 20 + treeRng() * 800;
     const s = forestPlane.scaleAtY(y);
     if (inGlade(x, y, 24)) continue;
     const roll = treeRng();
-    const nearRow = y > 298;
-    const middle = Math.abs(x - 440) < 170;
-    let kind: Kind;
-    if (nearRow && middle) {
-      if (frontPines >= MAX_FRONT_PINES) continue;
-      kind = 'pine';
-    }
-    else if (nearRow) kind = roll < 0.45 ? 'pine' : roll < 0.75 ? 'broad' : 'spruce';
-    else kind = roll < 0.55 ? 'spruce' : roll < 0.82 ? 'broad' : 'pine';
-    const real =
-      kind === 'pine' ? 380 + treeRng() * 120 : kind === 'spruce' ? 230 + treeRng() * 110 : (nearRow ? 160 : 200) + treeRng() * (nearRow ? 60 : 90);
+    const kind: Kind = roll < 0.44 ? 'spruce' : roll < 0.74 ? 'broad' : roll < 0.82 ? 'birch' : roll < 0.93 ? 'pine' : 'snag';
+    const real = kind === 'pine' ? 380 : kind === 'spruce' ? 230 + treeRng() * 110 : kind === 'birch' ? 220 + treeRng() * 80 : kind === 'snag' ? 140 + treeRng() * 100 : 200 + treeRng() * 90;
     let height = real * s;
-    if (kind === 'pine' && nearRow && middle) {
-      // Tall enough that its crown clears the valley.
-      height = Math.max(height, (y - PINE_CROWN_BOTTOM) / 0.54);
-    } else if (nearRow && middle) {
-      continue;
-    } else {
-      // Respect the vista: draw a younger, shorter tree, or none at all.
-      const room = y - vistaLimit(x);
-      if (height > room) {
-        if (room < 30 * s || kind === 'pine') continue;
-        height = room;
-      }
+    // Respect the vista: draw a younger, shorter tree, or none at all.
+    const room = y - vistaLimit(x) - (inVista(x) ? 8 : 0);
+    if (height > room) {
+      if (room < 26 * s || kind === 'pine') continue;
+      height = room;
     }
-    // Spacing: a footprint that grows with size; trees at clearly different depths may overlap on screen.
-    const r = (kind === 'pine' ? height * (nearRow && middle ? 0.11 : 0.07) : kind === 'spruce' ? height * 0.2 : height * 0.16) + 3;
-    if (placed.some((p) => Math.abs(p.x - x) < (p.r + r) * 0.85 && Math.abs(p.y - y) < 8 + 10 * s)) continue;
-    placed.push({ x, y, r, s, kind, height, seed: Math.floor(treeRng() * 1e6) });
-    if (nearRow && middle) frontPines++;
+    const r = (kind === 'spruce' ? height * 0.2 : kind === 'birch' ? height * 0.12 : kind === 'snag' ? height * 0.05 : height * 0.16) + 3;
+    if (!clear(x, y, r)) continue;
+    taken.push({ x, y, r });
+    crowned.push({ x, y, s, kind, height, seed: Math.floor(treeRng() * 1e6) });
   }
-  placed.sort((a, b) => a.y - b.y);
-  for (const t of placed) {
-    const haze = Math.max(0, Math.min(0.5, 0.75 - t.s));
-    const base = t.kind === 'broad' ? BROADLEAF : t.kind === 'pine' ? PINE : CONIFER;
-    const pal = hazePalette(base, HAZE, haze * 0.6);
-    const tree =
-      t.kind === 'spruce' ? drawConifer(t.height, t.seed, pal) : t.kind === 'broad' ? drawBroadleaf(t.height, t.seed, pal) : drawTallPine(t.height, t.seed, pal);
+  crowned.sort((a, b) => a.y - b.y);
+  for (const t of crowned) {
+    const haze = hazeAtY(t.y) * 0.9;
+    const base = t.kind === 'broad' || t.kind === 'birch' ? BROADLEAF : t.kind === 'pine' ? PINE : CONIFER;
+    const pal = hazePalette(t.kind === 'birch' ? { ...BROADLEAF, light: 0x8ab85a, highlight: 0xa8cc72, base: 0x6a9a4a } : base, HAZE, haze * 0.6);
+    let tree: { buffer: PixelBuffer; baseX: number; baseY: number; tipX: number; tipY: number; perches: Array<{ x0: number; x1: number; y: number }> };
+    if (t.kind === 'birch') tree = { ...drawBirch(t.height, t.seed, pal, haze * 0.6, HAZE), perches: [] };
+    else if (t.kind === 'snag') {
+      const snag = drawSnag(t.height, t.seed, haze * 0.6, HAZE);
+      tree = { ...snag, tipX: snag.baseX, perches: [] };
+    } else tree = t.kind === 'spruce' ? drawConifer(t.height, t.seed, pal) : t.kind === 'broad' ? drawBroadleaf(t.height, t.seed, pal) : drawTallPine(t.height, t.seed, pal);
     const left = Math.round(t.x - tree.baseX);
     const top = Math.round(t.y - tree.baseY);
     const index = midTrees.length;
-    midTrees.push({ art: tree.buffer, x: left, y: top, baseY: Math.round(t.y), haze: haze * 0.4, leaves: t.kind === 'pine' ? undefined : leafColors(pal) });
+    const leafy = t.kind !== 'pine' && t.kind !== 'snag';
+    midTrees.push({ art: tree.buffer, x: left, y: top, baseY: Math.round(t.y), haze: haze * 0.4, leaves: leafy ? leafColors(pal) : undefined, still: t.kind === 'snag' });
     const tipZ = depthForScale(BIRD_SCALE * t.s);
     const perchOn = (ledge: Ledge, x: number, y: number) => {
       ledges.push(ledge);
-      attachments.push({ target: ledge, group: 'mid', index, x, y });
+      if (t.kind !== 'snag') attachments.push({ target: ledge, group: 'mid', index, x, y });
     };
     if (top + tree.tipY > 4) {
       perchOn({ x0: left + tree.tipX - 1, x1: left + tree.tipX + 1, y: top + tree.tipY, layer: 'mid', kind: 'treetop', z: tipZ }, tree.tipX, tree.tipY);
@@ -590,42 +636,82 @@ export function generateForest(seed = 3141): ForestLayout {
       if (top + perch.y > 4) perchOn({ x0: left + perch.x0, x1: left + perch.x1, y: top + perch.y, layer: 'mid', kind: 'branch', z: tipZ }, (perch.x0 + perch.x1) / 2, perch.y);
     }
     // Its footprint for the deer: a spruce's low skirt, or just a trunk.
-    const footprintPx = t.kind === 'spruce' ? t.height * 0.13 : t.kind === 'pine' ? t.height * 0.04 : t.height * 0.05;
+    const footprintPx = t.kind === 'spruce' ? t.height * 0.13 : t.height * 0.05;
     const { gx, depth } = forestPlane.unproject(t.x, t.y);
     obstacles.push({ gx, depth, r: footprintPx / t.s + 10 });
-    if (t.kind !== 'spruce' && t.height > 60) {
-      const trunk: Trunk = {
-        x: Math.round(t.x),
-        width: Math.max(3, Math.round(t.kind === 'pine' ? t.height * 0.054 : t.height * 0.06)),
-        top: Math.round(t.y - t.height * (t.kind === 'pine' ? 0.5 : 0.38)),
-        bottom: Math.round(t.y),
-        layer: 'mid',
-        squirrelSize: Math.max(5, Math.round(16 * t.s)),
-      };
-      trunks.push(trunk);
-      attachments.push({ target: trunk, group: 'mid', index, x: tree.baseX, y: 0 });
+    if ((t.kind === 'broad' || t.kind === 'pine' || t.kind === 'snag') && t.height > 60) {
+      addTrunk(
+        {
+          x: Math.round(t.x),
+          width: Math.max(3, Math.round(t.kind === 'pine' ? t.height * 0.054 : t.height * 0.06)),
+          top: Math.round(t.y - t.height * (t.kind === 'pine' ? 0.5 : t.kind === 'snag' ? 0.8 : 0.38)),
+          bottom: Math.round(t.y),
+          layer: 'mid',
+          squirrelSize: Math.max(5, Math.round(16 * t.s)),
+        },
+        t.kind === 'snag' ? null : index,
+        tree.baseX,
+      );
     }
   }
 
-  // Ferns and shrubs on the floor, sorted among the trunks (deer pass behind them).
+  // A line of small trees along the brow, where the wood drops into the valley: dark against the mist beyond.
+  const browRng = createRng(seed + 6);
+  for (let x = -4; x < WORLD_WIDTH + 4; x += 3 + browRng() * 6) {
+    const baseY = brow(x) + 2 + browRng() * 3;
+    const s = forestPlane.scaleAtY(baseY);
+    let h = (60 + browRng() * 140) * s;
+    const room = baseY - vistaLimit(x) - (inVista(x) ? 10 : 0);
+    if (room < 6) continue;
+    h = Math.min(h, room);
+    if (inVista(x) && browRng() < 0.5) continue;
+    const haze = 0.42 + browRng() * 0.1;
+    if (browRng() < 0.55) stampConifer(ground, x, baseY, h, hazePalette(CONIFER, HAZE, haze), Math.round(x));
+    else stampBlob(ground, x, baseY, h * 0.8, hazePalette(BROADLEAF, HAZE, haze), Math.round(x));
+    // Bare trunks between them.
+    if (browRng() < 0.35) for (let y = Math.round(baseY - h * 1.1); y < baseY; y++) ground.set(x + 3, y, lerpColor(0x4a3a2c, HAZE, haze));
+  }
+
+  // The floor: thick with ferns, holly and bramble, saplings, foxgloves and mossy boulders.
   const plantRng = createRng(seed + 9);
-  for (let attempt = 0; attempt < 400 && floorPlants.length < 30; attempt++) {
-    const y = BROW_Y + 6 + plantRng() * 70;
-    const x = 30 + plantRng() * 800;
-    if (inGlade(x, y, -10)) continue;
+  for (let attempt = 0; attempt < 1200 && floorPlants.length < 84; attempt++) {
+    const y = BROW_Y + 4 + plantRng() * 74;
+    const x = 10 + plantRng() * 820;
+    if (inGlade(x, y, -14)) continue;
     const s = forestPlane.scaleAtY(y);
     const haze = Math.max(0, 0.5 - s * 0.6);
+    const roll = plantRng();
     let art: PixelBuffer;
-    if (plantRng() < 0.55) {
-      art = drawFern(plantRng, Math.max(0.35, s * 1.1));
+    let leaves: readonly number[] | undefined;
+    let still = y < BROW_Y + 16;
+    if (roll < 0.4) {
+      art = drawFern(plantRng, Math.max(0.35, s * 1.15));
+      leaves = FERN_LEAVES;
+    } else if (roll < 0.52) {
+      art = drawShrub('holly', (26 + plantRng() * 16) * s, (20 + plantRng() * 12) * s, Math.floor(x * 7), haze, HAZE, month);
+      leaves = HOLLY_LEAVES.map((c) => lerpColor(c, HAZE, haze));
+    } else if (roll < 0.64) {
+      art = drawShrub('bramble', (34 + plantRng() * 20) * s, (16 + plantRng() * 10) * s, Math.floor(x * 7), haze, HAZE, month);
+    } else if (roll < 0.76) {
+      const pal = hazePalette(BROADLEAF, HAZE, haze);
+      const sap = drawBroadleaf((44 + plantRng() * 30) * s, Math.floor(x * 11), pal, false);
+      art = sap.buffer;
+      leaves = leafColors(pal);
+    } else if (roll < 0.84) {
+      if (month < 4 || month > 7) continue;
+      art = drawFoxglove(Math.max(0.3, s * 0.9), Math.floor(x));
+    } else if (roll < 0.92) {
+      art = drawRock((20 + plantRng() * 22) * s, (9 + plantRng() * 8) * s, Math.floor(x * 3), haze, HAZE);
+      still = true;
     } else {
       const h = (22 + plantRng() * 12) * s;
       art = new PixelBuffer(Math.ceil(h * 1.6) + 2, Math.ceil(h) + 2);
       const pal = hazePalette(BROADLEAF, HAZE, haze);
       for (let k = 0; k < 3; k++) stampBlob(art, art.width / 2 + (k - 1) * h * 0.45, art.height - 1 - (k === 1 ? 0 : 1), h * (k === 1 ? 1 : 0.8), pal, Math.floor(x) + k);
       art.outline(BROADLEAF.ink);
+      leaves = leafColors(pal);
     }
-    floorPlants.push({ art, x: Math.round(x - art.width / 2), y: Math.round(y - art.height + 1), baseY: Math.round(y), haze: haze * 0.5 });
+    floorPlants.push({ art, x: Math.round(x - art.width / 2), y: Math.round(y - art.height + 1), baseY: Math.round(y), haze: haze * 0.5, leaves, still });
   }
 
   // Robins hop about the glade and the floor.
@@ -726,8 +812,19 @@ export function generateForest(seed = 3141): ForestLayout {
   // Ink the near layer's silhouettes for the hand-drawn look.
   near.outline(INK);
 
-  // --- Pine boughs and oak foliage hanging into the top of the view ---
+  // --- The canopy: a roof of leaves overhead, pine boughs, the oak's foliage, and moss hanging from it all ---
   const canopy: Placed[] = [];
+  // Behind everything, the crowns of the trunks rising out of the view: a dark, shaded roof, deepest at the
+  // sides and thinning over the vista (where the sky shows between the leaves).
+  const shadeRoof = (p: TreePalette, k: number): TreePalette => hazePalette(p, 0x14221a, k);
+  for (let x = -30, i = 0; x < WORLD_WIDTH + 30; x += 44 + randomRange(rng, 0, 22), i++) {
+    const over = Math.abs(x + 50 - 440);
+    // How far down it hangs into the view (the frame hides the top 20 px or so).
+    const depth = over < 80 ? 46 : over < 170 ? 70 : 96 + randomRange(rng, 0, 26);
+    const w = randomRange(rng, 100, 140);
+    const art = drawCanopyClump(Math.round(w), Math.round(depth + 16), shadeRoof(i % 3 ? BROADLEAF : CONIFER, 0.5), rng, 14, 300 + i);
+    canopy.push({ art, x, y: -16 - randomRange(rng, 0, 8), anchor: 'top', tree: 10 + Math.floor(x / 160), leaves: leafColors(shadeRoof(i % 3 ? BROADLEAF : CONIFER, 0.5)) });
+  }
   for (const [i, [y, length]] of [
     [-14, 70],
     [22, 96],
@@ -773,10 +870,41 @@ export function generateForest(seed = 3141): ForestLayout {
     if (i % 2 === 1) gaps.push(x + 70);
   }
 
-  // --- Ferns and wildflowers along the front ---
+  // In front of it on the right of the vista, the near crowns: lit leaves hanging lower.
+  for (let x = 452, i = 0; x < 700; x += 58 + randomRange(rng, 0, 18), i++) {
+    const over = Math.abs(x + 55 - 440);
+    const h = over < 120 ? 58 : 84;
+    const art = drawCanopyClump(120, h, BROADLEAF, rng, 9, 400 + i);
+    canopy.push({ art, x, y: -14 - randomRange(rng, 0, 6), anchor: 'top', tree: 2, leaves: leafColors(BROADLEAF) });
+  }
+  // Strands of old-man's-beard and moss hanging from the canopy and the boughs, stirring in the air.
+  for (let i = 0; i < 18; i++) {
+    const x = randomRange(rng, 90, 800);
+    if (Math.abs(x - 440) < 60) continue;
+    const length = randomRange(rng, 16, 58);
+    const art = drawMossStrand(length, i * 17, randomRange(rng, 0, 0.25), WOOD_HAZE);
+    canopy.push({ art, x: Math.round(x), y: Math.round(randomRange(rng, 30, Math.abs(x - 440) < 140 ? 44 : 80)), anchor: 'top' });
+  }
+
+  // --- Ferns, shrubs and wildflowers crowding the front ---
   const ferns: Placed[] = [];
-  for (const x of [8, 112, 320, 452, 530, 716, 806]) {
-    const art = drawFern(rng, 1.1);
+  for (const [x, kind, w, h] of [
+    [60, 'bramble', 66, 30],
+    [250, 'holly', 50, 34],
+    [610, 'bramble', 70, 28],
+    [770, 'holly', 56, 38],
+  ] as const) {
+    const art = drawShrub(kind, w, h, x * 13, 0, HAZE, month);
+    ferns.push({ art, x: x - art.width / 2, y: 330 - art.height, leaves: kind === 'holly' ? HOLLY_LEAVES : undefined });
+  }
+  if (month >= 4 && month <= 7) {
+    for (const x of [176, 664, 822]) {
+      const art = drawFoxglove(1.1 + randomRange(rng, 0, 0.25), x);
+      ferns.push({ art, x: x - art.width / 2, y: 330 - art.height });
+    }
+  }
+  for (const x of [8, 112, 200, 290, 320, 400, 452, 530, 584, 650, 716, 760, 806]) {
+    const art = drawFern(rng, 1 + randomRange(rng, 0, 0.35));
     // Their tops stand clear of the sill, which hides the bottom of the view.
     ferns.push({ art, x: x - art.width / 2, y: 328 - art.height + randomInt(rng, 0, 4), leaves: FERN_LEAVES });
   }
