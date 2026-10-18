@@ -15,8 +15,15 @@ export interface SwayOptions {
 
 /**
  * A texture on a vertex grid whose rows shift sideways with the wind: free
- * ends bend most, rooted ends not at all. Offsets are rounded to whole art
- * pixels, so the sway stays pixel-art crisp in the native-resolution world.
+ * ends bend most, rooted ends not at all.
+ *
+ * Offsets are left fractional. The world is drawn at its native resolution
+ * with nearest sampling, so the art stays crisp, but each scanline between
+ * two vertex rows crosses the half-pixel mark at its own moment: the bend
+ * slides smoothly up the plant a line at a time, rather than whole bands of
+ * it snapping across together. The tip lags the root a little, as a real
+ * stem whips, and gusts roll across the view so neighbouring plants sway in
+ * turn.
  */
 export class SwayMesh {
   readonly mesh: MeshPlane;
@@ -27,11 +34,13 @@ export class SwayMesh {
   private readonly amplitude: number;
   private readonly phase: number;
   private readonly frequency: number;
+  private readonly offsets: Float32Array;
 
   constructor(texture: Texture, options: SwayOptions = {}) {
-    this.rows = options.rows ?? Math.max(3, Math.ceil(texture.height / 6));
+    this.rows = options.rows ?? Math.max(3, Math.ceil(texture.height / 3));
     this.mesh = new MeshPlane({ texture, verticesX: this.cols, verticesY: this.rows });
     this.base = new Float32Array(this.mesh.geometry.positions);
+    this.offsets = new Float32Array(this.rows);
     this.anchor = options.anchor ?? 'bottom';
     this.amplitude = options.amplitude ?? 3;
     this.phase = options.phase ?? Math.random() * Math.PI * 2;
@@ -40,21 +49,41 @@ export class SwayMesh {
 
   /** `scale` (0..1) damps the whole motion, e.g. indoors with the window shut. */
   update(time: number, wind: number, scale = 1): void {
+    const offsets = this.offsets;
+    swayOffsets(offsets, time, wind, this.mesh.x, this.amplitude * scale, this.frequency, this.phase, this.anchor);
     const positions = this.mesh.geometry.positions;
-    const strength = 0.25 + Math.min(1, Math.abs(wind)) * 0.75;
-    const t = time * this.frequency + this.phase;
-    const wave = 0.65 * Math.sin(t) + 0.35 * Math.sin(t * 2.3 + this.phase * 1.7);
+    let moved = false;
     for (let j = 0; j < this.rows; j++) {
-      const along = j / (this.rows - 1); // 0 at the top row
-      const free = this.anchor === 'bottom' ? 1 - along : along;
-      const bend = free ** 1.6;
-      // A steady lean downwind plus a swaying oscillation.
-      const offset = Math.round(this.amplitude * scale * bend * (wind * 0.6 + wave * strength));
       for (let i = 0; i < this.cols; i++) {
         const k = (j * this.cols + i) * 2;
-        positions[k] = this.base[k] + offset;
+        const x = this.base[k] + offsets[j];
+        if (Math.abs(positions[k] - x) > 0.004) moved = true;
+        positions[k] = x;
       }
     }
-    this.mesh.geometry.getBuffer('aPosition').update();
+    if (moved) this.mesh.geometry.getBuffer('aPosition').update();
   }
+}
+
+/**
+ * The sideways offset (art px) of each vertex row, top row first: a steady
+ * lean downwind, a sway that grows with the wind, swelling as gusts roll
+ * across the view (by `x`), and the free end lagging behind the root.
+ */
+export function swayOffsets(out: Float32Array, time: number, wind: number, x: number, amplitude: number, frequency: number, phase: number, anchor: 'bottom' | 'top'): Float32Array {
+  const rows = out.length;
+  const calm = Math.min(1, Math.abs(wind));
+  const strength = 0.3 + calm * 0.7;
+  // A gust front sweeping across the panorama every half-minute or so, in the wind's direction.
+  const gust = 0.75 + 0.25 * Math.sin(time * 0.21 - x * 0.011 * Math.sign(wind || 1) + phase * 0.3) + 0.15 * calm * Math.sin(time * 0.53 - x * 0.023);
+  const t = time * frequency + phase;
+  for (let j = 0; j < rows; j++) {
+    const along = j / (rows - 1); // 0 at the top row
+    const free = anchor === 'bottom' ? 1 - along : along;
+    const bend = free ** 1.6;
+    const lag = free * 0.55;
+    const wave = 0.65 * Math.sin(t - lag) + 0.35 * Math.sin(t * 2.3 + phase * 1.7 - lag * 1.6);
+    out[j] = amplitude * bend * (wind * 0.6 * gust + wave * strength * gust);
+  }
+  return out;
 }
