@@ -109,7 +109,9 @@ async function boot(): Promise<void> {
     resolution: dpr,
     autoDensity: true,
     antialias: false,
-    roundPixels: true,
+    // No vertex rounding: swaying foliage meshes move by fractions of a pixel, each scanline stepping on its own,
+    // which is what makes them fluid. Sprites are placed on whole pixels in code.
+    roundPixels: false,
     background: '#1a1626',
   });
   host.appendChild(app.canvas);

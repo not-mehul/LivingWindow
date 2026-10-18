@@ -313,7 +313,7 @@ export class TrunkWoodpeckers {
       b.sprite.texture = this.sprites.get(`${frame}:${b.size}`, () => drawWoodpeckerCling(frame, b.size));
       // On the trunk's side, facing in to the bark.
       b.sprite.scale.x = b.side;
-      b.sprite.position.set(Math.round(b.trunk.x - b.side * (b.trunk.width / 2 + b.size * 0.25)), Math.round(b.y));
+      b.sprite.position.set(Math.round(b.trunk.x - b.side * (b.trunk.width / 2 + b.size * 0.25) + (b.trunk.sway?.(b.y) ?? 0)), Math.round(b.y));
       b.sprite.alpha = fade;
       b.sprite.tint = env.lighting.ambient;
     }

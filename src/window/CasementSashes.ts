@@ -161,7 +161,8 @@ interface SashParts {
   quad: Quad | null;
 }
 
-const meshOptions = () => ({ texture: Texture.EMPTY, verticesX: 14, verticesY: 14 });
+// The sashes keep their vertices on whole pixels (the renderer doesn't round, so the world's sway can move smoothly).
+const meshOptions = () => ({ texture: Texture.EMPTY, verticesX: 14, verticesY: 14, roundPixels: true });
 
 /**
  * The two hinged sashes. Closed, they meet in the middle of the opening;

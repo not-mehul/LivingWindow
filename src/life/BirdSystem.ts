@@ -171,6 +171,8 @@ export interface BirdSystemOptions {
  * perches (rooftops, antennas, lamps, the street and the sill), and how they
  * scatter from threats.
  */
+const NO_SWAY = { x: 0, y: 0 };
+
 export class BirdSystem {
   private readonly birds: Bird[] = [];
   private readonly flocks: Flock[] = [];
@@ -727,11 +729,13 @@ export class BirdSystem {
     }
 
     bird.shadow.visible = false;
+    // Perched on a swaying branch, it rides with it.
+    const sway = !flying && bird.perch?.ledge.sway ? bird.perch.ledge.sway() : NO_SWAY;
     if (bird.z < NEAR_Z) {
       const fs = viewport.layout.frameScale;
       const size = spriteSizeAt(bird.z, sp.size);
       this.reparent(bird, nearLayer);
-      const p = viewport.worldToScreen(bird.x, bird.y);
+      const p = viewport.worldToScreen(bird.x + sway.x, bird.y + sway.y);
       sprite.texture = this.sprites.get(bird.species, bird.pose, size);
       sprite.anchor.set(0.5, flying ? 0.5 : 1);
       sprite.scale.set(fs * bird.facing, fs);
@@ -750,7 +754,7 @@ export class BirdSystem {
       sprite.anchor.set(0.5, flying ? 0.5 : 1);
       sprite.scale.set(bird.facing, 1);
       const hopLift = bird.hop ? Math.sin(Math.PI * bird.hop.t) * 1.5 : 0;
-      sprite.position.set(Math.round(bird.x), Math.round(bird.y + (flying ? 0 : 1) - hopLift));
+      sprite.position.set(Math.round(bird.x + sway.x), Math.round(bird.y + sway.y + (flying ? 0 : 1) - hopLift));
     }
     sprite.tint = lighting ? lighting.ambient : 0xffffff;
   }

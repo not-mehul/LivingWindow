@@ -33,4 +33,6 @@ export interface Ledge {
   kind: string;
   /** Depth override; otherwise derived from the layer. */
   z?: number;
+  /** How far the branch has moved with the wind right now (world px), for birds perched on a swaying tree. */
+  sway?: () => { x: number; y: number };
 }

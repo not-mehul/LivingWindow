@@ -6,11 +6,12 @@ import { createRng } from '../../core/random';
 import type { GroundPlane } from '../../sim/groundPlane';
 import type { WalkArea } from '../../sim/groundWalker';
 import { DayNightSprite, type NightGrade } from '../common/night';
+import { rustleTextures } from '../common/rustle';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
-import { BROW_Y, FOREST_FLOOR, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout } from './forestGenerator';
+import { BROW_Y, FOREST_FLOOR, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout, type Placed } from './forestGenerator';
 
 const BAYER = [
   [0, 8, 2, 10],
@@ -145,24 +146,53 @@ export class ForestScene implements WorldScene {
     this.ground = new DayNightSprite(layout.ground, NIGHT.wood, DUSK.wood);
     this.near = new DayNightSprite(layout.near, NIGHT.wood, DUSK.wood);
 
-    for (const tree of [...layout.midTrees, ...layout.floorPlants]) {
-      const sway = new SwayMesh(tree.art.toTexture(), { anchor: 'bottom', amplitude: 1 + tree.art.height / 90 });
+    const leafy = (piece: Placed, seed: number) =>
+      piece.leaves && piece.leaves.length ? rustleTextures(piece.art, piece.leaves, seed) : undefined;
+    const midMeshes: SwayMesh[] = [];
+    for (const [i, tree] of [...layout.midTrees, ...layout.floorPlants].entries()) {
+      const sway = new SwayMesh(tree.art.toTexture(), { anchor: 'bottom', amplitude: 1 + tree.art.height / 90, rustle: leafy(tree, i) });
       sway.mesh.position.set(tree.x, tree.y);
       sway.mesh.zIndex = tree.baseY;
       this.midground.addChild(sway.mesh);
       this.trees.push({ sway, haze: tree.haze });
+      midMeshes.push(sway);
     }
-    for (const piece of layout.canopy) {
-      const sway = new SwayMesh(piece.art.toTexture(), { anchor: 'top', amplitude: 3 });
+    // Pieces of the same tree share one sway, so the oak's crown moves as one (bending unevenly across it).
+    const treePhase = new Map<number, { phase: number; frequency: number }>();
+    const canopyMeshes: SwayMesh[] = [];
+    for (const [i, piece] of layout.canopy.entries()) {
+      let shared: { phase: number; frequency: number } | undefined;
+      if (piece.tree !== undefined) {
+        shared = treePhase.get(piece.tree) ?? { phase: Math.random() * Math.PI * 2, frequency: 0.7 + Math.random() * 0.2 };
+        treePhase.set(piece.tree, shared);
+      }
+      const bough = piece.anchor === 'right' || piece.anchor === 'left';
+      const sway = new SwayMesh(piece.art.toTexture(), {
+        anchor: piece.anchor ?? 'top',
+        amplitude: bough ? 2.2 + piece.art.width / 60 : 3,
+        rustle: leafy(piece, 100 + i),
+        ...shared,
+      });
       sway.mesh.position.set(Math.round(piece.x), Math.round(piece.y));
       this.canopy.push(sway);
       this.canopyLayer.addChild(sway.mesh);
+      canopyMeshes.push(sway);
     }
-    for (const piece of layout.ferns) {
-      const sway = new SwayMesh(piece.art.toTexture(), { anchor: 'bottom', amplitude: 2 });
+    for (const [i, piece] of layout.ferns.entries()) {
+      const sway = new SwayMesh(piece.art.toTexture(), { anchor: 'bottom', amplitude: 2, rustle: leafy(piece, 200 + i) });
       sway.mesh.position.set(Math.round(piece.x), Math.round(piece.y));
       this.ferns.push(sway);
       this.fernLayer.addChild(sway.mesh);
+    }
+    // Perches and trunks ride on the piece they're part of.
+    for (const a of layout.attachments) {
+      const mesh = (a.group === 'mid' ? midMeshes : canopyMeshes)[a.index];
+      if (!mesh) continue;
+      if ('kind' in a.target) a.target.sway = () => mesh.offsetAt(a.x, a.y);
+      else {
+        const top = mesh.mesh.y;
+        a.target.sway = (y: number) => mesh.offsetAt(a.x, y - top).x;
+      }
     }
 
     for (const [i, x] of layout.gaps.entries()) {

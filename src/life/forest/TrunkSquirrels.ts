@@ -144,7 +144,8 @@ export class TrunkSquirrels {
     const descending = sq.state === 'climb' && sq.target > sq.y;
     sq.sprite.scale.set(onTrunk ? 1 : sq.dir, descending ? -1 : 1);
     sq.sprite.anchor.set(0.5, descending ? 0 : 1);
-    sq.sprite.position.set(Math.round(onTrunk ? sq.trunk.x - sq.trunk.width / 2 + 2 : sq.x), Math.round(sq.y));
+    // On a trunk it moves with the tree as it sways.
+    sq.sprite.position.set(Math.round(onTrunk ? sq.trunk.x - sq.trunk.width / 2 + 2 + (sq.trunk.sway?.(sq.y) ?? 0) : sq.x), Math.round(sq.y));
     sq.sprite.tint = tint;
   }
 }

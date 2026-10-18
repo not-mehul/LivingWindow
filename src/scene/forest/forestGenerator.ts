@@ -48,6 +48,17 @@ export interface Trunk {
   layer: 'mid' | 'near';
   /** Squirrel sprite size on this trunk (smaller on distant trees). */
   squirrelSize?: number;
+  /** How far the trunk has swayed at a world row right now (world px), for things climbing it. */
+  sway?: (y: number) => number;
+}
+
+/** A perch or trunk that rides on a swaying piece: which piece, and where on it (art px from its top-left). */
+export interface Attachment {
+  target: Ledge | Trunk;
+  group: 'mid' | 'canopy';
+  index: number;
+  x: number;
+  y: number;
 }
 
 /** A piece of art at a world position. */
@@ -55,6 +66,12 @@ export interface Placed {
   art: PixelBuffer;
   x: number;
   y: number;
+  /** How it moves: a bough bobs from the trunk at its right end; leaves hang from above; plants grow up. */
+  anchor?: 'top' | 'bottom' | 'right' | 'left';
+  /** Pieces of one tree share a sway, so its foliage moves together. */
+  tree?: number;
+  /** The colours in it that are leaves (they rustle); none means it doesn't. */
+  leaves?: readonly number[];
 }
 
 export interface MidTree extends Placed {
@@ -89,7 +106,12 @@ export interface ForestLayout {
   ledges: Ledge[];
   /** Openings in the oak's foliage where light shafts fall. */
   gaps: number[];
+  /** Perches and trunks that move with the piece they're on. */
+  attachments: Attachment[];
 }
+
+/** A tree palette's leaf colours, for rustling. */
+export const leafColors = (p: TreePalette): number[] => [p.shadow, p.dark, p.base, p.light, p.highlight];
 
 // --- Shapes ---------------------------------------------------------------
 
@@ -359,6 +381,8 @@ function drawFern(rng: () => number, scale: number): PixelBuffer {
   return p;
 }
 
+const FERN_LEAVES = [0x3e6a34, 0x88b064, 0x5e8c46, 0x3a5e30];
+
 /** A clump of wildflowers: stems and leaves with daisies or purple blooms. */
 function drawFlowers(rng: () => number, kind: 'daisy' | 'violet'): PixelBuffer {
   const w = randomInt(rng, 26, 40);
@@ -492,6 +516,7 @@ export function generateForest(seed = 3141): ForestLayout {
   const midTrees: MidTree[] = [];
   const floorPlants: MidTree[] = [];
   const obstacles: Obstacle[] = [];
+  const attachments: Attachment[] = [];
   const PINE: TreePalette = { ...CONIFER, bark: 0x8a5a3c, barkDark: 0x5a3626 };
   const treeRng = createRng(seed + 5);
   // Near the middle, treetops must stay below the valley so the vista stays open.
@@ -551,27 +576,34 @@ export function generateForest(seed = 3141): ForestLayout {
       t.kind === 'spruce' ? drawConifer(t.height, t.seed, pal) : t.kind === 'broad' ? drawBroadleaf(t.height, t.seed, pal) : drawTallPine(t.height, t.seed, pal);
     const left = Math.round(t.x - tree.baseX);
     const top = Math.round(t.y - tree.baseY);
-    midTrees.push({ art: tree.buffer, x: left, y: top, baseY: Math.round(t.y), haze: haze * 0.4 });
+    const index = midTrees.length;
+    midTrees.push({ art: tree.buffer, x: left, y: top, baseY: Math.round(t.y), haze: haze * 0.4, leaves: t.kind === 'pine' ? undefined : leafColors(pal) });
     const tipZ = depthForScale(BIRD_SCALE * t.s);
+    const perchOn = (ledge: Ledge, x: number, y: number) => {
+      ledges.push(ledge);
+      attachments.push({ target: ledge, group: 'mid', index, x, y });
+    };
     if (top + tree.tipY > 4) {
-      ledges.push({ x0: left + tree.tipX - 1, x1: left + tree.tipX + 1, y: top + tree.tipY, layer: 'mid', kind: 'treetop', z: tipZ });
+      perchOn({ x0: left + tree.tipX - 1, x1: left + tree.tipX + 1, y: top + tree.tipY, layer: 'mid', kind: 'treetop', z: tipZ }, tree.tipX, tree.tipY);
     }
     for (const perch of tree.perches) {
-      if (top + perch.y > 4) ledges.push({ x0: left + perch.x0, x1: left + perch.x1, y: top + perch.y, layer: 'mid', kind: 'branch', z: tipZ });
+      if (top + perch.y > 4) perchOn({ x0: left + perch.x0, x1: left + perch.x1, y: top + perch.y, layer: 'mid', kind: 'branch', z: tipZ }, (perch.x0 + perch.x1) / 2, perch.y);
     }
     // Its footprint for the deer: a spruce's low skirt, or just a trunk.
     const footprintPx = t.kind === 'spruce' ? t.height * 0.13 : t.kind === 'pine' ? t.height * 0.04 : t.height * 0.05;
     const { gx, depth } = forestPlane.unproject(t.x, t.y);
     obstacles.push({ gx, depth, r: footprintPx / t.s + 10 });
     if (t.kind !== 'spruce' && t.height > 60) {
-      trunks.push({
+      const trunk: Trunk = {
         x: Math.round(t.x),
         width: Math.max(3, Math.round(t.kind === 'pine' ? t.height * 0.054 : t.height * 0.06)),
         top: Math.round(t.y - t.height * (t.kind === 'pine' ? 0.5 : 0.38)),
         bottom: Math.round(t.y),
         layer: 'mid',
         squirrelSize: Math.max(5, Math.round(16 * t.s)),
-      });
+      };
+      trunks.push(trunk);
+      attachments.push({ target: trunk, group: 'mid', index, x: tree.baseX, y: 0 });
     }
   }
 
@@ -705,8 +737,13 @@ export function generateForest(seed = 3141): ForestLayout {
     [196, 96],
   ].entries()) {
     const bough = drawBough(length, 10 + length * 0.18, 90 + i);
-    canopy.push({ art: bough, x: 776 - bough.width + 2, y });
-    if (i === 2 || i === 4) ledges.push({ x0: 776 - length * 0.7, x1: 770, y: y + 4, layer: 'near', kind: 'branch', z: 0.48 });
+    const bx = 776 - bough.width + 2;
+    canopy.push({ art: bough, x: bx, y, anchor: 'right', leaves: leafColors(CONIFER) });
+    if (i === 2 || i === 4) {
+      const ledge: Ledge = { x0: 776 - length * 0.7, x1: 770, y: y + 4, layer: 'near', kind: 'branch', z: 0.48 };
+      ledges.push(ledge);
+      attachments.push({ target: ledge, group: 'canopy', index: canopy.length - 1, x: 776 - length * 0.35 - bx, y: 4 });
+    }
   }
   const gaps: number[] = [];
   for (let i = 0; i < 8; i++) {
@@ -732,7 +769,7 @@ export function generateForest(seed = 3141): ForestLayout {
     foliage.outline(pal.ink);
     // Along the oak's limbs, thinning out towards the middle of the view.
     const x = -40 + i * 54;
-    canopy.push({ art: foliage, x, y: -26 + (i % 2) * 16 - Math.max(0, i - 4) * 6 });
+    canopy.push({ art: foliage, x, y: -26 + (i % 2) * 16 - Math.max(0, i - 4) * 6, anchor: 'top', tree: 1, leaves: leafColors(pal) });
     if (i % 2 === 1) gaps.push(x + 70);
   }
 
@@ -741,7 +778,7 @@ export function generateForest(seed = 3141): ForestLayout {
   for (const x of [8, 112, 320, 452, 530, 716, 806]) {
     const art = drawFern(rng, 1.1);
     // Their tops stand clear of the sill, which hides the bottom of the view.
-    ferns.push({ art, x: x - art.width / 2, y: 328 - art.height + randomInt(rng, 0, 4) });
+    ferns.push({ art, x: x - art.width / 2, y: 328 - art.height + randomInt(rng, 0, 4), leaves: FERN_LEAVES });
   }
   for (const [x, kind] of [
     [24, 'daisy'],
@@ -755,5 +792,5 @@ export function generateForest(seed = 3141): ForestLayout {
     ferns.push({ art, x: x - art.width / 2, y: 324 - art.height + randomInt(rng, 0, 3) });
   }
 
-  return { far, mountains, valley, ground, midTrees, floorPlants, obstacles, near, canopy, ferns, trunks, ledges, gaps };
+  return { far, mountains, valley, ground, midTrees, floorPlants, obstacles, near, canopy, ferns, trunks, ledges, gaps, attachments };
 }
