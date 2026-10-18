@@ -173,17 +173,19 @@ interface Building {
   word?: string;
 }
 
-const HAZE = 0xb6c6d6;
+/** Smog: a warm grey-amber that the distance fades into. */
+const HAZE = 0xbcb4a2;
 const BIRD_SCALE = 0.34;
 const birdZ = (depth: number) => depthForScale(BIRD_SCALE / depth);
 const bandOf = (depth: number): CityLayerName => (depth < 4.2 ? 'near' : depth < 13 ? 'mid' : 'far');
 
+/** Weathered colours: sooty brick, stained render, smoked glass, concrete gone green-grey. */
 const BODIES: Record<Material, number[]> = {
-  brick: [0xa0644a, 0x96583e, 0x8a5240, 0xa86e52],
-  beige: [0xd8c8aa, 0xcfbfa0, 0xe0d2b6, 0xc8b898],
-  glass: [0x5a7a98, 0x4e6e90, 0x62849e],
-  concrete: [0xa8a49c, 0x9c988e, 0xb4b0a6, 0x8e8c86],
-  stone: [0xc8ccd0, 0xbcc2c8, 0xd2d4d4],
+  brick: [0x8e5644, 0x7e4a3a, 0x965e4c, 0x744434],
+  beige: [0xc0b49a, 0xb2a88e, 0xc8baa0, 0xa69c84],
+  glass: [0x445e78, 0x3a546e, 0x4c6880],
+  concrete: [0x8e8e88, 0x82847e, 0x9a9890, 0x76787a],
+  stone: [0xb4b8b6, 0xa8aeae, 0xbcbcb6],
   roof: [0x8a8680, 0x7e7a74],
   metal: [0x8c9094, 0x7c8084],
   sign: [0xd8d6cc],
@@ -192,7 +194,7 @@ const BODIES: Record<Material, number[]> = {
   pipe: [0x9a9a96],
 };
 
-const NEONS = [0xff4a9a, 0x4ae8ff, 0xffb040, 0x9a6aff, 0x6aff9a];
+const NEONS = [0xff2a9a, 0x3ae8ff, 0xffa030, 0x9a5aff, 0x8aff3a, 0xff3a5a];
 
 export function generateCity(seed = 20261015): CityLayout {
   const rng = createRng(seed);
@@ -1030,7 +1032,11 @@ function shadeBuilding(b: Building, hit: Hit, x: number, y: number): { color: nu
   if (hit.face === 'top') {
     // Flat roofs: tar and gravel, a lighter parapet round the edge.
     const edge = Math.min(box.halfU - Math.abs(hit.u), box.halfW - Math.abs(hit.w)) < 5;
-    color = edge ? scaleColor(b.body, 1.12) : ditherRamp([0x7a7672, 0x86827c, 0x928e86], valueNoise(hit.u, hit.w, 9, b.seed), x, y);
+    color = edge ? scaleColor(b.body, 1.05) : ditherRamp([0x5e5c5a, 0x6c6a66, 0x7a7672, 0x86827c], valueNoise(hit.u, hit.w, 9, b.seed), x, y);
+    // Puddles that never dry, catching the sky; tar patches.
+    const wet = valueNoise(hit.u + 500, hit.w, 14, b.seed + 4);
+    if (!edge && wet > 0.72) color = wet > 0.8 ? 0x8a9aa8 : 0x5a6470;
+    else if (!edge && valueNoise(hit.u, hit.w + 900, 22, b.seed + 6) > 0.74) color = 0x3e3c3a;
     return { color, window, glow };
   }
 
@@ -1047,7 +1053,11 @@ function shadeBuilding(b: Building, hit: Hit, x: number, y: number): { color: nu
       window = `${b.id}:shop:${bay}`;
       color = lerpColor(0x4a5868, 0x8aa0b0, (t - 3) / 15);
       if (pixelHash(bay, 1, b.seed) < 0.25 && sf > 14 && sf < 24) color = 0x2a2420;
-    } else color = scaleColor(b.body, 0.8);
+    } else {
+      color = scaleColor(b.body, 0.8);
+      // Flyers stuck to the piers between the shop windows.
+      if (screenPx < 1.6 && t > 6 && t < 16 && pixelHash(bay, Math.floor(t / 5), b.seed + 2) < 0.35) color = lerpColor(TAG_COLORS[(bay + Math.floor(t / 5)) % TAG_COLORS.length], 0xe8e0d0, 0.5);
+    }
     return { color: scaleColor(color, light), window, glow };
   }
   if (floorPx < 2.2 || pitchPx < 2.2) {
@@ -1067,18 +1077,101 @@ function shadeBuilding(b: Building, hit: Hit, x: number, y: number): { color: nu
   const winS0 = (b.pitch - winW) / 2;
   const winT0 = b.material === 'glass' ? 0 : b.floor * 0.25;
   const inWindow = row > 0 && t < box.h1 - box.h0 - 4 && sf >= winS0 && sf < winS0 + winW && tf >= winT0 && tf < winT0 + winH && s > 3 && s < along - 3;
+  const fine = screenPx < 3.2;
   if (inWindow) {
+    const fate = pixelHash(col * 3 + (hit.face === 'left' ? 1 : 0), row, b.seed + 5);
+    if (fate < 0.035 && b.material !== 'glass') {
+      // Boarded up: planks over the frame, and no light behind them.
+      const plank = Math.floor((tf - winT0) / Math.max(1.5, screenPx * 2.2));
+      return { color: scaleColor(plank % 2 ? 0x9a7a52 : 0x8a6a46, light * (pixelHash(plank, col, b.seed) < 0.3 ? 0.85 : 1)), window: null, glow };
+    }
+    if (fate < (b.material === 'glass' ? 0.047 : 0.06)) {
+      // Broken: a dark hole with a crack of glass left in it.
+      const crack = Math.abs(sf - winS0 - (tf - winT0) * (winW / winH)) < screenPx * 0.8;
+      return { color: scaleColor(crack ? 0x6a7a88 : 0x16181c, light), window: null, glow };
+    }
     window = `${b.id}:${hit.face}:${row}:${col}`;
     // Glass catches the sky: lighter higher up and towards one side, with a glint.
     const sky = 0.35 + (tf - winT0) / winH * -0.25 + (pixelHash(col, row, b.seed) - 0.5) * 0.3;
-    color = lerpColor(0x34404e, 0xa8c4dc, Math.max(0, Math.min(1, sky + (b.material === 'glass' ? 0.2 : 0))));
+    color = lerpColor(0x2e3844, 0x98b0c4, Math.max(0, Math.min(1, sky + (b.material === 'glass' ? 0.2 : 0))));
     if (b.material !== 'glass' && tf - winT0 < 1) color = scaleColor(b.body, 0.6);
+    // Who lives here: blinds half down, curtains, a plant on the sill, a sticker on the glass.
+    if (floorPx >= 7) {
+      const room = pixelHash(col, row * 5 + (hit.face === 'left' ? 2 : 0), b.seed + 17);
+      const wu = (sf - winS0) / winW;
+      const wv = (tf - winT0) / winH;
+      if (room < 0.2 && wv > 0.45 && Math.floor((tf - winT0) / Math.max(1, screenPx)) % 2 === 0) color = lerpColor(color, 0xd8d0c0, 0.55);
+      else if (room < 0.34 && (wu < 0.22 || wu > 0.78)) color = lerpColor(color, [0x9a4a46, 0x4a6488, 0xb89a5a, 0x648058][Math.floor(room * 40) % 4], 0.6);
+      else if (room < 0.42 && wv < 0.28 && pixelHash(x, y, b.seed) < 0.7) color = pixelHash(x, y + 1, b.seed) < 0.5 ? 0x4a6a3a : 0x5a8044;
+      else if (floorPx >= 10 && room > 0.96 && wu > 0.55 && wu < 0.85 && wv > 0.5 && wv < 0.8) color = [0xd84a8a, 0xd8b030, 0x4ac0d8][Math.floor(room * 300) % 3];
+    }
     return { color: scaleColor(color, light), window, glow };
   }
+  if (b.material !== 'glass' && floorPx >= 3) {
+    // An air-conditioner bolted under some windows, dripping a stain down the wall.
+    const unit = pixelHash(col * 3 + (hit.face === 'left' ? 1 : 0), row, b.seed + 9) < 0.22;
+    const u0 = winS0 + winW * 0.15;
+    const u1 = winS0 + winW * 0.75;
+    const v0 = winT0 - b.floor * 0.22;
+    if (unit && row > 0 && sf >= u0 && sf < u1 && tf >= v0 && tf < winT0 - screenPx * 0.5) {
+      const grille = Math.floor((sf - u0) / Math.max(1, screenPx * 1.5)) % 2 === 0 && tf < winT0 - b.floor * 0.08;
+      return { color: scaleColor(grille ? 0x8a8c88 : 0xb4b4ac, light * (sf - u0 < screenPx ? 0.8 : 1)), window, glow };
+    }
+    // Its drip runs rust-brown down the wall.
+    if (unit && row > 0 && Math.abs(sf - (u0 + u1) / 2) < screenPx * 0.6 && tf < v0 && tf > v0 - b.floor * 0.6) color = lerpColor(scaleColor(color, 0.8), 0x7a4a2a, 0.25);
+  }
   if (b.material === 'brick' && screenPx < 1 && Math.floor(t / 3) % 2 === 0 && (s + (Math.floor(t / 3) % 4 === 0 ? 3 : 0)) % 6 < 0.8) color = scaleColor(b.body, 0.85);
-  // Weathering streaks under the windows.
-  if (bayer(x, y) < 0.08) color = scaleColor(color, 0.94);
+  color = weather(b, color, s, t, along, box.h1 - box.h0, x, y, screenPx, fine, sf, winS0, winW, tf, winT0, row);
   return { color: scaleColor(color, light), window, glow };
+}
+
+const TAG_COLORS = [0xff3a9a, 0x8aff3a, 0x3ae8ff, 0xf4f0e8, 0xffd020, 0x9a5aff];
+
+/**
+ * Wear on a wall: water stains under the sills, soot rising from the street
+ * and running down from the roof, patched panels that never matched, pipes
+ * and conduits, and (down at street level, up close) graffiti and posters.
+ */
+function weather(b: Building, color: number, s: number, t: number, along: number, height: number, x: number, y: number, screenPx: number, fine: boolean, sf: number, winS0: number, winW: number, tf: number, winT0: number, row: number): number {
+  // Patches: rectangles of newer (or older) render and panel.
+  const pu = Math.floor(s / 46);
+  const pv = Math.floor(t / 30);
+  const patch = pixelHash(pu, pv, b.seed + 13);
+  if (patch < 0.09) color = lerpColor(color, patch < 0.03 ? 0x6a7a74 : patch < 0.06 ? scaleColor(b.body, 1.12) : 0x8a7a68, 0.45);
+  // Dirt in broad blotches, and rain streaks down from every ledge.
+  color = scaleColor(color, 0.86 + valueNoise(s, t, 40, b.seed + 41) * 0.14);
+  if (valueNoise(s * 3, t * 0.25, 6, b.seed + 43) > 0.62) color = scaleColor(color, 0.9);
+  // Soot from the street, and grime running down from the roof's edge.
+  if (t < 50) color = scaleColor(color, 0.86 + (t / 50) * 0.14);
+  const fromTop = height - t;
+  const streak = valueNoise(s * 0.8, 0, 6, b.seed + 21);
+  if (fromTop < 30 + streak * 70 && streak > 0.45) color = scaleColor(color, 0.86 + (fromTop / 100) * 0.1);
+  // Water stains spreading under each window.
+  if (row > 0 && sf >= winS0 && sf < winS0 + winW && tf < winT0 && pixelHash(Math.floor(s / Math.max(1, b.pitch)), row, b.seed + 3) < 0.45) {
+    const fade = (winT0 - tf) / Math.max(1, winT0);
+    if (bayer(x, y) > 0.35 + fade * 0.5) color = scaleColor(color, 0.88);
+  }
+  // A conduit or two running up the wall, bracketed every floor.
+  const conduit = (Math.floor(along / 2) + b.seed) % 97;
+  const cs = 6 + (conduit / 97) * (along - 12);
+  if (fine && Math.abs(s - cs) < Math.max(0.6, screenPx * 0.7)) color = Math.floor(t / b.floor) !== Math.floor((t - screenPx) / b.floor) ? 0x3a3c40 : lerpColor(0x5a5e62, 0x8a6a4a, pixelHash(0, Math.floor(t / 8), b.seed) < 0.3 ? 0.5 : 0);
+  if (fine && t < 44 && t > 4) {
+    // Graffiti tags in spray paint, low on the walls.
+    const cell = Math.floor(s / 34);
+    const tag = pixelHash(cell, 7, b.seed + 31);
+    if (tag < 0.5) {
+      const local = s - cell * 34;
+      const base = 8 + tag * 40;
+      const amp = 3 + tag * 4;
+      const wave = base + Math.sin(local * (0.4 + tag) + b.seed) * amp + Math.sin(local * 1.7) * 1.5;
+      if (local > 4 && local < 28 && Math.abs(t - wave) < Math.max(0.7, screenPx * 0.9)) return TAG_COLORS[Math.floor(tag * 12) % TAG_COLORS.length];
+    } else if (tag > 0.88 && t > 20 && t < 36) {
+      // A pasted-up poster, peeling at a corner.
+      const local = s - cell * 34;
+      if (local > 8 && local < 22 && !(local > 19 && t > 33)) return lerpColor(TAG_COLORS[Math.floor(tag * 37) % TAG_COLORS.length], 0xe8e0d0, 0.35 + (Math.floor(t / 3) % 2) * 0.15);
+    }
+  }
+  return color;
 }
 
 /**

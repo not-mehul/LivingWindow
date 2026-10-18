@@ -6,6 +6,9 @@ import type { WindowRecord } from './cityGenerator';
 // Mostly a soft cream-white, as in the night drawing, with the odd warmer lamp.
 const WARM = [0xfff0c8, 0xfff0c8, 0xffe8b8, 0xffdc9a, 0xfff6dc];
 const COOL = [0xd6e8ff, 0xe8f0ff];
+/** Rooms lit by a screen, or by a neon strip someone's put up. */
+const TV = [0x7ab8ff, 0x8ac8ff];
+const NEON_ROOM = [0xff8ad8, 0xa88aff, 0x6ae0ff, 0xffb070];
 /** Seconds between re-evaluating which windows are lit. */
 const TICK_SECONDS = 0.5;
 
@@ -40,7 +43,7 @@ export class WindowLights {
     this.windows = windows.map((w) => ({
       ...w,
       threshold: rng(),
-      color: rng() < 0.12 ? COOL[Math.floor(rng() * COOL.length)] : WARM[Math.floor(rng() * WARM.length)],
+      color: pickColor(rng),
       lit: false,
     }));
     this.image = this.canvas.ctx.createImageData(WORLD_WIDTH, WORLD_HEIGHT);
@@ -101,4 +104,10 @@ export class WindowLights {
     this.canvas.ctx.putImageData(this.image, 0, 0);
     this.texture.source.update();
   }
+}
+
+function pickColor(rng: () => number): number {
+  const r = rng();
+  const set = r < 0.1 ? COOL : r < 0.18 ? TV : r < 0.25 ? NEON_ROOM : WARM;
+  return set[Math.floor(rng() * set.length)];
 }

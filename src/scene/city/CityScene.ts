@@ -6,17 +6,19 @@ import type { Environment } from '../Environment';
 import { DayNightSprite, type NightGrade } from '../common/night';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
+import { PixelBuffer } from '../../core/pixelBuffer';
+import { bayer } from '../common/paint';
 import { generateCity, poolFalloff, POOL_REACH, type CityLayerName, type CityLayout } from './cityGenerator';
 import { Billboards } from './Billboards';
 import { StreetLamps } from './StreetLamps';
 import { WindowLife } from './WindowLife';
 import { WindowLights } from './WindowLights';
 
-/** Moonlit grades for the city's depth bands, after the night drawing: a deep teal-blue night. */
+/** Night grades for the city's depth bands: deep teal concrete, the distance going violet in the city's own glow. */
 const NIGHT: Record<CityLayerName, NightGrade> = {
-  far: { desaturate: 0.6, tint: [0.2, 0.3, 0.42], lift: [10, 16, 28] },
-  mid: { desaturate: 0.6, tint: [0.24, 0.36, 0.46], lift: [8, 12, 22] },
-  near: { desaturate: 0.6, tint: [0.27, 0.4, 0.48], lift: [6, 12, 20] },
+  far: { desaturate: 0.5, tint: [0.24, 0.24, 0.42], lift: [18, 10, 34] },
+  mid: { desaturate: 0.48, tint: [0.25, 0.32, 0.46], lift: [12, 10, 26] },
+  near: { desaturate: 0.45, tint: [0.28, 0.38, 0.48], lift: [8, 12, 22] },
 };
 
 /** Dusk and dawn, after the drawing: faces lit a warm pink-lavender, the distance a hazy violet. */
@@ -76,6 +78,9 @@ export class CityScene implements WorldScene {
   private readonly signLayer = new Container({ label: 'neon' });
   private signsLevel = 0;
   private readonly billboards: Billboards;
+  /** Smog hanging over the skyline: amber by day, lit violet from below by the city at night. */
+  private readonly smog: Sprite;
+  private readonly smogVeil: Sprite;
 
   constructor() {
     const rng = createRng(9001);
@@ -109,6 +114,9 @@ export class CityScene implements WorldScene {
       this.signs.push({ sprite, broken: sign.broken, dip: 0 });
     }
     this.billboards = new Billboards(city.billboards, rng);
+    const smogTexture = smogArt().toTexture();
+    this.smog = new Sprite(smogTexture);
+    this.smogVeil = new Sprite(smogTexture);
     this.lamps = new StreetLamps(city.lamps, rng);
     const midLife = new WindowLife(lightsByLayer.mid, rng);
     const nearLife = new WindowLife(lightsByLayer.near, rng);
@@ -116,9 +124,11 @@ export class CityScene implements WorldScene {
 
     this.container.addChild(
       this.sky.container,
+      this.smog,
       sprites.far.container,
       lightsByLayer.far.sprite,
       this.billboards.layers.far,
+      this.smogVeil,
       this.skyLife,
       this.birdsFar,
       sprites.mid.container,
@@ -154,6 +164,11 @@ export class CityScene implements WorldScene {
     this.layers.near.update(tints.near, lighting);
     this.over.update(tints.over, lighting);
     this.billboards.update(dt, lighting, tints);
+    const smogTint = lerpColor(lerpColor(0xffffff, 0xffa090, lighting.twilight), 0xa04a9a, lighting.nightness);
+    this.smog.tint = smogTint;
+    this.smog.alpha = 0.7 + 0.2 * lighting.twilight - 0.2 * lighting.nightness;
+    this.smogVeil.tint = smogTint;
+    this.smogVeil.alpha = 0.5 + 0.06 * lighting.twilight - 0.26 * lighting.nightness;
     for (const lights of this.lights) lights.update(dt, lighting.windowsLit, lighting.emissive);
     this.lamps.update(dt, lighting.darkness, lighting.emissive);
     for (const life of this.life) life.update(dt, lighting.emissive, lighting.darkness);
@@ -193,4 +208,24 @@ export class CityScene implements WorldScene {
       sign.sprite.alpha = this.signsLevel * flick;
     }
   }
+}
+
+/** The smog: densest along the horizon, thinning upwards in dithered bands. */
+function smogArt(): PixelBuffer {
+  const H = CITY_HORIZON + 30;
+  const art = new PixelBuffer(840, H);
+  for (let y = 0; y < H; y++) {
+    const up = (CITY_HORIZON + 10 - y) / 130;
+    const density = up < 0 ? 1 : Math.max(0, 1 - up) ** 2.2;
+    for (let x = 0; x < 840; x++) {
+      // A little drift and lumpiness along it.
+      const lump = 0.85 + 0.15 * Math.sin(x * 0.021 + y * 0.05) * Math.sin(x * 0.007);
+      const d = density * lump;
+      if (d < 0.04) continue;
+      const level = Math.min(4, Math.floor(d * 4 + bayer(x, y)));
+      if (level <= 0) continue;
+      art.set(x, y, lerpColor(0xc8a87a, 0xe0b880, d), Math.round((level / 4) * 150));
+    }
+  }
+  return art;
 }
