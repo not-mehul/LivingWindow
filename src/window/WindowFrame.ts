@@ -5,7 +5,7 @@ import type { ViewportLayout } from '../core/viewportLayout';
 import { pixelHash } from '../sprites/raster';
 import { HINGE_FRACTIONS, SASH_TUCK } from './casement';
 import { IRON, RUSTIC_THEME, type FrameTheme } from './palette';
-import { curtainWidth, nearness, plantSize } from './sillProps';
+import { curtainWidth, nearness, plantSize, tabletSize } from './sillProps';
 import { paintPlank, PixelBuffer } from './woodArt';
 
 /** Width of each jamb (side post), in frame art pixels. */
@@ -325,8 +325,8 @@ export class WindowFrame {
     this._surface = {
       // Clear of the potted plant at the left end.
       left: visibleLeft + plantSize(this._nearness).reserve * fs,
-      // Clear of the curtain's foot, which tucks in a little at the bottom.
-      right: visibleRight - (curtainWidth((visibleRight - visibleLeft) / fs) - 6) * fs,
+      // Clear of the curtain's foot (which tucks in a little at the bottom) and the tablet beside it.
+      right: visibleRight - (curtainWidth((visibleRight - visibleLeft) / fs) - 6 + tabletSize(this._nearness).reserve) * fs,
       y: sillTop + SILL_SURFACE_OFFSET * fs,
       top: sillTop,
       frameScale: fs,

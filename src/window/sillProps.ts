@@ -58,3 +58,16 @@ export function plantSize(k: number): PlantSize {
 export function curtainWidth(visibleArtWidth: number): number {
   return Math.round(Math.min(42, Math.max(26, visibleArtWidth * 0.12)));
 }
+
+export interface TabletSize {
+  width: number;
+  height: number;
+  /** Sill art (from the right, beside the curtain) kept clear of creatures. */
+  reserve: number;
+}
+
+/** The settings tablet propped on the sill's right-hand corner. */
+export function tabletSize(k: number): TabletSize {
+  const width = even(40 * k);
+  return { width, height: Math.round(width * 0.74), reserve: width + Math.round(8 * k) };
+}

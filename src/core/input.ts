@@ -10,6 +10,8 @@ export interface KeyboardActions {
   shiftTime: (hours: number) => void;
   toggleRadio: () => void;
   toggleMute: () => void;
+  /** Pick up (or put down) the settings tablet. */
+  toggleSettings?: () => void;
   setLandscape: (id: LandscapeId) => void;
 }
 
@@ -67,6 +69,10 @@ export function attachInput(canvas: HTMLCanvasElement, viewport: Viewport, actio
       case 'r':
       case 'R':
         actions.toggleRadio();
+        break;
+      case 's':
+      case 'S':
+        actions.toggleSettings?.();
         break;
       case 'm':
       case 'M':

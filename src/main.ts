@@ -27,6 +27,8 @@ import { BirdseedBowl } from './window/BirdseedBowl';
 import { WindowFrame } from './window/WindowFrame';
 import { CasementSashes } from './window/CasementSashes';
 import { SillDecor } from './window/SillDecor';
+import { SillTablet } from './window/SillTablet';
+import { curtainWidth } from './window/sillProps';
 
 /** Cap the backing-store density: beyond 3× the extra pixels are invisible. */
 const MAX_DEVICE_PIXEL_RATIO = 3;
@@ -134,6 +136,9 @@ async function boot(): Promise<void> {
   });
   const bowl = new BirdseedBowl(birdseed, () => !viewport.didDrag);
   const decor = new SillDecor(birdseed);
+  /** The settings tablet on the sill; `overlay` is set up further down. */
+  let overlay: Overlay | null = null;
+  const tablet = new SillTablet(() => !viewport.didDrag, () => overlay?.open());
   // The sashes would sweep the bowl off the sill: it's taken in as they
   // start to close and set back out once the window is fully open.
   windowState.on('toggle', ({ open }) => {
@@ -163,6 +168,7 @@ async function boot(): Promise<void> {
     frame.sillContainer,
     sillLayer,
     decor.front,
+    tablet.container,
     roomFlash,
     fade,
   );
@@ -263,6 +269,9 @@ async function boot(): Promise<void> {
     glass.layout(sashes.glassRect);
     bowl.layout(frame.sillSurface, l.devicePixelRatio, frame.nearness);
     decor.layout(l, frame.sillSurface, bowl.container.x, frame.nearness);
+    const visibleLeft = Math.max(0, l.opening.x);
+    const visibleRight = Math.min(l.screenWidth, l.opening.x + l.opening.width);
+    tablet.layout(frame.sillSurface, frame.nearness, visibleRight, curtainWidth((visibleRight - visibleLeft) / l.frameScale));
     roomFlash.width = fade.width = l.screenWidth;
     roomFlash.height = fade.height = l.screenHeight;
   };
@@ -299,9 +308,13 @@ async function boot(): Promise<void> {
       if (audio) void audio.engine.unlock().then(() => audio?.radio.toggle());
     },
     toggleMute: () => audio?.engine.setMuted(!audio.engine.muted),
+    toggleSettings: () => overlay?.toggle(),
     setLandscape,
   });
-  const overlay = new Overlay(document.body, {
+  overlay = new Overlay(document.body, {
+    onActivity: () => tablet.nudge(),
+    tabletRect: () => tablet.screenBounds(),
+    onOpenChange: (open) => tablet.setLifted(open),
     windowState,
     birdseed,
     viewport,
@@ -324,7 +337,7 @@ async function boot(): Promise<void> {
     if (!system) return;
     audio = system;
     system.setSoundscape(current.landscape.createSoundscape, current.landscape.id);
-    overlay.attachAudio(system);
+    overlay?.attachAudio(system);
     windowState.on('toggle', ({ open, durationSeconds }) => {
       system.engine.setWindowOpen(open, durationSeconds);
       system.engine.playUi('window-creak');
@@ -394,6 +407,7 @@ async function boot(): Promise<void> {
     sashes.update();
     bowl.update(dt);
     decor.update(env.time, env.weather.wind, windowState.openness);
+    tablet.update(dt, { hours: clock.hours, weather: weather.type, nightness: env.lighting.nightness }, interiorTint(env.lighting));
   };
 
   app.ticker.add((ticker) => {
@@ -401,7 +415,7 @@ async function boot(): Promise<void> {
     simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS));
     viewport.render(app.renderer);
     sashes.render(app.renderer);
-    overlay.tick();
+    overlay?.tick();
     app.stage.cursor = viewport.isDragging ? 'grabbing' : viewport.isPannable ? 'grab' : 'default';
   });
 

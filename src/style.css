@@ -718,3 +718,156 @@ body.is-idle canvas {
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------------
+ * The control panel as a tablet: it rests on the sill (drawn in the scene)
+ * and lifts up to the middle of the view when picked up.
+ * --------------------------------------------------------------------- */
+
+:root {
+  /* A calm tablet theme over the HUD's components. */
+  --hud-bg: rgba(16, 22, 34, 0.96);
+  --hud-bg-deep: rgba(10, 14, 24, 0.98);
+  --hud-text: #e8eef6;
+  --hud-muted: #8ea0b8;
+  --hud-cyan: #7ac8ff;
+  --hud-cyan-dim: rgba(122, 200, 255, 0.28);
+  --hud-cyan-faint: rgba(122, 200, 255, 0.07);
+  --hud-magenta: #ff9ab8;
+  --hud-yellow: #ffd27a;
+  --hud-glow: 0 0 4px rgba(122, 200, 255, 0.45);
+  --tablet-bezel: #1a1c22;
+  --tablet-bezel-hi: #3a3e48;
+  --tablet-bezel-lo: #0a0b0e;
+}
+
+.overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 8, 14, 0.38);
+  transition: opacity 260ms ease;
+}
+
+.overlay-backdrop.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.overlay {
+  top: 50%;
+  left: 50%;
+  right: auto;
+  width: min(540px, calc(100vw - 32px));
+  max-height: min(84vh, 780px);
+  transform: translate(-50%, -50%);
+  padding: 26px 16px 30px;
+  background: var(--tablet-bezel);
+  /* Stepped corners, like a pixel-art rounded rectangle. */
+  clip-path: polygon(
+    0 12px, 4px 12px, 4px 6px, 6px 6px, 6px 4px, 12px 4px, 12px 0,
+    calc(100% - 12px) 0, calc(100% - 12px) 4px, calc(100% - 6px) 4px, calc(100% - 6px) 6px, calc(100% - 4px) 6px, calc(100% - 4px) 12px, 100% 12px,
+    100% calc(100% - 12px), calc(100% - 4px) calc(100% - 12px), calc(100% - 4px) calc(100% - 6px), calc(100% - 6px) calc(100% - 6px), calc(100% - 6px) calc(100% - 4px), calc(100% - 12px) calc(100% - 4px), calc(100% - 12px) 100%,
+    12px 100%, 12px calc(100% - 4px), 6px calc(100% - 4px), 6px calc(100% - 6px), 4px calc(100% - 6px), 4px calc(100% - 12px), 0 calc(100% - 12px)
+  );
+  box-shadow:
+    inset 0 2px 0 var(--tablet-bezel-hi),
+    inset 2px 0 0 #2a2d34,
+    inset 0 -3px 0 var(--tablet-bezel-lo),
+    inset -2px 0 0 var(--tablet-bezel-lo);
+  filter: drop-shadow(0 10px 0 rgba(0, 0, 0, 0.35));
+  transition: none;
+  animation: none;
+  z-index: 2;
+}
+
+.overlay:not(.is-hidden) {
+  animation: none;
+}
+
+.overlay.is-hidden {
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+/* The camera, and the home bar. */
+.overlay::before,
+.overlay::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #3a404c;
+}
+
+.overlay::before {
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  box-shadow: 0 0 0 2px #0e1014;
+}
+
+.overlay::after {
+  bottom: 12px;
+  width: 54px;
+  height: 4px;
+  background: #4a5262;
+}
+
+/* The screen. */
+.overlay__body {
+  clip-path: none;
+  border: 3px solid #050608;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.015) 0 1px, transparent 1px 3px),
+    linear-gradient(170deg, #1a2a44 0%, #141c30 55%, #1e1a30 100%);
+  padding: 10px 14px 14px;
+}
+
+.overlay__bar {
+  display: flex;
+  justify-content: space-between;
+  margin: -4px -6px 2px;
+  color: var(--hud-muted);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+}
+
+.overlay__title {
+  color: var(--hud-text);
+  text-shadow: none;
+}
+
+@media (max-width: 480px) {
+  .overlay {
+    left: 50%;
+    right: auto;
+    width: calc(100vw - 20px);
+    max-height: 82vh;
+    padding: 20px 10px 24px;
+  }
+}
+
+@media (max-height: 480px) {
+  .overlay {
+    width: min(720px, calc(100vw - 24px));
+    max-height: calc(100vh - 20px);
+    padding: 14px 22px 14px;
+  }
+
+  .overlay::before {
+    top: 50%;
+    left: 8px;
+    transform: translateY(-50%);
+  }
+
+  .overlay::after {
+    display: none;
+  }
+}
+
+.overlay__title::before,
+.overlay__title::after {
+  display: none;
+}

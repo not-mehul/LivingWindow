@@ -28,6 +28,12 @@ export interface OverlayOptions {
   onAddSeed: () => void;
   onToggleFullscreen: (() => void) | null;
   wakeLock?: ScreenWakeLock;
+  /** The viewer moved or pressed something (wake the tablet's screen). */
+  onActivity?: () => void;
+  /** Where the tablet sits on screen, for the panel to lift out of and settle back into. */
+  tabletRect?: () => { x: number; y: number; width: number; height: number } | null;
+  /** The panel has been picked up (true) or put back down (false). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const SECTIONS_KEY = 'livingWindow.ui.sections';
@@ -56,9 +62,11 @@ const WEATHER_CHIPS: ReadonlyArray<{ value: WeatherType | 'auto'; label: string 
 ];
 
 /**
- * Minimal pixel-styled control panel. Appears on any activity (mouse move,
- * tap, key press) and fades out after a few seconds of stillness, taking the
- * mouse cursor with it so the window can be watched undisturbed.
+ * The control panel, as the screen of a tablet. It rests on the window sill
+ * (see `window/SillTablet.ts`); tapping the tablet lifts it up to the middle
+ * of the view with the settings on it, and tapping outside it (or Escape)
+ * sets it back down. The mouse cursor hides after a few seconds of stillness
+ * so the window can be watched undisturbed.
  */
 export class Overlay {
   readonly element: HTMLElement;
@@ -75,6 +83,10 @@ export class Overlay {
   private readonly presetButtons: HTMLButtonElement[];
   private readonly weatherButtons: HTMLButtonElement[];
   private hideTimer: number | undefined;
+  private readonly backdrop: HTMLElement;
+  private opened = false;
+  private openedAt = 0;
+  private animation: Animation | null = null;
   private hovered = false;
   private scrubbing = false;
   private lastMinute = -1;
@@ -85,14 +97,23 @@ export class Overlay {
   ) {
     const { windowState, birdseed, viewport, clock, weather } = options;
 
+    this.backdrop = document.createElement('div');
+    this.backdrop.className = 'overlay-backdrop is-hidden';
+    // The click that picked the tablet up lands on the backdrop as it appears: ignore it.
+    this.backdrop.addEventListener('click', () => {
+      if (performance.now() - this.openedAt > 400) this.close();
+    });
+    parent.appendChild(this.backdrop);
+
     this.element = document.createElement('div');
-    this.element.className = 'overlay';
+    this.element.className = 'overlay is-hidden';
     this.element.setAttribute('role', 'toolbar');
     this.element.setAttribute('aria-label', 'Living Window controls');
     // The outer element carries the neon glow; the body is clipped to the
     // chamfered HUD shape and scrolls (a clip-path would cut the glow off).
     this.element.innerHTML = `
       <div class="overlay__body">
+      <div class="overlay__bar" aria-hidden="true"><span data-bar-clock></span><span class="overlay__bar-icons">▮▮▮ ◔</span></div>
       <div class="overlay__title" data-text="Living Window">Living Window</div>
       <div class="overlay__sys" aria-hidden="true">
         <span data-feed></span>
@@ -143,7 +164,7 @@ export class Overlay {
       </details>
       <div data-audio-slot></div>
       <div class="overlay__hint" data-hint="pan"></div>
-      <div class="overlay__hint overlay__hint--keys">1–4 landscape · Space pause · [ ] time · W window · B seed · R radio · M mute · F fullscreen</div>
+      <div class="overlay__hint overlay__hint--keys">S or Esc put down · 1–4 landscape · Space pause · [ ] time · W window · B seed · R radio · M mute · F fullscreen</div>
       </div>
     `;
     parent.appendChild(this.element);
@@ -236,14 +257,81 @@ export class Overlay {
     weather.on('lock', () => this.refreshWeather());
 
     for (const event of ACTIVITY_EVENTS) {
-      window.addEventListener(event, () => this.show(), { passive: true });
+      window.addEventListener(event, () => this.activity(), { passive: true });
     }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && this.opened) {
+        e.preventDefault();
+        this.close();
+      }
+    });
 
     this.restoreSections();
     this.refresh();
     this.refreshClock(true);
     this.refreshWeather();
+    this.activity();
+  }
+
+  get isOpen(): boolean {
+    return this.opened;
+  }
+
+  toggle(): void {
+    if (this.opened) this.close();
+    else this.open();
+  }
+
+  /** Pick the tablet up: the panel lifts out of it to the middle of the view. */
+  open(): void {
+    if (this.opened) return;
+    this.opened = true;
+    this.openedAt = performance.now();
+    this.element.classList.remove('is-hidden');
+    this.backdrop.classList.remove('is-hidden');
+    this.options.onOpenChange?.(true);
+    this.animate(true);
     this.show();
+  }
+
+  /** Put it back down on the sill. */
+  close(): void {
+    if (!this.opened) return;
+    this.opened = false;
+    this.backdrop.classList.add('is-hidden');
+    if (this.element.contains(document.activeElement)) (document.activeElement as HTMLElement).blur();
+    const done = () => {
+      if (this.opened) return;
+      this.element.classList.add('is-hidden');
+      this.options.onOpenChange?.(false);
+    };
+    const anim = this.animate(false);
+    if (anim) anim.finished.then(done, done);
+    else done();
+  }
+
+  /** Fly between the tablet on the sill and the middle of the view (or just fade, if it can't be found). */
+  private animate(opening: boolean): Animation | null {
+    this.animation?.cancel();
+    const from = this.options.tabletRect?.();
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!from || reduce || typeof this.element.animate !== 'function') return null;
+    const box = this.element.getBoundingClientRect();
+    if (box.width === 0) return null;
+    const dx = from.x + from.width / 2 - (box.x + box.width / 2);
+    const dy = from.y + from.height / 2 - (box.y + box.height / 2);
+    const s = Math.max(0.05, from.width / box.width);
+    const down = { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${s}) rotate(-6deg)`, opacity: 0.4 };
+    const up = { transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', opacity: 1 };
+    this.animation = this.element.animate(opening ? [down, up] : [up, down], { duration: opening ? 340 : 260, easing: opening ? 'cubic-bezier(.2,.9,.3,1.1)' : 'cubic-bezier(.5,0,.8,.4)' });
+    return this.animation;
+  }
+
+  /** Any movement wakes the tablet's screen and the cursor; stillness hides the cursor again. */
+  private activity(): void {
+    document.body.classList.remove('is-idle');
+    this.options.onActivity?.();
+    this.scheduleHide();
   }
 
   /** Add the mixer and radio controls once the audio system is ready. */
@@ -288,14 +376,14 @@ export class Overlay {
   }
 
   show(): void {
-    this.element.classList.remove('is-hidden');
     document.body.classList.remove('is-idle');
     this.scheduleHide();
   }
 
+  /** Stillness: hide the cursor (the panel itself stays as it is, open or down). */
   hide(): void {
-    if (this.hovered || this.scrubbing || this.element.contains(document.activeElement)) return;
-    this.element.classList.add('is-hidden');
+    if (this.opened && (this.hovered || this.scrubbing || this.element.contains(document.activeElement))) return;
+    if (this.opened) return;
     document.body.classList.add('is-idle');
   }
 
@@ -328,6 +416,8 @@ export class Overlay {
     if (!force && minute === this.lastMinute) return;
     this.lastMinute = minute;
     this.clockText.textContent = formatClock(clock.hours);
+    const bar = this.element.querySelector('[data-bar-clock]');
+    if (bar) bar.textContent = formatClock(clock.hours);
     this.phaseText.textContent = PHASE_LABELS[clock.phase];
     if (!this.scrubbing) this.timeSlider.value = String(minute);
     this.timeSlider.setAttribute('aria-valuetext', `${formatClock(clock.hours)}, ${PHASE_LABELS[clock.phase]}`);
