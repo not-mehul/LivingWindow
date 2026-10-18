@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hedgehogActivity,
+  roeDeerOut,
+  sheepdogTime,
   bioluminescenceLevel,
   bioluminescenceNight,
   crabActivity,
@@ -182,5 +185,16 @@ describe('the shore', () => {
     expect(nights).toBeLessThan(230);
     expect(hatchlingTime(23)).toBe(true);
     expect(hatchlingTime(12)).toBe(false);
+  });
+});
+
+describe('the farm at night', () => {
+  it('keeps the sheepdog to the day, hedgehogs to the night and roe deer to dawn', () => {
+    expect(sheepdogTime(11)).toBe(true);
+    expect(sheepdogTime(21)).toBe(false);
+    expect(hedgehogActivity(23, false)).toBe(1);
+    expect(hedgehogActivity(13, false)).toBe(0);
+    expect(roeDeerOut(6)).toBe(true);
+    expect(roeDeerOut(12)).toBe(false);
   });
 });

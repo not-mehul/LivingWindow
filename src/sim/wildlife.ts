@@ -245,3 +245,24 @@ export function hatchlingTime(hours: number): boolean {
   const h = wrap(hours);
   return h >= 21.5 || h < 1.5;
 }
+
+// --- The farm and its night visitors ------------------------------------------------
+
+/** The sheepdog is sent round the flock now and then through the working day. */
+export function sheepdogTime(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 8.5 && h < 17.5;
+}
+
+/** Hedgehogs snuffle out after dark, through the night. */
+export function hedgehogActivity(hours: number, raining: boolean): number {
+  const h = wrap(hours);
+  if (h >= 21.5 || h < 4.5) return raining ? 0.5 : 1;
+  return 0;
+}
+
+/** Roe deer step out of the tree line in the half-light of dawn. */
+export function roeDeerOut(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 5 && h < 7.6;
+}

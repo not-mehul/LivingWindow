@@ -4,10 +4,10 @@ import { CAT_HEIGHT, CAT_WIDTH, drawCat, type CatPose } from './catSprites';
 import { PixelGrid } from './raster';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized } from './beachSprites';
 import { drawDeerSized, drawSquirrelSized } from './forestSprites';
-import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
+import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
 import { drawBusker, drawPerson, randomLook } from './people';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from './vehicleSprites';
-import { drawBat, drawBear, drawButterfly, drawFox, drawMushroom, drawWoodpeckerCling } from './wildSprites';
+import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling } from './wildSprites';
 import { drawStallLightsSized, drawStallSized, STALL_STAGES, type StallKind } from './streetSprites';
 
 const POSES: BirdPose[] = ['idle', 'idle-breathe', 'look-up', 'look-back', 'peck-reach', 'peck-down', 'chirp', 'hop', 'fly-up', 'fly-mid', 'fly-down', 'glide', 'sleep'];
@@ -234,5 +234,19 @@ describe('shore creatures', () => {
     for (const n of [8, 16, 34, 48]) for (const pose of ['glide', 'flap-up', 'flap-down', 'dive', 'float'] as const) expect(drawPelican(pose, n).grid.isEmpty()).toBe(false);
     for (const n of [3, 6, 10]) for (let f = 0; f < 3; f++) expect(drawJellyfish(f, n).grid.isEmpty()).toBe(false);
     for (const n of [3, 5, 8]) for (const f of [0, 1]) expect(drawHatchling(f, n).grid.isEmpty()).toBe(false);
+  });
+});
+
+describe('farm animals', () => {
+  it('draws sheep, the sheepdog, the horse and the hedgehog in every pose', () => {
+    for (const h of [6, 12, 22, 30]) {
+      for (const pose of ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'lie'] as const) expect(drawSheepSized(pose, h).grid.height).toBe(h);
+      for (const pose of ['run-1', 'run-2', 'trot-1', 'trot-2', 'crouch', 'sit', 'lie'] as const) expect(drawDogSized(pose, h).grid.isEmpty()).toBe(false);
+      for (const pose of ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'swish'] as const) expect(drawHorseSized(pose, h).grid.isEmpty()).toBe(false);
+    }
+    for (const n of [6, 10, 14]) {
+      for (const f of [0, 1]) expect(drawHedgehog(f, n).grid.isEmpty()).toBe(false);
+      expect(drawHedgehog(0, n, true).grid.isEmpty()).toBe(false);
+    }
   });
 });

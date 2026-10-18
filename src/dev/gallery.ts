@@ -4,8 +4,8 @@ import type { PixelGrid } from '../sprites/raster';
 import { drawBird, SPECIES, type SpeciesId } from '../sprites/birdSprites';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
-import { drawChickenSized, drawCowSized, drawRabbitSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type RabbitPose } from '../sprites/meadowSprites';
-import { drawBat, drawBear, drawButterfly, drawFox, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind } from '../sprites/wildSprites';
+import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type DogPose, type HorsePose, type RabbitPose, type SheepPose } from '../sprites/meadowSprites';
+import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind } from '../sprites/wildSprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from '../sprites/vehicleSprites';
 import { drawStallLightsSized, drawStallSized, STALL_LIGHT_PALETTE, type StallKind } from '../sprites/streetSprites';
 
@@ -100,6 +100,18 @@ function sections(): Section[] {
     cows.push(cowPoses.map((pose) => ({ label: pose, draw: () => drawCowSized(coat, pose, 40) })));
   }
   out.push({ title: 'Cows', rows: cows });
+
+  out.push({
+    title: 'Farm',
+    rows: [
+      [8, 12, 16, 22, 30].map((h) => ({ label: `sheep ${h}`, draw: () => drawSheepSized('stand', h) })),
+      (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'lie'] as SheepPose[]).map((pose) => ({ label: pose, draw: () => drawSheepSized(pose, 26) })),
+      [8, 12, 18, 24].flatMap((h) => (['run-1', 'run-2', 'trot-1', 'trot-2', 'crouch', 'sit', 'lie'] as DogPose[]).map((pose) => ({ label: `${pose} ${h}`, draw: () => drawDogSized(pose, h) }))),
+      [10, 14, 20, 30, 40].map((h) => ({ label: `horse ${h}`, draw: () => drawHorseSized('stand', h) })),
+      (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'swish'] as HorsePose[]).map((pose) => ({ label: pose, draw: () => drawHorseSized(pose, 40) })),
+      [6, 10, 14, 18].flatMap((n) => [0, 1].map((f) => ({ label: `hog ${n}/${f}`, draw: () => drawHedgehog(f, n) })).concat([{ label: 'ball', draw: () => drawHedgehog(0, n, true) }])),
+    ],
+  });
 
   const hens: Item[][] = [];
   for (const coat of ['white', 'brown', 'black'] as ChickenCoat[]) {

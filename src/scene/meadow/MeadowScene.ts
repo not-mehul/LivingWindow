@@ -74,6 +74,10 @@ export class MeadowScene implements WorldScene {
   /** Fish in the creek (seen from above). */
   readonly creekLife = new Container({ label: 'creek-life' });
   readonly nightLayer = new Graphics();
+  /** Things down among the wildflowers in front (a hedgehog), half hidden by them. */
+  readonly bankLife = new Container({ label: 'bank-life' });
+  /** Bees and butterflies over the wildflowers. */
+  readonly frontLife = new Container({ label: 'front-life' });
   readonly layout: MeadowLayout;
   readonly ledges: Ledge[];
   readonly trunks: Trunk[];
@@ -179,7 +183,9 @@ export class MeadowScene implements WorldScene {
       this.midground,
       this.birdsMid,
       this.birdsNear,
+      this.bankLife,
       this.flowerLayer,
+      this.frontLife,
       this.nightLayer,
       this.weatherFront,
     );

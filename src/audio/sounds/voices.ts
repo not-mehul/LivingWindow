@@ -589,6 +589,63 @@ const foxBark: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return t - when;
 };
 
+const sheepBaa: SynthVoice = (ctx, out, when, gain, rate) => {
+  // A wavering "baa": a reedy tone with a fast bleating tremolo, nasal formant.
+  const length = rand(0.55, 0.9);
+  const formant = ctx.createBiquadFilter();
+  formant.type = 'bandpass';
+  formant.Q.value = 2.5;
+  formant.frequency.setValueAtTime(900 * rate, when);
+  formant.frequency.linearRampToValueAtTime(1300 * rate, when + length * 0.3);
+  formant.connect(out);
+  const [osc, amp] = tone(ctx, 'sawtooth', formant);
+  const f = rand(280, 360) * rate;
+  osc.frequency.setValueAtTime(f, when);
+  osc.frequency.linearRampToValueAtTime(f * 1.08, when + length * 0.25);
+  osc.frequency.linearRampToValueAtTime(f * 0.9, when + length);
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = rand(14, 19);
+  const depth = ctx.createGain();
+  depth.gain.value = 0.18 * gain;
+  lfo.connect(depth).connect(amp.gain);
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.32 * gain, when + 0.05);
+  amp.gain.setValueAtTime(0.32 * gain, when + length * 0.7);
+  amp.gain.linearRampToValueAtTime(0, when + length);
+  osc.start(when);
+  lfo.start(when);
+  osc.stop(when + length + 0.05);
+  lfo.stop(when + length + 0.05);
+  return length;
+};
+
+const horseWhinny: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  // A whinny: a high, quavering cry tumbling down, ending in a snort.
+  const length = rand(1, 1.4);
+  const formant = ctx.createBiquadFilter();
+  formant.type = 'bandpass';
+  formant.Q.value = 1.8;
+  formant.frequency.setValueAtTime(1600 * rate, when);
+  formant.frequency.linearRampToValueAtTime(700 * rate, when + length);
+  formant.connect(out);
+  const [osc, amp] = tone(ctx, 'sawtooth', formant);
+  const f = rand(900, 1100) * rate;
+  osc.frequency.setValueAtTime(f, when);
+  osc.frequency.exponentialRampToValueAtTime(f * 0.35, when + length);
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = rand(9, 12);
+  const depth = ctx.createGain();
+  depth.gain.value = f * 0.06;
+  lfo.connect(depth).connect(osc.frequency);
+  envelope(amp.gain, when, 0.06, 0.24 * gain, length);
+  osc.start(when);
+  lfo.start(when);
+  osc.stop(when + length + 0.05);
+  lfo.stop(when + length + 0.05);
+  noiseBurst(ctx, noise, out, when + length * 0.95, 0.3, { type: 'bandpass', frequency: 500, Q: 0.8 }, 0.35 * gain, 0.01);
+  return length + 0.35;
+};
+
 export const SYNTH_VOICES = {
   'sparrow-chirp': sparrowChirp,
   'pigeon-coo': pigeonCoo,
@@ -619,5 +676,7 @@ export const SYNTH_VOICES = {
   'guitar-strum': guitarStrum,
   'firework-pop': fireworkPop,
   'fox-bark': foxBark,
+  'sheep-baa': sheepBaa,
+  'horse-whinny': horseWhinny,
   splash,
 } satisfies Record<string, SynthVoice>;

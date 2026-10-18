@@ -468,3 +468,197 @@ export class TopFishSprites {
     return t;
   }
 }
+
+// --- Sheep ----------------------------------------------------------------------
+
+export type SheepPose = 'walk-1' | 'walk-2' | 'walk-3' | 'walk-4' | 'graze-1' | 'graze-2' | 'stand' | 'lie';
+export const SHEEP_WALK: readonly SheepPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4'];
+
+/**
+ * A black-faced sheep in profile facing right, `height` px tall and 1.4× as
+ * wide: a curly, cloud-lumped fleece, black face and ears, thin black legs.
+ * Authored in a 42×30 box.
+ */
+export function drawSheepSized(pose: SheepPose, height: number): Drawn {
+  const H = Math.max(5, Math.round(height));
+  const W = Math.round(H * 1.4);
+  const g = new PixelGrid(W, H);
+  const s = H / 30;
+  const P = (x: number, y: number): Pt => [x * s, y * s];
+  const palette = new Palette();
+  const wool = palette.ramp(0xe6dfd0, 0.7);
+  const face = palette.ramp(0x2e2a28);
+  const eye = palette.add(0xb8a070);
+  const walking = pose.startsWith('walk');
+  const lying = pose === 'lie';
+  const phase = walking ? (Number(pose.slice(-1)) - 1) * (Math.PI / 2) : 0;
+  const sw = (o: number) => (walking ? Math.sin(phase + o) * 2.2 : 0);
+  const legW = Math.max(1, 1.8 * s);
+  const leg = (x: number, o: number, far: boolean) => limb(g, [P(x, 19), P(x + sw(o), 29.5)], legW, legW * 0.9, face, { bias: far ? -0.8 : 0 });
+  const by = lying ? 21 : 15;
+  if (!lying) {
+    leg(29, Math.PI, true);
+    leg(12, 0, true);
+  }
+  // The fleece: a lumpy cloud, curls picked out in light and shade.
+  for (const [cx, cy, rx, ry] of [[12, by, 8, 7], [20, by - 1.5, 9, 8], [28, by, 7.5, 7], [20, by + 2, 11, 6]] as const) {
+    g.ellipse(cx * s, cy * s, rx * s, ry * s, (u, v, x, y) => {
+      const lit = -u * 0.5 - v * 0.7;
+      const curl = pixelHash(Math.floor(x / Math.max(1, 1.5 * s)), Math.floor(y / Math.max(1, 1.5 * s)), 9) < 0.3 ? -1 : 0;
+      return wool[Math.max(1, Math.min(4, (lit > 0.45 ? 4 : lit > -0.1 ? 3 : 2) + curl))];
+    });
+  }
+  if (!lying) {
+    leg(31, 0, false);
+    leg(10, Math.PI, false);
+  } else {
+    // Legs folded under, a hoof showing.
+    g.set(Math.floor(30 * s), Math.floor(28.5 * s), face[1]);
+  }
+  // Head: up, or down in the grass.
+  const grazing = pose.startsWith('graze');
+  const [hx, hy, ang] = grazing ? [36, pose === 'graze-1' ? 25 : 26, 1.1] : lying ? [35, 15, 0.35] : [36, 10, 0.4];
+  limb(g, [P(30, by - 2), P(hx - 2, hy)], 5 * s, 4 * s, wool, { bias: 0.3 });
+  shadedEllipse(g, hx * s, hy * s, 3.4 * s, 2.4 * s, face, { dither: false, angle: ang });
+  // Ears out to the side.
+  limb(g, [P(hx - 2, hy - 1.5), P(hx - 5, hy - 0.5 + (grazing ? -1.5 : 0))], 1.6 * s, 1 * s, face, { bias: 0.3 });
+  if (H >= 12) g.set(Math.floor((hx + 0.6) * s), Math.floor((hy - 0.8 + (grazing ? 0.8 : 0)) * s), eye);
+  if (H >= 12) selOut(g, palette, { bottomHeavy: H < 20 });
+  return { grid: g, palette };
+}
+
+// --- The sheepdog -------------------------------------------------------------------
+
+export type DogPose = 'run-1' | 'run-2' | 'trot-1' | 'trot-2' | 'crouch' | 'sit' | 'lie';
+
+/** A black-and-white border collie in profile facing right, `height` px tall, 1.5× as wide. Authored in a 36×24 box. */
+export function drawDogSized(pose: DogPose, height: number): Drawn {
+  const H = Math.max(5, Math.round(height));
+  const W = Math.round(H * 1.5);
+  const g = new PixelGrid(W, H);
+  const s = H / 24;
+  const P = (x: number, y: number): Pt => [x * s, y * s];
+  const palette = new Palette();
+  const black = palette.ramp(0x26242a);
+  const white = palette.ramp(0xf0ece4, 0.5);
+  const eye = palette.add(0x8a5a2a);
+  const lw = Math.max(1, 1.8 * s);
+  const leg = (path: Pt[], far: boolean) => limb(g, path, lw * 1.2, lw, far ? black : white, { bias: far ? -0.8 : 0 });
+  const run = pose === 'run-1' ? 0 : pose === 'run-2' ? 1 : -1;
+  const trot = pose === 'trot-1' ? 0 : pose === 'trot-2' ? 1 : -1;
+  if (pose === 'sit') {
+    limb(g, [P(10, 21), P(4, 23)], 3 * s, 2 * s, black);
+    shadedEllipse(g, 14 * s, 15 * s, 5 * s, 6.5 * s, black, { dither: false, angle: -0.5 });
+    shadedEllipse(g, 18 * s, 13 * s, 3 * s, 4.5 * s, white, { dither: false, max: 3 });
+    leg([P(19, 15), P(20, 23.5)], false);
+    shadedEllipse(g, 21 * s, 6.5 * s, 3.4 * s, 2.8 * s, black, { dither: false });
+    limb(g, [P(22, 7.5), P(26, 8.5)], 2.4 * s, 1.2 * s, white);
+    limb(g, [P(19, 5), P(18, 2)], 1.8 * s, 0.8 * s, black);
+    if (H >= 12) g.set(Math.floor(22 * s), Math.floor(6 * s), eye);
+  } else {
+    const low = pose === 'crouch' ? 4 : pose === 'lie' ? 7 : 0;
+    const by = 12 + low;
+    // Far legs.
+    if (run === 0) {
+      leg([P(26, by + 2), P(31, by + 6), P(34, by + 9)], true);
+      leg([P(10, by + 2), P(5, by + 6), P(2, by + 8)], true);
+    } else if (run === 1) {
+      leg([P(26, by + 2), P(24, by + 7), P(21, by + 11)], true);
+      leg([P(10, by + 2), P(13, by + 7), P(16, by + 11)], true);
+    } else if (pose !== 'lie') {
+      leg([P(25, by + 2), P(25 + (trot === 0 ? 2 : -1), 23.5)], true);
+      leg([P(10, by + 2), P(10 + (trot === 0 ? -1 : 2), 23.5)], true);
+    }
+    // Tail streaming out behind, white-tipped.
+    limb(g, [P(5, by - 1), P(1, by + (run >= 0 ? -1 : 3))], 2.6 * s, 2 * s, black);
+    g.set(Math.floor(1 * s), Math.floor((by + (run >= 0 ? -1 : 3)) * s), white[3]);
+    // Body: black back, white chest and collar.
+    shadedEllipse(g, 16 * s, by * s, 10 * s, 4 * s, black, { dither: false, min: 1 });
+    shadedEllipse(g, 24 * s, (by + 1.5) * s, 3 * s, 3 * s, white, { dither: false, max: 3 });
+    // Near legs (white socks).
+    if (run === 0) {
+      leg([P(24, by + 2), P(29, by + 7), P(32, by + 10)], false);
+      leg([P(12, by + 2), P(7, by + 7), P(4, by + 9)], false);
+    } else if (run === 1) {
+      leg([P(24, by + 2), P(22, by + 8), P(19, by + 11)], false);
+      leg([P(12, by + 2), P(15, by + 8), P(18, by + 11)], false);
+    } else if (pose === 'lie') {
+      limb(g, [P(24, 21), P(31, 22.5)], lw, lw, white);
+    } else {
+      leg([P(23, by + 2), P(23 + (trot === 0 ? -1 : 2), 23.5)], false);
+      leg([P(12, by + 2), P(12 + (trot === 0 ? 2 : -1), 23.5)], false);
+    }
+    // Head, held low when stalking the flock.
+    const [hx, hy] = pose === 'crouch' ? [29, by] : pose === 'lie' ? [28, by - 2] : [28, by - 4];
+    shadedEllipse(g, hx * s, hy * s, 3.4 * s, 2.8 * s, black, { dither: false });
+    limb(g, [P(hx + 1, hy + 1), P(hx + 5, hy + 2)], 2.4 * s, 1.2 * s, white);
+    g.set(Math.floor((hx + 5.2) * s), Math.floor((hy + 1.6) * s), black[0]);
+    limb(g, [P(hx - 2, hy - 1.5), P(hx - 3, hy - 4.5)], 1.8 * s, 0.8 * s, black);
+    if (H >= 12) g.set(Math.floor((hx + 1) * s), Math.floor((hy - 0.6) * s), eye);
+  }
+  if (H >= 12) selOut(g, palette, { bottomHeavy: H < 18 });
+  return { grid: g, palette };
+}
+
+// --- The horse -------------------------------------------------------------------------
+
+export type HorsePose = 'walk-1' | 'walk-2' | 'walk-3' | 'walk-4' | 'graze-1' | 'graze-2' | 'stand' | 'swish';
+export const HORSE_WALK: readonly HorsePose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4'];
+
+/**
+ * A bay horse in profile facing right, `height` px tall and 1.3× as wide:
+ * a deep chest, long neck and head, black mane, tail and lower legs, and a
+ * white blaze. Grazing, walking, standing and swishing its tail at flies.
+ * Authored in a 52×40 box.
+ */
+export function drawHorseSized(pose: HorsePose, height: number): Drawn {
+  const H = Math.max(6, Math.round(height));
+  const W = Math.round(H * 1.3);
+  const g = new PixelGrid(W, H);
+  const s = H / 40;
+  const P = (x: number, y: number): Pt => [x * s, y * s];
+  const palette = new Palette();
+  const coat = palette.ramp(0x8a4a26);
+  const black = palette.ramp(0x2a1e1a);
+  const blaze = palette.ramp(0xf0e8dc, 0.5);
+  const eye = palette.add(0x0c0808);
+  const walking = pose.startsWith('walk');
+  const phase = walking ? (Number(pose.slice(-1)) - 1) * (Math.PI / 2) : 0;
+  const sw = (o: number) => (walking ? Math.sin(phase + o) * 3.2 : 0);
+  const lift = (o: number) => (walking ? Math.max(0, Math.cos(phase + o)) * 2 : 0);
+  const legW = Math.max(1, 2.8 * s);
+  const leg = (top: Pt, knee: Pt, foot: Pt, far: boolean) => {
+    limb(g, [top, knee], legW * 1.4, legW, coat, { bias: far ? -1.2 : 0 });
+    limb(g, [knee, foot], legW, legW * 0.9, black, { bias: far ? -0.8 : 0 });
+  };
+  leg(P(38, 24), P(38.5 + sw(Math.PI) * 0.4, 31 - lift(Math.PI)), P(38 + sw(Math.PI), 39.5 - lift(Math.PI) * 0.4), true);
+  leg(P(14, 24), P(12 + sw(0) * 0.4, 31 - lift(0)), P(13 + sw(0), 39.5 - lift(0) * 0.4), true);
+  // Tail: hanging, or swished out sideways.
+  const swish = pose === 'swish';
+  limb(g, swish ? [P(8, 14), P(3, 19), P(1, 25)] : [P(8, 14), P(6, 22), P(6.5, 30)], 3 * s, 2.4 * s, black, { bias: 0.2 });
+  // Body: quarters, barrel, a deep chest.
+  shadedEllipse(g, 14 * s, 18 * s, 8 * s, 8 * s, coat, { dither: false, min: 1 });
+  shadedEllipse(g, 25 * s, 19 * s, 14 * s, 7.5 * s, coat, { dither: false, min: 1, flat: 0.2 });
+  shadedEllipse(g, 36 * s, 18 * s, 7 * s, 8.5 * s, coat, { dither: false, min: 1 });
+  leg(P(40, 24), P(40.5 + sw(0) * 0.4, 31 - lift(0)), P(40 + sw(0), 39.5 - lift(0) * 0.4), false);
+  leg(P(12, 24), P(10 + sw(Math.PI) * 0.4, 31 - lift(Math.PI)), P(11 + sw(Math.PI), 39.5 - lift(Math.PI) * 0.4), false);
+  // Neck and head, up or down to the grass; the mane along the crest.
+  const grazing = pose.startsWith('graze');
+  const head: Pt = grazing ? [47, pose === 'graze-1' ? 34 : 35.5] : [47, 6];
+  const angle = grazing ? 1.35 : 0.85;
+  const crest: Pt[] = grazing ? [P(36, 12), P(43, 20), P(46, 29)] : [P(36, 12), P(40, 6), P(44, 3)];
+  limb(g, grazing ? [P(36, 15), P(43, 24), P(46, 31)] : [P(35, 16), P(41, 9), P(45, 5)], 12 * s, 7 * s, coat, { bias: 0.2 });
+  limb(g, crest, 2.2 * s, 1.6 * s, black);
+  shadedEllipse(g, (head[0] + Math.cos(angle) * 1.2) * s, (head[1] + Math.sin(angle) * 1.2) * s, 6.4 * s, 3.4 * s, coat, { dither: false, angle });
+  if (H >= 14) {
+    // The blaze down the face, an eye, an ear.
+    const bx = head[0] + Math.cos(angle) * 1.5;
+    const by = head[1] + Math.sin(angle) * 1.5;
+    limb(g, [[bx * s, by * s], [(bx + Math.cos(angle) * 3) * s, (by + Math.sin(angle) * 3) * s]], 1 * s, 1 * s, blaze, { max: 3 });
+    g.set(Math.floor((head[0] - 1.2) * s), Math.floor((head[1] - 0.8) * s), eye);
+    limb(g, [P(head[0] - 3, head[1] - 2), P(head[0] - 3.6, head[1] - 4.8)], 1.6 * s, 0.8 * s, coat, { bias: -0.4 });
+  }
+  if (H >= 14) selOut(g, palette, { bottomHeavy: H < 24 });
+  return { grid: g, palette };
+}
+

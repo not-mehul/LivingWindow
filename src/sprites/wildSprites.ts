@@ -1,7 +1,7 @@
 import type { Texture } from 'pixi.js';
 import { gridToTexture } from './birdSprites';
 import { limb, Palette, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
-import { PixelGrid } from './raster';
+import { PixelGrid, pixelHash } from './raster';
 
 /**
  * Wild animals shared between the landscapes: the fox, bats, the black bear,
@@ -314,3 +314,39 @@ export function drawMushroom(kind: MushroomKind, size: number): Drawn {
   return { grid: g, palette };
 }
 
+
+// --- Hedgehog ----------------------------------------------------------------------
+
+/** A hedgehog snuffling along, `size` px long: a dome of spines, a pointed snout, little feet (frames 0–1), or rolled into a ball. */
+export function drawHedgehog(frame: number, size: number, curled = false): Drawn {
+  const W = Math.max(5, Math.round(size));
+  const H = Math.max(3, Math.round(W * 0.6));
+  const g = new PixelGrid(W, H);
+  const s = W / 16;
+  const palette = new Palette();
+  const spines = palette.ramp(0x8a6a4c, 1.1);
+  const tips = palette.add(0xe8dcc0);
+  const face = palette.ramp(0xd4b490);
+  const nose = palette.add(0x1a1210);
+  if (curled) {
+    g.ellipse(W / 2, H - 4.4 * s, 4.6 * s, 4.2 * s, (u, v, x, y) => (pixelHash(x, y, 21) < 0.35 ? tips : spines[-u - v > 0.3 ? 3 : 1]));
+    if (W >= 10) selOut(g, palette, { bottomHeavy: true });
+    return { grid: g, palette };
+  }
+  // Snout and face, poking out in front.
+  limb(g, [[9.5 * s, H - 3 * s], [14.6 * s, H - 2 * s]], 3.6 * s, 1.4 * s, face);
+  g.set(Math.floor(14.8 * s), Math.floor(H - 2.2 * s), nose);
+  // The dome of spines, their pale tips catching the light.
+  g.ellipse(7 * s, H - 3.6 * s, 6.6 * s, 4.6 * s, (u, v, x, y) => {
+    if (v > 0.6) return 0;
+    if (pixelHash(x, y, 21) < 0.32 - v * 0.2) return tips;
+    return spines[-u * 0.5 - v * 0.7 > 0.3 ? 3 : 2];
+  });
+  // Little feet shuffling.
+  const step = frame % 2;
+  g.set(Math.floor((4 + step) * s), H - 1, face[1]);
+  g.set(Math.floor((10 - step) * s), H - 1, face[1]);
+  if (W >= 10) selOut(g, palette, { bottomHeavy: true });
+  if (W >= 10) g.set(Math.floor(11.8 * s), Math.floor(H - 3.6 * s), nose);
+  return { grid: g, palette };
+}
