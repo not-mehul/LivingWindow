@@ -7,6 +7,7 @@ import { DayNightSprite, type NightGrade } from '../common/night';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
 import { generateCity, poolFalloff, POOL_REACH, type CityLayerName, type CityLayout } from './cityGenerator';
+import { Billboards } from './Billboards';
 import { StreetLamps } from './StreetLamps';
 import { WindowLife } from './WindowLife';
 import { WindowLights } from './WindowLights';
@@ -74,6 +75,7 @@ export class CityScene implements WorldScene {
   private readonly signs: Array<{ sprite: Sprite; broken: boolean; dip: number }> = [];
   private readonly signLayer = new Container({ label: 'neon' });
   private signsLevel = 0;
+  private readonly billboards: Billboards;
 
   constructor() {
     const rng = createRng(9001);
@@ -106,6 +108,7 @@ export class CityScene implements WorldScene {
       this.signLayer.addChild(sprite);
       this.signs.push({ sprite, broken: sign.broken, dip: 0 });
     }
+    this.billboards = new Billboards(city.billboards, rng);
     this.lamps = new StreetLamps(city.lamps, rng);
     const midLife = new WindowLife(lightsByLayer.mid, rng);
     const nearLife = new WindowLife(lightsByLayer.near, rng);
@@ -115,15 +118,18 @@ export class CityScene implements WorldScene {
       this.sky.container,
       sprites.far.container,
       lightsByLayer.far.sprite,
+      this.billboards.layers.far,
       this.skyLife,
       this.birdsFar,
       sprites.mid.container,
       lightsByLayer.mid.sprite,
+      this.billboards.layers.mid,
       midLife.graphics,
       this.birdsMid,
       this.weatherBack,
       sprites.near.container,
       lightsByLayer.near.sprite,
+      this.billboards.layers.near,
       nearLife.graphics,
       this.roofLife,
       this.poolLayer,
@@ -132,6 +138,7 @@ export class CityScene implements WorldScene {
       this.streetLights,
       this.over.container,
       overLights.sprite,
+      this.billboards.layers.over,
       this.signLayer,
       this.birdsNear,
       this.weatherFront,
@@ -141,10 +148,12 @@ export class CityScene implements WorldScene {
   update(dt: number, env: Environment): void {
     const { lighting } = env;
     this.sky.update(dt, env);
-    this.layers.far.update(lerpColor(lighting.ambient, lighting.haze, 0.55), lighting);
-    this.layers.mid.update(lerpColor(lighting.ambient, lighting.haze, 0.2), lighting);
-    this.layers.near.update(lighting.ambient, lighting);
-    this.over.update(lighting.ambient, lighting);
+    const tints = { far: lerpColor(lighting.ambient, lighting.haze, 0.55), mid: lerpColor(lighting.ambient, lighting.haze, 0.2), near: lighting.ambient, over: lighting.ambient };
+    this.layers.far.update(tints.far, lighting);
+    this.layers.mid.update(tints.mid, lighting);
+    this.layers.near.update(tints.near, lighting);
+    this.over.update(tints.over, lighting);
+    this.billboards.update(dt, lighting, tints);
     for (const lights of this.lights) lights.update(dt, lighting.windowsLit, lighting.emissive);
     this.lamps.update(dt, lighting.darkness, lighting.emissive);
     for (const life of this.life) life.update(dt, lighting.emissive, lighting.darkness);

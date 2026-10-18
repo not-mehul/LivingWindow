@@ -9,6 +9,7 @@ import { gridToTexture } from '../../sprites/birdSprites';
 import { Palette, shadedEllipse } from '../../sprites/kit';
 import { PixelGrid } from '../../sprites/raster';
 import { blimpOut } from '../../sim/wildlife';
+import { drawText, textWidth } from '../../scene/city/pixelFont';
 
 const r = (a: number, b: number) => a + Math.random() * (b - a);
 
@@ -26,33 +27,47 @@ interface Craft {
   searchlight: Sprite | null;
 }
 
-/** The blimp, drawn once: a silver envelope with fins, a gondola and a band for its sign. */
+/** The blimp, drawn once: a silver envelope with fins, a gondola and a dark band for its sign. */
 function blimpTexture(): Texture {
-  const W = 40;
-  const H = 16;
+  const W = 56;
+  const H = 22;
   const g = new PixelGrid(W, H);
   const palette = new Palette();
   const skin = palette.ramp(0xd8dce0, 0.8);
   const fin = palette.ramp(0x3a6ab0);
   const gondola = palette.ramp(0x4a4e56);
   // Tail fins.
-  g.polygon([[2, 2], [9, 6], [9, 10], [2, 13]], fin[2]);
-  shadedEllipse(g, 21, 7.5, 17, 6, skin, { dither: false, min: 1 });
-  g.rect(18, 13, 8, 2, gondola[2]);
-  g.rect(19, 13, 1, 1, gondola[4]);
-  // A dark band where the sign runs.
-  for (let x = 10; x < 33; x++) {
-    g.set(x, 7, 0);
-    g.set(x, 8, 0);
-  }
+  g.polygon([[2, 3], [12, 8], [12, 13], [2, 18]], fin[2]);
+  shadedEllipse(g, 29, 10.5, 24, 8.5, skin, { dither: false, min: 1 });
+  g.rect(25, 19, 10, 2, gondola[2]);
+  g.rect(26, 19, 1, 1, gondola[4]);
+  g.rect(30, 19, 1, 1, gondola[4]);
+  // A dark band where the sign runs, inked top and bottom.
+  const band = palette.add(0x0c0e14);
   const ink = palette.add(0x1e2430);
-  for (let x = 10; x < 33; x++) {
-    if (g.get(x, 6) || g.get(x, 9)) {
-      g.set(x, 7, ink);
-      g.set(x, 8, ink);
-    }
+  for (let x = BAND_X0; x < BAND_X0 + BAND_W; x++) {
+    for (let y = BAND_Y0 - 1; y <= BAND_Y0 + 5; y++) if (g.get(x, y)) g.set(x, y, y === BAND_Y0 - 1 || y === BAND_Y0 + 5 ? ink : band);
   }
   return gridToTexture(g, palette.colors);
+}
+
+/** Where the blimp's sign runs on its texture. */
+const BAND_X0 = 15;
+const BAND_W = 32;
+const BAND_Y0 = 8;
+const BLIMP_MESSAGE = 'NEUROCOLA · TASTE THE SIGNAL · ASK KAI · ALWAYS LISTENING · DREAMDIVE 12¥/HR · ';
+
+/** The message as columns of lit pixels (bit k = row k), for scrolling. */
+function messageColumns(text: string): number[] {
+  const buf = new PixelBuffer(textWidth(text, 'small') + 1, 5);
+  drawText(buf, text, 0, 0, 0xffffff, 'small');
+  const cols: number[] = [];
+  for (let x = 0; x < buf.width; x++) {
+    let bits = 0;
+    for (let y = 0; y < 5; y++) if (buf.isSet(x, y)) bits |= 1 << y;
+    cols.push(bits);
+  }
+  return cols;
 }
 
 /** A searchlight's beam: a long dithered wedge, brightest at the lamp. */
@@ -92,6 +107,7 @@ export class SkyTraffic {
   private readonly nearGfx = new Graphics();
   private readonly crafts: Craft[] = [];
   private readonly blimpSprite: Sprite;
+  private readonly message = messageColumns(BLIMP_MESSAGE);
   private beam: Texture | null = null;
   private timers: Record<CraftKind, number> = { plane: r(10, 60), helicopter: r(120, 300), drone: r(60, 180), blimp: r(30, 120) };
   private blimpToday = false;
@@ -233,14 +249,16 @@ export class SkyTraffic {
         this.blimpSprite.position.set(x, y);
         this.blimpSprite.scale.x = c.dir;
         this.blimpSprite.tint = lerpColor(tint, 0xffffff, 0.2);
-        // Its sign: lit dots running along the band.
-        const left = x - c.dir * 11;
-        for (let k = 0; k < 22; k++) {
-          const on = (k + Math.floor(env.time * 8)) % 6 < 3;
-          if (!on) continue;
-          const px = left + c.dir * k;
-          const colors = [0xffe060, 0xff6a8a, 0x6ad8ff];
-          this.lights.rect(px, y, 1, 1).fill({ color: colors[Math.floor(k / 6) % 3], alpha: 0.5 + 0.5 * night });
+        // Its sign: a message scrolling along the band, readable whichever way it flies.
+        const offset = Math.floor(env.time * 9);
+        const x0 = Math.round(x) - 28 + (c.dir > 0 ? BAND_X0 : 56 - BAND_X0 - BAND_W);
+        const y0 = Math.round(y) - 11 + BAND_Y0;
+        const cols = this.message;
+        for (let k = 0; k < BAND_W; k++) {
+          const bits = cols[(k + offset) % cols.length];
+          if (!bits) continue;
+          const color = [0xffe060, 0xff6a8a, 0x6ad8ff][Math.floor((k + offset) / 40) % 3];
+          for (let r = 0; r < 5; r++) if (bits & (1 << r)) this.lights.rect(x0 + k, y0 + r, 1, 1).fill({ color, alpha: 0.55 + 0.45 * night });
         }
         break;
       }

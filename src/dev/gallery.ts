@@ -7,6 +7,8 @@ import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type Sq
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type DogPose, type HorsePose, type RabbitPose, type SheepPose } from '../sprites/meadowSprites';
 import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind } from '../sprites/wildSprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from '../sprites/vehicleSprites';
+import { ADS, drawAd, type AdId } from '../scene/city/ads';
+import type { PixelBuffer } from '../core/pixelBuffer';
 import { drawStallLightsSized, drawStallSized, STALL_LIGHT_PALETTE, type StallKind } from '../sprites/streetSprites';
 
 /**
@@ -17,7 +19,7 @@ import { drawStallLightsSized, drawStallSized, STALL_LIGHT_PALETTE, type StallKi
 
 interface Item {
   label: string;
-  draw: () => Drawn | { grid: PixelGrid; colors: readonly number[] };
+  draw: () => Drawn | { grid: PixelGrid; colors: readonly number[] } | { buffer: PixelBuffer };
 }
 
 interface Section {
@@ -38,6 +40,25 @@ function seeded(seed: number): () => number {
 
 function sections(): Section[] {
   const out: Section[] = [];
+  // City ads, every frame, at the sizes their screens are.
+  const adSizes: Record<AdId, Array<[number, number]>> = {
+    neurocola: [[72, 31], [40, 16]],
+    kaiju: [[64, 28], [40, 17]],
+    dreamdive: [[56, 24], [34, 15]],
+    askkai: [[68, 90], [56, 24]],
+    soulsync: [[60, 26], [40, 17]],
+    nanocare: [[56, 22], [34, 15]],
+    ramen: [[40, 18], [26, 40]],
+    curfew: [[76, 7]],
+  };
+  const ads: Item[][] = [];
+  for (const id of Object.keys(adSizes) as AdId[]) {
+    for (const [w, h] of adSizes[id]) {
+      const frames = Math.min(ADS[id].frames, 6);
+      ads.push(Array.from({ length: frames }, (_, f) => ({ label: `${id} ${w}x${h} ${f}`, draw: () => ({ buffer: drawAd(id, id === 'curfew' ? f * 12 : f, w, h, f === 0 ? 'dead-column' : null) }) })));
+    }
+  }
+  out.push({ title: 'City ads', rows: ads });
   // People: one look per row at every size, then poses at a near size.
   const people: Item[][] = [];
   const looks = Array.from({ length: 6 }, (_, i) => randomLook(seeded(i * 7919 + 101)));
@@ -189,13 +210,13 @@ function sections(): Section[] {
 
 function render(item: Item, scale: number, dark: boolean): HTMLElement {
   const drawn = item.draw();
-  const colors = 'palette' in drawn ? drawn.palette.colors : drawn.colors;
-  const { grid } = drawn;
+  const grid = 'buffer' in drawn ? drawn.buffer : drawn.grid;
+  const rgba = 'buffer' in drawn ? drawn.buffer.data : drawn.grid.toRGBA('palette' in drawn ? drawn.palette.colors : drawn.colors);
   const canvas = document.createElement('canvas');
   canvas.width = grid.width;
   canvas.height = grid.height;
   const ctx = canvas.getContext('2d');
-  if (ctx) ctx.putImageData(new ImageData(grid.toRGBA(colors) as Uint8ClampedArray<ArrayBuffer>, grid.width, grid.height), 0, 0);
+  if (ctx) ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba) as Uint8ClampedArray<ArrayBuffer>, grid.width, grid.height), 0, 0);
   canvas.style.cssText = `width:${grid.width * scale}px;height:${grid.height * scale}px;image-rendering:pixelated;background:${dark ? '#1c2230' : '#c8b898'}`;
   const cell = document.createElement('figure');
   cell.style.cssText = 'margin:0 6px 8px 0;display:inline-flex;flex-direction:column;align-items:center;vertical-align:bottom';

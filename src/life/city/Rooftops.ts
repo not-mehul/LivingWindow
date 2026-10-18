@@ -39,7 +39,7 @@ class Figure {
 // --- Window cleaners on the glass tower ------------------------------------
 
 /** The glass tower's face, towards us: ground units, and where it shows on screen. */
-const TOWER = { gx0: -630, gx1: -480, depth: 2.2, top: 0, bottom: 150 };
+const TOWER = { gx0: -630, gx1: -480, depth: 2.2, top: 122, bottom: 170 };
 const GONDOLA_W = 34;
 
 /**
@@ -72,7 +72,7 @@ class WindowCleaners {
     if (this.rising || !out) {
       // Hauled back up to the roof (and away, when the day's done).
       this.y -= 22 * dt;
-      if (this.y <= TOWER.top - 30) {
+      if (this.y <= TOWER.top) {
         this.rising = false;
         this.column = (this.column + 1) % columns;
         if (!out) {

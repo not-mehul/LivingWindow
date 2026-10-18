@@ -69,3 +69,23 @@ describe('generateCity light pools', () => {
     expect(paving / lit).toBeGreaterThan(0.6);
   });
 });
+
+describe('city screens', () => {
+  const city = generateCity();
+  it('puts every billboard in the world, each showing its ad on some of its pixels', () => {
+    expect(city.billboards.length).toBeGreaterThanOrEqual(8);
+    for (const b of city.billboards) {
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.y).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.w).toBeLessThanOrEqual(840);
+      expect(b.y + b.h).toBeLessThanOrEqual(360);
+      const shown = b.map.filter((a) => a >= 0);
+      expect(shown.length, b.ad).toBeGreaterThan(b.w * b.h * 0.3);
+      for (const a of shown) expect(a).toBeLessThan(b.artW * b.artH);
+    }
+  });
+
+  it('keeps exactly one worn-out neon sign', () => {
+    expect(city.signs.filter((s) => s.broken).length).toBe(1);
+  });
+});
