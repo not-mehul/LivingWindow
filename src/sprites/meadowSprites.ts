@@ -24,16 +24,19 @@ export const COW_WALK: readonly CowPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk
 export type CowCoat = 'holstein' | 'jersey' | 'brown';
 
 const COW_COATS: Record<CowCoat, { coat: number; patch: number; muzzle: number }> = {
-  holstein: { coat: 0xeeece4, patch: 0x2a2624, muzzle: 0xe0a8a0 },
+  holstein: { coat: 0xeeece4, patch: 0x2a2624, muzzle: 0xc89890 },
   jersey: { coat: 0xc08a54, patch: 0x8a5a30, muzzle: 0x3a2a24 },
-  brown: { coat: 0x7a4a2a, patch: 0x4a2a16, muzzle: 0xd8a890 },
+  brown: { coat: 0x7a4a2a, patch: 0x4a2a16, muzzle: 0xa87a68 },
 };
 
 /**
- * A cow in profile facing right, (1.5·H)×H, hooves on the bottom row: a
- * shaded barrel of a body, jointed legs with hocks and hooves, udder, tail
- * with its tuft, ear, horns and a muzzle; a Holstein's patches lie over it.
- * Authored in a 60×40 box.
+ * A cow in profile facing right, (1.5·H)×H, hooves on the bottom row, with
+ * real cattle lines: a straight back from the hip bones to the withers, a
+ * deep barrel, long slim legs (the hind ones bent back at the hock), and a
+ * big wedge of a head hanging below the back on a thick neck with a dewlap.
+ * Walking is a four-beat walk, one hoof lifted at a time. A Holstein's black
+ * patches stay on the body; its head is black with a white blaze and its
+ * lower legs are white. Authored in a 60×40 box.
  */
 export function drawCowSized(coat: CowCoat, pose: CowPose, height: number): Drawn {
   const H = Math.max(6, Math.round(height));
@@ -46,112 +49,160 @@ export function drawCowSized(coat: CowCoat, pose: CowPose, height: number): Draw
   const fur = palette.ramp(style.coat, coat === 'holstein' ? 0.7 : 1);
   const patch = palette.ramp(style.patch, 0.8);
   const muzzle = palette.ramp(style.muzzle);
-  const pink = palette.ramp(0xe0a0a0);
+  const pink = palette.ramp(0xd8a8a0, 0.7);
   const horn = palette.ramp(0xd8ccb0);
   const hoof = palette.ramp(0x2e2622);
   const eyeInk = palette.add(0x140e0c);
   const detailed = H >= 16;
-  // Flat bands of shade read better on a coat than dithering.
   const dither = false;
-  const legW = Math.max(1, 3.6 * s);
+  const px = (w: number) => Math.max(1, w * s);
+  const holstein = coat === 'holstein';
 
-  const leg = (top: Pt, joint: Pt, foot: Pt, far: boolean) => {
-    const bias = far ? -1.2 : 0;
-    limb(g, [top, joint], legW * 1.35, legW, fur, { bias });
-    limb(g, [joint, foot], legW, legW * 0.85, fur, { bias });
-    const hw = Math.max(1, Math.round(2.6 * s));
+  const drawHoof = (foot: Pt, far: boolean) => {
+    const hw = Math.max(1, Math.round(3 * s));
     const hh = Math.max(1, Math.round(1.6 * s));
-    for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) g.set(Math.floor(foot[0] - hw / 2) + x, H - hh + y, hoof[far ? 1 : y === 0 ? 3 : 2]);
+    const y0 = Math.min(H - hh, Math.round(foot[1] - hh / 2));
+    for (let y = 0; y < hh; y++) for (let x = 0; x < hw; x++) g.set(Math.round(foot[0] - hw / 2) + x, y0 + y, hoof[far ? 1 : y === 0 ? 3 : 2]);
+  };
+  /** A foreleg: elbow, knee, fetlock, hoof. Lifted, it folds back at the knee. */
+  const foreleg = (x: number, dx: number, lift: number, far: boolean) => {
+    const bias = far ? -1.2 : 0;
+    const knee = P(x + 0.5 + lift * 0.5, 31.5 - lift * 0.6);
+    const foot = P(x + dx - lift * 0.9, 39.2 - lift);
+    limb(g, [P(x - 0.5, 22), knee], px(4.6), px(3), fur, { bias });
+    limb(g, [knee, foot], px(2.8), px(2.4), fur, { bias });
+    drawHoof(foot, far);
+  };
+  /** A hind leg: the thigh down to the stifle, the gaskin back to the hock, the cannon straight down. */
+  const hindleg = (x: number, dx: number, lift: number, far: boolean) => {
+    const bias = far ? -1.2 : 0;
+    const stifle = P(x + 2.5, 24);
+    const hock = P(x - 1.5 + dx * 0.4 - lift * 0.3, 30.5 - lift * 0.8);
+    const foot = P(x + dx + lift * 0.4, 39.2 - lift);
+    limb(g, [P(x + 1, 16), stifle], px(8), px(5), fur, { bias });
+    limb(g, [stifle, hock], px(4.4), px(2.6), fur, { bias });
+    limb(g, [hock, foot], px(2.6), px(2.4), fur, { bias });
+    drawHoof(foot, far);
   };
 
+  let head: { poll: Pt; nose: Pt; lying: boolean };
   if (pose === 'lie') {
-    // Lying down: a low loaf with legs folded under, head up and chewing the cud.
-    // Tail lying along the ground.
-    limb(g, [P(11, 27), P(8, 33), P(11, 38)], Math.max(1, 1.2 * s), Math.max(1, 1.1 * s), fur, { bias: -0.6 });
-    // Body: a round back and a broad belly settled on the grass, a haunch with the hind leg folded under.
-    shadedEllipse(g, 29 * s, 31 * s, 18 * s, 7.5 * s, fur, { dither, flat: 0.2, min: 1 });
-    shadedEllipse(g, 24 * s, 28 * s, 11 * s, 8 * s, fur, { dither, min: 1 });
-    shadedEllipse(g, 16 * s, 32 * s, 6.5 * s, 5.5 * s, fur, { dither, bias: 0.3, min: 1 });
-    // A foreleg tucked forward.
-    limb(g, [P(39, 36.5), P(46, 38.3)], legW, legW * 0.8, fur, { bias: -0.3 });
-    // Neck up to the head.
-    limb(g, [P(42, 28), P(48, 23)], 8 * s, 6.5 * s, fur);
-    drawCowHead(g, s, 50, 21, 0.35, { fur, muzzle, horn, pink, eyeInk }, detailed, dither);
+    // Lying down: a low loaf settled on the grass, a hind leg folded with its hoof showing, a foreleg tucked forward,
+    // the head held up, chewing the cud.
+    limb(g, [P(9, 25), P(6.5, 32), P(9, 38.5)], px(1.3), px(1.1), fur, { bias: -0.6 });
+    shadedEllipse(g, 26 * s, 30 * s, 18 * s, 8.5 * s, fur, { dither, flat: 0.25, min: 1 });
+    shadedEllipse(g, 16 * s, 29 * s, 8 * s, 8.5 * s, fur, { dither, min: 1 });
+    shadedEllipse(g, 36 * s, 29.5 * s, 8 * s, 8 * s, fur, { dither, min: 1 });
+    // Haunch, and the folded hind leg's hoof poking out under the belly.
+    shadedEllipse(g, 15 * s, 31 * s, 6.5 * s, 6 * s, fur, { dither, bias: 0.3, min: 1 });
+    limb(g, [P(20, 36), P(27, 38)], px(2.8), px(2.4), fur, { bias: -0.4 });
+    drawHoof(P(28, 38.5), true);
+    limb(g, [P(39, 36), P(47, 38.4)], px(3), px(2.5), fur, { bias: -0.2 });
+    drawHoof(P(48, 38.6), false);
+    // The neck rises from the shoulder.
+    limb(g, [P(37, 27), P(42, 22), P(46, 19)], px(10), px(7), fur, { dither });
+    if (detailed) shadedEllipse(g, 42.5 * s, 28 * s, 3 * s, 2.6 * s, fur, { dither, bias: -0.3 });
+    head = { poll: P(47, 17.5), nose: P(51.5, 26.5), lying: true };
   } else {
     const walking = pose.startsWith('walk');
     const phase = walking ? (Number(pose.slice(-1)) - 1) * (Math.PI / 2) : 0;
-    const swing = (o: number) => (walking ? Math.sin(phase + o) * 3.2 : 0);
-    const lift = (o: number) => (walking ? Math.max(0, Math.cos(phase + o)) * 1.4 : 0);
+    // Four-beat walk: near hind, near fore, far hind, far fore, a quarter-cycle apart; a foot is lifted mid-swing.
+    const gait = (o: number) => {
+      if (!walking) return { dx: 0, lift: 0 };
+      const a = phase + o;
+      return { dx: -Math.cos(a) * 2.6, lift: Math.max(0, Math.sin(a)) ** 2 * 2.4 };
+    };
+    const nh = gait(Math.PI / 2);
+    const nf = gait(0);
+    const fh = gait(-Math.PI / 2);
+    const ff = gait(Math.PI);
     // Far legs first, in shadow.
-    leg(P(41, 24), P(42 + swing(Math.PI) * 0.5, 31 - lift(Math.PI)), P(41 + swing(Math.PI), 38), true);
-    leg(P(16, 24), P(13 + swing(0) * 0.4, 31 - lift(0)), P(15 + swing(0), 38), true);
-    // Body: hindquarters, barrel, shoulders.
-    shadedEllipse(g, 15 * s, 19 * s, 8.5 * s, 9.5 * s, fur, { dither, min: 1 });
-    shadedEllipse(g, 29 * s, 20.5 * s, 19 * s, 9 * s, fur, { dither, flat: 0.2, min: 1 });
-    shadedEllipse(g, 41 * s, 19 * s, 7 * s, 9.5 * s, fur, { dither, min: 1 });
-    // Udder.
+    hindleg(16, fh.dx, fh.lift, true);
+    foreleg(40.5, ff.dx, ff.lift, true);
+    // The back: a straight line from the tail head over the hip bones to the withers (under the body, which
+    // covers all but its top edge, filling the dips between the body's rounds).
+    limb(g, [P(9, 12), P(17, 11), P(30, 11), P(41, 10.6)], px(4), px(4), fur, { bias: 0.6 });
+    // The body: rump, barrel, chest; tops lined up so the back runs straight.
+    shadedEllipse(g, 15 * s, 18.5 * s, 8 * s, 8.5 * s, fur, { dither, min: 1 });
+    shadedEllipse(g, 28 * s, 19.5 * s, 16 * s, 9.5 * s, fur, { dither, flat: 0.25, min: 1 });
+    shadedEllipse(g, 40 * s, 18 * s, 6.5 * s, 8 * s, fur, { dither, min: 1 });
     if (detailed) {
-      shadedEllipse(g, 21 * s, 29 * s, 3.4 * s, 2.3 * s, pink, { dither: false });
-      g.set(Math.floor(20 * s), Math.floor(31.2 * s), pink[1]);
-      g.set(Math.floor(22.5 * s), Math.floor(31.2 * s), pink[1]);
+      g.set(Math.round(17 * s), Math.round(9.2 * s), fur[3]);
+      // The udder, forward of the hind legs, and its teats.
+      shadedEllipse(g, 21 * s, 28.4 * s, 2.8 * s, 2 * s, pink, { dither: false });
+      g.set(Math.floor(19.8 * s), Math.floor(30.2 * s), pink[1]);
+      g.set(Math.floor(22.2 * s), Math.floor(30.2 * s), pink[1]);
     }
     // Near legs.
-    leg(P(45, 24), P(46 + swing(0) * 0.5, 31 - lift(0)), P(45 + swing(0), 38), false);
-    leg(P(12, 24), P(9 + swing(Math.PI) * 0.4, 31 - lift(Math.PI)), P(11 + swing(Math.PI), 38), false);
-    // Tail, swinging a little, with its tuft.
+    hindleg(13, nh.dx, nh.lift, false);
+    foreleg(43.5, nf.dx, nf.lift, false);
+    // The tail hangs straight down the rump to its tuft, swinging a little.
     const t = walking ? Math.sin(phase) * 1.2 : 0;
-    limb(g, [P(9, 13), P(7 + t * 0.3, 21), P(7.5 + t, 28)], Math.max(1, 1.3 * s), Math.max(1, 1 * s), fur, { bias: -0.6 });
-    shadedEllipse(g, (7.5 + t) * s, 30 * s, Math.max(0.6, 1.3 * s), Math.max(0.8, 2.2 * s), patch, { dither: false });
-    // Neck and head: lowered to the grass when grazing.
+    limb(g, [P(8.5, 12), P(7 + t * 0.3, 21), P(7.2 + t, 29)], px(1.3), px(1), fur, { bias: -0.6 });
+    shadedEllipse(g, (7.2 + t) * s, 31 * s, Math.max(0.6, 1.3 * s), Math.max(0.8, 2.3 * s), holstein ? fur : patch, { dither: false });
+    // The neck: thick, set on the shoulders, with the dewlap hanging under it.
     const grazing = pose.startsWith('graze');
     if (grazing) {
-      const hy = pose === 'graze-1' ? 31 : 32.5;
-      limb(g, [P(44, 15), P(50, 24), P(52, hy - 4)], 8.5 * s, 6 * s, fur, { dither: false });
-      drawCowHead(g, s, 53, hy, 1.15, { fur, muzzle, horn, pink, eyeInk }, detailed, dither);
+      const bob = pose === 'graze-1' ? 0 : 1;
+      limb(g, [P(39, 15), P(46, 21), P(50, 27 + bob)], px(10), px(6.5), fur, { dither });
+      head = { poll: P(50.5, 27 + bob), nose: P(53.5, 38 + bob * 0.4), lying: false };
     } else {
-      limb(g, [P(43, 16), P(50, 13)], 9 * s, 7 * s, fur, { dither: false });
-      drawCowHead(g, s, 52, 14, 0.45, { fur, muzzle, horn, pink, eyeInk }, detailed, dither);
+      limb(g, [P(39, 16), P(45, 14.5), P(48.5, 14)], px(10), px(7.5), fur, { dither });
+      if (detailed) limb(g, [P(42.5, 19), P(45, 23), P(46.5, 21)], px(3), px(1.4), fur, { bias: -0.5 });
+      head = { poll: P(49.5, 13.5), nose: P(54, 23.5), lying: false };
     }
   }
-  if (H >= 10 && coat === 'holstein') {
-    // Black patches: organic blobs over the white, following its shading.
+  if (H >= 10 && holstein) {
+    // Black patches: organic blobs over the white of the body, following its shading, but not down the legs.
     const cell = 7 * s;
-    remap(g, fur, patch, (x, y) => valueNoise(x / cell, y / cell, 13) * 0.7 + valueNoise(x / (cell * 0.45), y / (cell * 0.45), 29) * 0.3 < 0.4);
+    remap(g, fur, patch, (x, y) => y < 28 * s && valueNoise(x / cell, y / cell, 13) * 0.7 + valueNoise(x / (cell * 0.45), y / (cell * 0.45), 29) * 0.3 < 0.42);
   } else if (detailed) {
-    // A paler belly and muzzle line.
+    // A paler belly line.
     const paler: Ramp = [fur[1], fur[2], fur[3], fur[4], fur[4]];
     remap(g, fur, paler, (_x, y) => y > 25 * s && y < 30 * s);
   }
+  drawCowHead(g, s, head.poll, head.nose, { fur, patch, muzzle, horn, eyeInk }, coat, detailed);
   if (detailed) selOut(g, palette, { bottomHeavy: H < 24 });
   return { grid: g, palette };
 }
 
+/** The head, from the poll down to the nose: a long tapering wedge with a broad muzzle, ears out sideways, eye high up. */
 function drawCowHead(
   g: PixelGrid,
   s: number,
-  hx: number,
-  hy: number,
-  tilt: number,
-  r: { fur: Ramp; muzzle: Ramp; horn: Ramp; pink: Ramp; eyeInk: number },
+  poll: Pt,
+  nose: Pt,
+  r: { fur: Ramp; patch: Ramp; muzzle: Ramp; horn: Ramp; eyeInk: number },
+  coat: CowCoat,
   detailed: boolean,
-  dither: boolean,
 ): void {
-  // Ear, sticking out behind the poll.
-  const back = tilt > 1 ? -1 : 0;
-  shadedEllipse(g, (hx - 4.5) * s, (hy - 3.5 + back * 2) * s, 2.6 * s, 1.2 * s, r.fur, { dither: false, angle: -0.3 + tilt * 0.4, bias: -0.5 });
-  // The long face, angled down to the muzzle.
-  shadedEllipse(g, hx * s, hy * s, 5.2 * s, 3.6 * s, r.fur, { dither, angle: tilt });
-  const mx = hx + Math.cos(tilt) * 4.2;
-  const my = hy + Math.sin(tilt) * 4.2;
-  shadedEllipse(g, mx * s, my * s, 2.6 * s, 2.4 * s, r.muzzle, { dither: false, angle: tilt });
+  const holstein = coat === 'holstein';
+  const skin = holstein ? r.patch : coat === 'jersey' ? r.patch : r.fur;
+  const dx = nose[0] - poll[0];
+  const dy = nose[1] - poll[1];
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const at = (t: number, side = 0): Pt => [poll[0] + dx * t - uy * side * s, poll[1] + dy * t + ux * side * s];
+  // An ear, sticking out sideways behind the poll.
+  shadedEllipse(g, poll[0] - 2.2 * s, poll[1] + 0.6 * s, 3 * s, 1.3 * s, skin, { dither: false, angle: Math.atan2(uy, ux) - Math.PI / 2 - 0.25, bias: -0.4 });
+  // The face: broad at the brow, narrowing to the muzzle.
+  limb(g, [at(0, 0.6), at(0.55, 0.2), at(0.85)], Math.max(1, 7.6 * s), Math.max(1, 5.2 * s), skin, { bias: 0.2 });
+  if (holstein && detailed) {
+    // The white blaze down the front of the face.
+    limb(g, [at(0.02, -1.8), at(0.5, -1.5), at(0.8, -1)], Math.max(1, 2.8 * s), Math.max(1, 2 * s), r.fur, { bias: 0.4 });
+  }
+  // The muzzle: broad and soft, a pale ring round a Jersey's.
+  const m = at(0.92, -0.2);
+  if (coat === 'jersey' && detailed) shadedEllipse(g, m[0], m[1], 3.2 * s, 2.9 * s, r.fur, { dither: false });
+  shadedEllipse(g, m[0], m[1], Math.max(0.8, 2.4 * s), Math.max(0.8, 2.2 * s), r.muzzle, { dither: false, angle: Math.atan2(uy, ux) });
   if (detailed) {
-    g.set(Math.floor((mx + 1) * s), Math.floor((my + 0.2) * s), r.muzzle[0]);
-    // Eye.
-    const ex = hx - 0.5 + Math.sin(tilt) * 0.6;
-    const ey = hy - 1.4 + Math.cos(tilt) * 0.2;
-    g.set(Math.floor(ex * s), Math.floor(ey * s), r.eyeInk);
-    // Horns: short and pale, curving up from the poll.
-    limb(g, [[(hx - 2) * s, (hy - 3.2) * s], [(hx - 1.6) * s, (hy - 5.5) * s], [(hx - 0.6) * s, (hy - 6.6) * s]], Math.max(1, 1.3 * s), Math.max(1, 0.8 * s), r.horn, { max: 4 });
+    const n = at(0.98, -1.2);
+    g.set(Math.floor(n[0]), Math.floor(n[1]), r.muzzle[0]);
+    const e = at(0.22, 1.2);
+    g.set(Math.floor(e[0]), Math.floor(e[1]), r.eyeInk);
+    // Short horns curving up from the poll, on the coats that keep them.
+    if (!holstein) limb(g, [[poll[0] - 0.4 * s, poll[1] - 1.8 * s], [poll[0] + 0.2 * s, poll[1] - 3.6 * s], [poll[0] + 1.2 * s, poll[1] - 4.4 * s]], Math.max(1, 1.3 * s), Math.max(1, 0.8 * s), r.horn, { max: 4 });
   }
 }
 

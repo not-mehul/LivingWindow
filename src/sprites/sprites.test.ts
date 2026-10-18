@@ -174,6 +174,25 @@ describe('landscape creatures', () => {
     expect(topRow(buck)!).toBeLessThan(topRow(doe)!);
   });
 
+  it('walks a cow in four distinct beats, hooves lifting in turn, with white lower legs on a Holstein', () => {
+    const frames = (['walk-1', 'walk-2', 'walk-3', 'walk-4'] as const).map((pose) => Array.from(drawCowSized('holstein', pose, 40).grid.data).join(','));
+    expect(new Set(frames).size).toBe(4);
+    // Each frame has a hoof off the ground: fewer hoof pixels sit on the bottom row than when standing.
+    const bottom = (pose: 'stand' | 'walk-1') => {
+      const { grid } = drawCowSized('jersey', pose, 40);
+      let n = 0;
+      for (let x = 0; x < grid.width; x++) if (grid.get(x, grid.height - 1)) n++;
+      return n;
+    };
+    expect(bottom('walk-1')).toBeLessThan(bottom('stand'));
+    const { grid, palette } = drawCowSized('holstein', 'stand', 40);
+    const dark = (c: number) => ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255) < 200;
+    let darkLeg = 0;
+    // Shins: between the knees and the hooves (rows 31-36), away from the tail.
+    for (let y = 31; y < 36; y++) for (let x = 14; x < grid.width - 10; x++) if (grid.get(x, y) && dark(palette.colors[grid.get(x, y)])) darkLeg++;
+    expect(darkLeg).toBeLessThan(12);
+  });
+
   it('draws cows, chickens, rabbits, fish, turtles and dolphins', () => {
     for (const coat of ['holstein', 'jersey', 'brown'] as const) {
       for (const h of [8, 14, 22, 40, 58]) {
