@@ -15,6 +15,7 @@ import { Fox } from '../common/Fox';
 import { Bear, findSlopeSpots, SlopeElk } from './BigWildlife';
 import { Hare, Mushrooms, NightEyes, TrunkWoodpeckers, undergrowthSpots } from './ForestCritters';
 import { DeerHerd } from './DeerHerd';
+import { ForestGlow } from './ForestGlow';
 import { OwlHollow } from './OwlHollow';
 import { TrunkSquirrels } from './TrunkSquirrels';
 import { Webs } from './Webs';
@@ -59,6 +60,7 @@ export class ForestLife implements SceneLife {
   readonly elk: SlopeElk;
   readonly owlHollow: OwlHollow;
   readonly webs: Webs;
+  readonly glow: ForestGlow;
   private hours = 12;
   private readonly deps: LandscapeDeps;
 
@@ -98,7 +100,8 @@ export class ForestLife implements SceneLife {
     );
     const nightGraphics = new Graphics();
     scene.nightLife.addChild(nightGraphics);
-    this.fireflies = new Fireflies(nightGraphics, { x0: 320, x1: 580, y0: 268, y1: 334 }, 22);
+    // Fireflies all through the wood, thickest low among the ferns.
+    this.fireflies = new Fireflies(nightGraphics, { x0: 40, x1: 800, y0: 250, y1: 334 }, 40);
     this.eyes = new NightEyes(undergrowthSpots(layout.floorPlants));
     scene.nightLife.addChild(this.eyes.graphics);
     this.woodpeckers = new TrunkWoodpeckers(layout.trunks, { mid: scene.midground, near: scene.birdsNear }, deps.viewport, deps.sound);
@@ -118,6 +121,16 @@ export class ForestLife implements SceneLife {
       { x: 742, y: 262, r: 14 },
     ]);
     scene.birdsNear.addChild(this.webs.container);
+    // Foxfire on the logs and at the feet of the trunks; wisps deep among the trees on misty nights.
+    const glowRng = createRng(909);
+    const glowSpots: Array<{ x: number; y: number; size: number; front?: boolean }> = [];
+    for (const l of layout.ledges.filter((l) => l.kind === 'log')) {
+      for (let k = 0; k < 3; k++) glowSpots.push({ x: l.x0 + glowRng() * (l.x1 - l.x0), y: l.y + 5 + glowRng() * 3, size: 4 + glowRng() * 2, front: true });
+    }
+    for (const t of layout.trunks.filter((t) => t.layer === 'mid' && t.width >= 5)) {
+      if (glowRng() < 0.45) glowSpots.push({ x: t.x + (glowRng() < 0.5 ? -1 : 1) * (t.width / 2 + 1), y: t.bottom + 1, size: Math.max(3, t.width * 0.35) });
+    }
+    this.glow = new ForestGlow(scene.midground, scene.birdsNear, glowSpots, { x0: 120, x1: 760, y0: 252, y1: 296 }, () => scene.atmosphere.mist);
   }
 
   get ambienceLevel(): number {
@@ -153,6 +166,7 @@ export class ForestLife implements SceneLife {
     this.hours = env.lighting.hours;
     this.owlHollow.update(dt, env);
     this.webs.update(dt, env);
+    this.glow.update(dt, env);
     const squirrelX = this.sillSquirrel.position;
     const state = { ...sill, catX: squirrelX, catStalking: false };
     this.sillSquirrel.update(dt, env, state);
