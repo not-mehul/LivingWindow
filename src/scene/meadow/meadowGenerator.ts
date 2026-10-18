@@ -11,6 +11,7 @@ import { pixelHash } from '../../sprites/raster';
 import { ditherRamp, valueNoise } from '../common/paint';
 import { BROADLEAF, CONIFER, drawBroadleaf, drawConifer, drawOak, hazePalette, type TreePalette } from '../common/trees';
 import type { Trunk } from '../forest/forestGenerator';
+import { layFarm, type FarmLayout } from './farmstead';
 
 /**
  * The meadows after the reference drawing: hazy hills and a wooded tree line
@@ -63,6 +64,7 @@ export interface MeadowLayout {
   /** Cover the rabbits hide in. */
   bushes: Array<{ x: number; y: number; width: number }>;
   coop: { x: number; baseY: number; door: { x: number; y: number }; gx: number; depth: number };
+  farm: FarmLayout;
   obstacles: Obstacle[];
   trunks: Trunk[];
   ledges: Ledge[];
@@ -293,7 +295,7 @@ function drawBush(w: number, h: number, seed: number, haze: number): PixelBuffer
 
 // --- The scene ----------------------------------------------------------
 
-export function generateMeadow(seed = 6060): MeadowLayout {
+export function generateMeadow(seed = 6060, date = new Date()): MeadowLayout {
   const ledges: Ledge[] = [];
   const trunks: Trunk[] = [];
   const obstacles: Obstacle[] = [];
@@ -535,6 +537,9 @@ export function generateMeadow(seed = 6060): MeadowLayout {
     ledges.push({ x0: Math.round(p.x - w / 2), x1: Math.round(p.x + w / 2), y: Math.round(p.y - h), layer: 'mid', kind: 'post', z: birdZ(p.y) });
   }
 
+  // --- The farm across the field behind the hen house ---
+  const farm = layFarm({ ground, standing, obstacles, ledges, haze: HAZE, hazeAt, birdZ, drawBush, coop: coopGround, date, seed });
+
   // --- A hedge along the right, and bushes in the field (rabbit cover) ---
   const bushes: MeadowLayout['bushes'] = [];
   for (const [x, baseY, w, h] of [
@@ -619,6 +624,7 @@ export function generateMeadow(seed = 6060): MeadowLayout {
     flowers,
     bushes,
     coop,
+    farm,
     obstacles,
     trunks,
     ledges,

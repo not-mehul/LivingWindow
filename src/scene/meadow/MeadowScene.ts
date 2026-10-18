@@ -12,6 +12,7 @@ import { pixelHash } from '../../sprites/raster';
 import { bayer } from '../common/paint';
 import { DayNightSprite, type NightGrade } from '../common/night';
 import { SwayMesh } from '../common/SwayMesh';
+import { drawRotor } from './farmstead';
 import type { Environment } from '../Environment';
 import type { Trunk } from '../forest/forestGenerator';
 import { Sky } from '../sky/Sky';
@@ -41,6 +42,10 @@ const NIGHT_FLOWERS = 0x8088bc;
 const CREEK_FPS = 15;
 /** Sun directions the oak shadows are drawn for. */
 const SHADOW_STEPS = 9;
+
+const ROTOR_FRAMES = 6;
+/** The haze the far farm is seen through (as the generator's). */
+const HAZE_FARM = 0xc4d8dc;
 
 /** Where the cows graze: the pasture from just beyond the flowers out to the tree line. */
 export const PASTURE: WalkArea = { minDepth: 1.3, maxDepth: 3.6, halfWidth: (d) => meadowPlane.halfWidthAt(d) };
@@ -102,6 +107,10 @@ export class MeadowScene implements WorldScene {
   /** Each creek pixel's ordered-dither threshold. */
   private readonly creekDither: Float32Array;
   private creekTimer = 0;
+  /** The farm's wind pump: its rotor, turning with the wind. */
+  private readonly rotor = new Sprite({ anchor: 0.5 });
+  private readonly rotorFrames: Texture[];
+  private rotorAngle = 0;
 
   constructor() {
     this.layout = generateMeadow();
@@ -145,6 +154,14 @@ export class MeadowScene implements WorldScene {
       this.flowerLayer.addChild(sway.mesh);
       this.flowerSways.push(sway);
     }
+
+    const mill = layout.farm.windmill;
+    this.rotorFrames = Array.from({ length: ROTOR_FRAMES }, (_, f) => drawRotor(mill.radius, f, ROTOR_FRAMES, (c) => lerpColor(c, HAZE_FARM, mill.haze * 0.85)).toTexture());
+    this.rotor.texture = this.rotorFrames[0];
+    this.rotor.position.set(mill.x, mill.y);
+    this.rotor.zIndex = mill.baseY + 0.1;
+    this.midground.addChild(this.rotor);
+    this.still.push({ sprite: this.rotor, haze: 0 });
 
     // The creek's surface lives in a canvas just big enough for it.
     const { index } = layout.creek;
@@ -205,6 +222,9 @@ export class MeadowScene implements WorldScene {
     }
     for (const s of this.still) s.sprite.tint = lerpColor(lighting.ambient, lighting.haze, s.haze);
     for (const f of this.flowerSways) f.update(time * 1.3, weather.wind);
+    // The wind pump turns lazily in a breeze and spins in a gale; it barely creeps when it's calm.
+    this.rotorAngle += dt * (0.25 + Math.min(1.5, Math.abs(weather.wind)) * 3.2);
+    this.rotor.texture = this.rotorFrames[Math.floor((this.rotorAngle / ((Math.PI * 2) / 14)) * ROTOR_FRAMES) % ROTOR_FRAMES];
     this.flowerLayer.tint = lerpColor(lighting.ambient, NIGHT_FLOWERS, lighting.nightness * 0.8);
     this.creekLife.tint = lighting.ambient;
     this.updateShadows(env);
