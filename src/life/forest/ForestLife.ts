@@ -15,7 +15,9 @@ import { Fox } from '../common/Fox';
 import { Bear, findSlopeSpots, SlopeElk } from './BigWildlife';
 import { Hare, Mushrooms, NightEyes, TrunkWoodpeckers, undergrowthSpots } from './ForestCritters';
 import { DeerHerd } from './DeerHerd';
+import { OwlHollow } from './OwlHollow';
 import { TrunkSquirrels } from './TrunkSquirrels';
+import { Webs } from './Webs';
 
 export const FOREST_ECOLOGY: BirdEcology = {
   mix: (hours) => {
@@ -55,6 +57,9 @@ export class ForestLife implements SceneLife {
   readonly mushrooms: Mushrooms;
   readonly bear: Bear;
   readonly elk: SlopeElk;
+  readonly owlHollow: OwlHollow;
+  readonly webs: Webs;
+  private hours = 12;
   private readonly deps: LandscapeDeps;
 
   constructor(scene: ForestScene, deps: LandscapeDeps) {
@@ -104,6 +109,15 @@ export class ForestLife implements SceneLife {
     this.mushrooms = new Mushrooms(scene.midground, spots, (y) => 9 * forestPlane.scaleAtY(y));
     this.elk = new SlopeElk(findSlopeSpots(layout.mountains, layout.valley));
     scene.slopeLife.addChild(this.elk.container);
+    // The owl that sleeps in the great oak's hollow, and orb webs strung among the plants and branches.
+    this.owlHollow = new OwlHollow(scene.birdsNear, { x: 50, y: 244, r: 7 }, deps.viewport, deps.sound);
+    this.webs = new Webs([
+      { x: 128, y: 236, r: 16 },
+      { x: 232, y: 297, r: 12 },
+      { x: 584, y: 301, r: 10 },
+      { x: 742, y: 262, r: 14 },
+    ]);
+    scene.birdsNear.addChild(this.webs.container);
   }
 
   get ambienceLevel(): number {
@@ -114,6 +128,7 @@ export class ForestLife implements SceneLife {
     if (this.birds.tap(screenX, screenY)) return true;
     if (!this.deps.canTap()) return false;
     const world = this.deps.viewport.screenToWorld(screenX, screenY);
+    if (this.owlHollow.tap(world.x, world.y, this.hours)) return true;
     if (this.fox.tap(world.x, world.y)) {
       const at = this.fox.position;
       if (at) this.hare.alarm(at.gx, at.depth);
@@ -135,6 +150,9 @@ export class ForestLife implements SceneLife {
   }
 
   update(dt: number, env: Environment, sill: SillBase): void {
+    this.hours = env.lighting.hours;
+    this.owlHollow.update(dt, env);
+    this.webs.update(dt, env);
     const squirrelX = this.sillSquirrel.position;
     const state = { ...sill, catX: squirrelX, catStalking: false };
     this.sillSquirrel.update(dt, env, state);
