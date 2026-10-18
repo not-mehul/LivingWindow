@@ -10,6 +10,7 @@ import { rustleTextures } from '../common/rustle';
 import { SwayMesh } from '../common/SwayMesh';
 import type { Environment } from '../Environment';
 import { Sky } from '../sky/Sky';
+import { ForestAtmosphere } from './ForestAtmosphere';
 import type { WorldScene } from '../WorldScene';
 import { BROW_Y, FOREST_FLOOR, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout, type Placed } from './forestGenerator';
 
@@ -19,6 +20,8 @@ const BAYER = [
   [3, 11, 1, 9],
   [15, 7, 13, 5],
 ];
+
+const RAY_WIDTHS = [16, 24, 12, 20, 32];
 
 /** A slanted, dithered shaft of sunlight (drawn additively). */
 function createRayTexture(width: number, height: number, slant: number): Texture {
@@ -35,7 +38,7 @@ function createRayTexture(width: number, height: number, slant: number): Texture
       img.data[k] = 255;
       img.data[k + 1] = 236;
       img.data[k + 2] = 180;
-      img.data[k + 3] = 80;
+      img.data[k + 3] = level > 0.55 ? 150 : 105;
     }
   }
   c.ctx.putImageData(img, 0, 0);
@@ -137,6 +140,8 @@ export class ForestScene implements WorldScene {
   private readonly leafLayer: ParticleContainer;
   private readonly rng = createRng(55);
   private leafBudget = 0;
+  /** Mist among the trunks, motes in the sun shafts, dew on the ferns. */
+  readonly atmosphere: ForestAtmosphere;
 
   constructor() {
     const layout = generateForest();
@@ -207,7 +212,7 @@ export class ForestScene implements WorldScene {
     }
 
     for (const [i, x] of layout.gaps.entries()) {
-      const ray = new Sprite({ texture: createRayTexture(16 + (i % 3) * 8, 250, 0.55), blendMode: 'add' });
+      const ray = new Sprite({ texture: createRayTexture(RAY_WIDTHS[i % RAY_WIDTHS.length], 250, 0.55), blendMode: 'add' });
       ray.position.set(x, 10);
       ray.alpha = 0;
       this.rays.push(ray);
@@ -220,6 +225,12 @@ export class ForestScene implements WorldScene {
       boundsArea: new Rectangle(0, 0, WORLD_WIDTH, WORLD_HEIGHT),
     });
 
+    this.atmosphere = new ForestAtmosphere(this.midground, layout.ferns, () =>
+      this.rays.map((ray, i) => ({ x: this.layout.gaps[i], alpha: ray.alpha, mirrored: ray.scale.x < 0, width: RAY_WIDTHS[i % RAY_WIDTHS.length] })),
+    );
+    this.atmosphere.moteGfx.blendMode = 'add';
+    this.atmosphere.dewGfx.blendMode = 'add';
+    this.rayLayer.addChild(this.atmosphere.moteGfx);
     this.container.addChild(
       this.sky.container,
       this.far.container,
@@ -237,6 +248,7 @@ export class ForestScene implements WorldScene {
       this.rayLayer,
       this.leafLayer,
       this.fernLayer,
+      this.atmosphere.dewGfx,
       this.canopyLayer,
       this.weatherFront,
     );
@@ -276,12 +288,16 @@ export class ForestScene implements WorldScene {
     const fromLeft = sun.progress < 0.5;
     this.rays.forEach((ray, i) => {
       ray.scale.x = fromLeft ? 1 : -1;
-      ray.x = fromLeft ? this.layout.gaps[i] : WORLD_WIDTH - this.layout.gaps[i];
-      ray.alpha = Math.min(1, strength * (0.75 + 0.25 * Math.sin(time * 0.4 + i * 1.7)));
+      // Shafts come down from the same openings all day, slanting away from the sun.
+      const w = RAY_WIDTHS[i % RAY_WIDTHS.length];
+      ray.x = Math.round(fromLeft ? this.layout.gaps[i] - w / 2 : this.layout.gaps[i] + w / 2);
+      // The mist catches the light: shafts stand out most on a misty morning.
+      ray.alpha = Math.min(1, strength * (0.75 + 0.25 * Math.sin(time * 0.4 + i * 1.7)) * (0.7 + this.atmosphere.mist * 0.7));
       ray.tint = sun.color;
     });
 
     this.updateLeaves(dt, env);
+    this.atmosphere.update(dt, env);
   }
 
   private updateLeaves(dt: number, env: Environment): void {

@@ -113,6 +113,39 @@ export interface ForestLayout {
   attachments: Attachment[];
 }
 
+/**
+ * Where light gets through the leaf roof (x of each opening): the places the
+ * canopy is thinnest just inside the top of the view, picked a good way
+ * apart from each other.
+ */
+export function canopyGaps(canopy: readonly Placed[], y0 = 20, y1 = 56, count = 6): number[] {
+  const cover = new Float32Array(WORLD_WIDTH);
+  for (const piece of canopy) {
+    if (piece.art.width < 20) continue;
+    for (let y = y0; y < y1; y++) {
+      const ly = y - Math.round(piece.y);
+      if (ly < 0 || ly >= piece.art.height) continue;
+      for (let lx = 0; lx < piece.art.width; lx++) {
+        const x = Math.round(piece.x) + lx;
+        if (x >= 0 && x < WORLD_WIDTH && piece.art.isSet(lx, ly)) cover[x] += 1;
+      }
+    }
+  }
+  // Smooth it, then take the thinnest spots, no two within 70 px.
+  const smooth = cover.map((_, x) => {
+    let sum = 0;
+    for (let k = -6; k <= 6; k++) sum += cover[Math.max(0, Math.min(WORLD_WIDTH - 1, x + k))];
+    return sum / 13;
+  });
+  const order = Array.from({ length: WORLD_WIDTH - 60 }, (_, i) => i + 30).sort((a, b) => smooth[a] - smooth[b]);
+  const out: number[] = [];
+  for (const x of order) {
+    if (out.length >= count) break;
+    if (out.every((o) => Math.abs(o - x) > 70)) out.push(x);
+  }
+  return out.sort((a, b) => a - b);
+}
+
 /** A tree palette's leaf colours, for rustling. */
 export const leafColors = (p: TreePalette): number[] => [p.shadow, p.dark, p.base, p.light, p.highlight];
 
@@ -867,7 +900,6 @@ export function generateForest(seed = 3141, date = new Date()): ForestLayout {
     // Along the oak's limbs, thinning out towards the middle of the view.
     const x = -40 + i * 54;
     canopy.push({ art: foliage, x, y: -26 + (i % 2) * 16 - Math.max(0, i - 4) * 6, anchor: 'top', tree: 1, leaves: leafColors(pal) });
-    if (i % 2 === 1) gaps.push(x + 70);
   }
 
   // In front of it on the right of the vista, the near crowns: lit leaves hanging lower.
@@ -919,6 +951,9 @@ export function generateForest(seed = 3141, date = new Date()): ForestLayout {
     const art = drawFlowers(rng, kind);
     ferns.push({ art, x: x - art.width / 2, y: 324 - art.height + randomInt(rng, 0, 3) });
   }
+
+  // Where light gets through: openings in the canopy just inside the top of the view.
+  gaps.push(...canopyGaps(canopy));
 
   return { far, mountains, valley, ground, midTrees, floorPlants, obstacles, near, canopy, ferns, trunks, ledges, gaps, attachments };
 }
