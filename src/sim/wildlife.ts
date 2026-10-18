@@ -115,6 +115,22 @@ export function blimpOut(hours: number, clear: boolean): boolean {
   return clear && h >= 10 && h < 17;
 }
 
+/** How bright the city's holograms over the skyline are (0..1): on from dusk, blazing through the evening, fading before dawn. */
+export function hologramLevel(hours: number): number {
+  const h = wrap(hours);
+  const ease = (t: number) => t * t * (3 - 2 * t);
+  if (h >= 19 && h < 20) return ease(h - 19);
+  if (h >= 20 || h < 3) return 1;
+  if (h >= 3 && h < 5) return ease(1 - (h - 3) / 2);
+  return 0;
+}
+
+/** Ad drones work the evening crowds: from five in the afternoon until two. */
+export function adDronesOut(hours: number): boolean {
+  const h = wrap(hours);
+  return h >= 17 || h < 2;
+}
+
 /** A stable hash of a string to 0..1. */
 function hash01(key: string): number {
   let h = 2166136261;

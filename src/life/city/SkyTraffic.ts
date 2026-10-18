@@ -8,12 +8,12 @@ import { glowTexture } from '../../scene/common/glow';
 import { gridToTexture } from '../../sprites/birdSprites';
 import { Palette, shadedEllipse } from '../../sprites/kit';
 import { PixelGrid } from '../../sprites/raster';
-import { blimpOut } from '../../sim/wildlife';
+import { adDronesOut, blimpOut } from '../../sim/wildlife';
 import { drawText, textWidth } from '../../scene/city/pixelFont';
 
 const r = (a: number, b: number) => a + Math.random() * (b - a);
 
-type CraftKind = 'plane' | 'helicopter' | 'drone' | 'blimp';
+type CraftKind = 'plane' | 'helicopter' | 'drone' | 'blimp' | 'addrone';
 
 interface Craft {
   kind: CraftKind;
@@ -105,11 +105,12 @@ export class SkyTraffic {
   private readonly gfx = new Graphics();
   private readonly lights = new Graphics();
   private readonly nearGfx = new Graphics();
+  private readonly nearLights = new Graphics();
   private readonly crafts: Craft[] = [];
   private readonly blimpSprite: Sprite;
   private readonly message = messageColumns(BLIMP_MESSAGE);
   private beam: Texture | null = null;
-  private timers: Record<CraftKind, number> = { plane: r(10, 60), helicopter: r(120, 300), drone: r(60, 180), blimp: r(30, 120) };
+  private timers: Record<CraftKind, number> = { plane: r(10, 60), helicopter: r(120, 300), drone: r(60, 180), blimp: r(30, 120), addrone: r(10, 60) };
   private blimpToday = false;
 
   constructor() {
@@ -117,11 +118,12 @@ export class SkyTraffic {
     this.blimpSprite.visible = false;
     this.lights.blendMode = 'add';
     this.container.addChild(this.gfx, this.blimpSprite, this.lights);
-    this.nearContainer.addChild(this.nearGfx);
+    this.nearLights.blendMode = 'add';
+    this.nearContainer.addChild(this.nearGfx, this.nearLights);
   }
 
   get counts(): Record<CraftKind, number> {
-    const out: Record<CraftKind, number> = { plane: 0, helicopter: 0, drone: 0, blimp: 0 };
+    const out: Record<CraftKind, number> = { plane: 0, helicopter: 0, drone: 0, blimp: 0, addrone: 0 };
     for (const c of this.crafts) out[c.kind]++;
     return out;
   }
@@ -141,6 +143,12 @@ export class SkyTraffic {
         if (ok && !this.crafts.some((c) => c.kind === kind)) this.launch(kind);
       }
     }
+    // Ad drones work the evening, a couple at a time, each with a little screen slung under it.
+    this.timers.addrone -= dt;
+    if (this.timers.addrone <= 0) {
+      this.timers.addrone = r(40, 110);
+      if (adDronesOut(h) && this.crafts.filter((c) => c.kind === 'addrone').length < 2) this.launch('addrone');
+    }
     // The blimp goes up once on a fair day.
     if (blimpOut(h, clear)) {
       this.timers.blimp -= dt;
@@ -153,12 +161,14 @@ export class SkyTraffic {
     this.gfx.clear();
     this.lights.clear();
     this.nearGfx.clear();
+    this.nearLights.clear();
     const night = env.lighting.emissive;
     for (let i = this.crafts.length - 1; i >= 0; i--) {
       const c = this.crafts[i];
       c.t += dt;
       c.x += c.dir * c.speed * dt;
       if (c.kind === 'drone') c.y += Math.sin(c.t * 2.3) * 6 * dt;
+      if (c.kind === 'addrone') c.y += Math.sin(c.t * 0.9) * 3 * dt;
       if (c.x < -60 || c.x > WORLD_WIDTH + 60) {
         c.searchlight?.destroy();
         if (c.kind === 'blimp') this.blimpSprite.visible = false;
@@ -172,8 +182,8 @@ export class SkyTraffic {
   private launch(kind: CraftKind): void {
     const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
     const x = dir > 0 ? -50 : WORLD_WIDTH + 50;
-    const y = kind === 'plane' ? r(18, 60) : kind === 'helicopter' ? r(70, 115) : kind === 'drone' ? r(175, 205) : r(40, 75);
-    const speed = kind === 'plane' ? r(14, 22) : kind === 'helicopter' ? r(16, 24) : kind === 'drone' ? r(30, 45) : r(3.5, 5);
+    const y = kind === 'plane' ? r(18, 60) : kind === 'helicopter' ? r(70, 115) : kind === 'drone' ? r(175, 205) : kind === 'addrone' ? r(120, 165) : r(40, 75);
+    const speed = kind === 'plane' ? r(14, 22) : kind === 'helicopter' ? r(16, 24) : kind === 'drone' ? r(30, 45) : kind === 'addrone' ? r(6, 10) : r(3.5, 5);
     let searchlight: Sprite | null = null;
     if (kind === 'helicopter') {
       this.beam ??= beamTexture();
@@ -244,6 +254,40 @@ export class SkyTraffic {
         if (blink) n.rect(x, y + 2, 1, 1).fill({ color: night > 0.1 ? 0x3aff6a : 0x2a8a3a, alpha: 0.6 + 0.4 * night });
         break;
       }
+      case 'addrone': {
+        // A drone dragging a screen through the evening: rotors flickering, the screen cycling its ads.
+        const n = this.nearGfx;
+        n.rect(x - 4, y, 9, 1).fill(dark).rect(x - 2, y + 1, 5, 1).fill(dark);
+        const props = Math.floor(env.time * 24) % 2 === 0;
+        n.rect(x - 6, y - 1, 3, 1).fill({ color: shade, alpha: props ? 0.8 : 0.3 }).rect(x + 4, y - 1, 3, 1).fill({ color: shade, alpha: props ? 0.3 : 0.8 });
+        // Tethers down to the screen.
+        n.rect(x - 4, y + 2, 1, 3).fill(dark).rect(x + 4, y + 2, 1, 3).fill(dark);
+        const sx = x - 7;
+        const sy = y + 5;
+        n.rect(sx, sy, 15, 10).fill(0x101418);
+        const ad = Math.floor((env.time + c.speed * 10) / 2.5) % 3;
+        const lit = 0.55 + 0.45 * night;
+        const bright = (color: number) => ({ color: lerpColor(lerpColor(color, tint, 0.4), color, night), alpha: lit });
+        if (ad === 0) {
+          // A heart, beating: SOULSYNC.
+          n.rect(sx + 1, sy + 1, 13, 8).fill(bright(0x5a1450));
+          const beat = Math.floor(env.time * 3) % 2;
+          n.rect(sx + 4 - beat, sy + 3, 3 + beat, 2).fill(bright(0xff3a7a)).rect(sx + 8, sy + 3, 3 + beat, 2).fill(bright(0xff3a7a)).rect(sx + 5, sy + 5, 5, 1).fill(bright(0xff3a7a)).rect(sx + 6, sy + 6, 3, 1).fill(bright(0xff3a7a));
+        } else if (ad === 1) {
+          // Kai's eyes, blinking.
+          n.rect(sx + 1, sy + 1, 13, 8).fill(bright(0x163e66));
+          const blink = Math.floor(env.time * 1.3) % 4 === 0;
+          n.rect(sx + 4, sy + (blink ? 4 : 3), 2, blink ? 1 : 3).fill(bright(0xd8ffff)).rect(sx + 9, sy + (blink ? 4 : 3), 2, blink ? 1 : 3).fill(bright(0xd8ffff));
+        } else {
+          // A can of NEUROCOLA, and its price.
+          n.rect(sx + 1, sy + 1, 13, 8).fill(bright(0x5a0a2a));
+          n.rect(sx + 3, sy + 2, 3, 6).fill(bright(0xd01c3a)).rect(sx + 3, sy + 2, 3, 1).fill(bright(0xc8cad4));
+          n.rect(sx + 8, sy + 3, 4, 1).fill(bright(0xffffff)).rect(sx + 8, sy + 5, 3, 1).fill(bright(0xffd020));
+        }
+        if (night > 0.2) this.nearLights.texture(glowTexture(6, [0xff3a7a, 0x3ae8ff, 0xff3a5a][ad], 0.7, false), 0xffffff, sx - 2, sy - 2, 19, 14);
+        if (blink) n.rect(x, y + 1, 1, 1).fill({ color: 0xff3a3a, alpha: 0.6 + 0.4 * night });
+        break;
+      }
       case 'blimp': {
         this.blimpSprite.visible = true;
         this.blimpSprite.position.set(x, y);
@@ -264,7 +308,7 @@ export class SkyTraffic {
       }
     }
     // A soft glow round the lights after dark, so they read against the sky.
-    if (night > 0.3 && c.kind !== 'blimp' && c.kind !== 'drone' && blink) {
+    if (night > 0.3 && c.kind !== 'blimp' && c.kind !== 'drone' && c.kind !== 'addrone' && blink) {
       this.lights.texture(glowTexture(2, 0xff5040), 0xffffff, x - 2, y - 3, 5, 5);
     }
   }

@@ -101,6 +101,8 @@ describe('lived-in rooftops', () => {
       expect(b.y).toBeLessThan(360);
     }
     expect(city.smoke.map((s) => s.kind).sort()).toEqual(['grill', 'stove']);
+    // Paper lanterns hang on the wires over the street.
+    expect(city.roofLights.filter((b) => (b.size ?? 0) > 3).length).toBeGreaterThanOrEqual(6);
   });
 
   it('keeps clear the spots where the rooftop people stand and work', () => {

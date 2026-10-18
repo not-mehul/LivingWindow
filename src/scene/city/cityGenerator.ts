@@ -146,8 +146,8 @@ export interface CityLayout {
   stallSpots: StallSpot[];
   /** Screens playing ads: the billboards, the giant screen on the glass tower, wall screens and the skybridge's ticker. */
   billboards: Billboard[];
-  /** Bulbs strung over the rooftops (world px), lit in the evenings. */
-  roofLights: Array<{ x: number; y: number; color: number }>;
+  /** Bulbs strung over the rooftops and lanterns hung over the street (world px), lit in the evenings. */
+  roofLights: Array<{ x: number; y: number; color: number; size?: number }>;
   /** Where smoke rises from the rooftops: a grill and a stovepipe (world px, and how big a puff is there). */
   smoke: Array<{ x: number; y: number; scale: number; kind: 'grill' | 'stove' }>;
 }
@@ -784,6 +784,99 @@ export function generateCity(seed = 20261015): CityLayout {
       const p = projectPoint(sm.gx, sm.depth, sm.h);
       smoke.push({ x: p.x, y: p.y, scale: 1 / sm.depth, kind: sm.kind });
     }
+  }
+
+  // --- Power lines and data cables: sagging across the street and between the roofs ---
+  {
+    /** Paint a wire's pixel into the overhangs if nothing nearer is there. */
+    const wirePx = (x: number, y: number, depth: number, color: number) => {
+      x = Math.round(x);
+      y = Math.round(y);
+      if (x < 0 || y < 0 || x >= WORLD_WIDTH || y >= WORLD_HEIGHT) return false;
+      const i = y * WORLD_WIDTH + x;
+      if (zbuf[i] < depth - 0.02) return false;
+      over.set(x, y, haze(color, depth));
+      return true;
+    };
+    type End = { gx: number; depth: number; h: number };
+    const sagAt = (a: End, b: End, sag: number, t: number) => {
+      const gx = a.gx + (b.gx - a.gx) * t;
+      const depth = a.depth + (b.depth - a.depth) * t;
+      const h = a.h + (b.h - a.h) * t - sag * 4 * t * (1 - t);
+      return { p: projectPoint(gx, depth, h), gx, depth, h };
+    };
+    const wire = (a: End, b: End, sag: number, color = 0x1e1c1a) => {
+      const pa = projectPoint(a.gx, a.depth, a.h);
+      const pb = projectPoint(b.gx, b.depth, b.h);
+      const steps = Math.ceil(Math.hypot(pb.x - pa.x, pb.y - pa.y) * 1.6) + 4;
+      for (let k = 0; k <= steps; k++) {
+        const { p, depth } = sagAt(a, b, sag, k / steps);
+        wirePx(p.x, p.y, depth, color);
+      }
+    };
+    const L = -S;
+    const R = S;
+    // Across the street: bundles of two or three lines at each span, from wall to wall.
+    const spans: Array<{ a: End; b: End; sag: number; lines: number; hang?: 'lanterns' | 'flags' | 'shoes' }> = [
+      { a: { gx: L, depth: 1.6, h: 130 }, b: { gx: R, depth: 1.6, h: 102 }, sag: 9, lines: 2 },
+      { a: { gx: L, depth: 2.7, h: 196 }, b: { gx: R, depth: 2.7, h: 104 }, sag: 14, lines: 1, hang: 'lanterns' },
+      { a: { gx: L, depth: 3.6, h: 186 }, b: { gx: R, depth: 3.6, h: 176 }, sag: 16, lines: 2, hang: 'flags' },
+      { a: { gx: L, depth: 3.4, h: 150 }, b: { gx: R, depth: 4.4, h: 140 }, sag: 10, lines: 1 },
+      { a: { gx: L, depth: 4.9, h: 206 }, b: { gx: R, depth: 4.9, h: 152 }, sag: 14, lines: 2, hang: 'shoes' },
+      { a: { gx: L, depth: 6.8, h: 226 }, b: { gx: R, depth: 6.8, h: 240 }, sag: 18, lines: 3, hang: 'lanterns' },
+      { a: { gx: L, depth: 9.5, h: 240 }, b: { gx: R, depth: 9.5, h: 210 }, sag: 16, lines: 2 },
+    ];
+    const FLAGS = [0xd8443c, 0xe0c060, 0x3c6aa8, 0x6aa86a, 0xf0e8d8];
+    for (const sp of spans) {
+      for (let k = 0; k < sp.lines; k++) {
+        const off = k * 4;
+        wire({ ...sp.a, h: sp.a.h + off }, { ...sp.b, h: sp.b.h + off * 0.8 }, sp.sag + k * 2);
+      }
+      if (sp.hang === 'lanterns') {
+        // Paper lanterns, red and amber, lit after dark.
+        const n = 7;
+        for (let k = 1; k <= n; k++) {
+          const { p, depth } = sagAt(sp.a, sp.b, sp.sag, k / (n + 1));
+          const r = Math.max(1, 5 / depth);
+          const color = k % 3 === 1 ? 0xf0a040 : 0xd83a2a;
+          let seen = false;
+          for (let y = 0; y <= r * 2.4; y++) {
+            for (let x = -r; x <= r; x++) {
+              const v = (y - r * 1.2) / (r * 1.2);
+              if ((x / r) ** 2 + v * v > 1) continue;
+              const band = Math.abs(v) > 0.75 ? 0x2a2018 : x < 0 ? lerpColor(color, 0xffffff, 0.15) : scaleColor(color, 0.8);
+              seen = wirePx(p.x + x, p.y + 1 + y, depth - 0.003, band) || seen;
+            }
+          }
+          if (seen) roofLights.push({ x: Math.round(p.x), y: Math.round(p.y + 1 + r * 1.2), color: lerpColor(color, 0xffb060, 0.4), size: Math.max(3, Math.round(r * 2.2)) });
+        }
+      } else if (sp.hang === 'flags') {
+        // A string of prayer flags, faded by the sun.
+        for (let k = 1; k < 18; k++) {
+          const { p, depth } = sagAt(sp.a, sp.b, sp.sag, k / 18);
+          const fh = Math.max(2, Math.round(6 / depth));
+          for (let y = 1; y <= fh; y++) for (let x = 0; x < Math.max(1, Math.round((fh - y + 1) * 0.7)); x++) wirePx(p.x + x, p.y + y, depth - 0.003, scaleColor(FLAGS[k % FLAGS.length], 0.85));
+        }
+      } else if (sp.hang === 'shoes') {
+        // A pair of trainers flung up over the wire by their laces.
+        const { p, depth } = sagAt(sp.a, sp.b, sp.sag, 0.38);
+        for (const dx of [-1, 1]) {
+          for (let y = 1; y <= 3; y++) wirePx(p.x + dx, p.y + y, depth - 0.003, 0xd8d8d0);
+          wirePx(p.x + dx, p.y + 4, depth - 0.003, 0xd83a2a);
+          wirePx(p.x + dx * 2, p.y + 4, depth - 0.003, 0xf0f0e8);
+        }
+      }
+    }
+    // Between the rooftops: power lines from the masts and the stair house to poles further off.
+    for (const [a, b, sag] of [
+      [{ gx: -222, depth: 2.08, h: 252 }, { gx: -484, depth: 2.18, h: 296 }, 6],
+      [{ gx: -118, depth: 2.12, h: 188 }, { gx: 82, depth: 2.4, h: 108 }, 10],
+      [{ gx: 178, depth: 1.9, h: 182 }, { gx: 972, depth: 4.44, h: 196 }, 14],
+      [{ gx: 292, depth: 1.7, h: 138 }, { gx: 1188, depth: 4.44, h: 186 }, 16],
+      [{ gx: 972, depth: 4.44, h: 196 }, { gx: 1982, depth: 7.04, h: 290 }, 18],
+      [{ gx: -338, depth: 2.2, h: 194 }, { gx: -620, depth: 2.19, h: 210 }, 8],
+    ] as Array<[End, End, number]>)
+      wire(a, b, sag, 0x24221f);
   }
 
   // --- The railing round the roof terrace at left (thin: drawn, not cast) ---

@@ -28,7 +28,7 @@ export class RoofAmbience {
 
   constructor(private readonly city: CityLayout) {
     for (const b of city.roofLights) {
-      const halo = new Sprite({ texture: glowTexture(3, b.color, 1, false), blendMode: 'add', anchor: 0.5 });
+      const halo = new Sprite({ texture: glowTexture(b.size ?? 3, b.color, 1, false), blendMode: 'add', anchor: 0.5 });
       halo.position.set(b.x, b.y);
       const core = new Sprite({ texture: glowTexture(1, lerpColor(b.color, 0xffffff, 0.5), 1, true), blendMode: 'add', anchor: 0.5 });
       core.position.set(b.x, b.y);

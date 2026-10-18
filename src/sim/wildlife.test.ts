@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adDronesOut,
+  hologramLevel,
   hedgehogActivity,
   roeDeerOut,
   sheepdogTime,
@@ -77,6 +79,19 @@ describe('wildlife schedules', () => {
 });
 
 describe('city rhythm', () => {
+  it('lights the holograms from dusk until before dawn, and sends ad drones out in the evenings', () => {
+    expect(hologramLevel(12)).toBe(0);
+    expect(hologramLevel(19.5)).toBeGreaterThan(0);
+    expect(hologramLevel(19.5)).toBeLessThan(1);
+    expect(hologramLevel(23)).toBe(1);
+    expect(hologramLevel(1)).toBe(1);
+    expect(hologramLevel(4)).toBeGreaterThan(0);
+    expect(hologramLevel(6)).toBe(0);
+    expect(adDronesOut(21)).toBe(true);
+    expect(adDronesOut(1)).toBe(true);
+    expect(adDronesOut(10)).toBe(false);
+  });
+
   it('sends delivery riders out by day, most at mealtimes and in the rain', () => {
     expect(deliveryRiders(3, false)).toBe(0);
     expect(deliveryRiders(12.5, false)).toBeGreaterThan(deliveryRiders(9, false));

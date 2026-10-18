@@ -10,6 +10,7 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import { bayer } from '../common/paint';
 import { generateCity, poolFalloff, POOL_REACH, type CityLayerName, type CityLayout } from './cityGenerator';
 import { Billboards } from './Billboards';
+import { Holograms } from './Holograms';
 import { RoofAmbience } from './RoofAmbience';
 import { StreetLamps } from './StreetLamps';
 import { WindowLife } from './WindowLife';
@@ -80,6 +81,7 @@ export class CityScene implements WorldScene {
   private signsLevel = 0;
   private readonly billboards: Billboards;
   private readonly roofAmbience: RoofAmbience;
+  private readonly holograms = new Holograms();
   /** Smog hanging over the skyline: amber by day, lit violet from below by the city at night. */
   private readonly smog: Sprite;
   private readonly smogVeil: Sprite;
@@ -132,6 +134,7 @@ export class CityScene implements WorldScene {
       lightsByLayer.far.sprite,
       this.billboards.layers.far,
       this.smogVeil,
+      this.holograms.container,
       this.skyLife,
       this.birdsFar,
       sprites.mid.container,
@@ -144,7 +147,6 @@ export class CityScene implements WorldScene {
       lightsByLayer.near.sprite,
       this.billboards.layers.near,
       nearLife.graphics,
-      this.roofAmbience.container,
       this.roofLife,
       this.poolLayer,
       this.street,
@@ -153,6 +155,7 @@ export class CityScene implements WorldScene {
       this.over.container,
       overLights.sprite,
       this.billboards.layers.over,
+      this.roofAmbience.container,
       this.signLayer,
       this.birdsNear,
       this.weatherFront,
@@ -169,6 +172,7 @@ export class CityScene implements WorldScene {
     this.over.update(tints.over, lighting);
     this.billboards.update(dt, lighting, tints);
     this.roofAmbience.update(dt, env);
+    this.holograms.update(dt, env);
     const smogTint = lerpColor(lerpColor(0xffffff, 0xffa090, lighting.twilight), 0xa04a9a, lighting.nightness);
     this.smog.tint = smogTint;
     this.smog.alpha = 0.7 + 0.2 * lighting.twilight - 0.2 * lighting.nightness;
