@@ -152,7 +152,10 @@ export interface CityLayout {
   smoke: Array<{ x: number; y: number; scale: number; kind: 'grill' | 'stove' }>;
 }
 
-type Material = 'brick' | 'beige' | 'glass' | 'concrete' | 'stone' | 'roof' | 'metal' | 'sign' | 'awning' | 'bridge' | 'pipe' | 'prop';
+type Material = 'brick' | 'beige' | 'glass' | 'concrete' | 'stone' | 'roof' | 'metal' | 'sign' | 'awning' | 'bridge' | 'pipe' | 'prop' | 'rail';
+
+/** What a piece of steel railing (or stair) is: shaded round, square, as sheet or as cloth. */
+type RailPart = 'tube' | 'post' | 'bar' | 'plate' | 'sheet' | 'banner' | 'weld' | 'tread';
 
 interface Building {
   box: Box;
@@ -178,6 +181,8 @@ interface Building {
   word?: string;
   /** Rooftop clutter: what it is. */
   prop?: PropBox;
+  /** Railing and stair steel: which piece. */
+  rail?: RailPart;
 }
 
 /** Smog: a warm grey-amber that the distance fades into. */
@@ -200,6 +205,7 @@ const BODIES: Record<Material, number[]> = {
   bridge: [0x8e8c88],
   pipe: [0x9a9a96],
   prop: [0x808080],
+  rail: [0x545a62],
 };
 
 const NEONS = [0xff2a9a, 0x3ae8ff, 0xffa030, 0x9a5aff, 0x8aff3a, 0xff3a5a];
@@ -226,6 +232,7 @@ export function generateCity(seed = 20261015): CityLayout {
       broken: extra.broken,
       word: extra.word,
       prop: extra.prop,
+      rail: extra.rail,
     };
     buildings.push(b);
     return b;
@@ -413,6 +420,51 @@ export function generateCity(seed = 20261015): CityLayout {
     add(nano.box, 'sign', { neon: NEONS[4], ad: { id: 'nanocare', face: 'front', flaw: null } });
     // Legs under the boards that stand on roofs (or on poles from far below).
     for (const leg of [...dream.legs(190, 214), ...kaiju.legs(280, 286), ...ramen.legs(0, 200), ...nano.legs(0, 300)]) add(leg, 'pipe');
+  }
+
+  // --- The terrace's railing, in solid steel: posts, a heavy top tube, balusters and a kick plate ---
+  const RAIL_GX = -S - 8;
+  const roofTop = 150;
+  const railDepths: number[] = [];
+  for (let d = 0.34; d < 2.38; d += 60 / FOCAL) railDepths.push(d);
+  {
+    const R = RAIL_GX;
+    const steel = (box: Box, rail: RailPart, body = 0x545a62) => add(box, 'rail', { rail, body, pitch: 1e9, floor: 1e9 });
+    const top = roofTop + 28;
+    // Along the street side.
+    steel(boxFrom(R - 1.8, R + 1.8, 0.33, 2.39, top, top + 3.5), 'tube');
+    steel(boxFrom(R - 1, R + 1, 0.33, 2.39, roofTop + 15, roofTop + 17), 'tube');
+    steel(boxFrom(R - 0.7, R + 0.7, 0.33, 2.39, roofTop, roofTop + 3.5), 'plate');
+    railDepths.forEach((d, k) => {
+      // Re-welded in a different grey where someone backed into it.
+      steel(boxFrom(R - 2, R + 2, d - 0.003, d + 0.003, roofTop, top), k === 7 ? 'weld' : 'post', k === 7 ? 0x7a7a6c : 0x545a62);
+      steel(boxFrom(R - 3, R + 3, d - 0.005, d + 0.005, roofTop, roofTop + 1.2), 'plate');
+      steel(boxFrom(R - 2.6, R + 2.6, d - 0.004, d + 0.004, top + 3.5, top + 4.8), 'post');
+      const next = railDepths[k + 1];
+      if (next === undefined) return;
+      if (k === 10) {
+        // A bay patched with a sheet of corrugated iron.
+        steel(boxFrom(R - 0.8, R + 0.8, d + 0.006, next - 0.006, roofTop + 4, top - 1), 'sheet', 0x8a9294);
+        return;
+      }
+      if (k === 15) {
+        // A banner zip-tied across a bay.
+        steel(boxFrom(R + 1.2, R + 2, d + 0.004, next - 0.004, roofTop + 6, top - 2), 'banner', 0x2a3a6a);
+      }
+      for (let q = 1; q < 4; q++) {
+        const bd = d + ((next - d) * q) / 4;
+        steel(boxFrom(R - 0.6, R + 0.6, bd - 0.0011, bd + 0.0011, roofTop + 3.5, top), 'bar');
+      }
+    });
+    // Along the terrace's near edge.
+    const N = 0.42;
+    steel(boxFrom(-480, R + 1.8, N - 0.003, N + 0.003, top, top + 3.5), 'tube');
+    steel(boxFrom(-480, R, N - 0.0015, N + 0.0015, roofTop + 15, roofTop + 17), 'tube');
+    steel(boxFrom(-480, R, N - 0.0015, N + 0.0015, roofTop, roofTop + 4), 'plate');
+    for (let gx = R; gx > -480; gx -= 70) {
+      steel(boxFrom(gx - 2, gx + 2, N - 0.003, N + 0.003, roofTop, top), 'post');
+      for (let q = 1; q < 4; q++) steel(boxFrom(gx - q * 17.5 - 0.6, gx - q * 17.5 + 0.6, N - 0.0009, N + 0.0009, roofTop + 3.5, top), 'bar');
+    }
   }
 
   // --- Rooftop life: the neighbours' terrace, the roof across the street, and clutter on the roofs further off ---
@@ -759,6 +811,32 @@ export function generateCity(seed = 20261015): CityLayout {
         }
       }
     }
+    {
+      // On the railing: a coil of razor wire along one stretch, a cable drooping between posts, a hanging planter.
+      const top = roofTop + 34;
+      for (let k = 0; k <= 900; k++) {
+        const t = k / 900;
+        const d = 1.55 + t * 0.6;
+        const phase = t * 26 * Math.PI * 2;
+        const p = projectPoint(RAIL_GX + Math.cos(phase) * 3.5, d, top + 4 + Math.sin(phase) * 4);
+        dab(p.x, p.y, d - 0.004, k % 37 === 0 ? 0xa8acb0 : 0x34363a);
+      }
+      for (let k = 0; k <= 200; k++) {
+        const t = k / 200;
+        const d = 0.6 + t * 0.85;
+        const p = projectPoint(RAIL_GX + 3, d, top - 4 - 9 * 4 * t * (1 - t));
+        dab(p.x, p.y, d - 0.004, 0x1e1c1a);
+      }
+      const pot = projectPoint(RAIL_GX - 4, 0.95, top - 14);
+      const ps = 1 / 0.95;
+      for (let y = 0; y < 7 * ps; y++) for (let x = -5 * ps; x <= 5 * ps; x++) dab(pot.x + x, pot.y + y, 0.94, y < 1.2 * ps ? 0x9a5a3a : x < 0 ? 0x8a4a32 : 0x6a3424);
+      for (let k = 0; k < 40; k++) {
+        const lx = pot.x + (pixelHash(k, 1, 5) - 0.5) * 14 * ps;
+        const ly = pot.y - pixelHash(k, 2, 5) * 4 * ps + (pixelHash(k, 3, 5) < 0.4 ? pixelHash(k, 4, 5) * 12 * ps : 0);
+        dab(lx, ly, 0.935, pixelHash(k, 5, 5) < 0.5 ? 0x4a7a3a : 0x2e5a2a);
+      }
+      for (const dx of [-4, 4]) for (let y = 0; y < 8 * ps; y++) dab(pot.x + dx * ps, pot.y - 8 * ps + y, 0.94, 0x3a3a3a);
+    }
     const BULBS = [0xffe0a0, 0xff9ab8, 0x9ae8ff, 0xffd060, 0xb8ff9a];
     terrace.strings.forEach((str, si) => {
       // The wire sags between its ends; bulbs hang along it, coloured, every so often.
@@ -878,47 +956,10 @@ export function generateCity(seed = 20261015): CityLayout {
       wire(a, b, sag, 0x24221f);
   }
 
-  // --- The railing round the roof terrace at left (thin: drawn, not cast) ---
   const near = bands.near;
-  const line = (p: { x: number; y: number }, q: { x: number; y: number }, depth: number, width: number, color: number, light: number) => {
-    const steps = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) * 1.5) + 1;
-    for (let s = 0; s <= steps; s++) {
-      const t = s / steps;
-      const x = p.x + (q.x - p.x) * t;
-      const y = p.y + (q.y - p.y) * t;
-      for (let k = 0; k < width; k++) {
-        const px = Math.round(x);
-        const py = Math.round(y + k - width / 2);
-        if (px < 0 || py < 0 || px >= WORLD_WIDTH || py >= WORLD_HEIGHT || zbuf[py * WORLD_WIDTH + px] < depth - 0.05) continue;
-        near.set(px, py, k === 0 ? light : color);
-      }
-    }
-  };
-  const RAIL_GX = -S - 8;
-  const roofTop = 150;
-  const railDepths: number[] = [];
-  for (let d = 0.34; d < 2.38; d += 60 / FOCAL) railDepths.push(d);
-  const rail = 0x6a6e72;
-  const railLight = 0xb4b8bc;
-  for (const d of railDepths) {
-    const foot = projectPoint(RAIL_GX, d, roofTop);
-    const top = projectPoint(RAIL_GX, d, roofTop + 28);
-    const w = Math.max(1, Math.round(3 / d));
-    for (let k = 0; k < w; k++) line({ x: foot.x + k, y: foot.y }, { x: top.x + k, y: top.y }, d, 1, k === 0 ? railLight : rail, railLight);
-  }
-  for (const h of [roofTop + 15, roofTop + 28]) {
-    for (let k = 0; k < railDepths.length - 1; k++) {
-      const d0 = railDepths[k];
-      const d1 = railDepths[k + 1];
-      line(projectPoint(RAIL_GX, d0, h), projectPoint(RAIL_GX, d1, h), d0, Math.max(1, Math.round(2.5 / d0)), rail, railLight);
-    }
-  }
-  // Along the terrace's near edge too.
-  for (const h of [roofTop + 15, roofTop + 28]) line(projectPoint(RAIL_GX, 0.42, h), projectPoint(-480, 0.42, h), 0.42, 5, rail, railLight);
-  for (let gx = RAIL_GX; gx > -480; gx -= 70) line(projectPoint(gx, 0.42, roofTop), projectPoint(gx, 0.42, roofTop + 28), 0.42, 6, rail, railLight);
   // Birds perch along the top rail, and pigeons walk the terrace.
   for (let k = 1; k < railDepths.length - 1; k += 2) {
-    const p = projectPoint(RAIL_GX, railDepths[k], roofTop + 28);
+    const p = projectPoint(RAIL_GX, railDepths[k], roofTop + 34);
     ledges.push({ x0: Math.round(p.x - 2), x1: Math.round(p.x + 2), y: Math.round(p.y) - 1, layer: 'near', kind: 'rail', z: birdZ(railDepths[k]) });
   }
   {
@@ -1267,6 +1308,8 @@ function shadeBuilding(b: Building, hit: Hit, x: number, y: number): { color: nu
       const shaded = shadeProp(p.material, b.body, p, hit, ps, t, along, box.h1 - box.h0, screenPx, x, y, b.seed);
       return { color: scaleColor(shaded.color, top ? 1.04 : light), window: shaded.window ? `${b.id}:prop` : null, glow };
     }
+    case 'rail':
+      return { color: shadeRail(b, hit, s, t, along, box.h1 - box.h0, screenPx, x, y), window, glow };
     case 'roof':
     case 'metal':
     case 'pipe': {
@@ -1418,6 +1461,51 @@ function shadeBuilding(b: Building, hit: Hit, x: number, y: number): { color: nu
   if (b.material === 'brick' && screenPx < 1 && Math.floor(t / 3) % 2 === 0 && (s + (Math.floor(t / 3) % 4 === 0 ? 3 : 0)) % 6 < 0.8) color = scaleColor(b.body, 0.85);
   color = weather(b, color, s, t, along, box.h1 - box.h0, x, y, screenPx, fine, sf, winS0, winW, tf, winT0, row);
   return { color: scaleColor(color, light), window, glow };
+}
+
+/**
+ * Steel railing and stairs: tubes shaded round (lit on top, a highlight
+ * along them, dark underneath), square posts with a lit edge, gunmetal
+ * paint chipped and rusting; a corrugated patch, and a cloth banner.
+ */
+function shadeRail(b: Building, hit: Hit, s: number, t: number, along: number, height: number, screenPx: number, x: number, y: number): number {
+  const part = b.rail ?? 'post';
+  const face = hit.face;
+  let c = b.body;
+  if (part === 'banner') {
+    // Faded blue cloth with a line of glyphs and a sprayed tag.
+    const u = s / Math.max(1, along);
+    const v = 1 - t / Math.max(1, height);
+    const k = Math.floor(u * 5);
+    if (v > 0.2 && v < 0.8 && glyphInk(b.seed + k, (u * 5) % 1, (v - 0.2) / 0.6)) return 0xe8e0d0;
+    return scaleColor(c, 0.9 + valueNoise(s, t, 6, b.seed) * 0.25);
+  }
+  if (part === 'sheet') {
+    const rib = Math.floor(t / 2.5) % 2 === 0;
+    c = scaleColor(c, rib ? 1 : 0.82);
+    if (valueNoise(s, t, 8, b.seed) > 0.6) c = lerpColor(c, 0x8a4a2a, 0.55);
+    return c;
+  }
+  if (part === 'tube' || part === 'tread') {
+    if (face === 'top') return lerpColor(scaleColor(c, 1.35), 0xc8ccd0, 0.2);
+    if (face === 'bottom') return scaleColor(c, 0.5);
+    // Round: a highlight just above the middle, dark underneath.
+    const v = t / Math.max(1, height);
+    c = scaleColor(c, 0.62 + Math.sin(Math.PI * Math.min(1, v * 1.15)) * 0.5);
+    if (v > 0.6 && v < 0.75) c = lerpColor(c, 0xc8ccd0, 0.35);
+  } else if (part === 'post' || part === 'weld') {
+    c = scaleColor(c, FACE_LIGHT[face] * (face === 'top' ? 1.25 : 1));
+    // A lit leading edge.
+    if (face !== 'top' && s < Math.max(0.8, screenPx)) c = lerpColor(c, 0xb8bcc0, 0.5);
+    if (part === 'weld' && Math.abs(t - height * 0.5) < Math.max(0.8, screenPx)) c = 0x3a3a34;
+  } else {
+    c = scaleColor(c, FACE_LIGHT[face] * (part === 'plate' ? 0.85 : 1.05));
+  }
+  // Paint chipped to bare steel, and rust bleeding from the joints.
+  if (pixelHash(x, y, b.seed) < 0.012) c = lerpColor(c, 0x9aa0a6, 0.5);
+  const rust = valueNoise(s * 2, t * 2, 5, b.seed + 3);
+  if (rust > 0.74) c = lerpColor(c, 0x7a4426, rust > 0.82 ? 0.5 : 0.25);
+  return c;
 }
 
 const TAG_COLORS = [0xff3a9a, 0x8aff3a, 0x3ae8ff, 0xf4f0e8, 0xffd020, 0x9a5aff];
