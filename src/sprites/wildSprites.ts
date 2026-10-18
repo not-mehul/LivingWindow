@@ -271,6 +271,88 @@ export function drawBear(pose: BearPose, height: number): Drawn {
   return { grid: g, palette };
 }
 
+// --- Grey wolf --------------------------------------------------------------
+
+export type WolfPose = 'walk-1' | 'walk-2' | 'walk-3' | 'walk-4' | 'sit' | 'howl';
+export const WOLF_WALK: readonly WolfPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4'];
+
+/**
+ * A grey wolf in profile facing right, `height` px tall and 1.6× as wide:
+ * lean and long-legged, a deep chest, a thick ruff, pointed ears, a long
+ * muzzle and a bushy tail carried low. It walks, sits, or sits with its
+ * muzzle raised to the sky, howling. Authored in a 38×24 box.
+ */
+export function drawWolf(pose: WolfPose, height: number): Drawn {
+  const H = Math.max(5, Math.round(height));
+  const W = Math.round(H * 1.6);
+  const g = new PixelGrid(W, H);
+  const s = H / 24;
+  const P = (x: number, y: number): Pt => [x * s, y * s];
+  const palette = new Palette();
+  const fur = palette.ramp(0x7a7672, 0.9);
+  const pale = palette.ramp(0xc8c2b8, 0.6);
+  const dark = palette.ramp(0x3a3634);
+  const eyeInk = palette.add(0xd8c060);
+  const detailed = H >= 14;
+  const legW = Math.max(1, 2 * s);
+  if (pose === 'sit' || pose === 'howl') {
+    // Sitting: haunches down, forelegs straight, the tail curled round the feet.
+    limb(g, [P(9, 21), P(4, 22.5), P(3, 20)], 3 * s, 2.4 * s, fur, { bias: -0.4 });
+    shadedEllipse(g, 12 * s, 17 * s, 6 * s, 5.5 * s, fur, { dither: false, min: 1 });
+    shadedEllipse(g, 17 * s, 12 * s, 4.5 * s, 7 * s, fur, { dither: false, angle: 0.35, min: 1 });
+    if (detailed) shadedEllipse(g, 19.5 * s, 13 * s, 2 * s, 5 * s, pale, { dither: false, angle: 0.35, max: 3 });
+    limb(g, [P(19, 15), P(20, 23.5)], legW * 1.2, legW, fur, { bias: -0.2 });
+    limb(g, [P(17, 15), P(17.5, 23.5)], legW * 1.2, legW, fur, { bias: -1.2 });
+    const howl = pose === 'howl';
+    const hx = howl ? 21 : 22.5;
+    const hy = howl ? 6.5 : 7;
+    const tilt = howl ? -1.05 : 0.15;
+    // The ruff, the head, ears laid back when it howls.
+    limb(g, [P(18, 9), P(hx - 1, hy + 1.5)], 6 * s, 4.5 * s, fur);
+    shadedEllipse(g, hx * s, hy * s, 3 * s, 2.6 * s, fur, { dither: false });
+    limb(g, [P(hx - 1, hy - 1.5), P(hx - (howl ? 3 : 1.5), hy - (howl ? 3 : 4.5))], 1.8 * s, 0.8 * s, fur, { bias: -0.4 });
+    const mx = hx + Math.cos(tilt) * 4;
+    const my = hy + Math.sin(tilt) * 4;
+    limb(g, [P(hx + Math.cos(tilt) * 1.5, hy + Math.sin(tilt) * 1.5), P(mx, my)], 2.4 * s, 1.4 * s, fur, { bias: 0.3 });
+    g.set(Math.floor(mx * s), Math.floor(my * s), dark[1]);
+    if (detailed && !howl) g.set(Math.floor((hx + 0.6) * s), Math.floor((hy - 0.6) * s), eyeInk);
+  } else {
+    const k = Number(pose.slice(-1)) - 1;
+    const ph = (k * Math.PI) / 2;
+    const leg = (x: number, o: number, far: boolean, front: boolean) => {
+      const sw = Math.sin(ph + o) * 2.6;
+      const lift = Math.max(0, Math.cos(ph + o)) * 1.4;
+      const joint = front ? P(x + sw * 0.3, 18.5 - lift * 0.4) : P(x - 1.5 + sw * 0.3, 18 - lift * 0.4);
+      limb(g, [P(x, 13), joint], legW * 1.4, legW, fur, { bias: far ? -1.3 : -0.2 });
+      limb(g, [joint, P(x + sw, 23.4 - lift)], legW, legW * 0.9, fur, { bias: far ? -1.3 : -0.3 });
+    };
+    leg(26, Math.PI, true, true);
+    leg(10, 0, true, false);
+    // The tail, low and bushy.
+    limb(g, [P(5, 11), P(2.5, 15), P(2, 19)], 3.4 * s, 2.6 * s, fur, { bias: -0.3 });
+    if (detailed) g.set(Math.floor(2 * s), Math.floor(19.5 * s), dark[1]);
+    // A lean body: the haunch, a tucked-up belly, the deep chest and the ruff over the shoulders.
+    shadedEllipse(g, 10 * s, 11.5 * s, 5 * s, 4.5 * s, fur, { dither: false, min: 1 });
+    shadedEllipse(g, 17 * s, 12 * s, 9 * s, 3.8 * s, fur, { dither: false, min: 1 });
+    shadedEllipse(g, 25 * s, 11.5 * s, 5 * s, 5.2 * s, fur, { dither: false, min: 1 });
+    if (detailed) shadedEllipse(g, 28.5 * s, 13.5 * s, 1.6 * s, 2.4 * s, pale, { dither: false, max: 3 });
+    leg(28, 0, false, true);
+    leg(8.5, Math.PI, false, false);
+    // Head carried level and low, ears pricked, the long muzzle.
+    const bob = Math.sin(ph * 2) * 0.4;
+    const hx = 32;
+    const hy = 8 + bob;
+    limb(g, [P(27, 9), P(hx - 1.5, hy + 0.5)], 5.5 * s, 4 * s, fur);
+    shadedEllipse(g, hx * s, hy * s, 2.8 * s, 2.5 * s, fur, { dither: false });
+    limb(g, [P(hx - 1, hy - 1.5), P(hx - 1.6, hy - 4.6)], 1.8 * s, 0.8 * s, fur);
+    limb(g, [P(hx + 1, hy + 0.3), P(hx + 4.6, hy + 1.2)], 2.3 * s, 1.4 * s, fur, { bias: 0.3 });
+    g.set(Math.floor((hx + 4.8) * s), Math.floor((hy + 1) * s), dark[1]);
+    if (detailed) g.set(Math.floor((hx + 0.7) * s), Math.floor((hy - 0.6) * s), eyeInk);
+  }
+  if (H >= 12) selOut(g, palette, { bottomHeavy: true });
+  return { grid: g, palette };
+}
+
 // --- Butterflies -------------------------------------------------------------
 
 export type ButterflyKind = 'monarch' | 'white' | 'blue' | 'brimstone';

@@ -16,6 +16,7 @@ import { Bear, findSlopeSpots, SlopeElk } from './BigWildlife';
 import { Hare, Mushrooms, NightEyes, TrunkWoodpeckers, undergrowthSpots } from './ForestCritters';
 import { DeerHerd } from './DeerHerd';
 import { ForestGlow } from './ForestGlow';
+import { NightCalls } from './NightCalls';
 import { OwlHollow } from './OwlHollow';
 import { TrunkSquirrels } from './TrunkSquirrels';
 import { Webs } from './Webs';
@@ -61,6 +62,7 @@ export class ForestLife implements SceneLife {
   readonly owlHollow: OwlHollow;
   readonly webs: Webs;
   readonly glow: ForestGlow;
+  readonly calls: NightCalls;
   private hours = 12;
   private readonly deps: LandscapeDeps;
 
@@ -131,6 +133,8 @@ export class ForestLife implements SceneLife {
       if (glowRng() < 0.45) glowSpots.push({ x: t.x + (glowRng() < 0.5 ? -1 : 1) * (t.width / 2 + 1), y: t.bottom + 1, size: Math.max(3, t.width * 0.35) });
     }
     this.glow = new ForestGlow(scene.midground, scene.birdsNear, glowSpots, { x0: 120, x1: 760, y0: 252, y1: 296 }, () => scene.atmosphere.mist);
+    // Wolves howling on the brow on moonlit nights, a bugling stag in the autumn, ravens by day, eyes in the dark.
+    this.calls = new NightCalls(scene.midground, scene.birdsMid, scene.nightLife, scene.plane, scene.floorArea, layout.obstacles, layout.trunks, deps.viewport, deps.sound);
   }
 
   get ambienceLevel(): number {
@@ -167,6 +171,7 @@ export class ForestLife implements SceneLife {
     this.owlHollow.update(dt, env);
     this.webs.update(dt, env);
     this.glow.update(dt, env);
+    this.calls.update(dt, env);
     const squirrelX = this.sillSquirrel.position;
     const state = { ...sill, catX: squirrelX, catStalking: false };
     this.sillSquirrel.update(dt, env, state);

@@ -646,7 +646,123 @@ const horseWhinny: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return length + 0.35;
 };
 
+/** A wolf's long howl: rising from a low note, holding high with a waver, falling away; sometimes a second wolf joins. */
+const wolfHowl: SynthVoice = (ctx, out, when, gain, rate) => {
+  const voices = Math.random() < 0.5 ? 2 : 1;
+  let end = 0;
+  for (let v = 0; v < voices; v++) {
+    const t = when + v * rand(0.8, 1.6);
+    const length = rand(2.6, 3.6);
+    const base = rand(300, 360) * rate * (v ? 1.18 : 1);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1400;
+    filter.connect(out);
+    const [osc, amp] = tone(ctx, 'triangle', filter);
+    osc.frequency.setValueAtTime(base * 0.75, t);
+    osc.frequency.exponentialRampToValueAtTime(base * 1.6, t + length * 0.28);
+    osc.frequency.setValueAtTime(base * 1.6, t + length * 0.7);
+    osc.frequency.exponentialRampToValueAtTime(base * 1.15, t + length);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = rand(4.5, 6);
+    const depth = ctx.createGain();
+    depth.gain.value = base * 0.025;
+    lfo.connect(depth).connect(osc.frequency);
+    amp.gain.setValueAtTime(0, t);
+    amp.gain.linearRampToValueAtTime(0.22 * gain, t + 0.5);
+    amp.gain.setValueAtTime(0.22 * gain, t + length * 0.75);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t + length);
+    osc.start(t);
+    lfo.start(t);
+    osc.stop(t + length + 0.05);
+    lfo.stop(t + length + 0.05);
+    end = Math.max(end, t + length - when);
+  }
+  return end;
+};
+
+/** A bull elk's bugle: a rising, piercing whistle that breaks into a scream, then a few deep grunts. */
+const elkBugle: SynthVoice = (ctx, out, when, gain, rate) => {
+  const length = rand(1.6, 2.2);
+  const [osc, amp] = tone(ctx, 'sine', out);
+  const f = rand(560, 640) * rate;
+  osc.frequency.setValueAtTime(f, when);
+  osc.frequency.exponentialRampToValueAtTime(f * 3, when + length * 0.45);
+  osc.frequency.setValueAtTime(f * 3, when + length * 0.8);
+  osc.frequency.exponentialRampToValueAtTime(f * 2.2, when + length);
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 7;
+  const depth = ctx.createGain();
+  depth.gain.value = f * 0.08;
+  lfo.connect(depth).connect(osc.frequency);
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.16 * gain, when + 0.3);
+  amp.gain.setValueAtTime(0.16 * gain, when + length * 0.8);
+  amp.gain.exponentialRampToValueAtTime(0.0001, when + length);
+  osc.start(when);
+  lfo.start(when);
+  osc.stop(when + length + 0.05);
+  lfo.stop(when + length + 0.05);
+  // The grunts.
+  let t = when + length + 0.15;
+  for (let i = 0; i < 3; i++) {
+    const [g, ga] = tone(ctx, 'sawtooth', out);
+    g.frequency.setValueAtTime(110 * rate, t);
+    g.frequency.exponentialRampToValueAtTime(80 * rate, t + 0.18);
+    envelope(ga.gain, t, 0.02, 0.12 * gain, 0.2);
+    g.start(t);
+    g.stop(t + 0.25);
+    t += 0.32;
+  }
+  return t - when;
+};
+
+/** A raven's deep, hollow croak ("kronk"), with a gurgle in it. */
+const ravenCroak: SynthVoice = (ctx, out, when, gain, rate) => {
+  const croaks = 1 + Math.floor(Math.random() * 3);
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = 800;
+  band.Q.value = 2;
+  band.connect(out);
+  let t = when;
+  for (let i = 0; i < croaks; i++) {
+    const [osc, amp] = tone(ctx, 'sawtooth', band);
+    const length = rand(0.24, 0.34);
+    const f = rand(280, 330) * rate;
+    osc.frequency.setValueAtTime(f, t);
+    osc.frequency.linearRampToValueAtTime(f * 0.85, t + length);
+    // The gurgle: a fast wobble in its loudness.
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = rand(28, 36);
+    const depth = ctx.createGain();
+    depth.gain.value = 0.12 * gain;
+    lfo.connect(depth).connect(amp.gain);
+    envelope(amp.gain, t, 0.02, 0.3 * gain, length);
+    osc.start(t);
+    lfo.start(t);
+    osc.stop(t + length + 0.05);
+    lfo.stop(t + length + 0.05);
+    t += length + rand(0.2, 0.35);
+  }
+  return t - when;
+};
+
+/** A bear's huff: a couple of deep, breathy puffs. */
+const bearHuff: SynthVoice = (ctx, out, when, gain, _rate, noise) => {
+  let t = when;
+  for (let i = 0; i < 2; i++) {
+    noiseBurst(ctx, noise, out, t, 0.28, { type: 'lowpass', frequency: 320 }, 0.5 * gain, 0.03);
+    t += 0.45;
+  }
+  return t - when;
+};
+
 export const SYNTH_VOICES = {
+  'wolf-howl': wolfHowl,
+  'elk-bugle': elkBugle,
+  'raven-croak': ravenCroak,
+  'bear-huff': bearHuff,
   'sparrow-chirp': sparrowChirp,
   'pigeon-coo': pigeonCoo,
   'crow-caw': crowCaw,

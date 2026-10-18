@@ -93,7 +93,7 @@ export class Bear {
     w.steering = { kind: 'exit', side: side > 0 ? -1 : 1 };
     this.walker = w;
     this.sprite.visible = true;
-    this.sound('deer-snort', this.viewport.worldXToStereo(w.point.x), 0.25);
+    this.sound('bear-huff', this.viewport.worldXToStereo(w.point.x), 0.35);
   }
 }
 

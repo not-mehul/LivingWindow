@@ -282,3 +282,24 @@ export function roeDeerOut(hours: number): boolean {
   const h = wrap(hours);
   return h >= 5 && h < 7.6;
 }
+
+// --- The deep forest's night and its callers -----------------------------------------
+
+/** Wolves come to the brow to howl on moonlit nights (0..1 by the hour and the moonlight). */
+export function wolfActivity(hours: number, moonlight: number): number {
+  const h = wrap(hours);
+  const night = h >= 21.5 || h < 4 ? 1 : 0;
+  return night * Math.max(0, Math.min(1, (moonlight - 0.15) / 0.4));
+}
+
+/** In the autumn rut (September and October), stags bugle in the first light. */
+export function stagRut(month: number, hours: number): boolean {
+  const h = wrap(hours);
+  return (month === 8 || month === 9) && h >= 5.3 && h < 8.5;
+}
+
+/** Ravens cross high over the wood through the day. */
+export function ravenActivity(hours: number): number {
+  const h = wrap(hours);
+  return h >= 6.5 && h < 19 ? 1 : 0;
+}

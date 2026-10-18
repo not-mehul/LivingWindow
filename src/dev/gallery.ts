@@ -5,7 +5,7 @@ import { drawBird, SPECIES, type SpeciesId } from '../sprites/birdSprites';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type DogPose, type HorsePose, type RabbitPose, type SheepPose } from '../sprites/meadowSprites';
-import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind } from '../sprites/wildSprites';
+import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind, drawWolf, type WolfPose } from '../sprites/wildSprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from '../sprites/vehicleSprites';
 import { ADS, drawAd, type AdId } from '../scene/city/ads';
 import type { PixelBuffer } from '../core/pixelBuffer';
@@ -109,6 +109,7 @@ function sections(): Section[] {
       [6, 8, 12, 16, 24].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `bat ${n}/${f}`, draw: () => drawBat(f, n) }))),
       [8, 12, 18].flatMap((h) => (['walk-1', 'walk-4', 'sniff'] as BearPose[]).map((pose) => ({ label: `bear ${pose} ${h}`, draw: () => drawBear(pose, h) }))),
       (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6', 'sniff', 'sniff-air'] as BearPose[]).map((pose) => ({ label: `bear ${pose}`, draw: () => drawBear(pose, 32) })),
+      [8, 12, 18, 30].flatMap((h) => (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'sit', 'howl'] as WolfPose[]).map((pose) => ({ label: `wolf ${pose} ${h}`, draw: () => drawWolf(pose, h) }))),
       (['monarch', 'white', 'blue', 'brimstone'] as ButterflyKind[]).flatMap((kind) => [4, 6, 9].flatMap((n) => [0, 1, 2].map((f) => ({ label: `${kind[0]}${n}/${f}`, draw: () => drawButterfly(kind, f, n) })))),
       [6, 8, 12, 16, 24].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `wp ${n}/${f}`, draw: () => drawWoodpeckerCling(f, n) }))),
       (['fly-agaric', 'bolete', 'cluster'] as MushroomKind[]).flatMap((kind) => [3, 5, 8, 12].map((n) => ({ label: `${kind} ${n}`, draw: () => drawMushroom(kind, n) }))),
