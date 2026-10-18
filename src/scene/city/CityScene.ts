@@ -10,6 +10,7 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import { bayer } from '../common/paint';
 import { generateCity, poolFalloff, POOL_REACH, type CityLayerName, type CityLayout } from './cityGenerator';
 import { Billboards } from './Billboards';
+import { RoofAmbience } from './RoofAmbience';
 import { StreetLamps } from './StreetLamps';
 import { WindowLife } from './WindowLife';
 import { WindowLights } from './WindowLights';
@@ -78,6 +79,7 @@ export class CityScene implements WorldScene {
   private readonly signLayer = new Container({ label: 'neon' });
   private signsLevel = 0;
   private readonly billboards: Billboards;
+  private readonly roofAmbience: RoofAmbience;
   /** Smog hanging over the skyline: amber by day, lit violet from below by the city at night. */
   private readonly smog: Sprite;
   private readonly smogVeil: Sprite;
@@ -114,6 +116,7 @@ export class CityScene implements WorldScene {
       this.signs.push({ sprite, broken: sign.broken, dip: 0 });
     }
     this.billboards = new Billboards(city.billboards, rng);
+    this.roofAmbience = new RoofAmbience(city);
     const smogTexture = smogArt().toTexture();
     this.smog = new Sprite(smogTexture);
     this.smogVeil = new Sprite(smogTexture);
@@ -141,6 +144,7 @@ export class CityScene implements WorldScene {
       lightsByLayer.near.sprite,
       this.billboards.layers.near,
       nearLife.graphics,
+      this.roofAmbience.container,
       this.roofLife,
       this.poolLayer,
       this.street,
@@ -164,6 +168,7 @@ export class CityScene implements WorldScene {
     this.layers.near.update(tints.near, lighting);
     this.over.update(tints.over, lighting);
     this.billboards.update(dt, lighting, tints);
+    this.roofAmbience.update(dt, env);
     const smogTint = lerpColor(lerpColor(0xffffff, 0xffa090, lighting.twilight), 0xa04a9a, lighting.nightness);
     this.smog.tint = smogTint;
     this.smog.alpha = 0.7 + 0.2 * lighting.twilight - 0.2 * lighting.nightness;

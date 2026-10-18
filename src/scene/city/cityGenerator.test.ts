@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CITY_HORIZON, projectPoint } from '../../sim/cityGeometry';
 import { generateCity, poolFalloff, POOL_REACH } from './cityGenerator';
+import { terraceScene } from './roofProps';
 
 const lum = (c: number) => ((c >> 16) & 255) + ((c >> 8) & 255) + (c & 255);
 
@@ -87,5 +88,36 @@ describe('city screens', () => {
 
   it('keeps exactly one worn-out neon sign', () => {
     expect(city.signs.filter((s) => s.broken).length).toBe(1);
+  });
+});
+
+describe('lived-in rooftops', () => {
+  const city = generateCity();
+  it('gives crows antennas to perch on, strings bulbs where they can be seen, and lights a grill and a stove', () => {
+    expect(city.ledges.filter((l) => l.kind === 'antenna').length).toBeGreaterThanOrEqual(3);
+    expect(city.roofLights.length).toBeGreaterThan(20);
+    for (const b of city.roofLights) {
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.y).toBeLessThan(360);
+    }
+    expect(city.smoke.map((s) => s.kind).sort()).toEqual(['grill', 'stove']);
+  });
+
+  it('keeps clear the spots where the rooftop people stand and work', () => {
+    const spots = [
+      { gx: -250, depth: 1.25 }, // the pigeon feeder
+      { gx: 100, depth: 1.08 },
+      { gx: 128, depth: 1.08 },
+      { gx: 156, depth: 1.08 }, // the planters
+      { gx: 268, depth: 1.6 }, // the stair door
+      { gx: 214, depth: 1.38 }, // the washing line
+    ];
+    for (const prop of terraceScene().boxes) {
+      const { box } = prop;
+      for (const s of spots) {
+        const inside = Math.abs(s.gx - box.gx) < box.halfU + 8 && Math.abs((s.depth - box.depth) * 700) < box.halfW + 8;
+        expect(inside, `${prop.material} at ${box.gx},${box.depth.toFixed(2)}`).toBe(false);
+      }
+    }
   });
 });
