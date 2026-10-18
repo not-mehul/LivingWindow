@@ -123,7 +123,8 @@ export function treeLineFoot(treeLine: PixelBuffer): (x: number) => number {
 export class TreeLineDeer {
   private readonly herd: Roe[] = [];
   private readonly sprites = new DrawnCache();
-  private forced = false;
+  /** Seconds left of a summoned visit. */
+  private forced = 0;
 
   constructor(
     private readonly container: Container,
@@ -137,11 +138,12 @@ export class TreeLineDeer {
   }
 
   summon(): void {
-    this.forced = true;
+    this.forced = 90;
   }
 
   update(dt: number, env: Environment): void {
-    const out = this.forced || roeDeerOut(env.lighting.hours);
+    this.forced = Math.max(0, this.forced - dt);
+    const out = this.forced > 0 || roeDeerOut(env.lighting.hours);
     if (out && this.herd.length === 0) {
       const x0 = r(this.xs[0], this.xs[1]);
       const n = 1 + Math.floor(Math.random() * 3);
@@ -179,7 +181,6 @@ export class TreeLineDeer {
       d.sprite.zIndex = d.y;
       d.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.3);
     }
-    if (!out) this.forced = false;
   }
 }
 
