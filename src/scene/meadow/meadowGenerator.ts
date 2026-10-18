@@ -511,6 +511,12 @@ export function generateMeadow(seed = 6060): MeadowLayout {
   ledges.push({ x0: coopLeft + coopArt.x0 + 2, x1: coopLeft + coopArt.x0 + coopArt.w - 2, y: coopTop + 1, layer: 'mid', kind: 'roof', z: birdZ(coopBase) });
   const coopGround = meadowPlane.unproject(coopX, coopBase);
   obstacles.push({ ...coopGround, r: 52 });
+  // Keep the ground just behind the hen house clear too: anything standing
+  // there has its feet on the roof line, and seems to stand on the roof.
+  for (let y = coopTop + 2; y <= coopTop + coopArt.y0 + 2; y += 2) {
+    const g = meadowPlane.unproject(coopX, y);
+    obstacles.push({ ...g, r: (coopArt.w / 2 + 14) * g.depth });
+  }
   const coop = {
     x: coopX,
     baseY: coopBase,
