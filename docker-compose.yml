@@ -1,0 +1,46 @@
+# One-command self-hosting on a home server, NAS or Raspberry Pi:
+#
+#   docker compose up -d
+#
+# Then open http://<this-machine's-LAN-IP>:8080 on any device on your Wi-Fi.
+# Change the port with LIVING_WINDOW_PORT=9000 docker compose up -d
+services:
+  living-window:
+    build:
+      context: .
+      args:
+        # Point these at a registry mirror if Docker Hub is unavailable.
+        NODE_IMAGE: ${NODE_IMAGE:-node:22-alpine}
+        NGINX_IMAGE: ${NGINX_IMAGE:-nginx:alpine}
+    image: living-window:latest
+    container_name: living-window
+    ports:
+      - "${LIVING_WINDOW_PORT:-8080}:8080"
+    restart: unless-stopped
+    # Nothing in the container needs to change at runtime.
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /var/run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    # Uncomment to use your own recordings and radio playlist without
+    # rebuilding (see public/audio/README.md for the manifest format):
+    # volumes:
+    #   - ./my-audio:/usr/share/nginx/html/audio:ro
+
+  # Optional: reach your window from anywhere, with no port forwarding, via a
+  # Cloudflare Tunnel. Create a tunnel in the Cloudflare dashboard pointing at
+  # http://living-window:8080, then:
+  #
+  #   CLOUDFLARE_TUNNEL_TOKEN=... docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - living-window
+    restart: unless-stopped

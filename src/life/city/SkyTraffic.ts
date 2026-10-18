@@ -1,0 +1,253 @@
+import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { WORLD_WIDTH } from '../../config';
+import { lerpColor } from '../../core/color';
+import { PixelBuffer } from '../../core/pixelBuffer';
+import type { Environment } from '../../scene/Environment';
+import { bayer } from '../../scene/common/paint';
+import { glowTexture } from '../../scene/common/glow';
+import { gridToTexture } from '../../sprites/birdSprites';
+import { Palette, shadedEllipse } from '../../sprites/kit';
+import { PixelGrid } from '../../sprites/raster';
+import { blimpOut } from '../../sim/wildlife';
+
+const r = (a: number, b: number) => a + Math.random() * (b - a);
+
+type CraftKind = 'plane' | 'helicopter' | 'drone' | 'blimp';
+
+interface Craft {
+  kind: CraftKind;
+  x: number;
+  y: number;
+  dir: 1 | -1;
+  speed: number;
+  t: number;
+  /** Day contrail points behind a plane. */
+  trail: Array<{ x: number; y: number; age: number }>;
+  searchlight: Sprite | null;
+}
+
+/** The blimp, drawn once: a silver envelope with fins, a gondola and a band for its sign. */
+function blimpTexture(): Texture {
+  const W = 40;
+  const H = 16;
+  const g = new PixelGrid(W, H);
+  const palette = new Palette();
+  const skin = palette.ramp(0xd8dce0, 0.8);
+  const fin = palette.ramp(0x3a6ab0);
+  const gondola = palette.ramp(0x4a4e56);
+  // Tail fins.
+  g.polygon([[2, 2], [9, 6], [9, 10], [2, 13]], fin[2]);
+  shadedEllipse(g, 21, 7.5, 17, 6, skin, { dither: false, min: 1 });
+  g.rect(18, 13, 8, 2, gondola[2]);
+  g.rect(19, 13, 1, 1, gondola[4]);
+  // A dark band where the sign runs.
+  for (let x = 10; x < 33; x++) {
+    g.set(x, 7, 0);
+    g.set(x, 8, 0);
+  }
+  const ink = palette.add(0x1e2430);
+  for (let x = 10; x < 33; x++) {
+    if (g.get(x, 6) || g.get(x, 9)) {
+      g.set(x, 7, ink);
+      g.set(x, 8, ink);
+    }
+  }
+  return gridToTexture(g, palette.colors);
+}
+
+/** A searchlight's beam: a long dithered wedge, brightest at the lamp. */
+function beamTexture(): Texture {
+  const W = 31;
+  const H = 110;
+  const p = new PixelBuffer(W, H);
+  for (let y = 0; y < H; y++) {
+    const t = y / H;
+    const half = 1 + t * (W / 2 - 1);
+    for (let x = 0; x < W; x++) {
+      const u = Math.abs(x + 0.5 - W / 2) / half;
+      if (u >= 1) continue;
+      const level = (1 - t * 0.8) * (1 - u * u) * 2.6;
+      let step = Math.floor(level);
+      if (level - step > bayer(x, y)) step++;
+      if (step > 0) p.set(x, y, lerpColor(0, 0xe8f0ff, Math.min(1, step * 0.16)));
+    }
+  }
+  return p.toTexture();
+}
+
+/**
+ * Traffic in the sky over the city: planes crossing high (a contrail behind
+ * them by day, blinking navigation lights by night), a helicopter now and
+ * then (sweeping a searchlight over the streets after dark), a little
+ * delivery drone darting across the canyon, and on fair days the
+ * advertising blimp drifting by with its sign running.
+ */
+export class SkyTraffic {
+  /** Far behind the buildings. */
+  readonly container = new Container({ label: 'sky-traffic' });
+  /** Closer in: the drone crosses the street canyon. */
+  readonly nearContainer = new Container({ label: 'drones' });
+  private readonly gfx = new Graphics();
+  private readonly lights = new Graphics();
+  private readonly nearGfx = new Graphics();
+  private readonly crafts: Craft[] = [];
+  private readonly blimpSprite: Sprite;
+  private beam: Texture | null = null;
+  private timers: Record<CraftKind, number> = { plane: r(10, 60), helicopter: r(120, 300), drone: r(60, 180), blimp: r(30, 120) };
+  private blimpToday = false;
+
+  constructor() {
+    this.blimpSprite = new Sprite({ texture: blimpTexture(), anchor: 0.5 });
+    this.blimpSprite.visible = false;
+    this.lights.blendMode = 'add';
+    this.container.addChild(this.gfx, this.blimpSprite, this.lights);
+    this.nearContainer.addChild(this.nearGfx);
+  }
+
+  get counts(): Record<CraftKind, number> {
+    const out: Record<CraftKind, number> = { plane: 0, helicopter: 0, drone: 0, blimp: 0 };
+    for (const c of this.crafts) out[c.kind]++;
+    return out;
+  }
+
+  summon(kind: CraftKind): void {
+    this.launch(kind);
+  }
+
+  update(dt: number, env: Environment): void {
+    const h = env.lighting.hours;
+    const clear = env.weather.cloudCover < 0.6 && env.weather.precipitation < 0.1;
+    for (const kind of ['plane', 'helicopter', 'drone'] as const) {
+      this.timers[kind] -= dt;
+      if (this.timers[kind] <= 0) {
+        this.timers[kind] = kind === 'plane' ? r(60, 180) : kind === 'helicopter' ? r(180, 480) : r(90, 240);
+        const ok = kind !== 'drone' || (h >= 8 && h < 22);
+        if (ok && !this.crafts.some((c) => c.kind === kind)) this.launch(kind);
+      }
+    }
+    // The blimp goes up once on a fair day.
+    if (blimpOut(h, clear)) {
+      this.timers.blimp -= dt;
+      if (!this.blimpToday && this.timers.blimp <= 0) {
+        this.blimpToday = true;
+        this.launch('blimp');
+      }
+    } else if (h < 9) this.blimpToday = false;
+
+    this.gfx.clear();
+    this.lights.clear();
+    this.nearGfx.clear();
+    const night = env.lighting.emissive;
+    for (let i = this.crafts.length - 1; i >= 0; i--) {
+      const c = this.crafts[i];
+      c.t += dt;
+      c.x += c.dir * c.speed * dt;
+      if (c.kind === 'drone') c.y += Math.sin(c.t * 2.3) * 6 * dt;
+      if (c.x < -60 || c.x > WORLD_WIDTH + 60) {
+        c.searchlight?.destroy();
+        if (c.kind === 'blimp') this.blimpSprite.visible = false;
+        this.crafts.splice(i, 1);
+        continue;
+      }
+      this.draw(c, dt, env, night);
+    }
+  }
+
+  private launch(kind: CraftKind): void {
+    const dir: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
+    const x = dir > 0 ? -50 : WORLD_WIDTH + 50;
+    const y = kind === 'plane' ? r(18, 60) : kind === 'helicopter' ? r(70, 115) : kind === 'drone' ? r(175, 205) : r(40, 75);
+    const speed = kind === 'plane' ? r(14, 22) : kind === 'helicopter' ? r(16, 24) : kind === 'drone' ? r(30, 45) : r(3.5, 5);
+    let searchlight: Sprite | null = null;
+    if (kind === 'helicopter') {
+      this.beam ??= beamTexture();
+      searchlight = new Sprite({ texture: this.beam, anchor: { x: 0.5, y: 0 }, blendMode: 'add' });
+      searchlight.visible = false;
+      this.container.addChild(searchlight);
+    }
+    this.crafts.push({ kind, x, y, dir, speed, t: 0, trail: [], searchlight });
+  }
+
+  private draw(c: Craft, dt: number, env: Environment, night: number): void {
+    const x = Math.round(c.x);
+    const y = Math.round(c.y);
+    const g = this.gfx;
+    const tint = env.lighting.ambient;
+    const shade = lerpColor(0x9aa0aa, tint, 0.5);
+    const dark = lerpColor(0x3a3e46, tint, 0.4);
+    const blink = Math.floor(env.time * 1.4 + c.x * 0.01) % 2 === 0;
+    switch (c.kind) {
+      case 'plane': {
+        // A contrail by day, spreading and fading behind it.
+        if (env.lighting.darkness < 0.6) {
+          c.trail.push({ x: c.x - c.dir * 5, y: c.y, age: 0 });
+          for (const p of c.trail) p.age += dt;
+          while (c.trail.length && c.trail[0].age > 25) c.trail.shift();
+          for (let k = 0; k < c.trail.length; k += 2) {
+            const p = c.trail[k];
+            const a = 0.55 * (1 - p.age / 25) * (1 - env.lighting.darkness);
+            const w = 1 + Math.floor(p.age / 9);
+            g.rect(Math.round(p.x), Math.round(p.y - (w - 1) / 2), 2, w).fill({ color: 0xffffff, alpha: a });
+          }
+        }
+        // Fuselage, wings and tail, tiny with height.
+        g.rect(x - 3, y, 7, 1).fill(shade);
+        g.rect(x - c.dir, y - 1, 1, 1).fill(dark).rect(x, y + 1, 1, 1).fill(dark);
+        g.rect(x - c.dir * 3, y - 1, 1, 1).fill(dark);
+        if (night > 0.1) {
+          this.lights.rect(x - 1, y - 1, 1, 1).fill({ color: 0xff3a2a, alpha: night });
+          this.lights.rect(x + 1, y + 1, 1, 1).fill({ color: 0x3aff6a, alpha: night });
+          if (Math.floor(env.time * 1.1) % 2 === 0 && env.time % 1 < 0.12) this.lights.rect(x - c.dir * 3, y, 1, 1).fill({ color: 0xffffff, alpha: night });
+        }
+        break;
+      }
+      case 'helicopter': {
+        // Body, tail boom, skids and the rotor's flicker.
+        g.rect(x - 2, y, 5, 3).fill(dark).rect(x - 1, y, 3, 1).fill(shade);
+        g.rect(x - c.dir * 7, y + 1, 5, 1).fill(dark);
+        g.rect(x - c.dir * 7, y - 1, 1, 2).fill(dark);
+        g.rect(x - 2, y + 4, 6, 1).fill(dark);
+        const rotor = Math.floor(env.time * 18) % 2 === 0;
+        g.rect(x - (rotor ? 5 : 3), y - 1, rotor ? 11 : 7, 1).fill({ color: dark, alpha: 0.7 });
+        if (night > 0.1 && blink) this.lights.rect(x, y - 1, 1, 1).fill({ color: 0xff3a2a, alpha: night });
+        if (c.searchlight) {
+          // After dark it sweeps a searchlight over the streets.
+          c.searchlight.visible = night > 0.3;
+          c.searchlight.position.set(x, y + 3);
+          c.searchlight.rotation = Math.sin(c.t * 0.6) * 0.45 - c.dir * 0.15;
+          c.searchlight.alpha = Math.min(0.9, night);
+        }
+        break;
+      }
+      case 'drone': {
+        // A little quadcopter darting across the canyon, its light winking.
+        const n = this.nearGfx;
+        n.rect(x - 2, y, 5, 1).fill(dark).rect(x - 1, y + 1, 3, 1).fill(dark);
+        const props = Math.floor(env.time * 20) % 2 === 0;
+        n.rect(x - 3, y - 1, 2, 1).fill({ color: shade, alpha: props ? 0.8 : 0.3 }).rect(x + 2, y - 1, 2, 1).fill({ color: shade, alpha: props ? 0.3 : 0.8 });
+        if (blink) n.rect(x, y + 2, 1, 1).fill({ color: night > 0.1 ? 0x3aff6a : 0x2a8a3a, alpha: 0.6 + 0.4 * night });
+        break;
+      }
+      case 'blimp': {
+        this.blimpSprite.visible = true;
+        this.blimpSprite.position.set(x, y);
+        this.blimpSprite.scale.x = c.dir;
+        this.blimpSprite.tint = lerpColor(tint, 0xffffff, 0.2);
+        // Its sign: lit dots running along the band.
+        const left = x - c.dir * 11;
+        for (let k = 0; k < 22; k++) {
+          const on = (k + Math.floor(env.time * 8)) % 6 < 3;
+          if (!on) continue;
+          const px = left + c.dir * k;
+          const colors = [0xffe060, 0xff6a8a, 0x6ad8ff];
+          this.lights.rect(px, y, 1, 1).fill({ color: colors[Math.floor(k / 6) % 3], alpha: 0.5 + 0.5 * night });
+        }
+        break;
+      }
+    }
+    // A soft glow round the lights after dark, so they read against the sky.
+    if (night > 0.3 && c.kind !== 'blimp' && c.kind !== 'drone' && blink) {
+      this.lights.texture(glowTexture(2, 0xff5040), 0xffffff, x - 2, y - 3, 5, 5);
+    }
+  }
+}
