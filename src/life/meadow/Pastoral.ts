@@ -2,6 +2,7 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { lerpColor } from '../../core/color';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
+import { BUNCHED, flockSpot, groundDistance, LOOSE, screenGap, type FlockSpread, type GroundSpot } from '../../sim/flock';
 import { FOCAL, type GroundPlane } from '../../sim/groundPlane';
 import { GroundWalker, type Obstacle, type WalkArea } from '../../sim/groundWalker';
 import { cowsResting, sheepdogTime } from '../../sim/wildlife';
@@ -24,21 +25,30 @@ interface Sheep {
   walker: GroundWalker;
   state: SheepState;
   timer: number;
-  /** Where it likes to be relative to the flock's middle (ground px). */
-  ox: number;
-  oz: number;
+  /** Where it's strolling to, or grazing. */
+  spot: GroundSpot;
+  /** Its place in the bunch when the dog's working them (offset from the flock's middle). */
+  tight: GroundSpot;
   stride: number;
   sprite: Sprite;
+  /** Lambs keep close to their mothers and are smaller. */
+  mother?: Sheep;
+  size: number;
 }
 
 /** Where the flock grazes: the left of the pasture, among the oaks. */
-const FLOCK_AREA = { gx0: -430, gx1: -60, depth0: 1.6, depth1: 3.2 };
+const FLOCK_AREA = { gx0: -460, gx1: -40, depth0: 1.45, depth1: 3.3 };
+/** How far a sheep strolls to a fresh mouthful (ground px). */
+const STROLL = 220;
 
 /**
- * A small flock of sheep grazing together: drifting across the grass as a
- * loose bunch, lying down at night, bleating now and then. Through the day
- * the sheepdog is sent round them: it races out in a wide arc, drops to a
- * crouch, and the flock bunches up and moves off ahead of it.
+ * A small flock of sheep and a lamb or two, scattered loosely across the
+ * grass: each grazes its own patch, wanders off to a fresh one now and then,
+ * and keeps a little apart from the others, while the flock as a whole
+ * drifts slowly. They lie down at night and bleat now and then. Through the
+ * day the sheepdog is sent round them: it races out in a wide arc, drops to
+ * a crouch, and the flock bunches up and moves off ahead of it, spreading out
+ * again over the next minute or two once it's gone.
  */
 export class SheepFlock {
   private readonly sheep: Sheep[] = [];
@@ -51,21 +61,25 @@ export class SheepFlock {
 
   constructor(
     container: Container,
-    plane: GroundPlane,
+    private readonly plane: GroundPlane,
     area: WalkArea,
-    obstacles: readonly Obstacle[],
+    private readonly obstacles: readonly Obstacle[],
     private readonly viewport: Viewport,
     private readonly sound: LifeSoundSink,
     count = 6,
   ) {
-    for (let i = 0; i < count; i++) {
-      const ox = r(-45, 45);
-      const oz = r(-30, 30);
-      const w = new GroundWalker(plane, area, this.centre.gx + ox, this.centre.depth + oz / FOCAL, Math.random() * Math.PI * 2);
+    const lambs = Math.random() < 0.5 ? 1 : 2;
+    for (let i = 0; i < count + lambs; i++) {
+      const mother = i >= count ? this.sheep[i - count] : undefined;
+      const spot = mother
+        ? { gx: mother.spot.gx + r(-14, 14), depth: mother.spot.depth + r(-0.04, 0.04) }
+        : (this.pickSpot(null, Infinity, LOOSE) ?? { ...this.centre });
+      const w = new GroundWalker(plane, area, spot.gx, spot.depth, Math.random() * Math.PI * 2);
       w.obstacles = obstacles;
       const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
       container.addChild(sprite);
-      this.sheep.push({ walker: w, state: 'graze', timer: r(1, 6), ox, oz, stride: Math.random() * 4, sprite });
+      const tight = { gx: r(-BUNCHED.gx, BUNCHED.gx), depth: r(-BUNCHED.depth, BUNCHED.depth) };
+      this.sheep.push({ walker: w, state: 'graze', timer: r(1, 12), spot, tight, stride: Math.random() * 4, sprite, mother, size: mother ? r(0.58, 0.66) : r(0.94, 1.06) });
     }
     this.dog = new Sheepdog(container, plane, area, obstacles, () => this.centre);
   }
@@ -79,26 +93,32 @@ export class SheepFlock {
     return this.sheep.filter((s) => s.state === 'flee').length;
   }
 
+  /** Where each one is on the ground (for tests and the debug view). */
+  get positions(): GroundSpot[] {
+    return this.sheep.map((s) => ({ gx: s.walker.gx, depth: s.walker.depth }));
+  }
+
   update(dt: number, env: Environment): void {
     const resting = cowsResting(env.lighting.hours);
     // The flock's middle drifts slowly across the grass.
     this.retarget -= dt;
     if (this.retarget <= 0) {
-      this.retarget = r(30, 70);
-      this.centreTarget = { gx: r(FLOCK_AREA.gx0, FLOCK_AREA.gx1), depth: r(FLOCK_AREA.depth0, FLOCK_AREA.depth1) };
+      this.retarget = r(40, 90);
+      this.centreTarget = { gx: r(FLOCK_AREA.gx0 + 60, FLOCK_AREA.gx1 - 60), depth: r(FLOCK_AREA.depth0 + 0.35, FLOCK_AREA.depth1 - 0.35) };
     }
     const dog = this.dog.position;
     if (dog && this.dog.herding) {
-      // Pushed away from the dog.
-      const dx = this.centre.gx - dog.gx;
-      const dz = (this.centre.depth - dog.depth) * FOCAL;
+      // Pushed away from the dog, judged as it looks on screen.
+      const dx = (this.centre.gx - dog.gx) / LOOSE.gx;
+      const dz = (this.centre.depth - dog.depth) / LOOSE.depth;
       const d = Math.hypot(dx, dz) || 1;
+      // Kept off the edges of their grass: hemmed in, they slip along it instead.
       this.centreTarget = {
-        gx: Math.max(FLOCK_AREA.gx0, Math.min(FLOCK_AREA.gx1, this.centre.gx + (dx / d) * 80)),
-        depth: Math.max(FLOCK_AREA.depth0, Math.min(FLOCK_AREA.depth1, this.centre.depth + ((dz / d) * 80) / FOCAL)),
+        gx: Math.max(FLOCK_AREA.gx0 + 50, Math.min(FLOCK_AREA.gx1 - 50, this.centre.gx + (dx / d) * 90)),
+        depth: Math.max(FLOCK_AREA.depth0 + 0.25, Math.min(FLOCK_AREA.depth1 - 0.25, this.centre.depth + (dz / d) * 0.35)),
       };
     }
-    const k = Math.min(1, dt * (this.dog.herding ? 0.6 : 0.05));
+    const k = Math.min(1, dt * (this.dog.herding ? 0.6 : 0.03));
     this.centre.gx += (this.centreTarget.gx - this.centre.gx) * k;
     this.centre.depth += (this.centreTarget.depth - this.centre.depth) * k;
 
@@ -109,47 +129,86 @@ export class SheepFlock {
     if (this.baaTimer <= 0) {
       this.baaTimer = this.dog.herding ? r(1.5, 4) : r(12, 35);
       const s = this.sheep[Math.floor(Math.random() * this.sheep.length)];
-      if (!resting || Math.random() < 0.2) this.sound('sheep-baa', this.viewport.worldXToStereo(s.walker.point.x), 0.4 + 0.4 * (1 - s.walker.point.scale));
+      if (!resting || Math.random() < 0.2) this.sound('sheep-baa', this.viewport.worldXToStereo(s.walker.point.x), (0.4 + 0.4 * (1 - s.walker.point.scale)) * (s.mother ? 0.7 : 1));
     }
     const tint = env.lighting.ambient;
     for (const s of this.sheep) this.draw(s, tint);
   }
 
+  /** A fresh patch near the flock's middle, within `reach` of where `s` stands, clear of the others. */
+  private pickSpot(s: Sheep | null, reach: number, spread: FlockSpread): GroundSpot | null {
+    const others = this.sheep.filter((o) => o !== s && !o.mother).map((o) => (o.state === 'walk' ? o.spot : { gx: o.walker.gx, depth: o.walker.depth }));
+    const from = s ? { gx: s.walker.gx, depth: s.walker.depth } : null;
+    return flockSpot(this.plane, this.centre, others, spread, FLOCK_AREA, (gx, depth) => GroundWalker.blocked(this.obstacles, gx, depth, 6) || (from !== null && groundDistance(from, { gx, depth }) > reach));
+  }
+
   private step(s: Sheep, dt: number, resting: boolean): void {
     const w = s.walker;
     s.timer -= dt;
-    const bunch = this.dog.herding ? 0.45 : 1;
-    const home = { gx: this.centre.gx + s.ox * bunch, depth: this.centre.depth + (s.oz * bunch) / FOCAL };
-    const away = w.distanceTo(home.gx, home.depth);
-    if (this.dog.herding && s.state !== 'flee') {
-      s.state = 'flee';
-      s.timer = 0;
+    const herding = this.dog.herding;
+    if (herding) {
+      // Bunch up and move off ahead of the dog.
+      if (s.state !== 'flee') s.state = 'flee';
+      const m = s.mother;
+      const tight = m ? { gx: m.tight.gx + 8, depth: m.tight.depth + 0.02 } : s.tight;
+      s.spot = { gx: this.centre.gx + tight.gx, depth: this.centre.depth + tight.depth };
+    } else if (s.state === 'flee') {
+      // The dog's gone: stay bunched a while, then drift apart one by one.
+      s.state = 'graze';
+      s.timer = r(4, 60) * (s.mother ? 0.3 : 1);
     }
-    if (s.state === 'flee' && !this.dog.herding) s.state = 'graze';
-    if (resting && s.state !== 'flee') {
-      s.state = 'lie';
-      w.speed = 0;
-    } else if (s.state === 'lie') s.state = 'graze';
-    if (s.state === 'flee' || (s.state === 'walk' && away > 6)) {
-      w.steering = { kind: 'seek', ...home };
-      w.speed = s.state === 'flee' ? 34 : 9;
-      if (s.state === 'walk' && away <= 6) s.state = 'graze';
-    } else if (s.state === 'graze') {
-      w.speed = 0;
-      if (s.timer <= 0) {
-        s.timer = r(3, 10);
-        // Wander off a step, or catch up with the others.
-        if (away > 40 || Math.random() < 0.3) s.state = 'walk';
+    if (resting && !herding) {
+      if (s.state !== 'lie') {
+        s.state = 'lie';
+        s.timer = r(30, 90);
       }
-    } else if (s.state === 'walk') s.state = 'graze';
+    } else if (s.state === 'lie') {
+      s.state = 'graze';
+      s.timer = r(1, 10);
+    }
+
+    if (s.state === 'graze' && s.timer <= 0) {
+      s.timer = r(6, 20);
+      const m = s.mother;
+      if (m) {
+        // A lamb trots after its mother, and noses about close to her.
+        const target = m.state === 'walk' ? m.spot : { gx: m.walker.gx, depth: m.walker.depth };
+        s.spot = { gx: target.gx + r(-16, 16), depth: target.depth + r(-0.05, 0.05) };
+        s.timer = r(2, 7);
+        if (w.distanceTo(s.spot.gx, s.spot.depth) > 6) s.state = 'walk';
+      } else {
+        // Wander off to a fresh patch, more surely when it's strayed from the others or is crowded.
+        const here = { gx: w.gx, depth: w.depth };
+        const others = this.sheep.filter((o) => o !== s && !o.mother).map((o) => ({ gx: o.walker.gx, depth: o.walker.depth }));
+        const crowded = screenGap(this.plane, here, others) < LOOSE.apart;
+        const strayed = Math.abs(w.gx - this.centre.gx) > LOOSE.gx * 1.2 || Math.abs(w.depth - this.centre.depth) > LOOSE.depth * 1.2;
+        if (crowded || strayed || Math.random() < 0.45) {
+          const spot = this.pickSpot(s, strayed ? Infinity : STROLL, LOOSE);
+          if (spot) {
+            s.spot = spot;
+            s.state = 'walk';
+          }
+        }
+      }
+    }
+
+    if (s.state === 'flee' || s.state === 'walk') {
+      w.steering = { kind: 'seek', ...s.spot };
+      const arrived = w.distanceTo(s.spot.gx, s.spot.depth) < 4;
+      w.speed = arrived ? 0 : s.state === 'flee' ? (s.mother ? 38 : 34) : s.mother ? 18 : 10;
+      if (s.state === 'walk' && (arrived || s.timer < -40)) {
+        s.state = 'graze';
+        s.timer = s.mother ? r(1, 4) : r(8, 26);
+      }
+    } else w.speed = 0;
     w.update(dt);
     s.stride += w.speed * w.point.scale * dt;
   }
 
   private draw(s: Sheep, tint: number): void {
     const p = s.walker.point;
-    const h = Math.max(6, Math.round((SHEEP_HEIGHT * p.scale) / 2) * 2);
-    const pose: SheepPose = s.state === 'lie' ? 'lie' : s.walker.speed > 0 ? SHEEP_WALK[Math.floor(s.stride / 2.5) % 4] : Math.floor(s.timer * 1.5) % 4 === 0 ? 'stand' : Math.floor(s.timer * 2) % 2 === 0 ? 'graze-1' : 'graze-2';
+    const h = Math.max(4, Math.round((SHEEP_HEIGHT * s.size * p.scale) / 2) * 2);
+    const pose: SheepPose = s.state === 'lie' ? 'lie' : s.walker.speed > 0 ? SHEEP_WALK[Math.floor(s.stride / (s.mother ? 1.8 : 2.5)) % 4] : Math.floor(s.timer * 1.5) % 4 === 0 ? 'stand' : Math.floor(s.timer * 2) % 2 === 0 ? 'graze-1' : 'graze-2';
     s.sprite.texture = this.sprites.get(`${pose}:${h}`, () => drawSheepSized(pose, h));
     s.sprite.scale.x = s.walker.facing;
     s.sprite.position.set(Math.round(p.x), Math.round(p.y));
@@ -159,6 +218,9 @@ export class SheepFlock {
 }
 
 type DogState = 'away' | 'outrun' | 'crouch' | 'leave';
+
+/** The dog's outrun round the flock's middle: across (ground px) and in depth. */
+const OUTRUN = { gx: 170, depth: 0.5 };
 
 /** The sheepdog: out in a wide, fast arc round the flock, a crouching stalk, then away. */
 export class Sheepdog {
@@ -209,8 +271,8 @@ export class Sheepdog {
     if (this.state === 'outrun') {
       // Round the flock in a wide arc, keeping it between itself and the window.
       this.angle += this.spin * dt * 0.55;
-      const radius = 110;
-      w.steering = { kind: 'seek', gx: c.gx + Math.cos(this.angle) * radius, depth: c.depth + (Math.sin(this.angle) * radius) / FOCAL };
+      // An ellipse on the ground that reads as a wide loop on screen, outside the bunched flock.
+      w.steering = { kind: 'seek', gx: c.gx + Math.cos(this.angle) * OUTRUN.gx, depth: c.depth + Math.sin(this.angle) * OUTRUN.depth };
       w.speed = 85;
       if (this.timer > 14) {
         this.state = 'crouch';
@@ -226,7 +288,9 @@ export class Sheepdog {
     } else {
       w.speed = 45;
       if (w.gone) {
+        // Back to the farm for a good while before it's sent out again.
         this.state = 'away';
+        this.timer = r(300, 720);
         this.walker = null;
         this.sprite.visible = false;
         return;
@@ -254,7 +318,7 @@ export class Sheepdog {
     this.state = 'outrun';
     this.timer = 0;
     const c = this.flockCentre();
-    this.angle = Math.atan2((depth - c.depth) * FOCAL, w.gx - c.gx);
+    this.angle = Math.atan2((depth - c.depth) / OUTRUN.depth, (w.gx - c.gx) / OUTRUN.gx);
     this.spin = Math.random() < 0.5 ? 1 : -1;
     this.sprite.visible = true;
   }
