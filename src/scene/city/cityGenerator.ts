@@ -467,6 +467,44 @@ export function generateCity(seed = 20261015): CityLayout {
     }
   }
 
+  const lampDepths = [1.3, 2.05, 2.85, 3.9, 5.1, 6.6, 8.6];
+  // --- Steel stairs up the canyon walls to the flats above the shops, and a skip by a doorway ---
+  /** Where each stair climbs (side, foot depth, landing depth, landing height, and a second flight back up to). */
+  const stairs = [
+    { side: -1, d0: 1.46, d1: 1.66, h: 42, second: { d: 1.42, h: 84 } },
+    { side: 1, d0: 2.14, d1: 2.42, h: 48, second: null },
+  ] as const;
+  {
+    const steel = (box: Box, rail: RailPart) => add(box, 'rail', { rail, body: 0x6e747c, pitch: 1e9, floor: 1e9 });
+    for (const st of stairs) {
+      const wall = st.side * S;
+      const out = st.side * (S - 14);
+      const g0 = Math.min(wall, out);
+      const g1 = Math.max(wall, out);
+      const flight = (da: number, db: number, ha: number, hb: number) => {
+        const steps = Math.round(Math.abs(hb - ha) / 5);
+        for (let k = 0; k < steps; k++) {
+          const d = da + ((db - da) * k) / steps;
+          const h = ha + ((hb - ha) * (k + 1)) / steps;
+          steel(boxFrom(g0 + 1, g1 - 1, Math.min(d, d + (db - da) / steps), Math.max(d, d + (db - da) / steps), h - 1.2, h), 'tread');
+        }
+      };
+      flight(st.d0, st.d1, 0, st.h);
+      // The landing outside the door, on brackets.
+      steel(boxFrom(g0, g1, st.d1, st.d1 + 0.2, st.h - 2, st.h), 'tread');
+      for (const d of [st.d1 + 0.01, st.d1 + 0.19]) steel(boxFrom(out - 1.2, out + 1.2, d - 0.003, d + 0.003, st.h, st.h + 16), 'post');
+      steel(boxFrom(out - 1, out + 1, st.d1, st.d1 + 0.2, st.h + 15, st.h + 17), 'tube');
+      if (st.second) {
+        flight(st.d1 + 0.18, st.second.d, st.h, st.second.h);
+        steel(boxFrom(g0, g1, st.second.d - 0.2, st.second.d, st.second.h - 2, st.second.h), 'tread');
+        for (const d of [st.second.d - 0.19, st.second.d - 0.01]) steel(boxFrom(out - 1.2, out + 1.2, d - 0.003, d + 0.003, st.second.h, st.second.h + 16), 'post');
+        steel(boxFrom(out - 1, out + 1, st.second.d - 0.2, st.second.d, st.second.h + 15, st.second.h + 17), 'tube');
+      }
+    }
+    // An overflowing skip against the wall between two pitches.
+    add(boxFrom(-S, -S + 13, 3.0, 3.12, 0, 13), 'prop', { prop: { box: boxFrom(-S, -S + 13, 3.0, 3.12, 0, 13), material: 'tank' }, body: 0x3a6a4a, pitch: 1e9, floor: 1e9 });
+  }
+
   // --- Rooftop life: the neighbours' terrace, the roof across the street, and clutter on the roofs further off ---
   const propRng = createRng(seed + 11);
   const terrace = terraceScene();
@@ -837,6 +875,104 @@ export function generateCity(seed = 20261015): CityLayout {
       }
       for (const dx of [-4, 4]) for (let y = 0; y < 8 * ps; y++) dab(pot.x + dx * ps, pot.y - 8 * ps + y, 0.94, 0x3a3a3a);
     }
+    // The stairs' stringers and handrails, the doors they climb to, and a plant on a landing.
+    const seg = (a: { gx: number; d: number; h: number }, b: { gx: number; d: number; h: number }, color: number) => {
+      const pa = projectPoint(a.gx, a.d, a.h);
+      const pb = projectPoint(b.gx, b.d, b.h);
+      const n = Math.ceil(Math.hypot(pb.x - pa.x, pb.y - pa.y) * 1.5) + 2;
+      for (let k = 0; k <= n; k++) {
+        const t = k / n;
+        const d = a.d + (b.d - a.d) * t;
+        const p = projectPoint(a.gx + (b.gx - a.gx) * t, d, a.h + (b.h - a.h) * t);
+        dab(p.x, p.y, d - 0.004, color);
+      }
+    };
+    for (const st of stairs) {
+      const out = st.side * (S - 14);
+      const climbs: Array<[number, number, number, number]> = [[st.d0, st.d1, 0, st.h]];
+      if (st.second) climbs.push([st.d1 + 0.18, st.second.d, st.h, st.second.h]);
+      for (const [da, db, ha, hb] of climbs) {
+        seg({ gx: out, d: da, h: ha }, { gx: out, d: db, h: hb }, 0x3a3e44);
+        seg({ gx: out, d: da, h: ha + 16 }, { gx: out, d: db, h: hb + 16 }, 0x6a7078);
+        for (let k = 0; k <= 4; k++) {
+          const t = k / 4;
+          const d = da + (db - da) * t;
+          const h = ha + (hb - ha) * t;
+          seg({ gx: out, d, h }, { gx: out, d, h: h + 16 }, 0x4e545a);
+        }
+      }
+      // A steel door in the wall at each landing, with a light over it.
+      for (const [d, h] of st.second ? [[st.d1 + 0.1, st.h], [st.second.d - 0.1, st.second.h]] : [[st.d1 + 0.1, st.h]]) {
+        for (let dd = -0.035; dd <= 0.035; dd += 0.003) for (let hh = 0; hh < 22; hh += 0.6) {
+          const p = projectPoint(st.side * S, d + dd, h + hh);
+          dab(p.x, p.y, d + dd - 0.002, Math.abs(dd) > 0.03 || hh > 21 ? 0x2a2a2e : hh > 10 && hh < 12 && dd > 0.02 ? 0x8a8c90 : 0x4a3a34);
+        }
+      }
+    }
+    {
+      // A potted plant and a crate on the left stair's landing.
+      const st = stairs[0];
+      const pot = projectPoint(-S + 9, st.d1 + 0.15, st.h + 5);
+      const r = 1 / (st.d1 + 0.15);
+      for (let y = 0; y < 5 * r; y++) for (let x = -3 * r; x <= 3 * r; x++) dab(pot.x + x, pot.y + y, st.d1 + 0.14, x < 0 ? 0x9a5a3a : 0x7a4428);
+      for (let k = 0; k < 18; k++) dab(pot.x + (pixelHash(k, 1, 9) - 0.5) * 10 * r, pot.y - pixelHash(k, 2, 9) * 7 * r, st.d1 + 0.135, k % 2 ? 0x4a7a3a : 0x2e5a2a);
+    }
+
+    // --- Trash along both kerbs: bin bags, boxes, cans, flyers and puddles, kept clear of the stalls, lamps and doors ---
+    const trashRng = createRng(seed + 23);
+    const ground = (gx: number, depth: number, h: number, color: number) => {
+      const p = projectPoint(gx, depth, h);
+      dab(p.x, p.y, depth - 0.002, color);
+    };
+    const BAGS = [0x1e1e22, 0x2a2a30, 0x3a3a44, 0x2a3a5a, 0x5a4a2a];
+    for (const side of [-1, 1]) {
+      for (let d = 1.0; d < 7.5; d += 0.12 + trashRng() * 0.3) {
+        const busy =
+          stallSpots.some((sp) => Math.sign(sp.gx) === side && Math.abs(sp.depth - d) < 0.16) ||
+          lampDepths.some((ld) => Math.abs(ld - d) < 0.06) ||
+          doors.some((dr) => Math.sign(dr.gx) === side && Math.abs(dr.depth - d) < 0.08) ||
+          stairs.some((st) => st.side === side && d > st.d0 - 0.05 && d < st.d1 + 0.25);
+        if (busy) continue;
+        const gx = side * (S - 4 - trashRng() * 12);
+        const roll = trashRng();
+        if (roll < 0.45) {
+          // A heap of bin bags, knotted at the top.
+          const n = 2 + Math.floor(trashRng() * 4);
+          for (let k = 0; k < n; k++) {
+            // A heap: bags against the wall, more thrown on top.
+            const onTop = k >= 3;
+            const bgx = gx - side * ((k % 3) * 8 + (onTop ? 4 : 0));
+            const bd = d + (trashRng() - 0.5) * 0.03;
+            const r = 6 + trashRng() * 5;
+            const color = BAGS[Math.floor(trashRng() * BAGS.length)];
+            const c = projectPoint(bgx, bd, r * 0.8 + (onTop ? r : 0));
+            const rx = r / bd;
+            const ry = (r * 0.8) / bd;
+            for (let y = -Math.ceil(ry); y <= Math.ceil(ry); y++) {
+              for (let x = -Math.ceil(rx); x <= Math.ceil(rx); x++) {
+                const q = (x / rx) ** 2 + (y / ry) ** 2;
+                if (q > 1) continue;
+                const lit = -x / rx - y / ry;
+                dab(c.x + x, c.y + y, bd - 0.003, lit > 0.9 ? lerpColor(color, 0x9aa0aa, 0.5) : lit > 0.2 ? lerpColor(color, 0x6a6a74, 0.2) : q > 0.7 ? scaleColor(color, 0.6) : color);
+              }
+            }
+            const knot = projectPoint(bgx, bd, r * 1.6);
+            dab(knot.x, knot.y, bd - 0.004, color);
+          }
+        } else if (roll < 0.65) {
+          // A burst cardboard box.
+          const w = 6 + trashRng() * 4;
+          for (let hh = 0; hh < w * 0.7; hh += d * 0.5) for (let gg = -w / 2; gg < w / 2; gg += d * 0.5) ground(gx + gg, d, hh, hh > w * 0.6 ? 0xc8a46a : gg < 0 ? 0xa8844e : 0x8a6a3e);
+        } else if (roll < 0.8) {
+          // A puddle, catching the sky.
+          for (let gg = -12; gg < 12; gg += d * 0.5) for (let dd = -0.03; dd < 0.03; dd += 0.004) if ((gg / 12) ** 2 + (dd / 0.03) ** 2 < 1) ground(gx + gg, d + dd, 0, gg + dd * 300 < -6 ? 0x8a98a8 : 0x3a4048);
+        } else {
+          // Cans, a bottle, and flyers trodden flat.
+          for (let k = 0; k < 4; k++) ground(gx + (trashRng() - 0.5) * 16, d + (trashRng() - 0.5) * 0.04, 0.5, [0xd8343a, 0xc8ccd0, 0x3a8a4a, 0xe8e0d0][k]);
+          for (let k = 0; k < 2; k++) for (let gg = 0; gg < 4; gg += d * 0.5) ground(gx + k * 7 + gg, d + k * 0.01, 0, k ? 0xff7ab8 : 0xe8e4d8);
+        }
+      }
+    }
     const BULBS = [0xffe0a0, 0xff9ab8, 0x9ae8ff, 0xffd060, 0xb8ff9a];
     terrace.strings.forEach((str, si) => {
       // The wire sags between its ends; bulbs hang along it, coloured, every so often.
@@ -995,7 +1131,6 @@ export function generateCity(seed = 20261015): CityLayout {
   }
 
   // --- Shop awnings: sloped canvas over the shopfronts (kept clear of the stalls and lamps) ---
-  const lampDepths = [1.3, 2.05, 2.85, 3.9, 5.1, 6.6, 8.6];
   {
     const awn = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
     const awnDepth = new Float32Array(WORLD_WIDTH * WORLD_HEIGHT).fill(Number.POSITIVE_INFINITY);
@@ -1022,7 +1157,10 @@ export function generateCity(seed = 20261015): CityLayout {
         // Each shop's canopy runs 50–90 ground px along its front.
         len = 0.07 + awnRng() * 0.06;
         const d1 = d0 + len;
-        const clash = stallSpots.some((sp) => Math.sign(sp.gx) === side && sp.depth > d0 - 0.17 && sp.depth < d1 + 0.12) || lampDepths.some((ld) => ld > d0 - 0.05 && ld < d1 + 0.05);
+        const clash =
+          stallSpots.some((sp) => Math.sign(sp.gx) === side && sp.depth > d0 - 0.17 && sp.depth < d1 + 0.12) ||
+          lampDepths.some((ld) => ld > d0 - 0.05 && ld < d1 + 0.05) ||
+          stairs.some((st) => st.side === side && d1 > st.d0 - 0.05 && d0 < (st.second ? st.d1 + 0.2 : st.d1 + 0.25));
         if (clash || awnRng() < 0.25) continue;
         const [ca, cb] = STRIPES[Math.floor(awnRng() * STRIPES.length)];
         const wall = side * S;
