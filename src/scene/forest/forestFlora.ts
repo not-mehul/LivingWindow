@@ -277,27 +277,71 @@ export function drawRock(w: number, h: number, seed: number, haze: number, hazeC
 }
 
 /**
- * A clump of canopy hanging into the view: overlapping rounds of leaves lit
- * from above and the left, dark beneath, with a ragged lower edge.
+ * A mass of canopy hanging into the view, grown rather than stamped: twigs
+ * reach down and out from the top edge, drooping and forking, and along
+ * them hang sprays of small leaves, each leaf a little lit on its upper
+ * side. Sprays further back are drawn first and darker, so the mass has
+ * depth; its edge is ragged with single leaves and gaps where the sky shows
+ * through. `clumps` sets how many twigs it grows from.
  */
 export function drawCanopyClump(w: number, h: number, pal: TreePalette, rng: () => number, clumps = 11, seed = 0): PixelBuffer {
   const foliage = new PixelBuffer(w, h);
-  for (let c = 0; c < clumps; c++) {
-    const r = randomRange(rng, Math.min(10, h * 0.2), Math.min(24, h * 0.38));
-    const cx = randomRange(rng, r, w - r);
-    const cy = randomRange(rng, r * 0.6, h - r);
-    for (let y = Math.floor(cy - r); y <= cy + r; y++) {
-      for (let x = Math.floor(cx - r); x <= cx + r; x++) {
-        const dx = (x + 0.5 - cx) / r;
-        const dy = (y + 0.5 - cy) / r;
-        const d = dx * dx + dy * dy;
-        if (d > 1 - pixelHash(x, y, seed + c) * 0.25) continue;
-        const light = -dx * 0.6 - dy * 0.9 + (1 - d) * 0.3;
-        foliage.set(x, y, light > 0.55 ? pal.highlight : light > 0.15 ? pal.light : light > -0.35 ? pal.base : light > -0.7 ? pal.dark : pal.shadow);
+  const shades = [pal.shadow, pal.dark, pal.base, pal.light, pal.highlight];
+  type Spray = { x: number; y: number; depth: number; size: number };
+  const sprays: Spray[] = [];
+  // Twigs: random walks from the top, drooping as they go, forking now and then.
+  const twigs: Array<{ x: number; y: number; a: number; len: number; depth: number }> = [];
+  for (let k = 0; k < Math.max(3, clumps); k++) {
+    twigs.push({ x: randomRange(rng, 4, w - 4), y: randomRange(rng, -4, h * 0.15), a: Math.PI / 2 + randomRange(rng, -0.9, 0.9), len: randomRange(rng, h * 0.45, h * 0.95), depth: rng() });
+  }
+  for (let i = 0; i < twigs.length && i < 60; i++) {
+    const t = twigs[i];
+    let { x, y, a } = t;
+    for (let d = 0; d < t.len; d += 2.2) {
+      x += Math.cos(a) * 2.2;
+      y += Math.sin(a) * 2.2;
+      // Droop towards hanging straight down, with a wander.
+      a += (Math.PI / 2 - a) * 0.06 + randomRange(rng, -0.25, 0.25);
+      if (x < 2 || x > w - 2 || y > h - 2) break;
+      // Leaves thicken towards the twig's end.
+      const along = d / t.len;
+      if (rng() < 0.55 + along * 0.4) sprays.push({ x, y, depth: Math.min(1, Math.max(0, t.depth + randomRange(rng, -0.15, 0.15))), size: 2.2 + along * 2.4 + rng() * 1.2 });
+      if (rng() < 0.05 && twigs.length < 60) twigs.push({ x, y, a: a + (rng() < 0.5 ? -0.7 : 0.7), len: (t.len - d) * 0.7, depth: t.depth + randomRange(rng, -0.2, 0.2) });
+    }
+  }
+  // Back sprays first (darker), then nearer ones over them.
+  sprays.sort((a, b) => a.depth - b.depth);
+  for (const sp of sprays) {
+    const leaves = 3 + Math.floor(rng() * 4);
+    for (let l = 0; l < leaves; l++) {
+      const lx = sp.x + randomRange(rng, -sp.size, sp.size);
+      const ly = sp.y + randomRange(rng, -sp.size * 0.6, sp.size * 0.9);
+      // A small leaf, longer than wide, tipped at an angle.
+      const rx = randomRange(rng, 1.2, 2.4);
+      const ry = randomRange(rng, 0.8, 1.6);
+      const ang = randomRange(rng, -0.9, 0.9);
+      const cos = Math.cos(ang);
+      const sin = Math.sin(ang);
+      // How lit this leaf is: nearer leaves and those high in the mass catch more light.
+      const tone = sp.depth * 2.2 + (1 - sp.y / h) * 1.3 + randomRange(rng, -0.6, 0.6);
+      for (let j = -3; j <= 3; j++) {
+        for (let i = -3; i <= 3; i++) {
+          const u = (i * cos + j * sin) / rx;
+          const v = (-i * sin + j * cos) / ry;
+          const d = u * u + v * v;
+          if (d > 1) continue;
+          // The leaf's upper side catches the light; its lower edge is in shade.
+          const lit = tone + (v < -0.2 ? 0.7 : v > 0.4 ? -0.8 : 0);
+          const k = Math.max(0, Math.min(4, Math.round(lit)));
+          foliage.set(Math.round(lx + i), Math.round(ly + j), shades[k]);
+        }
       }
     }
   }
-  foliage.outline(pal.ink);
+  // Ink only along the lower edges, so the top melts into the canopy above.
+  const ink: Array<[number, number]> = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (!foliage.isSet(x, y) && foliage.isSet(x, y - 1) && pixelHash(x, y, seed) < 0.75) ink.push([x, y]);
+  for (const [x, y] of ink) foliage.set(x, y, pal.ink);
   return foliage;
 }
 

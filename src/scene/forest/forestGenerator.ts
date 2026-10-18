@@ -33,7 +33,7 @@ export const FOREST_FLOOR: WalkArea = {
   halfWidth: (depth) => forestPlane.halfWidthAt(depth) + 40,
 };
 
-/** The small sunlit glade the deer path crosses (screen ellipse). */
+/** The small sunlit glade in the middle, grown over with ferns (screen ellipse). */
 const GLADE = { x: 440, y: 306, rx: 90, ry: 28 };
 const inGlade = (x: number, y: number, grow = 0) => ((x - GLADE.x) / (GLADE.rx + grow)) ** 2 + ((y - GLADE.y) / (GLADE.ry + grow * 0.3)) ** 2 < 1;
 
@@ -521,13 +521,9 @@ export function generateForest(seed = 3141, date = new Date()): ForestLayout {
   const brow = (x: number) => BROW_Y + Math.sin(x * 0.012 + 1) * 5 + Math.sin(x * 0.031) * 2.5;
   const grass = [0x4e6e34, 0x5a7c3a, 0x668a42, 0x76984a, 0x86a656];
   const floor = [0x34421f, 0x3e4e26, 0x4a5a2c, 0x566832, 0x627438];
-  const pathAt = (depth: number) => 20 + Math.sin(depth * 2.4) * 40;
   for (let y = Math.floor(BROW_Y - 8); y < WORLD_HEIGHT; y++) {
     const s = forestPlane.scaleAtY(y);
-    const depth = forestPlane.depthAtY(y);
     const hazeAmount = Math.max(0, 0.45 - s * 0.5);
-    const pathCentre = forestPlane.project(pathAt(depth), depth).x;
-    const pathHalf = 8 * s + 1;
     const stretch = 0.35 + s * 0.65;
     for (let x = 0; x < WORLD_WIDTH; x++) {
       if (y < brow(x)) continue;
@@ -544,8 +540,6 @@ export function generateForest(seed = 3141, date = new Date()): ForestLayout {
         if (valueNoise(x, y / stretch, 4 + 8 * s, 41) > 0.78) color = 0x6a8a3a;
         if (pixelHash(x, y, 29) < 0.07) color = pixelHash(x, y, 31) < 0.4 ? 0xa86a30 : pixelHash(x, y, 32) < 0.5 ? 0xc8963e : 0x7a4a26;
       }
-      // The trodden deer path.
-      if (Math.abs(x - pathCentre) < pathHalf - pixelHash(x, y, 25) * 1.5) color = pixelHash(x, y, 27) < 0.3 ? 0x7a5e3e : 0x8a6c48;
       if (y - brow(x) < 1.5) color = 0x30401e;
       ground.set(x, y, lerpColor(color, HAZE, hazeAmount));
     }
@@ -707,13 +701,14 @@ export function generateForest(seed = 3141, date = new Date()): ForestLayout {
 
   // The floor: thick with ferns, holly and bramble, saplings, foxgloves and mossy boulders.
   const plantRng = createRng(seed + 9);
-  for (let attempt = 0; attempt < 1200 && floorPlants.length < 84; attempt++) {
+  for (let attempt = 0; attempt < 2400 && floorPlants.length < 150; attempt++) {
     const y = BROW_Y + 4 + plantRng() * 74;
     const x = 10 + plantRng() * 820;
-    if (inGlade(x, y, -14)) continue;
     const s = forestPlane.scaleAtY(y);
     const haze = Math.max(0, 0.5 - s * 0.6);
-    const roll = plantRng();
+    // In the glade the growth is low (ferns and leafy clumps), so the vista still shows over it.
+    const glade = inGlade(x, y, 10);
+    const roll = glade ? (plantRng() < 0.65 ? plantRng() * 0.4 : 0.92 + plantRng() * 0.08) : plantRng();
     let art: PixelBuffer;
     let leaves: readonly number[] | undefined;
     let still = y < BROW_Y + 16;
@@ -879,24 +874,8 @@ export function generateForest(seed = 3141, date = new Date()): ForestLayout {
   for (let i = 0; i < 8; i++) {
     const w = 130;
     const h = 84 - Math.max(0, i - 4) * 10;
-    const foliage = new PixelBuffer(w, h);
     const pal = BROADLEAF;
-    for (let c = 0; c < 11; c++) {
-      const r = randomRange(rng, 12, 24);
-      const cx = randomRange(rng, r, w - r);
-      const cy = randomRange(rng, r * 0.6, h - r);
-      for (let y = Math.floor(cy - r); y <= cy + r; y++) {
-        for (let x = Math.floor(cx - r); x <= cx + r; x++) {
-          const dx = (x + 0.5 - cx) / r;
-          const dy = (y + 0.5 - cy) / r;
-          const d = dx * dx + dy * dy;
-          if (d > 1 - pixelHash(x, y, i) * 0.25) continue;
-          const light = -dx * 0.6 - dy * 0.9 + (1 - d) * 0.3;
-          foliage.set(x, y, light > 0.5 ? pal.highlight : light > 0.1 ? pal.light : light > -0.4 ? pal.base : pal.dark);
-        }
-      }
-    }
-    foliage.outline(pal.ink);
+    const foliage = drawCanopyClump(w, h, pal, rng, 13, 500 + i);
     // Along the oak's limbs, thinning out towards the middle of the view.
     const x = -40 + i * 54;
     canopy.push({ art: foliage, x, y: -26 + (i % 2) * 16 - Math.max(0, i - 4) * 6, anchor: 'top', tree: 1, leaves: leafColors(pal) });
@@ -935,7 +914,7 @@ export function generateForest(seed = 3141, date = new Date()): ForestLayout {
       ferns.push({ art, x: x - art.width / 2, y: 330 - art.height });
     }
   }
-  for (const x of [8, 112, 200, 290, 320, 400, 452, 530, 584, 650, 716, 760, 806]) {
+  for (const x of [8, 60, 112, 160, 200, 250, 290, 320, 362, 400, 430, 452, 488, 530, 560, 584, 620, 650, 690, 716, 760, 806, 836]) {
     const art = drawFern(rng, 1 + randomRange(rng, 0, 0.35));
     // Their tops stand clear of the sill, which hides the bottom of the view.
     ferns.push({ art, x: x - art.width / 2, y: 328 - art.height + randomInt(rng, 0, 4), leaves: FERN_LEAVES });
