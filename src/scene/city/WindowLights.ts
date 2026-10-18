@@ -56,7 +56,8 @@ export class WindowLights {
   randomLitWindow(rng: () => number): LitWindow | null {
     for (let attempt = 0; attempt < 12; attempt++) {
       const w = this.windows[Math.floor(rng() * this.windows.length)];
-      if (w?.lit && w.w >= 3) return w;
+      // A real window, not a scatter of distant lit dots spread over a whole wall.
+      if (w?.lit && w.w >= 3 && (!w.mask || w.mask.length >= w.w * w.h * 0.6)) return w;
     }
     return null;
   }

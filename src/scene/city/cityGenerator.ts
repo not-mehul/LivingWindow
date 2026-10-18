@@ -345,13 +345,15 @@ export function generateCity(seed = 20261015): CityLayout {
   add(boxFrom(96, 104, 1.2, 2.9, 110, 118), 'pipe');
   add(boxFrom(108, 116, 1.2, 2.9, 110, 116), 'pipe');
   add(boxFrom(96, 290, 2.85, 2.9, 110, 118), 'pipe');
-  // Three big billboard screens on legs: a soft drink, a dream for an hour, an energy drink.
-  add(boxFrom(140, 330, 2.62, 2.65, 132, 214), 'sign', { neon: NEONS[1], ad: { id: 'neurocola', face: 'front', flaw: null } });
-  add(boxFrom(146, 152, 2.66, 2.7, 110, 132), 'pipe');
-  add(boxFrom(318, 324, 2.66, 2.7, 110, 132), 'pipe');
-  add(boxFrom(80, 250, 3.05, 3.08, 214, 290), 'sign', { neon: NEONS[0], ad: { id: 'dreamdive', face: 'front', flaw: 'dim-corner' } });
-  add(boxFrom(-250, -90, 2.5, 2.53, 286, 356), 'sign', { neon: NEONS[2], ad: { id: 'kaiju', face: 'front', flaw: 'dead-column' } });
-  ledges.push(edgeLedge(140, 330, 2.62, 214, 'near', 'billboard'), edgeLedge(80, 250, 3.05, 290, 'near', 'billboard'), edgeLedge(-250, -90, 2.5, 356, 'near', 'billboard'));
+  // Three big billboard screens on legs, each turned its own way: a soft drink, a dream for an hour, an energy drink.
+  const neuro = turnedBoard(235, 2.64, 95, 132, 214, 0.5);
+  add(neuro.box, 'sign', { neon: NEONS[1], ad: { id: 'neurocola', face: 'front', flaw: null } });
+  for (const leg of neuro.legs(110, 132)) add(leg, 'pipe');
+  const dream = turnedBoard(165, 3.07, 85, 214, 290, -0.45);
+  add(dream.box, 'sign', { neon: NEONS[0], ad: { id: 'dreamdive', face: 'front', flaw: 'dim-corner' } });
+  const kaiju = turnedBoard(-170, 2.52, 80, 286, 356, 0.55);
+  add(kaiju.box, 'sign', { neon: NEONS[2], ad: { id: 'kaiju', face: 'front', flaw: 'dead-column' } });
+  ledges.push(neuro.ledge, dream.ledge, kaiju.ledge);
   ledges.push(edgeLedge(140, 210, 1.7, 130, 'near', 'roof'), edgeLedge(100, 300, 1.5, 110, 'near', 'roof'));
 
   // --- Blade signs and shop awnings along the street ---
@@ -395,26 +397,22 @@ export function generateCity(seed = 20261015): CityLayout {
 
   // --- More screens (added last, so the buildings before keep their looks) ---
   {
-    // A giant screen high on the glass tower: the city's friendly AI, watching over the street.
-    add(boxFrom(-628, -482, 2.19, 2.2, 300, 500), 'sign', { neon: NEONS[1], ad: { id: 'askkai', face: 'front', flaw: null } });
+    // A giant screen on the glass tower's corner, turned out over the street: the city's friendly AI, watching.
+    const kai = turnedBoard(-530, 2.138, 73, 300, 500, -0.55);
+    add(kai.box, 'sign', { neon: NEONS[1], ad: { id: 'askkai', face: 'front', flaw: null } });
+    for (const h of [318, 482]) add(boxFrom(-471, -466, 2.088, 2.2, h, h + 4), 'pipe', { body: 0x5a5c62 });
     // The skybridge's news ticker.
     add(boxFrom(-76, 76, 2.094, 2.098, 102, 116), 'sign', { neon: NEONS[2], ad: { id: 'curfew', face: 'front', flaw: null } });
     // Screens on the towers' faces and the roofs further off.
-    add(boxFrom(-462, -318, 2.49, 2.5, 360, 430), 'sign', { neon: NEONS[3], ad: { id: 'soulsync', face: 'front', flaw: 'stuck-row' } });
-    add(boxFrom(960, 1200, 4.4, 4.43, 200, 270), 'sign', { neon: NEONS[2], ad: { id: 'ramen', face: 'front', flaw: 'dead-column' } });
-    add(boxFrom(1960, 2310, 7.0, 7.03, 300, 380), 'sign', { neon: NEONS[4], ad: { id: 'nanocare', face: 'front', flaw: null } });
-    // Legs under the boards that stand on roofs.
-    for (const [gx, d, h0, h1] of [
-      [84, 3.09, 190, 214],
-      [242, 3.09, 190, 214],
-      [-246, 2.54, 280, 286],
-      [-98, 2.54, 280, 286],
-      [970, 4.44, 0, 200],
-      [1186, 4.44, 0, 200],
-      [1980, 7.04, 0, 300],
-      [2290, 7.04, 0, 300],
-    ] as const)
-      add(boxFrom(gx, gx + 4, d, d + 0.02, h0, h1), 'pipe');
+    const soul = turnedBoard(-390, 2.448, 72, 360, 430, 0.45);
+    add(soul.box, 'sign', { neon: NEONS[3], ad: { id: 'soulsync', face: 'front', flaw: 'stuck-row' } });
+    for (const h of [372, 418]) add(boxFrom(-457, -452, 2.405, 2.5, h, h + 3), 'pipe', { body: 0x5a5c62 });
+    const ramen = turnedBoard(1080, 4.42, 120, 200, 270, -0.5);
+    add(ramen.box, 'sign', { neon: NEONS[2], ad: { id: 'ramen', face: 'front', flaw: 'dead-column' } });
+    const nano = turnedBoard(2135, 7.02, 175, 300, 380, 0.45);
+    add(nano.box, 'sign', { neon: NEONS[4], ad: { id: 'nanocare', face: 'front', flaw: null } });
+    // Legs under the boards that stand on roofs (or on poles from far below).
+    for (const leg of [...dream.legs(190, 214), ...kaiju.legs(280, 286), ...ramen.legs(0, 200), ...nano.legs(0, 300)]) add(leg, 'pipe');
   }
 
   // --- Rooftop life: the neighbours' terrace, the roof across the street, and clutter on the roofs further off ---
@@ -642,8 +640,9 @@ export function generateCity(seed = 20261015): CityLayout {
     const h = y1 - y0 + 1;
     // A front-facing screen is drawn at its size on screen; one down a wall at the size it's given.
     const along = b.box.halfU * 2;
-    const artW = ad.artW ?? Math.max(4, Math.round(along / b.box.depth));
-    const artH = ad.artH ?? Math.max(4, Math.round((b.box.h1 - b.box.h0) / b.box.depth));
+    // Drawn no wider than it shows (a turned screen is foreshortened), so its lettering stays crisp.
+    const artW = ad.artW ?? Math.max(4, Math.min(w, Math.round(along / b.box.depth)));
+    const artH = ad.artH ?? Math.max(4, Math.min(h, Math.round((b.box.h1 - b.box.h0) / b.box.depth)));
     const map = new Int32Array(w * h).fill(-1);
     for (let k = 0; k < list.length; k += 3) {
       const x = (list[k] % WORLD_WIDTH) - x0;
@@ -1177,6 +1176,29 @@ export function generateCity(seed = 20261015): CityLayout {
     billboards,
     roofLights,
     smoke,
+  };
+}
+
+/**
+ * A billboard turned about the vertical (so it doesn't face the window
+ * square on), centred at (gx, depth): its box, legs under its two ends, and
+ * a perch along the middle of its top edge.
+ */
+function turnedBoard(gx: number, depth: number, halfU: number, h0: number, h1: number, angle: number) {
+  const cz = depth * FOCAL;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const box: Box = { gx, depth, halfU, halfW: 5, h0, h1, angle };
+  const at = (u: number, w: number) => ({ gx: gx + cos * u - sin * w, depth: (cz + sin * u + cos * w) / FOCAL });
+  const top = projectPoint(gx, depth, h1);
+  return {
+    box,
+    legs: (l0: number, l1: number): Box[] =>
+      [-1, 1].map((side) => {
+        const p = at(side * (halfU - 6), 9);
+        return boxFrom(p.gx - 2, p.gx + 2, p.depth - 0.006, p.depth + 0.006, l0, l1);
+      }),
+    ledge: { x0: Math.round(top.x - 6), x1: Math.round(top.x + 6), y: Math.round(top.y) - 1, layer: bandOf(depth), kind: 'billboard', z: birdZ(depth) } as Ledge,
   };
 }
 
