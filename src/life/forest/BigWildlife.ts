@@ -6,8 +6,8 @@ import type { Environment } from '../../scene/Environment';
 import type { GroundPlane } from '../../sim/groundPlane';
 import { GroundWalker, type Obstacle, type WalkArea } from '../../sim/groundWalker';
 import { bearActivity, elkOut } from '../../sim/wildlife';
-import { drawDeerSized } from '../../sprites/forestSprites';
-import { drawBear, DrawnCache, type BearPose } from '../../sprites/wildSprites';
+import { DEER_WALK, drawDeerSized } from '../../sprites/forestSprites';
+import { BEAR_WALK, drawBear, DrawnCache, type BearPose } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 
 const r = (min: number, max: number) => min + Math.random() * (max - min);
@@ -75,7 +75,8 @@ export class Bear {
     }
     const p = w.point;
     const h = Math.max(6, Math.round((BEAR_HEIGHT * p.scale) / 2) * 2);
-    const pose: BearPose = this.sniff > 0 ? 'sniff' : (['walk-1', 'walk-2', 'walk-3', 'walk-4'] as const)[Math.floor(this.stride / 3) % 4];
+    // Stopped, it noses the ground, and now and then lifts its head to scent the air.
+    const pose: BearPose = this.sniff > 0 ? (this.sniff % 2.4 > 1.6 ? 'sniff-air' : 'sniff') : BEAR_WALK[Math.floor(this.stride / 2) % BEAR_WALK.length];
     this.sprite.texture = this.sprites.get(`${pose}:${h}`, () => drawBear(pose, h));
     this.sprite.scale.x = w.facing;
     this.sprite.position.set(Math.round(p.x), Math.round(p.y));
@@ -178,7 +179,7 @@ export class SlopeElk {
         if (Math.random() < 0.3) e.dir = e.dir > 0 ? -1 : 1;
       }
       if (!e.graze) e.x += e.dir * 0.4 * dt;
-      const pose = e.graze ? 'graze-1' : 'walk-1';
+      const pose = e.graze ? (e.timer % 3 > 2.4 ? 'graze-3' : 'graze-1') : DEER_WALK[Math.floor(e.x * 2) % DEER_WALK.length];
       e.sprite.texture = this.sprites.get(pose, () => drawDeerSized('elk', pose, 6));
       e.sprite.scale.x = e.dir;
       e.sprite.position.set(Math.round(e.x), Math.round(e.y));

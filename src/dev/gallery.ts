@@ -106,10 +106,11 @@ function sections(): Section[] {
       [8, 12, 16, 20, 28, 36].map((h) => ({ label: `fox ${h}`, draw: () => drawFox('trot-1', h) })),
       foxPoses.map((pose) => ({ label: pose, draw: () => drawFox(pose, 26) })),
       [10, 14, 20].flatMap((h) => (['sit', 'alert', 'hop-1', 'hop-2'] as const).map((pose) => ({ label: `hare ${pose} ${h}`, draw: () => drawRabbitSized(pose, h, 'hare') }))),
-      [6, 8, 12, 16].flatMap((n) => [0, 1, 2].map((f) => ({ label: `bat ${n}/${f}`, draw: () => drawBat(f, n) }))),
-      [8, 12, 18, 24].flatMap((h) => (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'sniff'] as BearPose[]).map((pose) => ({ label: `bear ${pose} ${h}`, draw: () => drawBear(pose, h) }))),
+      [6, 8, 12, 16, 24].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `bat ${n}/${f}`, draw: () => drawBat(f, n) }))),
+      [8, 12, 18].flatMap((h) => (['walk-1', 'walk-4', 'sniff'] as BearPose[]).map((pose) => ({ label: `bear ${pose} ${h}`, draw: () => drawBear(pose, h) }))),
+      (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6', 'sniff', 'sniff-air'] as BearPose[]).map((pose) => ({ label: `bear ${pose}`, draw: () => drawBear(pose, 32) })),
       (['monarch', 'white', 'blue', 'brimstone'] as ButterflyKind[]).flatMap((kind) => [4, 6, 9].flatMap((n) => [0, 1, 2].map((f) => ({ label: `${kind[0]}${n}/${f}`, draw: () => drawButterfly(kind, f, n) })))),
-      [6, 8, 12, 16].flatMap((n) => [0, 1].map((f) => ({ label: `wp ${n}/${f}`, draw: () => drawWoodpeckerCling(f, n) }))),
+      [6, 8, 12, 16, 24].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `wp ${n}/${f}`, draw: () => drawWoodpeckerCling(f, n) }))),
       (['fly-agaric', 'bolete', 'cluster'] as MushroomKind[]).flatMap((kind) => [3, 5, 8, 12].map((n) => ({ label: `${kind} ${n}`, draw: () => drawMushroom(kind, n) }))),
     ],
   });
@@ -153,14 +154,14 @@ function sections(): Section[] {
   });
 
   const deer: Item[][] = [];
-  const deerPoses: DeerPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'alert', 'bound-1', 'bound-2'];
+  const deerPoses: DeerPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6', 'graze-1', 'graze-3', 'stand', 'stand-flick', 'alert', 'bound-1', 'bound-2'];
   for (const kind of ['doe', 'buck', 'fawn', 'roe', 'elk'] as DeerKind[]) {
     deer.push([8, 12, 16, 22, 30, 40, 48].map((h) => ({ label: `${kind} ${h}`, draw: () => drawDeerSized(kind, 'walk-1', h) })));
-    if (kind === 'doe' || kind === 'buck') deer.push(deerPoses.map((pose) => ({ label: pose, draw: () => drawDeerSized(kind, pose, 40) })));
+    if (kind === 'doe' || kind === 'buck' || kind === 'elk') deer.push(deerPoses.map((pose) => ({ label: pose, draw: () => drawDeerSized(kind, pose, 40) })));
   }
   out.push({ title: 'Deer', rows: deer });
 
-  const squirrelPoses: SquirrelPose[] = ['run-1', 'run-2', 'sit', 'nibble', 'climb-1', 'climb-2', 'cling'];
+  const squirrelPoses: SquirrelPose[] = ['run-1', 'run-2', 'run-3', 'run-4', 'sit', 'nibble', 'climb-1', 'climb-2', 'climb-3', 'climb-4', 'cling', 'cling-flick'];
   out.push({
     title: 'Squirrels',
     rows: [
@@ -179,6 +180,16 @@ function sections(): Section[] {
     birds.push(row);
   }
   out.push({ title: 'Small birds', rows: birds });
+
+  const woodBirds: Item[][] = [];
+  for (const species of ['owl', 'chickadee', 'woodpecker', 'finch', 'eagle'] as SpeciesId[]) {
+    const row: Item[] = [];
+    for (const size of [10, 16, 24]) {
+      for (const pose of ['idle', 'sleep', 'look-back', 'fly-up', 'fly-mid', 'fly-down', 'glide'] as const) row.push({ label: `${size}${pose.slice(0, 5)}`, draw: () => ({ grid: drawBird(species, pose, size), colors: SPECIES[species].palette }) });
+    }
+    woodBirds.push(row);
+  }
+  out.push({ title: 'Woodland birds', rows: woodBirds });
 
   out.push({
     title: 'Sea turtles and dolphins',

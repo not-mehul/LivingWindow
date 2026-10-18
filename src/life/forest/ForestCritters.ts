@@ -116,7 +116,9 @@ export class Hare {
     } else if (this.timer > this.duration) this.decide();
     const p = w.point;
     const h = HARE_HEIGHT * p.scale;
-    const pose: RabbitPose = this.state === 'freeze' ? 'alert' : loping ? RABBIT_HOP[Math.floor(((this.timer % cycle) / cycle) * 3)] : 'sit';
+    // Sitting, it washes its face now and then.
+    const grooming = this.state === 'graze' && this.timer % 7 > 5.4;
+    const pose: RabbitPose = this.state === 'freeze' ? 'alert' : loping ? RABBIT_HOP[Math.floor(((this.timer % cycle) / cycle) * 3)] : grooming ? 'groom' : 'sit';
     this.sprite.texture = this.sprites.get(pose, h, 'hare');
     this.sprite.scale.x = w.facing;
     const lift = inAir ? Math.round(Math.sin(((this.timer % cycle) / (cycle * 0.62)) * Math.PI) * h * 0.25) : 0;
@@ -248,6 +250,8 @@ interface Woodpecker {
   y: number;
   size: number;
   drum: number;
+  /** Seconds left of a hitch up the bark. */
+  hitch: number;
   pause: number;
   stay: number;
   t: number;
@@ -299,7 +303,10 @@ export class TrunkWoodpeckers {
           if (Math.random() < 0.65) {
             b.drum = r(0.5, 0.9);
             this.sound('woodpecker-drum', this.viewport.worldXToStereo(b.trunk.x), b.trunk.layer === 'near' ? 0.75 : 0.45);
-          } else b.y = Math.max(b.trunk.top + b.size, b.y - b.size * 0.4);
+          } else {
+            b.y = Math.max(b.trunk.top + b.size, b.y - b.size * 0.4);
+            b.hitch = 0.25;
+          }
           b.pause = r(1.5, 5);
         }
       }
@@ -309,7 +316,9 @@ export class TrunkWoodpeckers {
         this.birds.splice(i, 1);
         continue;
       }
-      const frame = b.drum > 0 ? Math.floor(b.t * 18) % 2 : 0;
+      if (b.hitch > 0) b.hitch -= dt;
+      // Drumming: drawn back, swinging in, striking; a hitch up the bark lifts the tail.
+      const frame = b.drum > 0 ? [0, 1, 2, 1][Math.floor(b.t * 30) % 4] : b.hitch > 0 ? 3 : 0;
       b.sprite.texture = this.sprites.get(`${frame}:${b.size}`, () => drawWoodpeckerCling(frame, b.size));
       // On the trunk's side, facing in to the bark.
       b.sprite.scale.x = b.side;
@@ -334,6 +343,7 @@ export class TrunkWoodpeckers {
       y: trunk.top + span * r(0.2, 0.6),
       size,
       drum: 0,
+      hitch: 0,
       pause: r(0.5, 2),
       stay: r(25, 70),
       t: 0,

@@ -151,7 +151,7 @@ describe('landscape creatures', () => {
   it('draws deer and squirrels in every pose', () => {
     for (const kind of ['doe', 'buck', 'fawn', 'roe', 'elk'] as const) {
       for (const h of [8, 14, 22, 30, 48]) {
-        for (const pose of ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'alert', 'bound-1', 'bound-2'] as const) {
+        for (const pose of ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6', 'graze-1', 'graze-2', 'graze-3', 'stand', 'stand-flick', 'alert', 'bound-1', 'bound-2'] as const) {
           const { grid } = drawDeerSized(kind, pose, h);
           expect(grid.height).toBe(h);
           expect(grid.isEmpty(), `${kind} ${pose} ${h}`).toBe(false);
@@ -160,7 +160,7 @@ describe('landscape creatures', () => {
     }
     for (const coat of ['red', 'grey'] as const) {
       for (const size of [6, 8, 13, 22]) {
-        for (const pose of ['run-1', 'run-2', 'sit', 'nibble', 'climb-1', 'climb-2', 'cling'] as const) {
+        for (const pose of ['run-1', 'run-2', 'run-3', 'run-4', 'sit', 'nibble', 'climb-1', 'climb-2', 'climb-3', 'climb-4', 'cling', 'cling-flick'] as const) {
           expect(drawSquirrelSized(coat, pose, size).grid.isEmpty()).toBe(false);
         }
       }
@@ -234,10 +234,15 @@ describe('wild creatures', () => {
     for (const h of [8, 14, 22]) for (const pose of ['sit', 'alert', 'hop-1', 'peek'] as const) expect(drawRabbitSized(pose, h, 'hare').grid.isEmpty()).toBe(false);
     // A hare's black-tipped ears make it differ from a rabbit.
     expect([...drawRabbitSized('sit', 20, 'hare').grid.data].join()).not.toBe([...drawRabbitSized('sit', 20).grid.data].join());
-    for (const n of [4, 8, 14]) for (const f of [0, 1, 2]) expect(drawBat(f, n).grid.isEmpty()).toBe(false);
-    for (const h of [6, 12, 24]) for (const pose of ['walk-1', 'walk-3', 'sniff'] as const) expect(drawBear(pose, h).grid.isEmpty()).toBe(false);
+    for (const n of [4, 8, 14, 24]) for (const f of [0, 1, 2, 3]) expect(drawBat(f, n).grid.isEmpty()).toBe(false);
+    for (const h of [6, 12, 24, 36]) for (const pose of ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6', 'sniff', 'sniff-air'] as const) expect(drawBear(pose, h).grid.isEmpty()).toBe(false);
+    // The bear's walk and the bat's wingbeat are all distinct frames.
+    const frames = (draw: (k: number) => { grid: PixelGrid }, n: number) => new Set(Array.from({ length: n }, (_, k) => Array.from(draw(k).grid.data).join(','))).size;
+    expect(frames((k) => drawBear((['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6'] as const)[k], 30), 6)).toBe(6);
+    expect(frames((k) => drawBat(k, 16), 4)).toBe(4);
+    expect(frames((k) => drawWoodpeckerCling(k, 16), 4)).toBe(4);
     for (const kind of ['monarch', 'white', 'blue', 'brimstone'] as const) for (const n of [4, 6, 9, 14]) for (const f of [0, 1, 2]) expect(drawButterfly(kind, f, n).grid.isEmpty()).toBe(false);
-    for (const n of [5, 8, 13]) for (const f of [0, 1]) expect(drawWoodpeckerCling(f, n).grid.isEmpty()).toBe(false);
+    for (const n of [5, 8, 13, 24]) for (const f of [0, 1, 2, 3]) expect(drawWoodpeckerCling(f, n).grid.isEmpty()).toBe(false);
     for (const kind of ['fly-agaric', 'bolete', 'cluster'] as const) for (const n of [3, 6, 10]) expect(drawMushroom(kind, n).grid.isEmpty()).toBe(false);
   });
 });

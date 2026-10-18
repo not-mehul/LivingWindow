@@ -93,7 +93,7 @@ export class Bats {
       }
       const t = Math.max(0, Math.min(1, (b.y - y0) / Math.max(1, y1 - y0)));
       const size = Math.max(4, Math.round(this.area.size[0] + (this.area.size[1] - this.area.size[0]) * t) * b.size);
-      const frame = Math.floor(b.flap) % 3;
+      const frame = Math.floor(b.flap) % 4;
       b.sprite.texture = this.sprites.get(`${frame}:${size}`, () => drawBat(frame, size));
       b.sprite.position.set(Math.round(b.x), Math.round(b.y));
       b.sprite.tint = tint;

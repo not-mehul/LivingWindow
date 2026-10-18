@@ -256,13 +256,15 @@ export class DeerHerd {
     switch (d.state) {
       case 'walk':
       case 'leave':
-        return DEER_WALK[Math.floor(d.stride / 4) % 4];
+        return DEER_WALK[Math.floor(d.stride / 2.7) % DEER_WALK.length];
       case 'bound':
         return Math.floor(d.stride / 12) % 2 === 0 ? 'bound-1' : 'bound-2';
       case 'graze':
-        return Math.floor(d.timer / 0.6) % 2 === 0 ? 'graze-1' : 'graze-2';
+        // Cropping the grass, lifting the head every few seconds to chew and look about.
+        return d.timer % 6 > 4.8 ? 'graze-3' : Math.floor(d.timer / 0.6) % 2 === 0 ? 'graze-1' : 'graze-2';
       case 'alert':
-        return 'alert';
+        // Head up and staring at first; then standing easy, flicking an ear and its tail now and then.
+        return d.timer < 1.2 ? 'alert' : d.timer % 3.1 < 0.28 ? 'stand-flick' : 'stand';
     }
   }
 

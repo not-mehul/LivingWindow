@@ -532,6 +532,8 @@ export class BirdSystem {
     switch (bird.state) {
       case 'perch-idle':
         bird.pose = Math.floor(bird.poseTimer / 0.7) % 2 === 0 ? 'idle' : 'idle-breathe';
+        // An owl blinks slowly now and then.
+        if (bird.species === 'owl' && bird.poseTimer % 4.3 < 0.22) bird.pose = 'sleep';
         break;
       case 'look-around': {
         const phase = Math.floor(bird.poseTimer / 0.45) % 3;

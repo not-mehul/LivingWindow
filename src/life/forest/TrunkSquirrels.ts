@@ -3,7 +3,7 @@ import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import type { Trunk } from '../../scene/forest/forestGenerator';
 import { squirrelActivity } from '../../sim/wildlife';
-import { SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../../sprites/forestSprites';
+import { SQUIRREL_CLIMB, SQUIRREL_RUN, SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
 
 type State = 'run' | 'climb' | 'cling' | 'leave';
@@ -138,8 +138,9 @@ export class TrunkSquirrels {
   private draw(sq: Squirrel, tint: number): void {
     const onTrunk = sq.state === 'climb' || sq.state === 'cling';
     let pose: SquirrelPose;
-    if (onTrunk) pose = sq.state === 'cling' ? 'cling' : Math.floor(sq.y / 3) % 2 === 0 ? 'climb-1' : 'climb-2';
-    else pose = Math.floor(sq.x / 3) % 2 === 0 ? 'run-1' : 'run-2';
+    // Four-beat gallops along the ground and up the bark; clinging, its tail twitches now and then.
+    if (onTrunk) pose = sq.state === 'cling' ? (Math.floor(sq.timer * 1.7) % 5 === 0 ? 'cling-flick' : 'cling') : SQUIRREL_CLIMB[Math.floor(Math.abs(sq.y) / 1.6) % 4];
+    else pose = SQUIRREL_RUN[Math.floor(Math.abs(sq.x) / 1.6) % 4];
     sq.sprite.texture = this.sprites.get(sq.coat, pose, sq.size);
     const descending = sq.state === 'climb' && sq.target > sq.y;
     sq.sprite.scale.set(onTrunk ? 1 : sq.dir, descending ? -1 : 1);

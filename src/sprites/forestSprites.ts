@@ -7,8 +7,23 @@ type Pt = readonly [number, number];
 
 // --- Deer ---------------------------------------------------------------
 
-export type DeerPose = 'walk-1' | 'walk-2' | 'walk-3' | 'walk-4' | 'graze-1' | 'graze-2' | 'alert' | 'bound-1' | 'bound-2';
-export const DEER_WALK: readonly DeerPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4'];
+export type DeerPose =
+  | 'walk-1'
+  | 'walk-2'
+  | 'walk-3'
+  | 'walk-4'
+  | 'walk-5'
+  | 'walk-6'
+  | 'graze-1'
+  | 'graze-2'
+  | 'graze-3'
+  | 'stand'
+  | 'stand-flick'
+  | 'alert'
+  | 'bound-1'
+  | 'bound-2';
+/** A six-beat walk: each leg swings through in turn, smoothly. */
+export const DEER_WALK: readonly DeerPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6'];
 export type DeerKind = 'doe' | 'buck' | 'fawn' | 'roe' | 'elk';
 
 const DEER_COATS: Record<DeerKind, { coat: number; belly: number; antlers: boolean }> = {
@@ -43,14 +58,20 @@ export function drawDeerSized(kind: DeerKind, pose: DeerPose, height: number): D
   const dark = palette.ramp(0x3a2a20);
   const antler = palette.ramp(0xd8c8a0, 0.8);
   const eyeInk = palette.add(0x0c0808);
+  const rump = palette.ramp(0xe0d6c0, 0.25);
+  const mane = palette.ramp(0x3e2a1c, 0.7);
   const detailed = H >= 18;
 
   const walking = pose.startsWith('walk');
   const bounding = pose.startsWith('bound');
   const grazing = pose.startsWith('graze');
   const alert = pose === 'alert';
-  const phase = walking ? (Number(pose.slice(-1)) - 1) * (Math.PI / 2) : 0;
-  const bodyY = bounding ? (pose === 'bound-1' ? 19 : 16) : 22;
+  const phase = walking ? (Number(pose.slice(-1)) - 1) * ((Math.PI * 2) / 6) : 0;
+  const flick = pose === 'stand-flick';
+  const chewing = pose === 'graze-3';
+  const elk = kind === 'elk';
+  // A walk bobs the body a touch as the weight shifts.
+  const bodyY = bounding ? (pose === 'bound-1' ? 19 : 16) : 22 + (walking ? Math.abs(Math.sin(phase)) * 0.6 : 0);
   const tilt = bounding ? (pose === 'bound-1' ? -0.12 : 0.1) : 0;
 
   // Legs: the far pair a step out of phase and in shadow.
@@ -91,7 +112,9 @@ export function drawDeerSized(kind: DeerKind, pose: DeerPose, height: number): D
   const Y = (y: number) => (y + headroom) * s;
   shadedEllipse(g, 20 * s, Y(bodyY - 1), 8.5 * s, 8.5 * s, fur, { dither: false, min: 1 });
   shadedEllipse(g, 33 * s, Y(bodyY), 16 * s, 7.5 * s, fur, { dither: false, angle: tilt, min: 1 });
-  shadedEllipse(g, 45 * s, Y(bodyY - 1), 7 * s, 8 * s, fur, { dither: false, min: 1 });
+  shadedEllipse(g, 45 * s, Y(bodyY - 1), elk ? 8.5 * s : 7 * s, elk ? 9.5 * s : 8 * s, fur, { dither: false, min: 1 });
+  // An elk's pale rump.
+  if (elk && detailed) shadedEllipse(g, 15.5 * s, Y(bodyY - 2), 4 * s, 5 * s, rump, { dither: false, max: 3 });
   // Pale belly along the underside.
   if (detailed) {
     shadedEllipse(g, 33 * s, Y(bodyY + 5.5), 12 * s, 2 * s, pale, { dither: false, angle: tilt, max: 2 });
@@ -108,6 +131,9 @@ export function drawDeerSized(kind: DeerKind, pose: DeerPose, height: number): D
   // Tail: flagged up white when alarmed, otherwise down and dark-tipped.
   if (alert || bounding) {
     limb(g, [P(13, bodyY - 5), P(10, bodyY - 11)], 3.4 * s, 4 * s, pale, { max: 3 });
+  } else if (flick) {
+    // A flick of the tail at the flies.
+    limb(g, [P(13.5, bodyY - 5), P(9.5, bodyY - 3)], 3 * s, 2.6 * s, fur, { bias: -0.4 });
   } else {
     limb(g, [P(13.5, bodyY - 5), P(12, bodyY + 1)], 3 * s, 2.6 * s, fur, { bias: -0.4 });
   }
@@ -118,7 +144,12 @@ export function drawDeerSized(kind: DeerKind, pose: DeerPose, height: number): D
   // Neck and head.
   let head: Pt;
   let headAngle: number;
-  if (grazing) {
+  if (chewing) {
+    // Head half raised from the grass, chewing, looking about.
+    head = [59, 27];
+    headAngle = 0.85;
+    limb(g, [P(45, bodyY - 3), P(53, bodyY + 1), P(57, head[1] - 3)], 8 * s, 5 * s, fur);
+  } else if (grazing) {
     head = [61, pose === 'graze-1' ? 41 : 42.5];
     headAngle = 1.25;
     limb(g, [P(46, bodyY - 3), P(54, bodyY + 6), P(59, head[1] - 4)], 7 * s, 4.5 * s, fur);
@@ -126,13 +157,15 @@ export function drawDeerSized(kind: DeerKind, pose: DeerPose, height: number): D
     head = alert ? [55, 5] : bounding ? [59, bodyY - 10] : [55, 10];
     headAngle = alert ? 0.45 : 0.3;
     limb(g, [P(44, bodyY - 3), P(head[0] - 3, head[1] + 3)], 10 * s, 6 * s, fur);
-    // A pale throat patch.
-    if (detailed) limb(g, [P(head[0] - 1.5, head[1] + 4), P(head[0] - 2, head[1] + 5.5)], 2.2 * s, 2 * s, pale, { max: 3 });
+    // A pale throat patch, or an elk's shaggy dark mane down the neck.
+    if (elk) limb(g, [P(head[0] - 3, head[1] + 2.5), P(46.5, bodyY + 3)], 7 * s, 9 * s, mane, { bias: 0.3 });
+    else if (detailed) limb(g, [P(head[0] - 1.5, head[1] + 4), P(head[0] - 2, head[1] + 5.5)], 2.2 * s, 2 * s, pale, { max: 3 });
   }
   const [hx, hy] = head;
   // Ears: big, the far one in shade.
   const earBase = grazing ? P(hx - 2, hy - 3) : P(hx - 2.5, hy - 2.5);
-  const earTip = (dx: number, dy: number): Pt => (grazing ? P(hx - 5.5 + dx, hy - 4.5 + dy) : P(hx - 6 + dx, hy - 6.5 + dy));
+  // Ears up (or one turned back, flicking).
+  const earTip = (dx: number, dy: number): Pt => (grazing ? P(hx - 5.5 + dx, hy - 4.5 + dy) : flick ? P(hx - 7.5 + dx, hy - 3.5 + dy) : P(hx - 6 + dx, hy - 6.5 + dy));
   limb(g, [earBase, earTip(-1.5, 0.8)], 3.4 * s, 2.2 * s, fur, { bias: -1.2 });
   // The head, tapering to the muzzle.
   shadedEllipse(g, hx * s, Y(hy), 5 * s, 3.8 * s, fur, { dither: false, angle: headAngle, min: 1 });
@@ -149,17 +182,26 @@ export function drawDeerSized(kind: DeerKind, pose: DeerPose, height: number): D
     g.set(Math.floor((hx + 0.6) * s), Math.floor(Y(hy - 0.8 + (grazing ? 1 : 0))), eyeInk);
     g.set(Math.floor((mx - 0.5) * s), Math.floor(Y(my + 1.2)), pale[2]);
   }
-  // Antlers on a buck (and an elk's broad rack).
-  if (style.antlers && !grazing) {
+  // Antlers on a buck (and an elk's broad, many-tined rack), turned with the head when it's down.
+  if (style.antlers) {
     const ax = hx - 1.5;
     const ay = hy - 3;
-    const big = kind === 'elk' ? 1.4 : 1;
-    const w = Math.max(1, 1.3 * s);
-    const beam: Pt[] = [P(ax, ay), P(ax - 3 * big, ay - 6 * big), P(ax - 2 * big, ay - 11 * big), P(ax + 1 * big, ay - 14 * big)];
-    limb(g, beam, w * 1.3, w, antler, { max: 4 });
-    limb(g, [P(ax - 2.4 * big, ay - 4 * big), P(ax + 2 * big, ay - 7 * big)], w, w * 0.8, antler);
-    limb(g, [P(ax - 2.6 * big, ay - 9 * big), P(ax + 1.5 * big, ay - 11 * big)], w, w * 0.8, antler);
-    limb(g, [P(ax - 2.8 * big, ay - 8 * big), P(ax - 7 * big, ay - 10 * big)], w, w * 0.8, antler, { bias: -1 });
+    const big = elk ? 1.6 : 1;
+    const w = Math.max(1, (elk ? 1.6 : 1.3) * s);
+    // The rack tips forward a little as the head goes down, but stays up over it.
+    const turn = (headAngle - 0.3) * 0.4;
+    const cos = Math.cos(turn);
+    const sin = Math.sin(turn);
+    const A = (dx: number, dy: number): Pt => P(ax + (dx * cos - dy * sin) * big, ay + (dx * sin + dy * cos) * big);
+    limb(g, [A(0, 0), A(-3, -6), A(-2, -11), A(1, -14)], w * 1.3, w, antler, { max: 4 });
+    limb(g, [A(-2.4, -4), A(2, -7)], w, w * 0.8, antler);
+    limb(g, [A(-2.6, -9), A(1.5, -11)], w, w * 0.8, antler);
+    limb(g, [A(-2.8, -8), A(-7, -10)], w, w * 0.8, antler, { bias: -1 });
+    if (elk) {
+      // More tines sweeping back off the beam.
+      limb(g, [A(-3, -6), A(-7.5, -6.5)], w, w * 0.7, antler, { bias: -1 });
+      limb(g, [A(-1.5, -12.5), A(-4.5, -15)], w, w * 0.7, antler, { bias: -0.6 });
+    }
   }
   if (detailed) selOut(g, palette, { bottomHeavy: H < 26 });
   return { grid: g, palette };
@@ -182,7 +224,14 @@ export class DeerSpriteCache {
 
 // --- Squirrel -----------------------------------------------------------
 
-export type SquirrelPose = 'run-1' | 'run-2' | 'sit' | 'nibble' | 'climb-1' | 'climb-2' | 'cling';
+export type SquirrelPose = 'run-1' | 'run-2' | 'run-3' | 'run-4' | 'sit' | 'nibble' | 'climb-1' | 'climb-2' | 'climb-3' | 'climb-4' | 'cling' | 'cling-flick';
+export const SQUIRREL_RUN: readonly SquirrelPose[] = ['run-1', 'run-2', 'run-3', 'run-4'];
+export const SQUIRREL_CLIMB: readonly SquirrelPose[] = ['climb-1', 'climb-2', 'climb-3', 'climb-4'];
+/** Where in its four-beat cycle a run or climb frame is (-1..1), 0 for anything else. */
+const beat = (pose: SquirrelPose) => {
+  const n = Number(pose.slice(-1));
+  return Number.isNaN(n) ? 0 : Math.sin(((n - 1) * Math.PI) / 2 + Math.PI / 2);
+};
 export type SquirrelCoat = 'red' | 'grey';
 
 const SQUIRREL_COATS: Record<SquirrelCoat, { coat: number; belly: number }> = {
@@ -217,10 +266,11 @@ export function drawSquirrelSized(coat: SquirrelCoat, pose: SquirrelPose, size: 
   const detailed = N >= 12;
   const tw = Math.max(1.6, 6.5 * s);
 
-  if (pose.startsWith('climb') || pose === 'cling') {
+  if (pose.startsWith('climb') || pose.startsWith('cling')) {
     // Head-up on a trunk: the tail hanging below and flicking out.
-    const reach = pose === 'climb-1' ? -1.5 : pose === 'climb-2' ? 1.5 : 0;
-    bushyTail(g, [P(12, 15), P(10.5, 19), P(12 + reach, 22.5), P(15 + reach, 23)], tw, fur);
+    const reach = pose.startsWith('climb') ? beat(pose) * 1.6 : 0;
+    const flickOut = pose === 'cling-flick' ? 4 : 0;
+    bushyTail(g, [P(12, 15), P(10.5 - flickOut * 0.4, 19), P(12 + reach - flickOut, 22.5 - flickOut * 0.6), P(15 + reach - flickOut * 1.5, 23 - flickOut)], tw, fur);
     shadedEllipse(g, 12 * s, 12 * s, 4 * s, 6.5 * s, fur, { dither: false });
     if (detailed) shadedEllipse(g, 13.2 * s, 13 * s, 2 * s, 4.5 * s, belly, { dither: false, max: 3 });
     for (const [x, y] of [[8, 9 + reach], [16, 9 - reach], [8.5, 16 - reach], [15.5, 16 + reach]] as const) {
@@ -236,7 +286,8 @@ export function drawSquirrelSized(coat: SquirrelCoat, pose: SquirrelPose, size: 
     }
   } else {
     const sitting = pose === 'sit' || pose === 'nibble';
-    const stride = pose === 'run-1' ? 1 : pose === 'run-2' ? -1 : 0;
+    // A bounding gallop: hind legs reach forward under it, then it stretches out.
+    const stride = pose.startsWith('run') ? beat(pose) : 0;
     if (sitting) {
       // Sitting up, the tail an S curling up its back.
       bushyTail(g, [P(9, 21), P(4, 18), P(4, 11), P(7, 6), P(5, 2.5)], tw * 1.05, fur);

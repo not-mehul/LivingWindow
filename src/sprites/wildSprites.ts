@@ -1,6 +1,6 @@
 import type { Texture } from 'pixi.js';
 import { gridToTexture } from './birdSprites';
-import { limb, Palette, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
+import { eye, limb, Palette, rimShade, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
 
 /**
@@ -134,41 +134,68 @@ export function drawFox(pose: FoxPose, height: number): Drawn {
 
 // --- Bats -----------------------------------------------------------------
 
-/** A bat flitting, `size` px across: a furry body and leathery wings (up, level, down). */
+/**
+ * A bat flitting, `size` px across: a furry brown body and big ears, and
+ * leathery wings stretched over long finger bones, scalloped between them.
+ * Four frames through the wingbeat: raised, sweeping down, down, coming up.
+ */
 export function drawBat(frame: number, size: number): Drawn {
   const N = Math.max(4, Math.round(size));
-  const H = Math.max(3, Math.round(N * 0.6));
+  const H = Math.max(3, Math.round(N * 0.66));
   const g = new PixelGrid(N, H);
   const s = N / 16;
   const palette = new Palette();
-  const wing = palette.ramp(0x3a2e34);
-  const fur = palette.ramp(0x5a463a);
+  const wing = palette.ramp(0x3e3036, 0.9);
+  const bone = palette.ramp(0x6a5458);
+  const fur = palette.ramp(0x6a503e);
   const cx = N / 2;
-  const cy = H * 0.55;
-  const f = ((frame % 3) + 3) % 3;
-  const tipY = [-4.5, 0, 3.5][f] * s;
-  const elbowY = [-3, -0.5, 1.5][f] * s;
+  const cy = H * 0.52;
+  const f = ((frame % 4) + 4) % 4;
+  // Wrist and tip heights through the beat (authored units).
+  const wristY = [-3.2, -1, 1.6, 0.2][f] * s;
+  const tipY = [-4.8, -0.4, 3.6, 1.8][f] * s;
+  const spread = [0.86, 1, 0.82, 0.9][f];
   for (const side of [-1, 1]) {
-    // Each wing a scalloped membrane from body to the wrist and on to the tip.
-    const wrist: Pt = [cx + side * 4 * s, cy + elbowY];
-    const tip: Pt = [cx + side * 7.6 * s, cy + tipY];
-    g.polygon([[cx, cy - 0.5 * s], wrist, tip, [cx + side * 5.5 * s, cy + tipY * 0.5 + 1.6 * s], [cx + side * 3 * s, cy + 1.6 * s], [cx, cy + 1.2 * s]], wing[f === 0 ? 2 : 1]);
-    if (N >= 10) limb(g, [[cx, cy - 0.5 * s], wrist, tip], 0.8, 0.6, wing, { max: 3 });
+    const wrist: Pt = [cx + side * 3.8 * s * spread, cy + wristY];
+    const tip: Pt = [cx + side * 7.6 * s * spread, cy + tipY];
+    const mid: Pt = [cx + side * 6.6 * s * spread, cy + tipY * 0.5 + 2.2 * s];
+    const inner: Pt = [cx + side * 4.4 * s * spread, cy + wristY * 0.3 + 2.4 * s];
+    // The membrane: from the body out to the tip, scalloped back along the trailing edge.
+    g.polygon([[cx, cy - 0.8 * s], wrist, tip, mid, [cx + side * 5.4 * s * spread, cy + 1.2 * s + tipY * 0.2], inner, [cx + side * 2.6 * s, cy + 2 * s], [cx, cy + 1.4 * s]], wing[f === 2 ? 1 : 2]);
+    if (N >= 9) {
+      // The arm and finger bones fanning from the wrist.
+      limb(g, [[cx, cy - 0.6 * s], wrist], 0.9, 0.7, bone, { max: 2 });
+      limb(g, [wrist, tip], 0.7, 0.6, bone, { max: 2 });
+      limb(g, [wrist, mid], 0.6, 0.6, bone, { max: 1 });
+      limb(g, [wrist, inner], 0.6, 0.6, bone, { max: 1 });
+    }
   }
-  shadedEllipse(g, cx, cy, Math.max(0.8, 1.4 * s), Math.max(1, 2.2 * s), fur, { dither: false });
-  // Ears.
-  if (N >= 8) {
-    g.set(Math.floor(cx - 0.6 * s), Math.floor(cy - 2.6 * s), fur[1]);
-    g.set(Math.floor(cx + 0.6 * s), Math.floor(cy - 2.6 * s), fur[1]);
+  // The body: furry, a pale-ish chest, ears pricked.
+  shadedEllipse(g, cx, cy + 0.3 * s, Math.max(0.8, 1.5 * s), Math.max(1, 2.4 * s), fur, { dither: false });
+  if (N >= 7) {
+    const ear = Math.max(1, Math.round(1.2 * s));
+    for (let k = 0; k < ear; k++) {
+      g.set(Math.floor(cx - 0.9 * s), Math.floor(cy - 2.2 * s) - k, fur[2]);
+      g.set(Math.floor(cx + 0.9 * s), Math.floor(cy - 2.2 * s) - k, fur[1]);
+    }
   }
+  if (N >= 12) selOut(g, palette, { bottomHeavy: false });
   return { grid: g, palette };
 }
 
 // --- Black bear -------------------------------------------------------------
 
-export type BearPose = 'walk-1' | 'walk-2' | 'walk-3' | 'walk-4' | 'sniff';
+export type BearPose = 'walk-1' | 'walk-2' | 'walk-3' | 'walk-4' | 'walk-5' | 'walk-6' | 'sniff' | 'sniff-air';
+/** A heavy, rolling six-beat amble. */
+export const BEAR_WALK: readonly BearPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6'];
 
-/** A black bear ambling in profile facing right, `height` px tall, 1.7× as wide: a shouldered bulk, round ears, a tan muzzle. */
+/**
+ * A black bear ambling in profile facing right, `height` px tall and 1.7× as
+ * wide: a shaggy bulk rising to the hump over its shoulders, thick jointed
+ * legs on broad paws with pale claws, round ears, a small dark eye and a tan
+ * muzzle. It sniffs along the ground, or lifts its nose to scent the air.
+ * Authored in a 41×24 box.
+ */
 export function drawBear(pose: BearPose, height: number): Drawn {
   const H = Math.max(5, Math.round(height));
   const W = Math.round(H * 1.7);
@@ -178,26 +205,68 @@ export function drawBear(pose: BearPose, height: number): Drawn {
   const palette = new Palette();
   const fur = palette.ramp(0x2e2826, 0.9);
   const muzzle = palette.ramp(0xa8845a);
-  const k = pose.startsWith('walk') ? Number(pose.slice(-1)) - 1 : 0;
-  const ph = (k * Math.PI) / 2;
-  const sw = (o: number) => (pose.startsWith('walk') ? Math.sin(ph + o) * 2.4 : 0);
-  const legW = Math.max(1.5, 3.4 * s);
-  const leg = (x: number, o: number, far: boolean) => limb(g, [P(x, 15), P(x + sw(o), 23.5)], legW * 1.2, legW, fur, { bias: far ? -1.2 : -0.2 });
-  leg(30, Math.PI, true);
-  leg(13, 0, true);
-  // The bulk: rump, belly, the hump over the shoulders.
-  shadedEllipse(g, 12 * s, 12 * s, 7 * s, 7 * s, fur, { dither: false, min: 1 });
-  shadedEllipse(g, 21 * s, 13 * s, 11 * s, 6.5 * s, fur, { dither: false, min: 1 });
-  shadedEllipse(g, 28 * s, 10.5 * s, 6 * s, 6 * s, fur, { dither: false, min: 1 });
-  leg(32, 0, false);
-  leg(11, Math.PI, false);
-  // Head, carried low, sniffing the ground when it stops.
-  const [hx, hy] = pose === 'sniff' ? [36, 17] : [35, 11];
-  g.set(Math.floor((hx - 2.5) * s), Math.floor((hy - 4) * s), fur[2]);
-  shadedEllipse(g, (hx - 2) * s, (hy - 3.6) * s, Math.max(0.6, 1.3 * s), Math.max(0.6, 1.3 * s), fur, { dither: false });
-  shadedEllipse(g, hx * s, hy * s, 4 * s, 3.4 * s, fur, { dither: false });
-  shadedEllipse(g, (hx + 3.6) * s, (hy + 0.8) * s, 2.2 * s, 1.6 * s, muzzle, { dither: false, max: 3 });
-  g.set(Math.floor((hx + 5.4) * s), Math.floor((hy + 0.4) * s), fur[0]);
+  const claw = palette.ramp(0xd8ccb0);
+  const eyeInk = palette.add(0x0a0808);
+  const glint = palette.add(0xc8c0b0);
+  const walking = pose.startsWith('walk');
+  const k = walking ? Number(pose.slice(-1)) - 1 : 0;
+  const ph = (k * Math.PI * 2) / 6;
+  const bob = walking ? Math.abs(Math.sin(ph)) * 0.7 : 0;
+  const detailed = H >= 14;
+  const legW = Math.max(1.5, 3.8 * s);
+  /** One leg: a thick upper limb, the forearm or hock, and a broad paw; it swings and lifts in the walk. */
+  const leg = (x: number, o: number, far: boolean, front: boolean) => {
+    const swing = walking ? Math.sin(ph + o) * 2.6 : 0;
+    const lift = walking ? Math.max(0, Math.cos(ph + o)) * 1.6 : 0;
+    const bias = far ? -1.3 : -0.2;
+    const top = P(x, 13 + bob);
+    const joint = front ? P(x + swing * 0.4 + lift * 0.4, 19 - lift * 0.5) : P(x - 1 + swing * 0.3, 19.5 - lift * 0.6);
+    const paw = P(x + swing, 23.2 - lift);
+    limb(g, [top, joint], legW * 1.5, legW * 1.05, fur, { bias });
+    limb(g, [joint, paw], legW * 1.05, legW * 0.95, fur, { bias });
+    // The paw, flat on the ground, and its claws.
+    shadedEllipse(g, paw[0] + 0.8 * s, paw[1], Math.max(1, 2.2 * s), Math.max(0.6, 1 * s), fur, { dither: false, bias: bias - 0.3 });
+    if (detailed && !far) g.set(Math.floor(paw[0] + 2.6 * s), Math.floor(paw[1] + 0.4 * s), claw[2]);
+  };
+  leg(29, Math.PI, true, true);
+  leg(11.5, 0, true, false);
+  // The bulk: rump, a deep belly, and the hump over the shoulders.
+  shadedEllipse(g, 11 * s, (11.5 + bob) * s, 7.5 * s, 7.5 * s, fur, { dither: false, min: 1 });
+  shadedEllipse(g, 20 * s, (12.5 + bob) * s, 11 * s, 6.8 * s, fur, { dither: false, min: 1 });
+  shadedEllipse(g, 27.5 * s, (10 + bob) * s, 6.5 * s, 6.5 * s, fur, { dither: false, min: 1 });
+  // A stub of tail.
+  g.set(Math.floor(3.6 * s), Math.floor((9.5 + bob) * s), fur[1]);
+  leg(31.5, 0, false, true);
+  leg(10, Math.PI, false, false);
+  // Head: low and swinging as it walks, nose to the ground to sniff, or raised to scent the air.
+  const sniffing = pose === 'sniff';
+  const air = pose === 'sniff-air';
+  const hx = sniffing ? 35.5 : air ? 34.5 : 35 + (walking ? Math.sin(ph) * 0.5 : 0);
+  const hy = (sniffing ? 17.5 : air ? 7 : 11.5) + bob;
+  const tilt = sniffing ? 0.7 : air ? -0.5 : 0.15;
+  // The neck, thick, into the shoulders.
+  limb(g, [P(29, 9 + bob), P(hx - 1.5, hy)], 8 * s, 6.5 * s, fur, { dither: false });
+  // Round ears, the far one in shade.
+  shadedEllipse(g, (hx - 2.8) * s, (hy - 3.6) * s, Math.max(0.6, 1.4 * s), Math.max(0.6, 1.4 * s), fur, { dither: false, bias: -1 });
+  shadedEllipse(g, (hx - 1.4) * s, (hy - 3.9) * s, Math.max(0.6, 1.5 * s), Math.max(0.6, 1.4 * s), fur, { dither: false });
+  shadedEllipse(g, hx * s, hy * s, 4 * s, 3.4 * s, fur, { dither: false, angle: tilt });
+  // The long tan muzzle and its dark nose.
+  const mx = hx + Math.cos(tilt) * 3.4;
+  const my = hy + Math.sin(tilt) * 3.4 + 0.6;
+  shadedEllipse(g, mx * s, my * s, 2.4 * s, 1.6 * s, muzzle, { dither: false, angle: tilt, max: 3 });
+  g.set(Math.floor((mx + Math.cos(tilt) * 2.2) * s), Math.floor((my + Math.sin(tilt) * 2.2 - 0.4) * s), fur[0]);
+  if (detailed) {
+    eye(g, (hx + 0.8) * s, (hy - 0.9) * s, H >= 30 ? 2 : 1, eyeInk, glint);
+    // Shaggy fur: darker strands through the coat, a little rim light along the back.
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const c = g.get(x, y);
+        if (c === fur[2] && pixelHash(x, Math.floor(y / 2), 17) < 0.18) g.set(x, y, fur[1]);
+        else if (c === fur[3] && pixelHash(x, Math.floor(y / 2), 19) < 0.07) g.set(x, y, fur[4]);
+      }
+    }
+    rimShade(g, [fur]);
+  }
   if (H >= 12) selOut(g, palette, { bottomHeavy: true });
   return { grid: g, palette };
 }
@@ -246,13 +315,14 @@ export function drawButterfly(kind: ButterflyKind, frame: number, size: number):
 
 /**
  * A great spotted woodpecker clinging upright to bark, facing the trunk at
- * its right, `size` px tall: black back with a white shoulder patch, red
- * under the tail and at the nape, the stiff tail braced on the bark.
- * Frame 0 has its head drawn back, frame 1 striking.
+ * its right, `size` px tall: black back with a white shoulder patch, white
+ * cheeks with a black moustache, a red nape and red under the tail, the
+ * stiff tail braced on the bark. Frames: 0 head drawn back, 1 swinging in,
+ * 2 striking the bark, 3 hitching up the trunk (tail lifted, body raised).
  */
 export function drawWoodpeckerCling(frame: number, size: number): Drawn {
   const N = Math.max(5, Math.round(size));
-  const W = Math.max(4, Math.round(N * 0.7));
+  const W = Math.max(4, Math.round(N * 0.72));
   const g = new PixelGrid(W, N);
   const s = N / 16;
   const palette = new Palette();
@@ -260,26 +330,37 @@ export function drawWoodpeckerCling(frame: number, size: number): Drawn {
   const white = palette.ramp(0xeeeae2, 0.5);
   const red = palette.ramp(0xc8282a);
   const beak = palette.add(0x3a3a40);
-  const strike = frame % 2 === 1 ? 1 : 0;
-  // Tail braced against the bark, below.
-  limb(g, [[3.4 * s, 10 * s], [3.8 * s, 15.5 * s]], 1.8 * s, 1.2 * s, black, { bias: -0.5 });
-  // Body, upright and leaning in to the trunk.
-  shadedEllipse(g, 4.2 * s, 8.5 * s, 2.6 * s, 4.4 * s, black, { dither: false, angle: -0.15 });
+  const eyeInk = palette.add(0x0a0a0c);
+  const f = ((frame % 4) + 4) % 4;
+  const reach = [0, 0.6, 1.3, 0][f];
+  const hitch = f === 3 ? -1 : 0;
+  // Tail braced against the bark below (lifted as it hitches up).
+  limb(g, [[3.4 * s, (10 + hitch) * s], [3.8 * s, (15.5 + hitch * 1.6) * s]], 1.8 * s, 1.2 * s, black, { bias: -0.5 });
+  // Body, upright and leaning in to the trunk; white underparts showing at the front.
+  shadedEllipse(g, 4.2 * s, (8.5 + hitch) * s, 2.6 * s, 4.4 * s, black, { dither: false, angle: -0.15 });
   if (N >= 8) {
-    shadedEllipse(g, 3.2 * s, 7.5 * s, 1 * s, 2 * s, white, { dither: false, max: 3 });
-    g.set(Math.floor(5.4 * s), Math.floor(12 * s), red[2]);
+    shadedEllipse(g, 5.4 * s, (8.4 + hitch) * s, 1 * s, 3 * s, white, { dither: false, max: 2 });
+    shadedEllipse(g, 3.1 * s, (7.4 + hitch) * s, 1 * s, 2 * s, white, { dither: false, max: 3 });
+    g.set(Math.floor(5.2 * s), Math.floor((12 + hitch) * s), red[2]);
   }
-  // Head: drawn back, or struck forward into the bark.
-  const hx = 5.2 + strike * 1.2;
-  const hy = 3.4 + strike * 0.4;
+  // Head: drawn back, swinging in, or struck into the bark.
+  const hx = 5.2 + reach;
+  const hy = 3.4 + reach * 0.3 + hitch;
   shadedEllipse(g, hx * s, hy * s, 1.9 * s, 1.7 * s, black, { dither: false });
   if (N >= 8) {
-    g.set(Math.floor((hx + 0.3) * s), Math.floor((hy + 0.6) * s), white[3]);
-    g.set(Math.floor((hx - 1.2) * s), Math.floor((hy - 0.5) * s), red[2]);
+    // White cheek, black moustache, red nape.
+    g.set(Math.floor((hx + 0.2) * s), Math.floor((hy + 0.7) * s), white[3]);
+    g.set(Math.floor((hx - 1.2) * s), Math.floor((hy - 0.4) * s), red[2]);
+    if (N >= 12) {
+      g.set(Math.floor((hx + 0.9) * s), Math.floor((hy + 0.6) * s), white[3]);
+      g.set(Math.floor((hx - 1.3) * s), Math.floor((hy - 1) * s), red[1]);
+    }
+    g.set(Math.floor((hx + 0.6) * s), Math.floor((hy - 0.5) * s), eyeInk);
   }
-  for (let k = 0; k < Math.max(1, Math.round(1.6 * s)); k++) g.set(Math.floor((hx + 1.8) * s) + k, Math.floor(hy * s), beak);
+  for (let k = 0; k < Math.max(1, Math.round(1.6 * s)); k++) g.set(Math.floor((hx + 1.8) * s) + k, Math.floor((hy + reach * 0.15) * s), beak);
   // Feet gripping the bark.
-  g.set(Math.floor(6 * s), Math.floor(10.5 * s), black[0]);
+  g.set(Math.floor(6 * s), Math.floor((10.5 + hitch) * s), black[0]);
+  if (N >= 12) selOut(g, palette, { bottomHeavy: false });
   return { grid: g, palette };
 }
 

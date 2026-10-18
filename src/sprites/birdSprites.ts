@@ -306,6 +306,8 @@ export function drawBird(speciesId: SpeciesId, pose: BirdPose, size: number): Pi
 
   if (f.upright && !flying) {
     drawUprightBird(grid, sp, pose, s, detailed, medium);
+  } else if (f.upright) {
+    drawOwlFlight(grid, pose, s, detailed, medium);
   } else {
     drawProfileBird(grid, sp, pose, s, P, detailed, medium, flying);
   }
@@ -549,6 +551,54 @@ function drawProfileBird(
     const shape = f.wingSpan ? spanWing(base, f.wingSpan) : base;
     grid.line(...P(shape[0][0], shape[0][1]), ...P(shape[1][0], shape[1][1]), C.Outline, Math.max(1, s));
   }
+}
+
+/**
+ * An owl in flight, side on and heading right: a big round head with its
+ * pale facial disk turned a little towards us, a short stout body and tail,
+ * and broad, rounded, barred wings beating slowly (or held out in a glide).
+ */
+function drawOwlFlight(grid: PixelGrid, pose: BirdPose, s: number, detailed: boolean, medium: boolean): void {
+  const P = (x: number, y: number): [number, number] => [x * s, y * s];
+  // The far wing first, in shade, a little behind the near one.
+  const wing = (dy: number, far: boolean) => {
+    const tip: Record<string, [number, number]> = { 'fly-up': [14, 3], 'fly-mid': [6, 20], 'fly-down': [15, 43], glide: [4, 25] };
+    const [tx, ty] = tip[pose] ?? tip.glide;
+    const shoulder: [number, number] = [25, 24 + dy];
+    // A broad rounded wing: leading edge out to the tip, then a deep rounded trailing edge back to the body.
+    const up = ty < 20;
+    const pts: Array<[number, number]> = [
+      P(shoulder[0] + 3, shoulder[1] - 1),
+      P(tx + 4, ty + (up ? 1 : -1) + dy),
+      P(tx, ty + dy),
+      P(tx - 1, ty + (up ? 5 : ty > 30 ? -5 : 4) + dy),
+      P((tx + shoulder[0]) / 2 - 2, (ty + shoulder[1]) / 2 + (up ? 6 : ty > 30 ? -6 : 7) + dy),
+      P(shoulder[0] - 5, shoulder[1] + 3),
+    ];
+    grid.polygon(pts, far ? C.WingDark : C.Wing);
+    if (detailed && !far) {
+      // Bars across the flight feathers.
+      for (let k = 1; k <= 3; k++) {
+        const t = k / 4;
+        grid.line(...P(shoulder[0] + (tx - shoulder[0]) * t, shoulder[1] + (ty + dy - shoulder[1]) * t), ...P(shoulder[0] + (tx - shoulder[0]) * t - 2, shoulder[1] + (ty + dy - shoulder[1]) * t + (up ? 4 : ty > 30 ? -4 : 4)), C.WingDark, Math.max(1, s));
+      }
+    }
+  };
+  wing(-2, true);
+  // Short tail and a stout, streaked body.
+  grid.polygon([P(15, 25), P(8, 23), P(8, 29), P(15, 28)], C.WingDark);
+  grid.ellipse(22 * s, 26 * s, 9 * s, 5.5 * s, (_u, v, x, y) => (v > 0.2 ? (detailed && pixelHash(x, y, 4) < 0.25 ? C.Sheen : C.Belly) : C.Body));
+  // The big round head.
+  grid.ellipse(33 * s, 22 * s, 7 * s, 6.5 * s, C.Head);
+  if (medium) {
+    grid.ellipse(35 * s, 23 * s, 4.2 * s, 4.6 * s, C.Accent);
+    if (detailed) {
+      grid.ellipse(36 * s, 22 * s, 1.6 * s, 1.6 * s, C.Cap);
+      grid.set(Math.floor(36.4 * s), Math.floor(22 * s), C.Eye);
+    } else grid.set(Math.floor(36 * s), Math.floor(22 * s), C.Eye);
+    grid.set(Math.floor(39 * s), Math.floor(24.5 * s), C.Beak);
+  }
+  wing(0, false);
 }
 
 /** Owls: a front-facing, upright body with a facial disk and big eyes. */
