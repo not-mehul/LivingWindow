@@ -79,6 +79,8 @@ export class MeadowScene implements WorldScene {
   /** Fish in the creek (seen from above). */
   readonly creekLife = new Container({ label: 'creek-life' });
   readonly nightLayer = new Graphics();
+  /** Effects lying on the grass under everything standing on it (the wind through it). */
+  readonly groundFx = new Container({ label: 'ground-fx' });
   /** Things down among the wildflowers in front (a hedgehog), half hidden by them. */
   readonly bankLife = new Container({ label: 'bank-life' });
   /** Bees and butterflies over the wildflowers. */
@@ -196,6 +198,7 @@ export class MeadowScene implements WorldScene {
       this.creekSprite,
       this.creekLife,
       this.shadowLayer,
+      this.groundFx,
       this.weatherBack,
       this.midground,
       this.birdsMid,

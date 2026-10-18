@@ -10,7 +10,9 @@ import { Butterflies } from '../common/Butterflies';
 import { Fireflies } from '../common/Fireflies';
 import { Fox } from '../common/Fox';
 import { TrunkSquirrels } from '../forest/TrunkSquirrels';
+import { Breeze } from './Breeze';
 import { Chickens, CowHerd } from './Farm';
+import { Farmstead } from './Farmstead';
 import { Bees, bloomPoints, Dragonflies, Hedgehog, TreeLineDeer, treeLineFoot } from './MeadowVisitors';
 import { HorsePaddock, SheepFlock } from './Pastoral';
 import { Rabbits, SoaringEagle, StreamFishes } from './Wild';
@@ -36,6 +38,8 @@ export const MEADOW_ECOLOGY: BirdEcology = {
  * fireflies, an owl; a flock of sheep and their dog, a horse in its paddock;
  * butterflies, bees and dragonflies by day; bats at dusk, a fox nosing round
  * the shut-up hen house, a hedgehog in the flowers, and roe deer at dawn.
+ * Across the field, the farm: lights and chimney smoke, a scarecrow and its
+ * crows, the farmer about the patch; and the wind rolling through the grass.
  */
 export class MeadowLife implements SceneLife {
   readonly birds: BirdSystem;
@@ -55,6 +59,8 @@ export class MeadowLife implements SceneLife {
   readonly butterflies: Butterflies;
   readonly bees: Bees;
   readonly dragonflies: Dragonflies;
+  readonly farm: Farmstead;
+  readonly breeze: Breeze;
   private readonly deps: LandscapeDeps;
   private time = 0;
 
@@ -112,6 +118,8 @@ export class MeadowLife implements SceneLife {
     scene.frontLife.addChild(this.bees.graphics);
     this.dragonflies = new Dragonflies();
     scene.birdsMid.addChild(this.dragonflies.graphics);
+    this.farm = new Farmstead(scene.midground, layout.farm);
+    this.breeze = new Breeze(scene.groundFx, scene.frontLife);
   }
 
   get ambienceLevel(): number {
@@ -156,5 +164,7 @@ export class MeadowLife implements SceneLife {
     this.butterflies.update(dt, env);
     this.bees.update(dt, env);
     this.dragonflies.update(dt, env);
+    this.farm.update(dt, env);
+    this.breeze.update(dt, env);
   }
 }

@@ -40,6 +40,8 @@ export interface FarmLayout {
   windmill: { x: number; y: number; radius: number; haze: number; baseY: number };
   /** The farmhouse's windows (world px, top-left), lit in the evening. */
   windows: Array<{ x: number; y: number; w: number; h: number }>;
+  /** The row the farmhouse stands on (for drawing its lights just over it). */
+  houseBaseY: number;
   /** The top of the farmhouse chimney, for its smoke. */
   chimney: { x: number; y: number; scale: number };
   /** The scarecrow's spot in the vegetable patch. */
@@ -162,8 +164,9 @@ export function layFarm(ctx: FarmContext): FarmLayout {
   return {
     windmill,
     windows: house.windows,
+    houseBaseY: Math.round(house.at.y),
     chimney: house.chimney,
-    scarecrow: { x: Math.round(scareAt.x), baseY: Math.round(scareAt.y), height: Math.round(78 * scareAt.scale) },
+    scarecrow: { x: Math.round(scareAt.x), baseY: Math.round(scareAt.y), height: Math.round(64 * scareAt.scale) },
     patch: { x0: Math.round(patchNear.x), x1: Math.round(Math.min(meadowCreek.centreX(patchNear.y) - 16, project(PATCH.gx1, PATCH.d0).x)), y0: Math.round(patchFar.y), y1: Math.round(patchNear.y) },
     track,
     crops,
