@@ -77,7 +77,7 @@ export class CityLife implements SceneLife {
       sound: options.sound,
       pan,
     });
-    this.rooftops = new Rooftops({ summonPigeons: (x, y, n) => void this.birds.summonToPerchNear(x, y, 'pigeon', n) });
+    this.rooftops = new Rooftops({ summonPigeons: (x, y, n) => void this.birds.summonToPerchNear(x, y, 'pigeon', n), dronePad: scene.city.dronePad });
     scene.roofLife.addChild(this.rooftops.container);
     this.sky = new SkyTraffic();
     this.fireworks = new Fireworks(options.sound, pan);

@@ -12,7 +12,7 @@ import { bayer, valueNoise } from '../common/paint';
  * the round and spindly things are painted in after.
  */
 
-export type PropMaterial = 'shack' | 'tarp' | 'tank' | 'solar' | 'crate' | 'sofa' | 'planter' | 'plastic';
+export type PropMaterial = 'shack' | 'tarp' | 'tank' | 'solar' | 'crate' | 'sofa' | 'planter' | 'plastic' | 'condenser';
 
 export const PROP_BODIES: Record<PropMaterial, number[]> = {
   shack: [0x6e8282, 0x8a6446, 0x58769a, 0x8e8c7e],
@@ -23,6 +23,7 @@ export const PROP_BODIES: Record<PropMaterial, number[]> = {
   sofa: [0x8a3a3a, 0x3a5a7a, 0x6a6a3a],
   planter: [0x7a5a3a, 0x8a4a32],
   plastic: [0x2a8a6a, 0xe0dcd0, 0xd89a30],
+  condenser: [0xa8aaa4, 0x9a9e9c, 0xb4b2a8],
 };
 
 export interface PropBox {
@@ -73,6 +74,10 @@ export interface RoofScene {
   rugs: Array<{ gx0: number; gx1: number; d0: number; d1: number; h: number; colors: [number, number, number] }>;
   /** A drying rack of laundry between two poles. */
   laundry: Array<{ gx0: number; gx1: number; depth: number; h: number }>;
+  /** A drone landing pad painted on a roof (centre, radius in ground px). */
+  pad: { gx: number; depth: number; h: number; r: number };
+  /** Old tyres lying about (centre, radius). */
+  tyres: Array<{ gx: number; depth: number; h: number; r: number }>;
 }
 
 /**
@@ -115,10 +120,26 @@ export function terraceScene(): RoofScene {
     { box: boxFrom(-382, -362, 0.86, 0.9, T, T + 10), material: 'planter' },
     { box: boxFrom(-128, -110, 1.3, 1.34, T, T + 9), material: 'planter' },
     { box: boxFrom(-336, -318, 1.56, 1.6, T, T + 9), material: 'planter' },
-    // The roof across the street: a tool shed by the stair house, AC condensers, a tank.
-    { box: boxFrom(300, 334, 1.2, 1.4, R, R + 24), material: 'shack', roof: 0xd0702a },
-    { box: boxFrom(196, 218, 2.0, 2.12, R, R + 12), material: 'crate' },
-    { box: boxFrom(222, 244, 2.0, 2.12, R, R + 12), material: 'crate' },
+    // The roof across the street: a tool shed, a bank of AC condensers by the drone pad, and junk.
+    { box: boxFrom(262, 300, 1.0, 1.22, R, R + 24), material: 'shack', roof: 0xd0702a },
+    { box: boxFrom(186, 210, 1.62, 1.72, R, R + 14), material: 'condenser' },
+    { box: boxFrom(213, 237, 1.62, 1.72, R, R + 14), material: 'condenser' },
+    { box: boxFrom(266, 300, 2.3, 2.42, R, R + 18), material: 'condenser' },
+    // Pallets, drums and gas bottles, a folded tarp, a broken chair.
+    { box: boxFrom(86, 112, 2.55, 2.7, R, R + 4), material: 'crate' },
+    { box: boxFrom(88, 110, 2.57, 2.68, R + 4, R + 7), material: 'crate' },
+    { box: boxFrom(280, 292, 1.9, 1.96, R, R + 14), material: 'tank' },
+    { box: boxFrom(280, 292, 1.97, 2.03, R, R + 14), material: 'tank' },
+    { box: boxFrom(296, 301, 2.18, 2.21, R, R + 12), material: 'tank' },
+    { box: boxFrom(186, 214, 2.48, 2.56, R, R + 3), material: 'tarp' },
+    ...chair(214, 2.64, R).slice(0, 4),
+    // Junk at the front of the roof, out of the gardener's way.
+    { box: boxFrom(88, 110, 1.24, 1.32, R, R + 8), material: 'crate' },
+    { box: boxFrom(91, 107, 1.25, 1.31, R + 8, R + 14), material: 'crate' },
+    { box: boxFrom(112, 120, 1.27, 1.3, R, R + 9), material: 'tank' },
+    { box: boxFrom(284, 296, 1.3, 1.36, R, R + 14), material: 'tank' },
+    { box: boxFrom(276, 302, 1.42, 1.52, R, R + 3), material: 'crate' },
+    { box: boxFrom(280, 298, 1.44, 1.5, R + 3, R + 5), material: 'tarp' },
   ];
   return {
     boxes,
@@ -150,6 +171,12 @@ export function terraceScene(): RoofScene {
     ],
     rugs: [{ gx0: -212, gx1: -136, d0: 1.3, d1: 1.5, h: T, colors: [0x8a2a3a, 0xd8a040, 0x2a4a6a] }],
     laundry: [{ gx0: -340, gx1: -276, depth: 0.98, h: T + 26 }],
+    pad: { gx: 150, depth: 1.43, h: R, r: 28 },
+    tyres: [
+      { gx: 96, depth: 1.98, h: R, r: 7 },
+      { gx: 104, depth: 2.06, h: R, r: 7 },
+      { gx: 100, depth: 2.02, h: R + 4, r: 7 },
+    ],
   };
 }
 
@@ -260,6 +287,26 @@ export function shadeProp(
     }
     case 'plastic': {
       return { color: scaleColor(body, top ? 1.08 : u < 0.1 || u > 0.9 ? 0.7 : 0.9), window: false };
+    }
+    case 'condenser': {
+      if (top) {
+        // A fan in a round grille, its blades behind the bars.
+        const cx = hit.u;
+        const cw = hit.w;
+        const rr = Math.hypot(cx, cw * 0.9);
+        const fan = Math.min(along, height * 3) * 0.42;
+        if (rr < fan) {
+          const a = Math.atan2(cw, cx);
+          const blade = Math.sin(a * 3 + rr * 0.05) > 0.2;
+          const bar = Math.abs((rr % 4) - 2) < Math.max(0.6, screenPx * 0.5);
+          return { color: bar ? 0x6a6c6a : blade ? 0x3a3c40 : 0x1e2024, window: false };
+        }
+        return { color: scaleColor(body, 1.1), window: false };
+      }
+      // Louvred sides, streaked with rust.
+      let c = scaleColor(body, Math.floor(t / 2.5) % 2 === 0 ? 0.92 : 0.78);
+      if (valueNoise(s, t * 0.3, 6, seed) > 0.7) c = lerpColor(c, 0x7a4a2a, 0.4);
+      return { color: c, window: false };
     }
     case 'sofa': {
       const seam = Math.abs((s % 16) - 8) < Math.max(0.6, screenPx * 0.5);

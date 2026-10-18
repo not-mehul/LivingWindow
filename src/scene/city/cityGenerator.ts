@@ -148,6 +148,8 @@ export interface CityLayout {
   billboards: Billboard[];
   /** Bulbs strung over the rooftops and lanterns hung over the street (world px), lit in the evenings. */
   roofLights: Array<{ x: number; y: number; color: number; size?: number }>;
+  /** The drone landing pad on the roof across the street (ground point and roof height). */
+  dronePad: { gx: number; depth: number; h: number };
   /** Where smoke rises from the rooftops: a grill and a stovepipe (world px, and how big a puff is there). */
   smoke: Array<{ x: number; y: number; scale: number; kind: 'grill' | 'stove' }>;
 }
@@ -346,9 +348,9 @@ export function generateCity(seed = 20261015): CityLayout {
     [302, 2.13],
     [336, 2.13],
   ] as const) add(boxFrom(gx, gx + 3, d, d + 0.01, 110, 140), 'pipe');
-  add(boxFrom(120, 160, 2.35, 2.5, 110, 114), 'glass');
+  add(boxFrom(124, 196, 2.24, 2.32, 110, 110.6), 'roof', { body: 0x5a5c5e });
   ledges.push(edgeLedge(250, 292, 1.62, 140, 'near', 'roof'), edgeLedge(300, 340, 2.0, 170, 'near', 'tower'));
-  add(boxFrom(230, 280, 2.3, 2.55, 110, 124), 'metal');
+  add(boxFrom(222, 262, 2.3, 2.42, 110, 128), 'prop', { prop: { box: boxFrom(222, 262, 2.3, 2.42, 110, 128), material: 'condenser' }, body: 0xa8aaa4, pitch: 1e9, floor: 1e9 });
   add(boxFrom(96, 104, 1.2, 2.9, 110, 118), 'pipe');
   add(boxFrom(108, 116, 1.2, 2.9, 110, 116), 'pipe');
   add(boxFrom(96, 290, 2.85, 2.9, 110, 118), 'pipe');
@@ -875,6 +877,63 @@ export function generateCity(seed = 20261015): CityLayout {
       }
       for (const dx of [-4, 4]) for (let y = 0; y < 8 * ps; y++) dab(pot.x + dx * ps, pot.y - 8 * ps + y, 0.94, 0x3a3a3a);
     }
+    {
+      // The drone pad: a worn circle and an H, hazard chevrons in the corners, marker lamps.
+      const pad = terrace.pad;
+      const rd = pad.r / FOCAL;
+      for (let d = pad.depth - rd * 1.2; d <= pad.depth + rd * 1.2; d += 0.0015) {
+        for (let gx = pad.gx - pad.r * 1.2; gx <= pad.gx + pad.r * 1.2; gx += d * 0.6) {
+          const u = (gx - pad.gx) / pad.r;
+          const v = (d - pad.depth) / rd;
+          const r = Math.hypot(u, v);
+          const p = projectPoint(gx, d, pad.h);
+          const worn = pixelHash(Math.round(p.x), Math.round(p.y), 61) < 0.12;
+          let c: number | null = null;
+          if (Math.abs(u) > 1 || Math.abs(v) > 1) {
+            // The square's edge: yellow and black chevrons.
+            if (Math.max(Math.abs(u), Math.abs(v)) < 1.18) c = Math.floor((u + v) * 5) % 2 === 0 ? 0xd8b030 : 0x24221e;
+          } else if (r > 0.82 && r < 0.95) c = 0xd8b030;
+          else if (r <= 0.82) {
+            const h = (Math.abs(u) < 0.42 && Math.abs(u) > 0.26 && Math.abs(v) < 0.5) || (Math.abs(u) < 0.42 && Math.abs(v) < 0.08);
+            c = h ? 0xe8e4d8 : 0x4a4c50;
+          } else c = 0x3e4044;
+          if (c !== null) dab(p.x, p.y, d + 0.002, worn ? scaleColor(c, 0.8) : c);
+        }
+      }
+      for (const [su, sv] of [
+        [-1.18, -1.18],
+        [1.18, -1.18],
+        [-1.18, 1.18],
+        [1.18, 1.18],
+      ]) {
+        const p = projectPoint(pad.gx + su * pad.r, pad.depth + sv * rd, pad.h + 2);
+        dab(p.x, p.y, pad.depth + sv * rd - 0.004, 0xc83a2a);
+        dab(p.x, p.y + 1, pad.depth + sv * rd - 0.004, 0x3a3a3a);
+      }
+      // Old tyres, stacked.
+      for (const t of terrace.tyres) {
+        for (let a = 0; a < Math.PI * 2; a += 0.05) {
+          for (const rr of [0.7, 0.85, 1]) {
+            const p = projectPoint(t.gx + Math.cos(a) * t.r * rr, t.depth + (Math.sin(a) * t.r * rr) / FOCAL, t.h + 2.5);
+            dab(p.x, p.y, t.depth - 0.01, rr === 1 ? 0x1a1a1c : rr > 0.8 ? 0x2a2a2e : 0x3a3a40);
+          }
+        }
+      }
+      // Cable bundles snaking across the roof from the condensers to the stair house.
+      for (const [a0, d0, a1, d1] of [
+        [198, 1.72, 252, 1.76],
+        [225, 1.72, 252, 1.82],
+        [280, 2.3, 286, 2.03],
+      ]) {
+        for (let k = 0; k <= 160; k++) {
+          const t = k / 160;
+          const gx = a0 + (a1 - a0) * t + Math.sin(t * 9) * 4;
+          const d = d0 + (d1 - d0) * t;
+          const p = projectPoint(gx, d, 110.4);
+          dab(p.x, p.y, d - 0.001, k % 11 === 0 ? 0x3a3a40 : 0x1a1a1e);
+        }
+      }
+    }
     // The stairs' stringers and handrails, the doors they climb to, and a plant on a landing.
     const seg = (a: { gx: number; d: number; h: number }, b: { gx: number; d: number; h: number }, color: number) => {
       const pa = projectPoint(a.gx, a.d, a.h);
@@ -1355,6 +1414,7 @@ export function generateCity(seed = 20261015): CityLayout {
     billboards,
     roofLights,
     smoke,
+    dronePad: { gx: terrace.pad.gx, depth: terrace.pad.depth, h: terrace.pad.h },
   };
 }
 

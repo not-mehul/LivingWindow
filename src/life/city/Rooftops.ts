@@ -1,4 +1,5 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { lerpColor } from '../../core/color';
 import { gridToTexture } from '../../sprites/birdSprites';
 import { drawPerson, randomLook, type PersonFacing, type PersonLook, type PersonPose } from '../../sprites/people';
 import type { Environment } from '../../scene/Environment';
@@ -324,9 +325,164 @@ class PigeonFeeder {
   }
 }
 
+// --- The delivery drone on the pad across the street -----------------------
+
+type DroneState = 'away' | 'arriving' | 'landed' | 'leaving';
+
+/**
+ * A delivery quadcopter that drops in on the landing pad across the street
+ * now and then: descending on whirring rotors, kicking up dust as it
+ * settles, its props spinning down to a stop while it waits with its
+ * parcel, then spinning up again and lifting off into the city.
+ */
+export class PadDrone {
+  readonly container = new Container({ label: 'pad-drone' });
+  private readonly gfx = new Graphics();
+  private stateName: DroneState = 'away';
+  private timer = r(30, 120);
+  /** Height above the pad (ground px) and sideways drift. */
+  private alt = 0;
+  private drift = 0;
+  private spin = 0;
+  private rotor = 0;
+  private dust: Array<{ x: number; y: number; vx: number; vy: number; t: number }> = [];
+
+  constructor(private readonly pad: { gx: number; depth: number; h: number }) {
+    this.container.addChild(this.gfx);
+  }
+
+  get state(): DroneState {
+    return this.stateName;
+  }
+
+  /** Bring it in now. */
+  summon(): void {
+    if (this.stateName === 'away') this.timer = 0;
+  }
+
+  update(dt: number, env: Environment): void {
+    const raining = env.weather.kind === 'rain' && env.weather.precipitation > 0.3;
+    this.timer -= dt;
+    switch (this.stateName) {
+      case 'away':
+        if (this.timer <= 0) {
+          if (!raining || Math.random() < 0.3) {
+            this.stateName = 'arriving';
+            this.alt = 240;
+            this.drift = (Math.random() < 0.5 ? -1 : 1) * r(80, 160);
+            this.spin = 1;
+          }
+          this.timer = r(90, 260);
+        }
+        break;
+      case 'arriving': {
+        // Slowing as it nears the pad, the last few feet gentle.
+        const v = Math.max(8, this.alt * 0.6);
+        this.alt = Math.max(0, this.alt - v * dt);
+        this.drift *= Math.pow(0.4, dt);
+        if (this.alt < 14 && Math.random() < dt * 30) this.kick();
+        if (this.alt <= 0) {
+          this.stateName = 'landed';
+          this.drift = 0;
+          this.timer = r(20, 70);
+          for (let k = 0; k < 6; k++) this.kick();
+        }
+        break;
+      }
+      case 'landed':
+        this.spin = Math.max(0, this.spin - dt * 0.4);
+        if (this.timer <= 0) {
+          this.spin = Math.min(1, this.spin + dt * 0.8);
+          if (this.spin >= 1) {
+            this.stateName = 'leaving';
+            for (let k = 0; k < 6; k++) this.kick();
+          }
+        }
+        break;
+      case 'leaving':
+        this.alt += Math.max(10, this.alt * 0.9) * dt;
+        this.drift += dt * 30;
+        if (this.alt > 260) {
+          this.stateName = 'away';
+          this.timer = r(90, 260);
+        }
+        break;
+    }
+    this.rotor += dt * this.spin * 40;
+    this.draw(dt, env);
+  }
+
+  /** A puff of dust off the pad. */
+  private kick(): void {
+    const p = projectPoint(this.pad.gx, this.pad.depth, this.pad.h);
+    const a = Math.random() * Math.PI * 2;
+    this.dust.push({ x: p.x, y: p.y, vx: Math.cos(a) * r(6, 14), vy: Math.sin(a) * r(1, 3) - 1, t: 0 });
+  }
+
+  private draw(dt: number, env: Environment): void {
+    const g = this.gfx;
+    g.clear();
+    const tint = env.lighting.ambient;
+    for (let k = this.dust.length - 1; k >= 0; k--) {
+      const d = this.dust[k];
+      d.t += dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      if (d.t > 1.2) {
+        this.dust.splice(k, 1);
+        continue;
+      }
+      g.rect(Math.round(d.x), Math.round(d.y), 1, 1).fill({ color: 0xb8b0a0, alpha: 0.5 * (1 - d.t / 1.2) });
+    }
+    if (this.stateName === 'away') {
+      g.tint = 0xffffff;
+      return;
+    }
+    const scale = 1 / this.pad.depth;
+    const base = projectPoint(this.pad.gx + this.drift, this.pad.depth, this.pad.h);
+    const at = projectPoint(this.pad.gx + this.drift, this.pad.depth, this.pad.h + 3 + this.alt);
+    const x = Math.round(at.x);
+    const y = Math.round(at.y);
+    // Its shadow on the pad, sharper as it comes down.
+    if (this.alt < 60) {
+      const sw = Math.round(22 * scale * (1 + this.alt / 60));
+      g.rect(Math.round(base.x - sw / 2), Math.round(base.y), sw, 1).fill({ color: 0x000000, alpha: 0.35 * (1 - this.alt / 60) });
+    }
+    const w = Math.max(7, Math.round(24 * scale));
+    const dark = lerpColor(0x24262c, tint, 0.25);
+    const shell = lerpColor(0x4a505a, tint, 0.3);
+    const stripe = lerpColor(0x3ad8e8, tint, 0.35);
+    const parcel = lerpColor(0xf0a020, tint, 0.3);
+    // Body with a coloured stripe, arms out to the rotors, landing legs, and the parcel slung underneath.
+    g.rect(x - Math.round(w * 0.22), y - 3, Math.round(w * 0.44), 3).fill(shell);
+    g.rect(x - Math.round(w * 0.22), y - 2, Math.round(w * 0.44), 1).fill(stripe);
+    g.rect(x - Math.round(w / 2), y - 3, w, 1).fill(dark);
+    g.rect(x - 2, y, 5, 3).fill(parcel);
+    g.rect(x - 2, y, 5, 1).fill(lerpColor(parcel, 0xffffff, 0.3));
+    g.rect(x - Math.round(w * 0.3), y, 1, 3).fill(dark);
+    g.rect(x + Math.round(w * 0.3), y, 1, 3).fill(dark);
+    g.rect(x - Math.round(w / 2), y - 2, 1, 2).fill(dark);
+    g.rect(x + Math.round(w / 2) - 1, y - 2, 1, 2).fill(dark);
+    // Rotors: a blur when spinning, two still blades when stopped.
+    for (const side of [-1, 1]) {
+      const rx = x + side * Math.round(w / 2);
+      if (this.spin > 0.3) g.rect(rx - 4, y - 4, 9, 1).fill({ color: 0xd8dce0, alpha: 0.3 + 0.35 * this.spin });
+      else {
+        const flip = Math.floor(this.rotor) % 2 === 0;
+        g.rect(rx - (flip ? 3 : 1), y - 4, flip ? 7 : 3, 1).fill(dark);
+      }
+    }
+    // A status light: blinking green when it's waiting, red in flight.
+    const blink = Math.floor(env.time * 2) % 2 === 0;
+    if (blink) g.rect(x, y - 4, 1, 1).fill(this.stateName === 'landed' ? 0x3aff6a : 0xff3a3a);
+  }
+}
+
 export interface RooftopsOptions {
   /** Ask the birds to come down near a world point. */
   summonPigeons: (x: number, y: number, count: number) => void;
+  /** The drone pad across the street. */
+  dronePad: { gx: number; depth: number; h: number };
 }
 
 /**
@@ -339,16 +495,19 @@ export class Rooftops {
   readonly cleaners = new WindowCleaners();
   readonly garden = new RoofGarden();
   readonly feeder: PigeonFeeder;
+  readonly drone: PadDrone;
   private forced: { cleaners: boolean; gardener: boolean; feeder: boolean } = { cleaners: false, gardener: false, feeder: false };
 
   constructor(options: RooftopsOptions) {
     this.feeder = new PigeonFeeder(options.summonPigeons);
-    this.container.addChild(this.cleaners.container, this.garden.container, this.feeder.container);
+    this.drone = new PadDrone(options.dronePad);
+    this.container.addChild(this.cleaners.container, this.garden.container, this.feeder.container, this.drone.container);
   }
 
   /** Bring one of them out regardless of the hour (for demos and tests). */
-  summon(who: 'cleaners' | 'gardener' | 'feeder'): void {
-    this.forced[who] = true;
+  summon(who: 'cleaners' | 'gardener' | 'feeder' | 'drone'): void {
+    if (who === 'drone') this.drone.summon();
+    else this.forced[who] = true;
   }
 
   update(dt: number, env: Environment): void {
@@ -357,5 +516,6 @@ export class Rooftops {
     this.cleaners.update(dt, env, this.forced.cleaners || windowCleanersOut(h, raining));
     this.garden.update(dt, env, this.forced.gardener || gardenerOut(h, raining));
     this.feeder.update(dt, env, this.forced.feeder || pigeonFeederOut(h, raining));
+    this.drone.update(dt, env);
   }
 }
