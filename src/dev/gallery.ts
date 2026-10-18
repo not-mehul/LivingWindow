@@ -74,7 +74,7 @@ function sections(): Section[] {
   out.push({ title: 'People', rows: people });
 
   const stalls: Item[][] = [];
-  for (const kind of ['fruit', 'flowers', 'cart', 'noodles', 'lanterns', 'trinkets'] as StallKind[]) {
+  for (const kind of ['produce', 'tea', 'flowers', 'noodles', 'tech', 'skewers'] as StallKind[]) {
     const row: Item[] = [6, 10, 14, 18, 24, 30, 38].map((h) => ({ label: `${kind} ${h}`, draw: () => drawStallSized(kind, 3, h) }));
     for (let stage = 0; stage < 3; stage++) row.push({ label: `stage ${stage}`, draw: () => drawStallSized(kind, stage, 30) });
     const lights = drawStallLightsSized(kind, 38);

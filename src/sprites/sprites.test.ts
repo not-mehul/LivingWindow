@@ -131,7 +131,7 @@ describe('other sprites', () => {
   });
 
   it('draws every stall at each stage and size, and lights the night ones', () => {
-    const kinds: StallKind[] = ['fruit', 'flowers', 'cart', 'noodles', 'lanterns', 'trinkets'];
+    const kinds: StallKind[] = ['produce', 'tea', 'flowers', 'noodles', 'tech', 'skewers'];
     for (const kind of kinds) {
       for (const h of [5, 8, 12, 18, 26, 38]) {
         for (let stage = 0; stage < STALL_STAGES; stage++) {
@@ -140,7 +140,7 @@ describe('other sprites', () => {
           expect(grid.isEmpty(), `${kind} ${stage} ${h}`).toBe(false);
         }
         const lights = drawStallLightsSized(kind, h);
-        if (['noodles', 'lanterns', 'trinkets'].includes(kind)) expect(lights?.isEmpty()).toBe(false);
+        if (['noodles', 'tech', 'skewers'].includes(kind)) expect(lights?.isEmpty()).toBe(false);
         else expect(lights).toBeNull();
       }
     }

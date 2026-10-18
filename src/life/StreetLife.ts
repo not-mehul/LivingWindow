@@ -334,15 +334,13 @@ export class StreetLife {
       sprite.position.set(Math.round(at.x), Math.round(at.y));
       sprite.zIndex = at.y;
       sprite.visible = false;
-      // Facing into the street.
-      if (gx > 0) sprite.scale.x = -1;
+      // Facing into the street (drawn mirrored, so its sign still reads).
       this.container.addChild(sprite);
-      const lightsTexture = this.stallSprites.lights(kind, height);
+      const lightsTexture = this.stallSprites.lights(kind, height, gx > 0);
       let lights: Sprite | null = null;
       if (lightsTexture) {
         lights = new Sprite({ texture: lightsTexture, anchor: { x: 0.5, y: 1 } });
         lights.position.set(Math.round(at.x), Math.round(at.y));
-        if (gx > 0) lights.scale.x = -1;
         lights.blendMode = 'add';
         lights.visible = false;
         this.lightsContainer.addChild(lights);
@@ -360,7 +358,7 @@ export class StreetLife {
       const height = Math.max(4, Math.round(STALL_HEIGHT_AT_1 / stall.depth));
       if (visible) {
         const stage = progress >= 1 ? STALL_STAGES - 1 : Math.min(STALL_STAGES - 2, Math.floor(progress * (STALL_STAGES - 1)));
-        stall.sprite.texture = this.stallSprites.get(stall.kind, stage, height);
+        stall.sprite.texture = this.stallSprites.get(stall.kind, stage, height, stall.gx > 0);
         stall.sprite.tint = this.tintAt(stall.gx, stall.depth);
       }
       if (stall.lights) {
