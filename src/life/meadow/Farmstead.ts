@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { gridToTexture } from '../../sprites/cache';
+import { DrawnCache } from '../../sprites/cache';
 import { lerpColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
@@ -71,7 +71,7 @@ export class Farmstead {
   private readonly birdSprites = new BirdSpriteCache();
   private readonly farmer = new Sprite({ anchor: { x: 0.5, y: 1 } });
   private readonly farmerLook: PersonLook;
-  private readonly farmerCache = new Map<string, Texture>();
+  private readonly farmerCache = new DrawnCache();
   private farmerState: FarmerState = 'away';
   private farmerTimer = r(60, 240);
   private route: Array<{ gx: number; depth: number }> = [];
@@ -355,13 +355,7 @@ export class Farmstead {
     const pose = this.farmerState === 'work' ? (this.stooping > 0 ? 'crouch' : 'browse') : 'walk';
     const frame = this.farmerState === 'work' ? Math.floor(env.time * 0.8) % 2 : Math.floor(this.stride / 2) % 4;
     const key = `${this.facing}:${pose}:${frame}:${height}`;
-    let tex = this.farmerCache.get(key);
-    if (!tex) {
-      const { grid, palette } = drawPerson(this.farmerLook, this.facing, pose, frame, false, height);
-      tex = gridToTexture(grid, palette.colors);
-      this.farmerCache.set(key, tex);
-    }
-    this.farmer.texture = tex;
+    this.farmer.texture = this.farmerCache.get(key, () => drawPerson(this.farmerLook, this.facing, pose, frame, false, height));
     this.farmer.visible = true;
     this.farmer.scale.x = this.facing === 'side' ? this.dir : 1;
     this.farmer.position.set(Math.round(p.x), Math.round(p.y));

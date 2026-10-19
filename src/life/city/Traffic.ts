@@ -16,7 +16,7 @@ import type { Environment } from '../../scene/Environment';
 import { glowTexture } from '../../scene/common/glow';
 import { FOCAL } from '../../sim/groundPlane';
 import { deliveryRiders, foodCartOut, sweeperOut, taxiHours } from '../../sim/wildlife';
-import { FAR_END, NEAR_END, PERSON_HEIGHT_AT_1 } from '../StreetLife';
+import { FAR_END, NEAR_END, personHeightAt } from '../StreetLife';
 import { evenSize } from '../../sprites/kit';
 
 type VehicleKind = 'bike' | 'scooter' | 'sweeper' | 'taxi' | 'cart';
@@ -284,7 +284,7 @@ export class Traffic {
       const behind = v.facing === 'front' ? 0.035 : -0.035;
       const pd = v.depth + behind;
       const pp = project(v.gx + 2, pd);
-      const ph = Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / pd));
+      const ph = personHeightAt(pd);
       const frame = v.stopped ? 0 : Math.floor(v.stride / 5) % 4;
       const key = `v${v.id}/pusher:${v.facing}:${v.stopped ? 'stand' : 'walk'}:${frame}:${ph}`;
       let t = this.textures.get(key);

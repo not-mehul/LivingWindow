@@ -1,5 +1,5 @@
-import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { gridToTexture } from '../../sprites/cache';
+import { Container, Graphics, Sprite } from 'pixi.js';
+import { DrawnCache } from '../../sprites/cache';
 import { lerpColor } from '../../core/color';
 import { drawPerson, randomLook, type PersonFacing, type PersonLook, type PersonPose } from '../../sprites/people';
 import type { Environment } from '../../scene/Environment';
@@ -11,7 +11,7 @@ import { rand as r } from '../../core/random';
 /** A person somewhere on the roofs, drawn at their depth. */
 class Figure {
   readonly sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
-  private readonly textures = new Map<string, Texture>();
+  private readonly textures = new DrawnCache();
 
   /** `size` is their height at depth 1: the roofs across the way are built smaller than the street's people. */
   constructor(
@@ -22,13 +22,7 @@ class Figure {
   show(x: number, y: number, depth: number, facing: PersonFacing, pose: PersonPose, frame: number, dir: 1 | -1, tint: number): void {
     const h = Math.max(3, Math.round(this.size / depth));
     const key = `${facing}:${pose}:${frame % 4}:${h}`;
-    let t = this.textures.get(key);
-    if (!t) {
-      const { grid, palette } = drawPerson(this.look, facing, pose, frame, false, h);
-      t = gridToTexture(grid, palette.colors);
-      this.textures.set(key, t);
-    }
-    this.sprite.texture = t;
+    this.sprite.texture = this.textures.get(key, () => drawPerson(this.look, facing, pose, frame, false, h));
     this.sprite.position.set(Math.round(x), Math.round(y));
     this.sprite.scale.x = dir;
     this.sprite.tint = tint;

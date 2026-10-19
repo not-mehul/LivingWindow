@@ -75,6 +75,11 @@ interface Stall {
 
 /** A person's height (world px) right in front of the view, at depth 1. */
 export const PERSON_HEIGHT_AT_1 = 30;
+
+/** A person's height in px at a depth along the street. */
+export function personHeightAt(depth: number): number {
+  return Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / depth));
+}
 /** A stall's height at depth 1. */
 const STALL_HEIGHT_AT_1 = 36;
 /** The street's ends: people walk off into the distance, or out of view under the sill. */
@@ -419,17 +424,13 @@ export class StreetLife {
     return false;
   }
 
-  private heightAt(depth: number): number {
-    return Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / depth));
-  }
-
   private draw(p: Person): void {
     const m = p.moment;
     const pose: PersonPose = m ? m.pose : p.shelter?.under ? 'stand' : p.browse > 0 ? 'browse' : 'walk';
     const facing = m ? m.facing : p.facing;
     // Waving: the hand goes back and forth.
     const frame = m ? Math.floor(performance.now() / 220) % 2 : Math.floor(p.stride) % 4;
-    p.sprite.texture = this.personSprites.get(p.look, p.id, facing, pose, frame, p.umbrella && pose !== 'wave' && pose !== 'hail', this.heightAt(p.depth));
+    p.sprite.texture = this.personSprites.get(p.look, p.id, facing, pose, frame, p.umbrella && pose !== 'wave' && pose !== 'hail', personHeightAt(p.depth));
     p.sprite.scale.x = m ? (facing === 'side' ? m.dir : 1) : p.dir;
     const pt = this.options.project(p.gx, p.depth);
     p.sprite.position.set(Math.round(pt.x), Math.round(pt.y));
@@ -515,7 +516,7 @@ export class StreetLife {
           moment: null,
           shelter: null,
         };
-        vendor.sprite.texture = this.personSprites.get(vendor.look, vendor.id, 'side', 'stand', 0, false, this.heightAt(stall.depth));
+        vendor.sprite.texture = this.personSprites.get(vendor.look, vendor.id, 'side', 'stand', 0, false, personHeightAt(stall.depth));
         const at = this.options.project(gx, stall.depth);
         vendor.sprite.position.set(Math.round(at.x), Math.round(at.y) - 1);
         vendor.sprite.scale.x = vendor.dir;

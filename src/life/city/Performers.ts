@@ -1,5 +1,5 @@
-import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { gridToTexture } from '../../sprites/cache';
+import { Container, Graphics, Sprite } from 'pixi.js';
+import { DrawnCache } from '../../sprites/cache';
 import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonLook, type PersonPose } from '../../sprites/people';
 import type { StallKind } from '../../sprites/streetSprites';
 import type { Environment } from '../../scene/Environment';
@@ -7,7 +7,7 @@ import { glowTexture } from '../../scene/common/glow';
 import { FOCAL } from '../../sim/groundPlane';
 import { buskerOut } from '../../sim/wildlife';
 import type { LifeSoundSink } from '../types';
-import { PERSON_HEIGHT_AT_1 } from '../StreetLife';
+import { PERSON_HEIGHT_AT_1, personHeightAt } from '../StreetLife';
 import { rand as r } from '../../core/random';
 
 interface Bystander {
@@ -19,7 +19,7 @@ interface Bystander {
   stay: number;
   phase: number;
   sprite: Sprite;
-  textures: Map<string, Texture>;
+  textures: DrawnCache;
   /** Walking away once they're done (ground px/s along the street; 0 while they stand). */
   leaving: number;
   /** Looking up at the sky (fireworks) for this long. */
@@ -50,7 +50,7 @@ const PITCH = { gx: 60, depth: 2.02 };
  * noodle stall.
  */
 export class Performers {
-  private readonly busker: { look: PersonLook; sprite: Sprite; textures: Map<string, Texture> };
+  private readonly busker: { look: PersonLook; sprite: Sprite; textures: DrawnCache };
   private readonly crowd: Bystander[] = [];
   private readonly queue: Bystander[] = [];
   private readonly props = new Graphics();
@@ -65,7 +65,7 @@ export class Performers {
   private applause = 0;
 
   constructor(private readonly options: PerformersOptions) {
-    this.busker = { look: randomLook(), sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }), textures: new Map() };
+    this.busker = { look: randomLook(), sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }), textures: new DrawnCache() };
     this.busker.sprite.visible = false;
     options.container.addChild(this.busker.sprite, this.props);
     this.props.zIndex = options.project(PITCH.gx, PITCH.depth).y + 0.5;
@@ -128,16 +128,10 @@ export class Performers {
     this.props.clear();
     if (out) {
       const p = project(PITCH.gx, PITCH.depth);
-      const h = Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / PITCH.depth));
+      const h = personHeightAt(PITCH.depth);
       const frame = this.applause > 0 ? 0 : Math.floor(env.time * 4) % 2;
       const key = `${frame}:${h}`;
-      let t = b.textures.get(key);
-      if (!t) {
-        const { grid, palette } = drawBusker(b.look, frame, h);
-        t = gridToTexture(grid, palette.colors);
-        b.textures.set(key, t);
-      }
-      b.sprite.texture = t;
+      b.sprite.texture = b.textures.get(key, () => drawBusker(b.look, frame, h));
       b.sprite.position.set(Math.round(p.x), Math.round(p.y));
       b.sprite.zIndex = p.y;
       b.sprite.tint = tintAt(PITCH.gx, PITCH.depth);
@@ -245,7 +239,7 @@ export class Performers {
   private bystander(gx: number, depth: number, dir: 1 | -1, stay: number, look?: PersonLook): Bystander {
     const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
     this.options.container.addChild(sprite);
-    return { look: look ?? randomLook(), gx, depth, dir, stay, phase: Math.random() * 6, sprite, textures: new Map(), leaving: 0 };
+    return { look: look ?? randomLook(), gx, depth, dir, stay, phase: Math.random() * 6, sprite, textures: new DrawnCache(), leaving: 0 };
   }
 
   /** Stand, sway, and when their time's up (or the show's over) walk off up or down the street. */
@@ -269,7 +263,7 @@ export class Performers {
         frame = Math.floor(b.phase) % 4;
         if (b.depth < 0.9 || b.depth > 9.5) {
           b.sprite.destroy();
-          for (const t of b.textures.values()) t.destroy(true);
+          b.textures.forget('');
           list.splice(i, 1);
           continue;
         }
@@ -286,15 +280,9 @@ export class Performers {
         }
       }
       const p = project(b.gx, b.depth);
-      const h = Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / b.depth));
+      const h = personHeightAt(b.depth);
       const key = `${facing}:${pose}:${frame}:${h}`;
-      let t = b.textures.get(key);
-      if (!t) {
-        const { grid, palette } = drawPerson(b.look, facing, pose, frame, false, h);
-        t = gridToTexture(grid, palette.colors);
-        b.textures.set(key, t);
-      }
-      b.sprite.texture = t;
+      b.sprite.texture = b.textures.get(key, () => drawPerson(b.look, facing, pose, frame, false, h));
       // Swaying to the music while they stand.
       const sway = !b.leaving && pose === 'stand' && this.applause <= 0 ? Math.round(Math.sin(env.time * 2.2 + b.phase) * 0.6) : 0;
       b.sprite.position.set(Math.round(p.x) + sway, Math.round(p.y));
