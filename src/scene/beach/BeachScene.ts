@@ -3,6 +3,7 @@ import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { channels, lerpColor, multiplyColor, pack } from '../../core/color';
 import { Emitter } from '../../core/Emitter';
 import { lerp } from '../../core/math';
+import { PixelBuffer } from '../../core/pixelBuffer';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import { quality } from '../../core/quality';
 import { createRng } from '../../core/random';
@@ -94,6 +95,12 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   readonly splashLayer = new Graphics();
   /** The tide pools on the rock shelf: under the water, so waves and the tide wash over them. */
   readonly poolLayer = new Container({ label: 'tide-pools' });
+  /** Low over the open sand (blowing sand), over the surf (spray haze), and the far sand bending in the heat. */
+  readonly sandFx = new Container({ label: 'sand-fx' });
+  readonly airLayer = new Container({ label: 'air' });
+  readonly shimmerLayer = new Container({ label: 'shimmer' });
+  /** How big the sea is running (0 calm .. 1 storm). */
+  seaEnergy = 0;
   /** Turtles and shorebirds on the sand, sorted by depth (the rocks among them). */
   readonly shoreLayer = new Container({ label: 'shore-life', sortableChildren: true });
   readonly ledges: Ledge[];
@@ -120,7 +127,8 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   private readonly ramps = new Uint32Array(6 * SHADES);
   private readonly faces = new Uint32Array(6);
   private readonly palms: PalmSway[] = [];
-  private readonly palmLayer = new Container({ label: 'palms', sortableChildren: true });
+  /** The palms and the dune plants among them, sorted by depth (a fallen coconut goes here too). */
+  readonly palmLayer = new Container({ label: 'palms', sortableChildren: true });
   private readonly tufts: SwayMesh[] = [];
   private readonly tuftLayer = new Container({ label: 'tufts' });
   private readonly rocks: DayNightSprite[] = [];
@@ -229,10 +237,13 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
       this.land.container,
       this.sand.container,
       this.scrub.container,
+      this.shimmerLayer,
       this.poolLayer,
       this.water,
+      this.sandFx,
       this.fishLayer,
       this.seaLife,
+      this.airLayer,
       this.horizonLayer,
       this.birdsFar,
       this.shoreLayer,
@@ -252,6 +263,26 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   reachAt(depth: number): number {
     const y = beachPlane.project(0, depth).y;
     return this.waves.runUp(Math.round(y * 3)) * RUN_UP_SCALE + this.tideS;
+  }
+
+  /** The crowns of the near palms where they are this moment, with the ground beneath. */
+  palmCrowns(): Array<{ x: number; y: number; ground: number; scale: number }> {
+    const out: Array<{ x: number; y: number; ground: number; scale: number }> = [];
+    for (const [i, p] of this.palms.entries()) {
+      const parts = this.layout.palms[i].parts;
+      if (!parts || !p.crownOffset) continue;
+      const ground = this.layout.palms[i].baseY;
+      out.push({ x: parts.crown.x + p.crownOffset.x, y: parts.crown.y + p.crownOffset.y, ground, scale: beachPlane.scaleAtY(ground) });
+    }
+    return out;
+  }
+
+  /** The sand with the far scrub over it, as painted. */
+  get farGround(): PixelBuffer {
+    const p = new PixelBuffer(WORLD_WIDTH, WORLD_HEIGHT);
+    p.draw(this.layout.sand, 0, 0);
+    p.draw(this.layout.scrub, 0, 0);
+    return p;
   }
 
   /** How high the tide is (-1 low .. 1 high springs). */
@@ -326,6 +357,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     }
 
     const energy = Math.min(1, Math.abs(weather.wind) * 0.8 + weather.lightning * 0.6 + (weather.kind === 'rain' ? 0.15 : 0));
+    this.seaEnergy = energy;
     for (const event of this.waves.update(dt, energy)) {
       // The sea is to the right: breaks sound from the right-hand side.
       this.emit('break', { ...event, pan: 0.15 + Math.random() * 0.6 });

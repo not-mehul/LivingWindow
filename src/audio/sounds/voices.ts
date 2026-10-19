@@ -758,7 +758,29 @@ const bearHuff: SynthVoice = (ctx, out, when, gain, _rate, noise) => {
   return t - when;
 };
 
+/** A coconut hitting the sand: a dull, hollow thump, a softer one as it bounces, and a hiss of sand. */
+const coconutThud: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  let t = when;
+  for (const [peak, gap] of [
+    [0.6, 0.32],
+    [0.22, 0.2],
+  ]) {
+    const [osc, amp] = tone(ctx, 'sine', out);
+    osc.frequency.setValueAtTime(150 * rate, t);
+    osc.frequency.exponentialRampToValueAtTime(62 * rate, t + 0.12);
+    envelope(amp.gain, t, 0.004, peak * gain, 0.16);
+    osc.start(t);
+    osc.stop(t + 0.22);
+    // The husk's hollow knock.
+    noiseBurst(ctx, noise, out, t, 0.06, { type: 'bandpass', frequency: 420 * rate, Q: 4 }, peak * 0.5 * gain);
+    noiseBurst(ctx, noise, out, t + 0.01, 0.12, { type: 'highpass', frequency: 3000 }, peak * 0.08 * gain);
+    t += gap;
+  }
+  return t - when + 0.2;
+};
+
 export const SYNTH_VOICES = {
+  'coconut-thud': coconutThud,
   'wolf-howl': wolfHowl,
   'elk-bugle': elkBugle,
   'raven-croak': ravenCroak,

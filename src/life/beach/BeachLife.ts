@@ -6,6 +6,7 @@ import { BirdSystem, type BirdEcology } from '../BirdSystem';
 import { Bioluminescence, Crabs, Hatchlings, HermitCrabs, Jellyfish, Pelican } from './ShoreCreatures';
 import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
 import { TidePools } from './TidePools';
+import { BeachAir } from './BeachAir';
 
 export const BEACH_ECOLOGY: BirdEcology = {
   mix: () => ({ seagull: 1 }),
@@ -33,6 +34,7 @@ export class BeachLife implements SceneLife {
   readonly hatchlings: Hatchlings;
   readonly glow: Bioluminescence;
   readonly pools: TidePools;
+  readonly air: BeachAir;
   private readonly deps: LandscapeDeps;
 
   constructor(scene: BeachScene, deps: LandscapeDeps) {
@@ -58,6 +60,7 @@ export class BeachLife implements SceneLife {
     this.hatchlings = new Hatchlings(scene);
     this.glow = new Bioluminescence(scene);
     this.pools = new TidePools(scene, poolShapes());
+    this.air = new BeachAir(scene, deps.viewport, deps.sound);
     this.deps = deps;
   }
 
@@ -93,5 +96,6 @@ export class BeachLife implements SceneLife {
     this.hatchlings.update(dt, env);
     this.glow.update(env);
     this.pools.update(dt, env);
+    this.air.update(dt, env);
   }
 }
