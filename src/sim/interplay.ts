@@ -92,6 +92,20 @@ export function hourWindow(hours: number, from: number, to: number, ramp = 0.5):
   return Math.min(1, t / ramp, (span - t) / ramp);
 }
 
+// --- Birds' day ------------------------------------------------------------------
+
+/** Dusk: small birds about now settle down for the night where they're perched. */
+export function roostTime(hours: number): boolean {
+  const h = ((hours % 24) + 24) % 24;
+  return h >= 19.4 && h < 22;
+}
+
+/** First light: roosting birds wake. */
+export function wakeTime(hours: number): boolean {
+  const h = ((hours % 24) + 24) % 24;
+  return h >= 5.8 && h < 12;
+}
+
 // --- Weather lore ------------------------------------------------------------------
 
 /** How likely a cow is to lie down when it next decides what to do: the old saying that cows lie down before rain. */

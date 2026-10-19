@@ -195,12 +195,23 @@ export class SillDecor {
   private visibleWidth = 1;
   private bowlFraction = 0.74;
   private frameScale = 1;
+  private surfaceLeft = 0;
+  /** Rain blown in on the open window leaves a puddle on the sill, drying slowly (0..1). */
+  private puddle = 0;
+  private readonly puddleFx = 0.4;
+  private readonly puddleGfx = new Graphics();
+  private drawnPuddle = -1;
+  /** Droplets thrown up by a bird bathing in the puddle. */
+  private readonly drops: Array<{ x: number; y: number; vx: number; vy: number; age: number }> = [];
+  private readonly dropGfx = new Graphics();
 
   constructor(birdseed: BirdseedState) {
     sillContacts.on('contact', ({ x, strength }) => this.nudge(x, strength));
+    sillContacts.on('splash', ({ x }) => this.splash(x));
     this.plant.addChild(this.pot);
     this.front.addChild(this.plant);
-    this.back.addChild(this.seeds);
+    this.back.addChild(this.puddleGfx, this.seeds);
+    this.front.addChild(this.dropGfx);
     for (let i = 0; i < BASE_SPECKS; i++) this.addSpeck(i < 6 ? 0.07 : 0.4);
     birdseed.on('filled', () => {
       for (let i = 0; i < 4; i++) this.addSpeck(0.05);
@@ -257,6 +268,67 @@ export class SillDecor {
     this.seeds.scale.set(fs);
     this.seeds.position.set(snap(this.visibleLeft), snap(surface.y));
     this.redrawSeeds();
+    this.surfaceLeft = surface.left;
+    for (const g of [this.puddleGfx, this.dropGfx]) {
+      g.scale.set(fs);
+      g.position.set(snap(this.visibleLeft), snap(surface.y));
+    }
+    this.drawnPuddle = -1;
+  }
+
+  /** The puddle's place along the sill (sill art px from the surface's left), while there's one big enough to bathe in. */
+  get puddleX(): number | null {
+    if (this.puddle < 0.25) return null;
+    return (this.visibleLeft + this.puddleFx * this.visibleWidth - this.surfaceLeft) / this.frameScale;
+  }
+
+  /** Rain coming in through the open window wets the sill; after it, the puddle dries away over a few minutes. */
+  weather(dt: number, rainingIn: boolean): void {
+    this.puddle = rainingIn ? Math.min(1, this.puddle + dt / 40) : Math.max(0, this.puddle - dt / 420);
+    const level = Math.round(this.puddle * 12);
+    if (level !== this.drawnPuddle) {
+      this.drawnPuddle = level;
+      this.drawPuddle();
+    }
+    this.updateDrops(dt);
+  }
+
+  private drawPuddle(): void {
+    const g = this.puddleGfx;
+    g.clear();
+    if (this.puddle < 0.05) return;
+    const cx = Math.round(this.puddleFx * (this.visibleWidth / this.frameScale));
+    const half = Math.max(3, Math.round(13 * this.puddle));
+    // A thin, flat sheet of water round where the birds stand: darker where it soaks the wood, the sky's light caught in it.
+    for (let x = -half; x <= half; x++) {
+      const edge = Math.abs(x) / half;
+      const rows = edge > 0.85 ? 1 : edge > 0.5 ? 2 : 3;
+      for (let y = 0; y < rows; y++) g.rect(cx + x, 1 + y - Math.floor(rows / 2), 1, 1).fill({ color: 0x3a2e26, alpha: 0.5 });
+      if (edge < 0.7 && (x + 7) % 4 !== 0) g.rect(cx + x, 1, 1, 1).fill({ color: 0xd8e8f4, alpha: 0.7 * Math.min(1, this.puddle * 1.5) });
+    }
+  }
+
+  private splash(screenX: number): void {
+    if (this.puddle < 0.1) return;
+    const x = (screenX - this.visibleLeft) / this.frameScale;
+    for (let k = 0; k < 4; k++) this.drops.push({ x: x + (this.rng() - 0.5) * 6, y: -1, vx: (this.rng() - 0.5) * 30, vy: -20 - this.rng() * 18, age: 0 });
+  }
+
+  private updateDrops(dt: number): void {
+    const g = this.dropGfx;
+    g.clear();
+    for (let i = this.drops.length - 1; i >= 0; i--) {
+      const d = this.drops[i];
+      d.age += dt;
+      d.vy += 90 * dt;
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      if (d.y > 0 || d.age > 1) {
+        this.drops.splice(i, 1);
+        continue;
+      }
+      g.rect(Math.round(d.x), Math.round(d.y), 1, 1).fill({ color: 0xdce8f4, alpha: 0.85 });
+    }
   }
 
   /** Redraw the plant when the view calls for a different size. */

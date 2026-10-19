@@ -15,6 +15,8 @@ export interface SillState {
   /** The cat's position in sill art pixels, when it is visiting. */
   catX: number | null;
   catStalking: boolean;
+  /** A rain puddle on the sill (sill art px), while there is one. */
+  puddleX?: number | null;
 }
 
 /** Sill width in art pixels. */

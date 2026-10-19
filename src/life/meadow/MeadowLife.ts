@@ -164,6 +164,8 @@ export class MeadowLife implements SceneLife {
       this.chickens.takeCover();
     }
     if (distance < 0.85) this.cows.lookUp();
+    // And the dog at the window ducks down out of sight.
+    if (distance < 0.5) this.dog.spook();
   }
 
   stage(name: string): boolean {
@@ -258,6 +260,8 @@ export class MeadowLife implements SceneLife {
     this.interplay(dt, env, sill);
     const state = { ...sill, catX: null, catStalking: false };
     this.dog.update(dt, env, state, this.birds.sillBirds());
+    const flyby = this.birds.nearFlights(state)[0];
+    if (flyby !== undefined) this.dog.glance(flyby);
     this.birds.update(dt, env, state);
     this.cows.update(dt, env);
     this.chickens.update(dt, env);

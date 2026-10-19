@@ -143,6 +143,10 @@ export class BeachLife implements SceneLife {
     this.birds.startleNear(sillX, radius);
   }
 
+  thunder(distance: number): void {
+    if (distance < 0.5) this.dog.spook();
+  }
+
   stage(name: string): boolean {
     switch (name) {
       case 'pelican':
@@ -215,6 +219,8 @@ export class BeachLife implements SceneLife {
     this.pelicanLine.update(dt, env);
     const state = { ...sill, catX: null, catStalking: false };
     this.dog.update(dt, env, state, this.birds.sillBirds());
+    const flyby = this.birds.nearFlights(state)[0];
+    if (flyby !== undefined) this.dog.glance(flyby);
     this.birds.update(dt, env, state);
     this.sandpipers.update(dt, env);
     this.sea.update(dt, env);

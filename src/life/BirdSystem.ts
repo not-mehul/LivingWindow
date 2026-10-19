@@ -31,16 +31,23 @@ function nearSize(z: number, relative: number): number {
 
 /** How long each frame of a little standing-about action shows (s). */
 const MICRO_FRAME = 0.16;
-const MICRO: Record<'blink' | 'tilt' | 'tail' | 'preen' | 'scratch' | 'fluff', readonly BirdPose[]> = {
+const MICRO: Record<'blink' | 'tilt' | 'tail' | 'preen' | 'scratch' | 'fluff' | 'shake', readonly BirdPose[]> = {
   blink: ['blink'],
   tilt: ['tilt', 'tilt', 'tilt', 'tilt', 'idle', 'look-up'],
   tail: ['tail-flick', 'idle', 'tail-flick'],
   preen: ['preen-1', 'preen-2', 'preen-1', 'preen-2', 'preen-1', 'preen-2', 'preen-1', 'idle', 'blink'],
   scratch: ['scratch-1', 'scratch-2', 'scratch-1', 'scratch-2', 'scratch-1', 'scratch-2', 'idle'],
   fluff: ['fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'idle-breathe'],
+  /** Shaking the wet off after rain. */
+  shake: ['fluff', 'idle', 'fluff', 'idle', 'fluff', 'preen-1', 'idle'],
 };
+/** A bath in the puddle: ducking in, flicking water over its back, a fluffed-up shake. */
+const BATHE: readonly BirdPose[] = ['peck-down', 'fluff', 'peck-down', 'fluff', 'peck-down', 'fluff', 'fluff', 'scratch-1', 'fluff', 'idle'];
+/** Birds that settle for the night where they are, rather than flying off at dusk. */
+const ROOSTERS: readonly SpeciesId[] = ['pigeon', 'sparrow', 'finch', 'chickadee', 'robin', 'bluebird'];
 import { sillWidth, type Ledge, type LifeSoundSink, type SillState } from './types';
 import { sillContacts } from '../window/sillContacts';
+import { roostTime, wakeTime } from '../sim/interplay';
 
 /** Below this depth birds are drawn in screen space, at the window's pixel scale. */
 const NEAR_Z = 0.33;
@@ -156,6 +163,10 @@ interface Bird {
   startleIn: number | null;
   sprite: Sprite;
   shadow: Graphics;
+  /** Settled for the night: head tucked in, until the morning. */
+  roosting: boolean;
+  /** Bathing in the sill puddle (the steps of the bath already splashed). */
+  bathing?: boolean;
 }
 
 interface Flock {
@@ -212,6 +223,8 @@ export class BirdSystem {
   private sill: SillState | null = null;
   private env: Environment | null = null;
   private wasRaining = false;
+  /** Seconds since the rain stopped (birds shake themselves off and preen), or Infinity. */
+  private sinceRain = Infinity;
 
   constructor(private readonly options: BirdSystemOptions) {
     this.rng = options.rng ?? Math.random;
@@ -241,6 +254,8 @@ export class BirdSystem {
     // Rain sends birds for shelter as it starts.
     const raining = env.weather.kind === 'rain' && env.weather.precipitation > 0.15;
     if (raining && !this.wasRaining) this.startleAll(0.7);
+    if (raining) this.sinceRain = 0;
+    else this.sinceRain += dt;
     this.wasRaining = raining;
 
     this.spawnTimer -= dt;
@@ -274,6 +289,17 @@ export class BirdSystem {
       if (sillOnly && !bird.onSill) continue;
       if (this.rng() < probability) this.startle(bird);
     }
+  }
+
+  /** Birds flying close past the window right now: where they are along the sill (art px). */
+  nearFlights(sill: SillState): number[] {
+    const fs = sill.surface.frameScale;
+    return this.birds.filter((b) => b.flight && !b.onSill && b.z < NEAR_Z && b.sprite.parent === this.options.nearLayer).map((b) => (b.sprite.x - sill.surface.left) / fs);
+  }
+
+  /** How many birds are roosting for the night. */
+  get roosting(): number {
+    return this.birds.filter((b) => b.roosting).length;
   }
 
   /** Scare the birds on the sill within `radius` art px of `sillX`. */
@@ -398,6 +424,11 @@ export class BirdSystem {
       .map((b) => (b.onSill ? b.sillX : b.flight?.arrive.kind === 'sill' ? b.flight.arrive.sillX : null))
       .filter((x): x is number => x !== null);
     const free = (x: number) => taken.every((t) => Math.abs(t - x) >= SILL_SPACING) && x > 12 && x < width - 12;
+    // A puddle after rain: some come down to bathe in it.
+    const puddle = sill.puddleX;
+    if (puddle !== null && puddle !== undefined && this.rng() < 0.5) {
+      for (const side of [6, -6]) if (free(puddle + side)) return Math.round(puddle + side);
+    }
     // With seed out, land beside the bowl.
     if (this.options.birdseed.isStocked) {
       const reach = sill.bowlHalfWidth + 14;
@@ -451,6 +482,7 @@ export class BirdSystem {
       poseTimer: 0,
       micro: null,
       microIn: 1 + this.rng() * 3,
+      roosting: false,
       startleIn: null,
       sprite,
       shadow,
@@ -494,6 +526,26 @@ export class BirdSystem {
     if (bird.state === 'take-off') {
       if (bird.timer >= bird.duration) this.depart(bird, sill);
       return false;
+    }
+    // Dusk: some small birds settle down where they are for the night, and stay till morning.
+    const hours = this.env?.lighting.hours ?? 12;
+    if (bird.roosting) {
+      if (wakeTime(hours)) {
+        // Morning: awake, a stretch and a preen, and then about its day.
+        bird.roosting = false;
+        bird.stay = 0;
+        bird.micro = { frames: MICRO.preen, step: 0, t: 0 };
+        this.enter(bird, 'perch-idle');
+      } else {
+        bird.timer = 0;
+        return false;
+      }
+    } else if (!bird.onSill && bird.state === 'perch-idle' && ROOSTERS.includes(bird.species) && roostTime(hours) && bird.timer >= bird.duration) {
+      if (this.rng() < 0.6) {
+        bird.roosting = true;
+        bird.micro = null;
+        return false;
+      }
     }
     if (bird.timer >= bird.duration) {
       const atBowl = bird.onSill && this.atBowl(bird, sill);
@@ -558,12 +610,23 @@ export class BirdSystem {
   private animatePerched(bird: Bird, dt: number, sill: SillState): void {
     bird.poseTimer += dt;
     switch (bird.state) {
-      case 'perch-idle':
+      case 'perch-idle': {
+        const weather = this.env?.weather;
         bird.pose = Math.floor(bird.poseTimer / 0.7) % 2 === 0 ? 'idle' : 'idle-breathe';
+        // Roosting: head tucked in, now and then lifted to look about.
+        if (bird.roosting) {
+          bird.pose = bird.poseTimer % 11 < 0.8 ? 'idle' : 'sleep';
+          break;
+        }
+        // In the snow, puffed up round against the cold.
+        if (weather?.kind === 'snow' && weather.precipitation > 0.1 && !bird.micro) bird.pose = Math.floor(bird.poseTimer / 1.6) % 3 === 2 ? 'idle-breathe' : 'fluff';
+        // On the sill in a stiff breeze, it turns to face into the wind.
+        if (bird.onSill && weather && Math.abs(weather.wind) > 0.45) bird.facing = weather.wind > 0 ? -1 : 1;
         // An owl blinks slowly now and then.
         if (bird.species === 'owl' && bird.poseTimer % 4.3 < 0.22) bird.pose = 'sleep';
         else this.microAction(bird, dt);
         break;
+      }
       case 'look-around': {
         const phase = Math.floor(bird.poseTimer / 0.45) % 3;
         bird.pose = phase === 0 ? 'look-up' : phase === 1 ? 'idle' : 'look-back';
@@ -611,16 +674,31 @@ export class BirdSystem {
       if (m.t >= each) {
         m.t -= each;
         m.step++;
+        // Each duck into the puddle sends up a little splash.
+        if (bird.bathing && m.frames[m.step] === 'peck-down' && this.sill) sillContacts.splash(this.sill.surface.left + bird.sillX * this.sill.surface.frameScale);
       }
-      if (m.step >= m.frames.length) bird.micro = null;
-      else bird.pose = m.frames[m.step];
+      if (m.step >= m.frames.length) {
+        bird.micro = null;
+        bird.bathing = false;
+      } else bird.pose = m.frames[m.step];
       return;
     }
     bird.microIn -= dt;
     if (bird.microIn > 0) return;
     bird.microIn = 1.2 + this.rng() * 4;
+    // At the puddle: a bath.
+    const puddle = this.sill?.puddleX;
+    if (bird.onSill && puddle !== null && puddle !== undefined && Math.abs(bird.sillX - puddle) < 14 && this.rng() < 0.7) {
+      bird.micro = { frames: BATHE, step: 0, t: 0 };
+      bird.bathing = true;
+      bird.pose = BATHE[0];
+      sillContacts.splash(this.sill!.surface.left + bird.sillX * this.sill!.surface.frameScale);
+      return;
+    }
     const roll = this.rng();
-    const frames = roll < 0.34 ? MICRO.blink : roll < 0.5 ? MICRO.tilt : roll < 0.62 ? MICRO.tail : roll < 0.74 ? MICRO.preen : roll < 0.86 ? MICRO.scratch : MICRO.fluff;
+    // Just after rain they shake the wet off and preen a lot.
+    const damp = this.sinceRain < 600;
+    const frames = damp && roll < 0.45 ? (roll < 0.2 ? MICRO.shake : MICRO.preen) : roll < 0.34 ? MICRO.blink : roll < 0.5 ? MICRO.tilt : roll < 0.62 ? MICRO.tail : roll < 0.74 ? MICRO.preen : roll < 0.86 ? MICRO.scratch : MICRO.fluff;
     bird.micro = { frames, step: 0, t: 0 };
     bird.pose = frames[0];
   }

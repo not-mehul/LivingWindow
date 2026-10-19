@@ -73,6 +73,8 @@ export class WindowDog {
   private interest: number | null = null;
   /** About to howl along with something (s), or negative. */
   private pendingHowl = -1;
+  /** Not to snap round at every bird: the next glance no sooner than this. */
+  private glanceAt = 0;
 
   constructor(
     private readonly emitSound: LifeSoundSink,
@@ -104,6 +106,24 @@ export class WindowDog {
   /** Bring the dog to the window now. */
   summon(): void {
     this.nextVisit = 0;
+  }
+
+  /** Thunder right overhead: down from the window it goes, and it won't come back for a good while. */
+  spook(): void {
+    if (this.phase === 'up' || this.phase === 'rise') this.leave();
+    this.pendingHowl = -1;
+    this.nextVisit = Math.max(this.nextVisit, 300 + this.rng() * 300);
+  }
+
+  /** A bird flashing past close to the window (sill art px): its head snaps round to follow it. */
+  glance(sillX: number): void {
+    if (this.phase !== 'up' || this.flourish?.pose === 'howl' || this.time < this.glanceAt) return;
+    this.glanceAt = this.time + 4;
+    this.gaze = 'side';
+    this.gazeTime = 0;
+    this.gazeFor = 1.2 + this.rng();
+    this.facing = sillX >= this.x ? 1 : -1;
+    this.flourish = null;
   }
 
   /** Wolves howling far off: it comes to the window (if it can) and, head back, howls along. */
@@ -159,7 +179,7 @@ export class WindowDog {
         if (this.timer >= DROP_TIME) {
           this.phase = 'gone';
           this.container.visible = false;
-          this.nextVisit = lerp(DOG_VISIT_INTERVAL[0], DOG_VISIT_INTERVAL[1], this.rng());
+          this.nextVisit = Math.max(this.nextVisit, lerp(DOG_VISIT_INTERVAL[0], DOG_VISIT_INTERVAL[1], this.rng()));
           return;
         }
         break;

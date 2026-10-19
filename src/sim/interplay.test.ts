@@ -70,3 +70,14 @@ describe('weather lore', () => {
     expect(goldenHour(13)).toBe(0);
   });
 });
+
+describe("birds' day", () => {
+  it('roosts at dusk and wakes at first light', async () => {
+    const { roostTime, wakeTime } = await import('./interplay');
+    expect(roostTime(20)).toBe(true);
+    expect(roostTime(15)).toBe(false);
+    expect(roostTime(3)).toBe(false);
+    expect(wakeTime(6.5)).toBe(true);
+    expect(wakeTime(23)).toBe(false);
+  });
+});

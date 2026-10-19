@@ -50,6 +50,7 @@ export class RooftopCat {
   private micro: { kind: 'blink' | 'look' | 'ear' | 'swish'; t: number; length: number } | null = null;
   private microIn = 2;
   private brush = 0;
+  private chatterCooldown = 0;
 
   constructor(
     private readonly emitSound: LifeSoundSink,
@@ -88,6 +89,22 @@ export class RooftopCat {
     this.nextVisit = 0;
   }
 
+  /** A crack of thunder: it flattens, then bolts off the sill. */
+  startle(): void {
+    if (!this.present || this.state === 'exit' || !this.sill) return;
+    this.leave(sillWidth(this.sill), 3.2);
+  }
+
+  /** A bird flashing past close to the window (sill art px): if it's sitting, it turns and chatters at it. */
+  watchBird(sillX: number): void {
+    if (!this.present || this.chatterCooldown > 0) return;
+    if (this.state !== 'sit' && this.state !== 'loaf' && this.state !== 'groom') return;
+    this.chatterCooldown = 20;
+    this.facing = sillX >= this.x ? 1 : -1;
+    this.begin('chatter');
+    this.duration = 1.5 + this.rng() * 1.5;
+  }
+
   update(dt: number, env: Environment, sill: SillState, birdsOnSill: number[]): void {
     this.sill = sill;
     const wet = env.weather.kind === 'rain' && env.weather.precipitation > 0.1;
@@ -99,6 +116,7 @@ export class RooftopCat {
 
     this.elapsed += dt;
     this.timer += dt;
+    if (this.chatterCooldown > 0) this.chatterCooldown -= dt;
     const width = sillWidth(sill);
 
     // A closing window (or rain) sends it off at a trot.

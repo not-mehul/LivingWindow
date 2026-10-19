@@ -61,6 +61,11 @@ export class SillSquirrel {
     this.nextVisit = 0;
   }
 
+  /** A crack of thunder: off the sill in a flash. */
+  bolt(): void {
+    if (this.present) this.leave();
+  }
+
   update(dt: number, env: Environment, sill: SillState): void {
     this.sill = sill;
     const wet = env.weather.kind === 'rain' && env.weather.precipitation > 0.1;

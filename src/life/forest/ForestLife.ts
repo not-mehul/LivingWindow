@@ -223,6 +223,14 @@ export class ForestLife implements SceneLife {
     return false;
   }
 
+  thunder(distance: number): void {
+    // A crack overhead: the dog drops from the window, the squirrel's off the sill.
+    if (distance < 0.5) {
+      this.dog.spook();
+      this.sillSquirrel.bolt();
+    }
+  }
+
   /** Small birds find the owl at its hole, and scold it till it shrinks back inside. */
   private mobOwl(): boolean {
     const { x, y } = this.owlHollow.mouth;
@@ -325,6 +333,8 @@ export class ForestLife implements SceneLife {
     const state = { ...sill, catX: squirrelX, catStalking: false };
     this.sillSquirrel.update(dt, env, state);
     this.dog.update(dt, env, state, this.birds.sillBirds());
+    const flyby = this.birds.nearFlights(state)[0];
+    if (flyby !== undefined) this.dog.glance(flyby);
     this.birds.update(dt, env, { ...state, catX: this.sillSquirrel.position });
     this.deer.update(dt, env);
     this.squirrels.update(dt, env);

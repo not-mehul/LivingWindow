@@ -377,6 +377,7 @@ async function boot(): Promise<void> {
       bowlX: bowlSillX(),
       bowlHalfWidth: bowl.halfWidth,
       windowOpen: windowState.isOpen && !windowState.isAnimating && bowl.present,
+      puddleX: decor.puddleX,
     });
     lightning.update(dt);
     glass.update(dt, env, windowState.openness);
@@ -413,6 +414,8 @@ async function boot(): Promise<void> {
     sashes.update();
     bowl.update(dt);
     decor.update(env.time, env.weather.wind, windowState.openness);
+    // Rain blowing in at the open window wets the sill.
+    decor.weather(dt, env.weather.kind === 'rain' && env.weather.precipitation > 0.15 && windowState.openness > 0.5);
     tablet.update(dt, { hours: clock.hours, weather: weather.type, nightness: env.lighting.nightness }, interiorTint(env.lighting));
   };
 

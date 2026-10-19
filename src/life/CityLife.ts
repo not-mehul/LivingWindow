@@ -104,6 +104,11 @@ export class CityLife implements SceneLife {
     };
   }
 
+  thunder(distance: number): void {
+    // Indoors too: a crack overhead and the cat's off the sill.
+    if (distance < 0.5) this.cat.startle();
+  }
+
   stage(name: string): boolean {
     switch (name) {
       case 'fireworks':
@@ -217,6 +222,9 @@ export class CityLife implements SceneLife {
     const state: SillState = { ...sill, catX: this.cat.position, catStalking: this.cat.isStalking };
     this.cat.update(dt, env, state, this.birds.sillBirds());
     this.birds.update(dt, env, { ...state, catX: this.cat.position, catStalking: this.cat.isStalking });
+    // A bird flashing past the window: the cat on the sill turns and chatters at it.
+    const flyby = this.birds.nearFlights(state)[0];
+    if (flyby !== undefined) this.cat.watchBird(flyby);
     this.street.update(dt, env);
     this.traffic.update(dt, env);
     this.performers.update(dt, env);
