@@ -4,8 +4,8 @@ import { createRng } from '../core/random';
 import type { ViewportLayout } from '../core/viewportLayout';
 import { SwayMesh } from '../scene/common/SwayMesh';
 import type { BirdseedState } from '../state/BirdseedState';
-import { pixelHash } from '../sprites/raster';
-import { LINEN, PLANT, SEED } from './palette';
+import { Curtain } from './Curtain';
+import { PLANT, SEED } from './palette';
 import { curtainWidth, plantSize, type PlantSize } from './sillProps';
 import type { SillSurface } from './WindowFrame';
 import { PixelBuffer } from './woodArt';
@@ -141,41 +141,6 @@ function drawLeaves(size: PlantSize): Texture {
   return p.toTexture();
 }
 
-/** Linen drawn back to the right: gathered at the top, billowing in deep folds, hemmed. */
-function drawCurtain(W: number, height: number): Texture {
-  const H = Math.max(8, height);
-  const p = new PixelBuffer(W, H);
-  const tones = [LINEN.outline, LINEN.shadow, LINEN.dark, LINEN.base, LINEN.light, LINEN.highlight];
-  for (let y = 0; y < H; y++) {
-    const t = y / H;
-    // Narrow where it's gathered, swelling lower down, tucked in at the foot,
-    // with the leading edge rippling gently.
-    const smooth = Math.min(1, Math.max(0, (t - 0.04) / 0.7));
-    const ease = smooth * smooth * (3 - 2 * smooth);
-    const tuck = Math.max(0, (t - 0.88) / 0.12);
-    const width = Math.round(10 + (W - 12) * ease - 5 * tuck * tuck + Math.sin(t * 17) * 1.2 * ease);
-    const left = W - width;
-    for (let x = left; x < W; x++) {
-      const u = (x - left) / width;
-      // Folds fan out from the gather, so their phase follows the width.
-      const fold = Math.sin(u * Math.PI * (3 + ease * 2.5) + 0.6);
-      // The leading edge turns away from the light.
-      const turn = Math.max(0, 1 - (x - left) / 3);
-      const shade = 3.1 + fold * 1.5 - turn * 1.6 - (u > 0.85 ? 0.6 : 0);
-      p.set(x, y, tones[Math.max(1, Math.min(5, Math.round(shade)))]);
-    }
-    p.set(left, y, LINEN.outline);
-    // A lit ridge just inside the leading edge.
-    if (pixelHash(left + 3, y, 3) < 0.7) p.set(left + 3, y, LINEN.highlight);
-  }
-  // Hem with a line of stitching.
-  for (let y = H - 4; y < H; y++) {
-    for (let x = 0; x < W; x++) if (p.isSet(x, y)) p.set(x, y, y === H - 1 ? LINEN.outline : LINEN.dark);
-  }
-  for (let x = 0; x < W; x += 2) if (p.isSet(x, H - 3)) p.set(x, H - 3, LINEN.light);
-  return p.toTexture();
-}
-
 interface Speck {
   /** Position along the sill's visible width (0..1). */
   fx: number;
@@ -205,7 +170,7 @@ export class SillDecor {
   private leaves: SwayMesh | null = null;
   private plantSize: PlantSize | null = null;
   private readonly plant = new Container({ label: 'plant' });
-  private curtain: SwayMesh | null = null;
+  private curtain: Curtain | null = null;
   private curtainSize = '';
   private readonly seeds = new Graphics();
   private readonly specks: Speck[] = [];
@@ -263,10 +228,9 @@ export class SillDecor {
     if (`${width}x${height}` !== this.curtainSize) {
       if (this.curtain) {
         this.front.removeChild(this.curtain.mesh);
-        this.curtain.mesh.texture.destroy(true);
-        this.curtain.mesh.destroy();
+        this.curtain.destroy();
       }
-      this.curtain = new SwayMesh(drawCurtain(width, height), { anchor: 'top', amplitude: 2.5, frequency: 0.7, rows: 24 });
+      this.curtain = new Curtain(width, height);
       this.curtainSize = `${width}x${height}`;
       this.front.addChild(this.curtain.mesh);
     }
@@ -301,7 +265,7 @@ export class SillDecor {
   update(time: number, wind: number, openness: number): void {
     const calm = openness * openness;
     this.leaves?.update(time, wind * 0.6, calm);
-    this.curtain?.update(time * 0.8, wind, calm);
+    this.curtain?.update(time, wind, openness);
   }
 
   private addSpeck(spread: number): void {
