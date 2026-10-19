@@ -419,3 +419,77 @@ export function drawNightjar(frame: number, span: number): Drawn {
   }
   return { grid: g, palette };
 }
+
+// --- Boats on the horizon ------------------------------------------------------------
+
+/**
+ * A small sailboat far out, `height` px from keel to masthead, sailing
+ * right: a white hull, the mast, a full mainsail and a jib, heeled over by
+ * the wind a little (`heel` 0 upright .. 2 well over).
+ */
+export function drawSailboat(heel: number, height: number): Drawn {
+  const H = Math.max(5, Math.round(height));
+  const W = Math.max(4, Math.round(H * 0.9));
+  const g = new PixelGrid(W, H);
+  const palette = new Palette();
+  const sail = palette.ramp(0xf4f0e4, 0.5);
+  const hull = palette.ramp(0xe8ecf0, 0.6);
+  const mast = palette.add(0x5a5650);
+  const lean = [0, 0.18, 0.34][Math.max(0, Math.min(2, Math.round(heel)))];
+  const deck = H - 2;
+  const mx = W * 0.42;
+  // Where the mast is at a height above the deck (leaning downwind, to the right).
+  const at = (h: number) => mx + h * lean;
+  for (let y = 0; y < deck; y++) {
+    const h = deck - y;
+    g.set(Math.floor(at(h)), y, mast);
+    // The mainsail aft of the mast, narrowing to the head; the jib forward, smaller.
+    const main = Math.round((((y + 1) / deck) * W) * 0.42);
+    for (let k = 1; k <= main; k++) g.set(Math.floor(at(h)) - k, y, sail[k === main ? 2 : 3]);
+    const jib = Math.round((((y + 1 - deck * 0.2) / deck) * W) * 0.4 * (y > deck * 0.2 ? 1 : 0));
+    for (let k = 1; k <= jib; k++) g.set(Math.floor(at(h)) + k, y, sail[k === 1 ? 2 : 4]);
+  }
+  // The hull: a low, sleek wedge, the bow to the right.
+  for (let x = 1; x < W; x++) g.set(x, deck, hull[x > W * 0.7 ? 4 : 3]);
+  for (let x = 2; x < W - 1; x++) g.set(x, deck + 1, hull[1]);
+  return { grid: g, palette };
+}
+
+/**
+ * A small fishing boat far out, `length` px long, heading right: a dark
+ * hull with a pale stripe, the white wheelhouse forward, a mast and the
+ * trawl boom aft, nets hanging; frame 1 dips the bow a touch in the swell.
+ */
+export function drawFishingBoat(frame: number, length: number): Drawn {
+  const L = Math.max(8, Math.round(length));
+  const H = Math.max(5, Math.round(L * 0.62));
+  const g = new PixelGrid(L, H);
+  const s = L / 24;
+  const palette = new Palette();
+  const hull = palette.ramp(0x2a4a6a, 0.8);
+  const stripe = palette.add(0xd8d4c8);
+  const red = palette.add(0xa83a2a);
+  const house = palette.ramp(0xf0ece4, 0.5);
+  const rig = palette.add(0x3a3632);
+  const glass = palette.add(0x2a3440);
+  const dip = frame % 2;
+  const wl = H - 1;
+  // The hull: higher at the bow, a red waterline.
+  for (let x = 0; x < L; x++) {
+    const u = x / (L - 1);
+    const top = Math.round(wl - 3 * s - u * 1.6 * s + (u > 0.8 ? dip : 0));
+    for (let y = top; y <= wl; y++) g.set(x, y, y === wl ? red : y === top ? stripe : hull[u > 0.6 ? 3 : 2]);
+  }
+  // The wheelhouse forward, its windows.
+  const hx0 = Math.round(L * 0.55);
+  const hx1 = Math.round(L * 0.78);
+  const hTop = Math.round(wl - 7.4 * s);
+  for (let y = hTop; y < wl - 3 * s; y++) for (let x = hx0; x <= hx1; x++) g.set(x, y, house[x === hx1 ? 4 : y === hTop ? 3 : 2]);
+  for (let x = hx0 + 1; x < hx1; x += 2) g.set(x, Math.round(hTop + 1.4 * s), glass);
+  // The mast with its boom angled out aft, and the net hanging off it.
+  const mx = Math.round(L * 0.45);
+  for (let y = Math.round(wl - 12 * s); y < wl - 3 * s; y++) g.set(mx, y, rig);
+  for (let k = 0; k < 9 * s; k++) g.set(Math.round(mx - k), Math.round(wl - 11 * s + k * 0.55), rig);
+  for (let y = Math.round(wl - 6 * s); y < wl - 3 * s; y++) g.set(Math.round(mx - 8 * s), y, rig);
+  return { grid: g, palette };
+}

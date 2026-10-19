@@ -3,7 +3,7 @@ import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonPose 
 import type { PixelGrid } from '../sprites/raster';
 import { drawBird, SPECIES, type SpeciesId } from '../sprites/birdSprites';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
-import { drawEgret, drawFrigatebird, drawGull, drawJumpFish, drawSandpiper, JUMP_FRAMES, SANDPIPER_FLY, SANDPIPER_RUN, type EgretPose, type GullPose, type SandpiperPose } from '../sprites/shoreSprites';
+import { drawEgret, drawFishingBoat, drawFrigatebird, drawGull, drawJumpFish, drawNightjar, drawSailboat, drawSandpiper, NIGHTJAR_FRAMES, JUMP_FRAMES, SANDPIPER_FLY, SANDPIPER_RUN, type EgretPose, type GullPose, type SandpiperPose } from '../sprites/shoreSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type DogPose, type HorsePose, type RabbitPose, type SheepPose } from '../sprites/meadowSprites';
 import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind, drawWolf, type WolfPose } from '../sprites/wildSprites';
@@ -223,6 +223,8 @@ function sections(): Section[] {
       ...[8, 12, 18].map((n) => sandpiperPoses.map((pose) => ({ label: `${pose} ${n}`, draw: () => drawSandpiper(pose, n) }))),
       ...[10, 16, 24].map((n) => gullPoses.map((pose) => ({ label: `${pose} ${n}`, draw: () => drawGull(pose, n) }))),
       ...[14, 22, 34].map((n) => egretPoses.map((pose) => ({ label: `${pose} ${n}`, draw: () => drawEgret(pose, n) }))),
+      [12, 16].flatMap((n) => Array.from({ length: NIGHTJAR_FRAMES }, (_, f) => ({ label: `nightjar ${n}/${f}`, draw: () => drawNightjar(f, n) }))),
+      [6, 9, 13].flatMap((n) => [0, 1, 2].map((f) => ({ label: `sail ${n}/${f}`, draw: () => drawSailboat(f, n) }))).concat([14, 20].flatMap((n) => [0, 1].map((f) => ({ label: `trawler ${n}/${f}`, draw: () => drawFishingBoat(f, n) })))),
       [10, 16, 24].flatMap((n) => [0, 1].map((f) => ({ label: `frigate ${n}/${f}`, draw: () => drawFrigatebird(f, n) }))).concat([5, 8].flatMap((n) => Array.from({ length: JUMP_FRAMES }, (_, f) => ({ label: `jump ${n}/${f}`, draw: () => drawJumpFish(f, n) })))),
     ],
   });

@@ -7,6 +7,7 @@ import { Bioluminescence, Crabs, Hatchlings, HermitCrabs, Jellyfish, Pelican } f
 import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
 import { TidePools } from './TidePools';
 import { BeachAir } from './BeachAir';
+import { Boats } from './Boats';
 import { Froth } from './Froth';
 import { Nightjars } from './NightShore';
 import { Bats } from '../common/Bats';
@@ -50,6 +51,7 @@ export class BeachLife implements SceneLife {
   readonly leapingFish: JumpingFish;
   readonly nightjars: Nightjars;
   readonly bats: Bats;
+  readonly boats: Boats;
   private readonly deps: LandscapeDeps;
 
   constructor(scene: BeachScene, deps: LandscapeDeps) {
@@ -85,6 +87,7 @@ export class BeachLife implements SceneLife {
     this.leapingFish = new JumpingFish(scene, deps.viewport);
     // Over the dunes after dark: nightjars after moths, and a few bats.
     this.nightjars = new Nightjars(scene.birdsMid, { x0: 20, x1: 520, y0: 150, y1: 250 }, deps.viewport, deps.sound);
+    this.boats = new Boats(scene, deps.viewport);
     this.bats = new Bats(scene.birdsMid, { x0: 0, x1: 560, y0: 140, y1: 240, size: [6, 9] }, 3);
     for (const walker of [this.sandpipers, this.turtles, this.crabs, this.hermits, this.hatchlings, this.egret, this.gulls]) walker.tracks = this.tracks;
     this.air = new BeachAir(scene, deps.viewport, deps.sound);
@@ -129,6 +132,7 @@ export class BeachLife implements SceneLife {
     this.leapingFish.update(dt, env);
     this.nightjars.update(dt, env);
     this.bats.update(dt, env);
+    this.boats.update(dt, env);
     this.wrack.update(dt, env);
     this.tracks.update(dt, env);
     this.froth.update(dt, env);
