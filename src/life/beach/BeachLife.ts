@@ -5,8 +5,9 @@ import type { Environment } from '../../scene/Environment';
 import { Cooldown } from '../../sim/interplay';
 import { shoreCoords, shorePoint } from '../../sim/shore';
 import { PelicanLine } from './PelicanLine';
-import { WindowDog } from '../WindowDog';
-import { BirdSystem, type BirdEcology } from '../BirdSystem';
+import type { WindowDog } from '../WindowDog';
+import type { BirdEcology, BirdSystem } from '../BirdSystem';
+import { addWindowDog, makeBirds, updateWindowDog } from '../common/windowLife';
 import { Bioluminescence, Crabs, Hatchlings, HermitCrabs, Jellyfish, Pelican } from './ShoreCreatures';
 import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
 import { TidePools } from './TidePools';
@@ -66,20 +67,8 @@ export class BeachLife implements SceneLife {
   private scareTimer = 0;
 
   constructor(scene: BeachScene, deps: LandscapeDeps) {
-    this.birds = new BirdSystem({
-      ledges: scene.ledges,
-      worldLayers: { far: scene.birdsFar, mid: scene.birdsMid, near: scene.birdsNear },
-      nearLayer: deps.layers.near,
-      sillLayer: deps.layers.sillFront,
-      viewport: deps.viewport,
-      birdseed: deps.birdseed,
-      sound: deps.sound,
-      canTap: deps.canTap,
-      ecology: BEACH_ECOLOGY,
-    });
-    // The household dog, up at the window now and then.
-    this.dog = new WindowDog(deps.sound, deps.canTap, (x) => this.birds.startleNear(x, 50));
-    deps.layers.room.addChild(this.dog.container);
+    this.birds = makeBirds(scene, scene.ledges, deps, BEACH_ECOLOGY);
+    this.dog = addWindowDog(deps, this.birds);
     this.sandpipers = new Sandpipers(scene, deps.viewport, deps.sound);
     this.sea = new FishAndGulls(scene, deps.viewport, deps.sound);
     this.turtles = new Turtles(scene, deps.viewport);
@@ -218,9 +207,7 @@ export class BeachLife implements SceneLife {
     this.interplay(dt);
     this.pelicanLine.update(dt, env);
     const state = { ...sill, catX: null, catStalking: false };
-    this.dog.update(dt, env, state, this.birds.sillBirds());
-    const flyby = this.birds.nearFlights(state)[0];
-    if (flyby !== undefined) this.dog.glance(flyby);
+    updateWindowDog(this.dog, this.birds, dt, env, state);
     this.birds.update(dt, env, state);
     this.sandpipers.update(dt, env);
     this.sea.update(dt, env);

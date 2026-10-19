@@ -1,10 +1,8 @@
-import type { Container } from 'pixi.js';
-import type { Viewport } from '../core/Viewport';
-import type { SceneLife, SillBase } from '../landscapes/types';
+import type { LandscapeDeps, SceneLife, SillBase } from '../landscapes/types';
 import type { CityScene } from '../scene/city/CityScene';
 import type { Environment } from '../scene/Environment';
-import type { BirdseedState } from '../state/BirdseedState';
-import { BirdSystem } from './BirdSystem';
+import type { BirdSystem } from './BirdSystem';
+import { makeBirds } from './common/windowLife';
 import { Fireworks } from './city/Fireworks';
 import { Performers } from './city/Performers';
 import { Rooftops } from './city/Rooftops';
@@ -14,20 +12,7 @@ import { chance } from '../sim/interplay';
 import { Traffic } from './city/Traffic';
 import { RooftopCat } from './RooftopCat';
 import { StreetLife } from './StreetLife';
-import type { LifeSoundSink, SillState } from './types';
-
-export interface CityLifeOptions {
-  scene: CityScene;
-  viewport: Viewport;
-  /** Screen-space layer for birds flying near the window. */
-  nearLayer: Container;
-  /** Screen-space sill layer; the cat goes in `catSlot` (behind the bowl). */
-  sillLayer: Container;
-  catSlot: Container;
-  birdseed: BirdseedState;
-  sound: LifeSoundSink;
-  canTap: () => boolean;
-}
+import type { SillState } from './types';
 
 /**
  * Everything alive in the downtown scene: birds, people, stalls and the cat;
@@ -52,20 +37,9 @@ export class CityLife implements SceneLife {
   private readonly passed = new Set<number>();
   private lookTimer = 0;
 
-  constructor(options: CityLifeOptions) {
-    const { scene } = options;
+  constructor(scene: CityScene, deps: LandscapeDeps) {
     this.scene = scene;
-    const ledges = scene.city.ledges;
-    this.birds = new BirdSystem({
-      ledges,
-      worldLayers: { far: scene.birdsFar, mid: scene.birdsMid, near: scene.birdsNear },
-      nearLayer: options.nearLayer,
-      sillLayer: options.sillLayer,
-      viewport: options.viewport,
-      birdseed: options.birdseed,
-      sound: options.sound,
-      canTap: options.canTap,
-    });
+    this.birds = makeBirds(scene, scene.city.ledges, deps);
     this.street = new StreetLife({
       doors: scene.city.doors,
       stallSpots: scene.city.stallSpots,
@@ -77,7 +51,7 @@ export class CityLife implements SceneLife {
     scene.street.addChild(this.street.container);
     scene.streetLights.addChild(this.street.lightsContainer);
     const tintAt = (gx: number, depth: number) => this.street.tintAt(gx, depth);
-    const pan = (x: number) => options.viewport.worldXToStereo(x);
+    const pan = (x: number) => deps.viewport.worldXToStereo(x);
     this.traffic = new Traffic({ container: this.street.container, lights: scene.streetLights, laneHalf: scene.laneHalf, project: scene.project, tintAt });
     this.performers = new Performers({
       container: this.street.container,
@@ -85,18 +59,18 @@ export class CityLife implements SceneLife {
       project: scene.project,
       tintAt,
       openStalls: () => this.street.openStalls(),
-      sound: options.sound,
+      sound: deps.sound,
       pan,
     });
     this.rooftops = new Rooftops({ summonPigeons: (x, y, n) => void this.birds.summonToPerchNear(x, y, 'pigeon', n), dronePad: scene.city.dronePad });
     scene.roofLife.addChild(this.rooftops.container);
     this.sky = new SkyTraffic();
-    this.fireworks = new Fireworks(options.sound, pan);
+    this.fireworks = new Fireworks(deps.sound, pan);
     scene.skyLife.addChild(this.sky.container, this.fireworks.container);
     scene.birdsMid.addChild(this.sky.nearContainer);
-    this.cat = new RooftopCat(options.sound, options.canTap);
-    options.catSlot.addChild(this.cat.container);
-    this.pigeons = new StreetPigeons({ container: this.street.container, project: scene.project, tintAt, sound: options.sound, pan });
+    this.cat = new RooftopCat(deps.sound, deps.canTap);
+    deps.layers.sillBack.addChild(this.cat.container);
+    this.pigeons = new StreetPigeons({ container: this.street.container, project: scene.project, tintAt, sound: deps.sound, pan });
     // Each burst: people in the street stop and look up, and so do the busker's crowd.
     this.fireworks.onBurst = () => {
       this.street.lookUp(0.3, [3, 7]);

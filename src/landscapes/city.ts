@@ -7,16 +7,7 @@ import type { Landscape, LandscapeDeps } from './types';
 /** Scene 1: the downtown city rooftop. */
 export function createCity(deps: LandscapeDeps): Landscape {
   const scene = new CityScene();
-  const life = new CityLife({
-    scene,
-    viewport: deps.viewport,
-    nearLayer: deps.layers.near,
-    sillLayer: deps.layers.sillFront,
-    catSlot: deps.layers.sillBack,
-    birdseed: deps.birdseed,
-    sound: deps.sound,
-    canTap: deps.canTap,
-  });
+  const life = new CityLife(scene, deps);
   return {
     id: 'city',
     scene,

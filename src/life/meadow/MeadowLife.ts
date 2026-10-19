@@ -5,8 +5,9 @@ import type { MeadowScene } from '../../scene/meadow/MeadowScene';
 import { meadowPlane } from '../../sim/meadowGeometry';
 import { chance, Cooldown, FLIGHT_DISTANCE, goldenHour, groundDistance } from '../../sim/interplay';
 import { chickensOut, owlActivity } from '../../sim/wildlife';
-import { WindowDog } from '../WindowDog';
-import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
+import type { WindowDog } from '../WindowDog';
+import type { BirdEcology, BirdSystem } from '../BirdSystem';
+import { addWindowDog, makeBirds, owlNightActivity, updateWindowDog } from '../common/windowLife';
 import { Bats } from '../common/Bats';
 import { Butterflies } from '../common/Butterflies';
 import { Fireflies } from '../common/Fireflies';
@@ -24,7 +25,7 @@ export const MEADOW_ECOLOGY: BirdEcology = {
     if (owlActivity(hours) > 0) return { owl: 1 };
     return { robin: 0.25, bluebird: 0.25, finch: 0.25, sparrow: 0.25 };
   },
-  activity: (env) => Math.max(defaultActivity(env), owlActivity(env.lighting.hours) * (1 - env.weather.lightning)),
+  activity: owlNightActivity,
   shySpecies: ['owl'],
   maxPerSpecies: { owl: 1 },
   flockSpecies: ['finch', 'sparrow'],
@@ -74,20 +75,8 @@ export class MeadowLife implements SceneLife {
 
   constructor(scene: MeadowScene, deps: LandscapeDeps) {
     this.deps = deps;
-    this.birds = new BirdSystem({
-      ledges: scene.ledges,
-      worldLayers: { far: scene.birdsFar, mid: scene.birdsMid, near: scene.birdsNear },
-      nearLayer: deps.layers.near,
-      sillLayer: deps.layers.sillFront,
-      viewport: deps.viewport,
-      birdseed: deps.birdseed,
-      sound: deps.sound,
-      canTap: deps.canTap,
-      ecology: MEADOW_ECOLOGY,
-    });
-    // The household dog, up at the window now and then.
-    this.dog = new WindowDog(deps.sound, deps.canTap, (x) => this.birds.startleNear(x, 50));
-    deps.layers.room.addChild(this.dog.container);
+    this.birds = makeBirds(scene, scene.ledges, deps, MEADOW_ECOLOGY);
+    this.dog = addWindowDog(deps, this.birds);
     this.cows = new CowHerd(scene.midground, scene.plane, scene.pasture, scene.layout.obstacles, deps.viewport, deps.sound);
     this.chickens = new Chickens(scene.midground, scene.plane, scene.layout.coop, deps.viewport, deps.sound);
     this.rabbits = new Rabbits(scene.bushes, scene.midground);
@@ -259,9 +248,7 @@ export class MeadowLife implements SceneLife {
     this.time += dt;
     this.interplay(dt, env, sill);
     const state = { ...sill, catX: null, catStalking: false };
-    this.dog.update(dt, env, state, this.birds.sillBirds());
-    const flyby = this.birds.nearFlights(state)[0];
-    if (flyby !== undefined) this.dog.glance(flyby);
+    updateWindowDog(this.dog, this.birds, dt, env, state);
     this.birds.update(dt, env, state);
     this.cows.update(dt, env);
     this.chickens.update(dt, env);

@@ -8,8 +8,9 @@ import { forestPlane } from '../../scene/forest/forestGenerator';
 import { chance, Cooldown, groundDistance, hourWindow } from '../../sim/interplay';
 import { owlActivity } from '../../sim/wildlife';
 import { owlAtHome } from './OwlHollow';
-import { WindowDog } from '../WindowDog';
-import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
+import type { WindowDog } from '../WindowDog';
+import type { BirdEcology, BirdSystem } from '../BirdSystem';
+import { addWindowDog, makeBirds, owlNightActivity, updateWindowDog } from '../common/windowLife';
 import { SillSquirrel } from '../SillSquirrel';
 import { Bats } from '../common/Bats';
 import { Butterflies } from '../common/Butterflies';
@@ -29,7 +30,7 @@ export const FOREST_ECOLOGY: BirdEcology = {
     if (owlActivity(hours) > 0) return { owl: 1 };
     return { chickadee: 0.34, jay: 0.24, woodpecker: 0.2, robin: 0.22 };
   },
-  activity: (env) => Math.max(defaultActivity(env), owlActivity(env.lighting.hours) * (1 - env.weather.lightning)),
+  activity: owlNightActivity,
   shySpecies: ['owl', 'woodpecker'],
   maxPerSpecies: { owl: 1, woodpecker: 2 },
   flockSpecies: [],
@@ -85,20 +86,8 @@ export class ForestLife implements SceneLife {
 
   constructor(scene: ForestScene, deps: LandscapeDeps) {
     this.deps = deps;
-    this.birds = new BirdSystem({
-      ledges: scene.layout.ledges,
-      worldLayers: { far: scene.birdsFar, mid: scene.birdsMid, near: scene.birdsNear },
-      nearLayer: deps.layers.near,
-      sillLayer: deps.layers.sillFront,
-      viewport: deps.viewport,
-      birdseed: deps.birdseed,
-      sound: deps.sound,
-      canTap: deps.canTap,
-      ecology: FOREST_ECOLOGY,
-    });
-    // The household dog, up at the window now and then.
-    this.dog = new WindowDog(deps.sound, deps.canTap, (x) => this.birds.startleNear(x, 50));
-    deps.layers.room.addChild(this.dog.container);
+    this.birds = makeBirds(scene, scene.layout.ledges, deps, FOREST_ECOLOGY);
+    this.dog = addWindowDog(deps, this.birds);
     this.deer = new DeerHerd(scene.midground, scene.plane, scene.floorArea, scene.layout.obstacles, deps.viewport, deps.sound);
     this.squirrels = new TrunkSquirrels(scene.layout.trunks, { mid: scene.midground, near: scene.birdsNear }, deps.viewport, deps.sound);
     this.sillSquirrel = new SillSquirrel(deps.birdseed, deps.sound, deps.canTap);
@@ -332,9 +321,7 @@ export class ForestLife implements SceneLife {
     const squirrelX = this.sillSquirrel.position;
     const state = { ...sill, catX: squirrelX, catStalking: false };
     this.sillSquirrel.update(dt, env, state);
-    this.dog.update(dt, env, state, this.birds.sillBirds());
-    const flyby = this.birds.nearFlights(state)[0];
-    if (flyby !== undefined) this.dog.glance(flyby);
+    updateWindowDog(this.dog, this.birds, dt, env, state);
     this.birds.update(dt, env, { ...state, catX: this.sillSquirrel.position });
     this.deer.update(dt, env);
     this.squirrels.update(dt, env);
