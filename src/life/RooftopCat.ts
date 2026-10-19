@@ -13,7 +13,7 @@ import {
 } from '../sim/catBrain';
 import { CAT_COATS, CAT_GROOM, CAT_STALK, CAT_WALK, CAT_WIDTH, CatSpriteCache, type CatCoat, type CatPose } from '../sprites/catSprites';
 import { sillContacts } from '../window/sillContacts';
-import { sillWidth, type LifeSoundSink, type SillState } from './types';
+import { sillWidth, type LifeSoundSink, type SillState, sillPan, sillScreenX, sillSnapX } from './types';
 
 /** The wiggle before a pounce, seconds. */
 const WINDUP = 0.9;
@@ -145,7 +145,7 @@ export class RooftopCat {
         this.brush -= Math.abs(step);
         if (this.brush <= 0 && this.sill) {
           this.brush = 12;
-          sillContacts.touch(this.sill.surface.left + this.x * this.sill.surface.frameScale, this.state === 'exit' && this.exitSpeed > 1 ? 0.5 : 0.25);
+          sillContacts.touch(sillScreenX(this.sill, this.x), this.state === 'exit' && this.exitSpeed > 1 ? 0.5 : 0.25);
         }
         if (Math.abs(dx) > 0.5) this.facing = dx > 0 ? 1 : -1;
         if (Math.abs(this.targetX - this.x) < 0.5) {
@@ -161,7 +161,7 @@ export class RooftopCat {
         const t = clamp((this.timer - WINDUP) / (this.duration - WINDUP), 0, 1);
         this.x = this.pounceFrom + this.facing * 26 * t;
         if (this.timer >= this.duration) {
-          if (this.sill) sillContacts.touch(this.sill.surface.left + this.x * this.sill.surface.frameScale, 0.8);
+          if (this.sill) sillContacts.touch(sillScreenX(this.sill, this.x), 0.8);
           if (this.rng() < 0.5) this.meow();
           this.decide(0, wet);
         }
@@ -279,10 +279,7 @@ export class RooftopCat {
   private voice(id: 'cat-meow' | 'cat-purr'): void {
     const sill = this.sill;
     if (!sill) return;
-    const { left, right, frameScale } = sill.surface;
-    const screenX = left + this.x * frameScale;
-    const half = Math.max(1, (right - left) / 2);
-    this.emitSound(id, clamp((screenX - (left + half)) / half, -1, 1), 0);
+    this.emitSound(id, sillPan(sill, this.x), 0);
   }
 
   private pose(): CatPose {
@@ -338,7 +335,7 @@ export class RooftopCat {
     const lift = Math.sin(Math.PI * leap) * 6;
     this.sprite.texture = this.sprites.get(this.coat, this.pose());
     this.sprite.scale.set(fs * this.facing, fs);
-    const x = Math.round((sill.surface.left + this.x * fs) / fs) * fs;
+    const x = sillSnapX(sill, this.x);
     this.sprite.position.set(x, sill.surface.y + Math.round(2 - lift) * fs);
     this.sprite.tint = interiorTint(env.lighting);
     this.shadow.clear();

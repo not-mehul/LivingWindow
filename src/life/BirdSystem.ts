@@ -45,7 +45,7 @@ const MICRO: Record<'blink' | 'tilt' | 'tail' | 'preen' | 'scratch' | 'fluff' | 
 const BATHE: readonly BirdPose[] = ['peck-down', 'fluff', 'peck-down', 'fluff', 'peck-down', 'fluff', 'fluff', 'scratch-1', 'fluff', 'idle'];
 /** Birds that settle for the night where they are, rather than flying off at dusk. */
 const ROOSTERS: readonly SpeciesId[] = ['pigeon', 'sparrow', 'finch', 'chickadee', 'robin', 'bluebird'];
-import { sillWidth, type Ledge, type LifeSoundSink, type SillState } from './types';
+import { sillWidth, type Ledge, type LifeSoundSink, type SillState, sillScreenX } from './types';
 import { sillContacts } from '../window/sillContacts';
 import { roostTime, wakeTime } from '../sim/interplay';
 
@@ -675,7 +675,7 @@ export class BirdSystem {
         m.t -= each;
         m.step++;
         // Each duck into the puddle sends up a little splash.
-        if (bird.bathing && m.frames[m.step] === 'peck-down' && this.sill) sillContacts.splash(this.sill.surface.left + bird.sillX * this.sill.surface.frameScale);
+        if (bird.bathing && m.frames[m.step] === 'peck-down' && this.sill) sillContacts.splash(sillScreenX(this.sill, bird.sillX));
       }
       if (m.step >= m.frames.length) {
         bird.micro = null;
@@ -692,7 +692,7 @@ export class BirdSystem {
       bird.micro = { frames: BATHE, step: 0, t: 0 };
       bird.bathing = true;
       bird.pose = BATHE[0];
-      sillContacts.splash(this.sill!.surface.left + bird.sillX * this.sill!.surface.frameScale);
+      sillContacts.splash(sillScreenX(this.sill!, bird.sillX));
       return;
     }
     const roll = this.rng();
@@ -724,7 +724,7 @@ export class BirdSystem {
     bird.perch = null;
     if (bird.onSill) {
       // Convert the sill position to world coordinates for the flight.
-      const screenX = sill.surface.left + bird.sillX * sill.surface.frameScale;
+      const screenX = sillScreenX(sill, bird.sillX);
       const screenY = sill.surface.y - 20 * sill.surface.frameScale;
       const world = this.options.viewport.screenToWorld(screenX, screenY);
       bird.x = world.x;
@@ -823,7 +823,7 @@ export class BirdSystem {
       bird.onSill = true;
       bird.sillX = f.arrive.sillX;
       bird.z = 0;
-      sillContacts.touch(sill.surface.left + bird.sillX * sill.surface.frameScale, 0.5 + SPECIES[bird.species].size * 0.4);
+      sillContacts.touch(sillScreenX(sill, bird.sillX), 0.5 + SPECIES[bird.species].size * 0.4);
     } else {
       bird.perch = f.arrive.perch;
       bird.x = f.arrive.x;
@@ -935,7 +935,7 @@ export class BirdSystem {
     const sill = this.sill;
     let pan: number;
     if (bird.onSill && sill) {
-      const x = sill.surface.left + bird.sillX * sill.surface.frameScale;
+      const x = sillScreenX(sill, bird.sillX);
       pan = (x / viewport.layout.screenWidth) * 2 - 1;
     } else {
       pan = viewport.worldXToStereo(bird.x);

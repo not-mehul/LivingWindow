@@ -4,7 +4,7 @@ import type { Environment } from '../scene/Environment';
 import { interiorTint } from '../scene/lighting';
 import { DOG_HEIGHT, DOG_PANT_FACE, DOG_PANT_SIDE, DOG_SURFACE_ROW, DogSpriteCache, randomDogLook, type DogLook, type DogPose } from '../sprites/dogSprites';
 import { sillContacts } from '../window/sillContacts';
-import { sillWidth, type LifeSoundSink, type SillState } from './types';
+import { sillWidth, type LifeSoundSink, type SillState, sillPan, sillScreenX, sillSnapX } from './types';
 
 /** Seconds between visits (min, max). */
 export const DOG_VISIT_INTERVAL: readonly [number, number] = [4 * 60, 12 * 60];
@@ -227,9 +227,7 @@ export class WindowDog {
         this.stay = Math.max(this.stay, this.timer + 8);
         const sill = this.sill;
         if (sill) {
-          const { left, right, frameScale } = sill.surface;
-          const half = Math.max(1, (right - left) / 2);
-          this.emitSound('dog-howl', clamp((left + this.x * frameScale - (left + half)) / half, -1, 1), 0);
+          this.emitSound('dog-howl', sillPan(sill, this.x), 0);
         }
         return;
       }
@@ -313,14 +311,12 @@ export class WindowDog {
     this.startle(this.x);
     const sill = this.sill;
     if (!sill) return;
-    const { left, right, frameScale } = sill.surface;
-    const half = Math.max(1, (right - left) / 2);
-    this.emitSound('dog-boof', clamp((left + this.x * frameScale - (left + half)) / half, -1, 1), 0);
+    this.emitSound('dog-boof', sillPan(sill, this.x), 0);
   }
 
   private touch(strength: number): void {
     const sill = this.sill;
-    if (sill) sillContacts.touch(sill.surface.left + this.x * sill.surface.frameScale, strength);
+    if (sill) sillContacts.touch(sillScreenX(sill, this.x), strength);
   }
 
   private pose(): DogPose {
@@ -348,7 +344,7 @@ export class WindowDog {
     // Only its head turns: the body stays square to the window.
     const flip = this.gaze === 'side' && this.phase === 'up' ? this.facing : 1;
     this.sprite.scale.set(fs * flip, fs);
-    const x = Math.round((sill.surface.left + this.x * fs) / fs) * fs;
+    const x = sillSnapX(sill, this.x);
     this.sprite.position.set(x, sill.surface.y + (DOG_HEIGHT - DOG_SURFACE_ROW + drop) * fs);
     this.sprite.tint = interiorTint(env.lighting);
   }

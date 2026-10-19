@@ -5,7 +5,7 @@ import { interiorTint } from '../scene/lighting';
 import type { BirdseedState } from '../state/BirdseedState';
 import { sillVisitInterval, squirrelActivity } from '../sim/wildlife';
 import { SQUIRREL_RUN, SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../sprites/forestSprites';
-import { sillWidth, type LifeSoundSink, type SillState } from './types';
+import { sillWidth, type LifeSoundSink, type SillState, sillPan, sillSnapX } from './types';
 
 type State = 'enter' | 'sit' | 'run' | 'nibble' | 'exit';
 
@@ -174,9 +174,7 @@ export class SillSquirrel {
   private chatter(): void {
     const sill = this.sill;
     if (!sill) return;
-    const { left, right, frameScale } = sill.surface;
-    const half = Math.max(1, (right - left) / 2);
-    this.sound('squirrel-chatter', clamp((left + this.x * frameScale - (left + half)) / half, -1, 1), 0);
+    this.sound('squirrel-chatter', sillPan(sill, this.x), 0);
   }
 
   private draw(env: Environment, sill: SillState): void {
@@ -190,7 +188,7 @@ export class SillSquirrel {
     this.sprite.texture = this.sprites.get(this.coat, pose, SIZE);
     const glance = this.state === 'sit' && Math.floor(this.timer / 1.3) % 3 === 2 ? -1 : 1;
     this.sprite.scale.set(fs * this.dir * glance, fs);
-    const x = Math.round((sill.surface.left + this.x * fs) / fs) * fs;
+    const x = sillSnapX(sill, this.x);
     this.sprite.position.set(x, sill.surface.y + 2 * fs);
     this.sprite.tint = interiorTint(env.lighting);
     this.shadow.clear();
