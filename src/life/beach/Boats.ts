@@ -9,6 +9,7 @@ import { drawFishingBoat, drawSailboat } from '../../sprites/shoreSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
 import { rand as r } from '../../core/random';
 import { wrapHours } from '../../state/timeOfDay';
+import { hazeTint } from '../../scene/lighting';
 
 /** How many sailboats are out (0..1 of the most): fair-weather daytime sailors, a breeze but not a blow. */
 export function sailingWeather(hours: number, wind: number, precipitation: number, lightning: number): number {
@@ -166,7 +167,7 @@ export class Boats {
     f.sprite.texture = this.sprites.get(`fish:${frame}:${f.size}`, () => drawFishingBoat(frame, f.size));
     f.sprite.scale.x = f.vx >= 0 ? 1 : -1;
     f.sprite.position.set(Math.round(f.x), f.y);
-    const tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.3);
+    const tint = hazeTint(env.lighting, 0.3);
     f.sprite.tint = tint;
     // Deck lights after dark: the wheelhouse, the masthead, a work lamp aft.
     const dir = f.vx >= 0 ? 1 : -1;

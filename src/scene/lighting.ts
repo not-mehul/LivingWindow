@@ -15,6 +15,11 @@ import type { WeatherSnapshot } from '../state/Weather';
  * Scene-agnostic lighting for a moment in time. Colours are 0xRRGGBB tints:
  * scene art is authored at full daylight and multiplied by these.
  */
+/** The ambient tint, pushed `amount` of the way into the distance haze (for things further off). */
+export function hazeTint(lighting: Pick<Lighting, 'ambient' | 'haze'>, amount: number): number {
+  return lerpColor(lighting.ambient, lighting.haze, amount);
+}
+
 export interface Lighting {
   hours: number;
   skyTop: number;

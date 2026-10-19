@@ -14,6 +14,7 @@ import { ForestAtmosphere } from './ForestAtmosphere';
 import type { WorldScene } from '../WorldScene';
 import { BROW_Y, FOREST_FLOOR, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout, type Placed } from './forestGenerator';
 import { bayer } from '../common/paint';
+import { hazeTint } from '../lighting';
 
 const RAY_WIDTHS = [16, 24, 12, 20, 32];
 
@@ -255,9 +256,9 @@ export class ForestScene implements WorldScene {
 
     // Atmospheric perspective: the further away, the more it takes the sky's haze.
     this.far.update(lerpColor(lighting.haze, lighting.skyHorizon, 0.4), lighting);
-    this.mountains.update(lerpColor(lighting.ambient, lighting.haze, 0.8), lighting);
-    this.valley.update(lerpColor(lighting.ambient, lighting.haze, 0.45), lighting);
-    this.ground.update(lerpColor(lighting.ambient, lighting.haze, 0.08), lighting);
+    this.mountains.update(hazeTint(lighting, 0.8), lighting);
+    this.valley.update(hazeTint(lighting, 0.45), lighting);
+    this.ground.update(hazeTint(lighting, 0.08), lighting);
     // By moonlight the trees go a deep teal, the distant ones paler and bluer.
     const foliage = lerpColor(lerpColor(lighting.ambient, DUSK_FOLIAGE, lighting.twilight * 0.65), NIGHT_FOLIAGE, lighting.nightness * 0.65);
     for (const tree of this.trees) {

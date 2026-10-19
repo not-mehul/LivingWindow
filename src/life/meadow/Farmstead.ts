@@ -9,6 +9,7 @@ import { meadowPlane } from '../../sim/meadowGeometry';
 import { BirdSpriteCache, FLAP_CYCLE, type BirdPose } from '../../sprites/birdSprites';
 import { drawPerson, randomLook, type PersonFacing, type PersonLook } from '../../sprites/people';
 import { rand as r } from '../../core/random';
+import { hazeTint } from '../../scene/lighting';
 
 /** When someone's home and the lights are on: the evening, and before dawn on dark mornings. */
 export function farmhouseLit(hours: number, dark: boolean): boolean {
@@ -146,7 +147,7 @@ export class Farmstead {
     const { lighting, weather } = env;
     const h = lighting.hours;
     const wind = weather.wind ?? 0.2;
-    const ambient = lerpColor(lighting.ambient, lighting.haze, 0.25);
+    const ambient = hazeTint(lighting, 0.25);
 
     // Lights in the farmhouse.
     const lit = farmhouseLit(h, lighting.emissive > 0.3);
@@ -202,7 +203,7 @@ export class Farmstead {
   private updateCrows(dt: number, env: Environment): void {
     const { patch } = this.farm;
     const day = env.lighting.hours > 6.5 && env.lighting.hours < 19.5 && env.weather.precipitation < 0.5;
-    const tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.2);
+    const tint = hazeTint(env.lighting, 0.2);
     for (const c of this.crows) {
       c.timer -= dt;
       if (c.state === 'away') {
@@ -366,7 +367,7 @@ export class Farmstead {
     this.farmer.position.set(Math.round(p.x), Math.round(p.y));
     // Out on the headland and in the patch he's in front of the maize; up the track, between the fields.
     this.farmer.zIndex = p.y + 0.3;
-    this.farmer.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.2);
+    this.farmer.tint = hazeTint(env.lighting, 0.2);
   }
 }
 

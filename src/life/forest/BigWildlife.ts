@@ -11,6 +11,7 @@ import { BEAR_WALK, drawBear, DrawnCache, type BearPose } from '../../sprites/wi
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
 import { evenSize } from '../../sprites/kit';
+import { hazeTint } from '../../scene/lighting';
 
 /** A bear's height (world px) at depth 1. */
 const BEAR_HEIGHT = 40;
@@ -91,7 +92,7 @@ export class Bear {
     this.sprite.scale.x = w.facing;
     this.sprite.position.set(Math.round(p.x), Math.round(p.y));
     this.sprite.zIndex = p.y;
-    this.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.2);
+    this.sprite.tint = hazeTint(env.lighting, 0.2);
   }
 
   private spawn(): void {
@@ -180,7 +181,7 @@ export class SlopeElk {
       this.herd.length = 0;
     }
     // Far away and in the haze of the slope.
-    const tint = lerpColor(lerpColor(env.lighting.ambient, env.lighting.haze, 0.75), 0x404858, 0.25);
+    const tint = lerpColor(hazeTint(env.lighting, 0.75), 0x404858, 0.25);
     for (const e of this.herd) {
       e.timer -= dt;
       if (e.timer <= 0) {

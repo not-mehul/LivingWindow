@@ -1,5 +1,4 @@
 import { Graphics, Sprite, type Container } from 'pixi.js';
-import { lerpColor } from '../../core/color';
 import type { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
 import { meadowCreek } from '../../sim/meadowGeometry';
@@ -8,6 +7,7 @@ import { butterflyActivity, hedgehogActivity, roeDeerOut } from '../../sim/wildl
 import { drawDeerSized } from '../../sprites/forestSprites';
 import { drawHedgehog, DrawnCache } from '../../sprites/wildSprites';
 import { rand as r } from '../../core/random';
+import { hazeTint } from '../../scene/lighting';
 
 // --- A hedgehog in the flower bank --------------------------------------------------------
 
@@ -98,7 +98,7 @@ export class Hedgehog {
     this.sprite.scale.x = this.dir;
     this.sprite.position.set(Math.round(this.x), this.y);
     this.sprite.visible = true;
-    this.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.08);
+    this.sprite.tint = hazeTint(env.lighting, 0.08);
   }
 }
 
@@ -188,7 +188,7 @@ export class TreeLineDeer {
       d.sprite.scale.x = d.dir;
       d.sprite.position.set(Math.round(d.x), Math.round(d.y));
       d.sprite.zIndex = d.y;
-      d.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.3);
+      d.sprite.tint = hazeTint(env.lighting, 0.3);
     }
   }
 }

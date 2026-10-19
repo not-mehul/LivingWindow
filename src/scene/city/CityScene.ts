@@ -16,6 +16,7 @@ import { StreetLamps } from './StreetLamps';
 import { WindowLife } from './WindowLife';
 import { WindowLights } from './WindowLights';
 import { clamp01 } from '../../core/math';
+import { hazeTint } from '../lighting';
 
 /** Night grades for the city's depth bands: deep teal concrete, the distance going violet in the city's own glow. */
 const NIGHT: Record<CityLayerName, NightGrade> = {
@@ -166,7 +167,7 @@ export class CityScene implements WorldScene {
   update(dt: number, env: Environment): void {
     const { lighting } = env;
     this.sky.update(dt, env);
-    const tints = { far: lerpColor(lighting.ambient, lighting.haze, 0.55), mid: lerpColor(lighting.ambient, lighting.haze, 0.2), near: lighting.ambient, over: lighting.ambient };
+    const tints = { far: hazeTint(lighting, 0.55), mid: hazeTint(lighting, 0.2), near: lighting.ambient, over: lighting.ambient };
     this.layers.far.update(tints.far, lighting);
     this.layers.mid.update(tints.mid, lighting);
     this.layers.near.update(tints.near, lighting);

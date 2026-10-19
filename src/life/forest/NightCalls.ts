@@ -1,6 +1,5 @@
 import { Container, Sprite, type Texture } from 'pixi.js';
 import { PixelBuffer } from '../../core/pixelBuffer';
-import { lerpColor } from '../../core/color';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import type { Trunk } from '../../scene/forest/forestGenerator';
@@ -13,6 +12,7 @@ import { DrawnCache, drawWolf, WOLF_WALK, type WolfPose } from '../../sprites/wi
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
 import { evenSize } from '../../sprites/kit';
+import { hazeTint } from '../../scene/lighting';
 
 const WOLF_HEIGHT = 30;
 const STAG_HEIGHT = 58;
@@ -128,7 +128,7 @@ export class NightCalls {
       this.forceWolves = false;
       this.spawnWolves();
     }
-    const tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.25);
+    const tint = hazeTint(env.lighting, 0.25);
     for (let i = this.wolves.length - 1; i >= 0; i--) {
       const wolf = this.wolves[i];
       const w = wolf.walker;
@@ -223,7 +223,7 @@ export class NightCalls {
     st.sprite.scale.x = w.facing;
     st.sprite.position.set(Math.round(p.x), Math.round(p.y));
     st.sprite.zIndex = p.y;
-    st.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.3);
+    st.sprite.tint = hazeTint(env.lighting, 0.3);
   }
 
   private updateRavens(dt: number, env: Environment): void {
@@ -252,7 +252,7 @@ export class NightCalls {
       rv.sprite.texture = this.birdSprites.get('crow', pose, 14);
       rv.sprite.scale.x = rv.vx > 0 ? 1 : -1;
       rv.sprite.position.set(Math.round(rv.x), Math.round(rv.y));
-      rv.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.35);
+      rv.sprite.tint = hazeTint(env.lighting, 0.35);
       if (Math.random() < dt * 0.04) this.sound('raven-croak', this.viewport.worldXToStereo(rv.x), 0.3);
       if (rv.x < -60 || rv.x > 900) {
         rv.sprite.destroy();

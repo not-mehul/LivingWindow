@@ -1,5 +1,4 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { lerpColor } from '../../core/color';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import { BUNCHED, flockSpot, groundDistance, LOOSE, screenGap, type FlockSpread, type GroundSpot } from '../../sim/flock';
@@ -12,6 +11,7 @@ import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
 import { evenSize } from '../../sprites/kit';
+import { hazeTint } from '../../scene/lighting';
 
 /** Heights (world px) at depth 1. */
 const SHEEP_HEIGHT = 30;
@@ -574,7 +574,7 @@ export class HorsePaddock {
     this.sprite.scale.x = this.dir;
     this.sprite.position.set(Math.round(p.x), Math.round(p.y));
     this.sprite.zIndex = p.y;
-    const tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.12);
+    const tint = hazeTint(env.lighting, 0.12);
     this.sprite.tint = tint;
     this.back.tint = tint;
     this.front.tint = tint;

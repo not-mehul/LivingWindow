@@ -1,5 +1,4 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
-import { lerpColor } from '../../core/color';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import type { MidTree, Trunk } from '../../scene/forest/forestGenerator';
@@ -12,6 +11,7 @@ import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
 import { wrapHours } from '../../state/timeOfDay';
 import { clamp01 } from '../../core/math';
+import { hazeTint } from '../../scene/lighting';
 
 // --- The hare -------------------------------------------------------------------
 
@@ -125,7 +125,7 @@ export class Hare {
     const lift = inAir ? Math.round(Math.sin(((this.timer % cycle) / (cycle * 0.62)) * Math.PI) * h * 0.25) : 0;
     this.sprite.position.set(Math.round(p.x), Math.round(p.y) - lift);
     this.sprite.zIndex = p.y;
-    this.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.08);
+    this.sprite.tint = hazeTint(env.lighting, 0.08);
   }
 
   private spawn(): void {

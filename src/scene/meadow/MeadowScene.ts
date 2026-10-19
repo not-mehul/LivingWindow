@@ -19,6 +19,7 @@ import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
 import { generateMeadow, type MeadowLayout, type MeadowOak } from './meadowGenerator';
 import { clamp01 } from '../../core/math';
+import { hazeTint } from '../lighting';
 
 export { MEADOW_HORIZON };
 
@@ -216,7 +217,7 @@ export class MeadowScene implements WorldScene {
     const { lighting, weather, time } = env;
     this.sky.update(dt, env);
     this.hills.update(lerpColor(lighting.haze, lighting.ambient, 0.35), lighting);
-    this.treeLine.update(lerpColor(lighting.ambient, lighting.haze, 0.2), lighting);
+    this.treeLine.update(hazeTint(lighting, 0.2), lighting);
     this.ground.update(lighting.ambient, lighting);
     // By moonlight the oaks and hedges go a deep blue-green; the flowers keep a hint of their colour.
     const plants = lerpColor(lighting.ambient, NIGHT_TREES, lighting.nightness * 0.9);
@@ -224,7 +225,7 @@ export class MeadowScene implements WorldScene {
       s.sway.update(time * s.speed, weather.wind);
       s.sway.mesh.tint = lerpColor(plants, lighting.haze, s.haze);
     }
-    for (const s of this.still) s.sprite.tint = lerpColor(lighting.ambient, lighting.haze, s.haze);
+    for (const s of this.still) s.sprite.tint = hazeTint(lighting, s.haze);
     for (const f of this.flowerSways) f.update(time * 1.3, weather.wind);
     // The wind pump turns lazily in a breeze and spins in a gale; it barely creeps when it's calm.
     this.rotorAngle += dt * (0.25 + Math.min(1.5, Math.abs(weather.wind)) * 3.2);

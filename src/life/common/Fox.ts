@@ -1,5 +1,4 @@
 import { Sprite, type Container } from 'pixi.js';
-import { lerpColor } from '../../core/color';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import type { GroundPlane } from '../../sim/groundPlane';
@@ -9,6 +8,7 @@ import { drawFox, DrawnCache, FOX_TROT, type FoxPose } from '../../sprites/wildS
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
 import { evenSize } from '../../sprites/kit';
+import { hazeTint } from '../../scene/lighting';
 
 type FoxState = 'trot' | 'sniff' | 'sit' | 'crouch' | 'pounce' | 'visit' | 'bolt' | 'leave';
 
@@ -266,6 +266,6 @@ export class Fox {
     const hop = this.state === 'pounce' ? Math.round(Math.sin((this.timer / 0.45) * Math.PI) * h * 0.4) : 0;
     this.sprite.position.set(Math.round(p.x), Math.round(p.y) - hop);
     this.sprite.zIndex = p.y;
-    this.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.haze, 0.08);
+    this.sprite.tint = hazeTint(env.lighting, 0.08);
   }
 }
