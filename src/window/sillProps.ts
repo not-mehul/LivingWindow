@@ -66,8 +66,8 @@ export interface TabletSize {
   reserve: number;
 }
 
-/** The settings tablet propped on the sill's right-hand corner. */
+/** The settings iPad stood on the sill's right-hand corner, in landscape. */
 export function tabletSize(k: number): TabletSize {
-  const width = even(40 * k);
-  return { width, height: Math.round(width * 0.74), reserve: width + Math.round(8 * k) };
+  const width = even(46 * k);
+  return { width, height: Math.round(width * 0.72), reserve: width + Math.round(8 * k) };
 }

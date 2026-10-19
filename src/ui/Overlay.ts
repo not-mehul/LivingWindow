@@ -318,12 +318,14 @@ export class Overlay {
     if (!from || reduce || typeof this.element.animate !== 'function') return null;
     const box = this.element.getBoundingClientRect();
     if (box.width === 0) return null;
+    // Grow out of the tablet's screen on the sill (and shrink back into it).
     const dx = from.x + from.width / 2 - (box.x + box.width / 2);
     const dy = from.y + from.height / 2 - (box.y + box.height / 2);
-    const s = Math.max(0.05, from.width / box.width);
-    const down = { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${s}) rotate(-6deg)`, opacity: 0.4 };
-    const up = { transform: 'translate(-50%, -50%) scale(1) rotate(0deg)', opacity: 1 };
-    this.animation = this.element.animate(opening ? [down, up] : [up, down], { duration: opening ? 340 : 260, easing: opening ? 'cubic-bezier(.2,.9,.3,1.1)' : 'cubic-bezier(.5,0,.8,.4)' });
+    const sx = Math.max(0.02, from.width / box.width);
+    const sy = Math.max(0.02, from.height / box.height);
+    const down = { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${sx}, ${sy})`, opacity: 0.5, borderRadius: '4px' };
+    const up = { transform: 'translate(-50%, -50%) scale(1, 1)', opacity: 1 };
+    this.animation = this.element.animate(opening ? [down, up] : [up, down], { duration: opening ? 360 : 280, easing: opening ? 'cubic-bezier(.2,.8,.2,1)' : 'cubic-bezier(.5,0,.75,.2)' });
     return this.animation;
   }
 
