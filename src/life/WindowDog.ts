@@ -71,6 +71,8 @@ export class WindowDog {
   private sill: SillState | null = null;
   /** Something out there it's keen on (sill art px along the window), e.g. the sheepdog at work. */
   private interest: number | null = null;
+  /** About to howl along with something (s), or negative. */
+  private pendingHowl = -1;
 
   constructor(
     private readonly emitSound: LifeSoundSink,
@@ -102,6 +104,18 @@ export class WindowDog {
   /** Bring the dog to the window now. */
   summon(): void {
     this.nextVisit = 0;
+  }
+
+  /** Wolves howling far off: it comes to the window (if it can) and, head back, howls along. */
+  answerHowl(): void {
+    if (this.phase === 'gone') {
+      if (this.rng() < 0.6) {
+        this.nextVisit = 0;
+        this.pendingHowl = 2.5 + this.rng() * 2;
+      }
+      return;
+    }
+    this.pendingHowl = 0.8 + this.rng() * 1.5;
   }
 
   /**
@@ -182,6 +196,24 @@ export class WindowDog {
   }
 
   private behave(dt: number, birds: number[]): void {
+    if (this.pendingHowl >= 0) {
+      this.pendingHowl -= dt;
+      if (this.pendingHowl < 0) {
+        // Head back, a long soft howl, side on to the window.
+        this.gaze = 'side';
+        this.gazeTime = 0;
+        this.gazeFor = 4;
+        this.flourish = { pose: 'howl', until: this.time + 2.2 };
+        this.stay = Math.max(this.stay, this.timer + 8);
+        const sill = this.sill;
+        if (sill) {
+          const { left, right, frameScale } = sill.surface;
+          const half = Math.max(1, (right - left) / 2);
+          this.emitSound('dog-howl', clamp((left + this.x * frameScale - (left + half)) / half, -1, 1), 0);
+        }
+        return;
+      }
+    }
     // Birds landing: it's very interested.
     if (birds.length > this.lastBirds) {
       this.gaze = 'side';

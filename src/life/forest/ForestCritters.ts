@@ -268,6 +268,9 @@ export class TrunkWoodpeckers {
   private readonly birds: Woodpecker[] = [];
   private readonly sprites = new DrawnCache();
   private spawnTimer = r(10, 40);
+  /** A rival's answering roll, due in this many seconds (or negative). */
+  private answerIn = -1;
+  private answerPan = 0;
 
   constructor(
     private readonly trunks: readonly Trunk[],
@@ -284,7 +287,24 @@ export class TrunkWoodpeckers {
     this.spawn();
   }
 
+  /** Something prowling below near world x: woodpeckers on nearby trunks go quiet a while. */
+  hush(x: number, radius: number): void {
+    for (const b of this.birds) if (Math.abs(b.trunk.x - x) < radius) b.pause = Math.max(b.pause, r(8, 14));
+  }
+
   update(dt: number, env: Environment): void {
+    // Another woodpecker, further off in the wood, answering the last drum roll.
+    if (this.answerIn >= 0) {
+      this.answerIn -= dt;
+      if (this.answerIn < 0) {
+        const other = this.birds.find((b) => b.drum <= 0 && b.pause > 0.5);
+        if (other && Math.random() < 0.5) {
+          other.drum = r(0.5, 0.9);
+          other.pause = r(2, 5);
+          this.sound('woodpecker-drum', this.viewport.worldXToStereo(other.trunk.x), other.trunk.layer === 'near' ? 0.7 : 0.4);
+        } else this.sound('woodpecker-drum', this.answerPan, 0.2);
+      }
+    }
     const activity = woodpeckerActivity(env.lighting.hours) * (env.weather.kind === 'rain' ? 0.3 : 1);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
@@ -302,7 +322,13 @@ export class TrunkWoodpeckers {
           // A drum roll, or a hitch up the bark.
           if (Math.random() < 0.65) {
             b.drum = r(0.5, 0.9);
-            this.sound('woodpecker-drum', this.viewport.worldXToStereo(b.trunk.x), b.trunk.layer === 'near' ? 0.75 : 0.45);
+            const pan = this.viewport.worldXToStereo(b.trunk.x);
+            this.sound('woodpecker-drum', pan, b.trunk.layer === 'near' ? 0.75 : 0.45);
+            // Now and then it's answered from across the wood.
+            if (this.answerIn < 0 && Math.random() < 0.35) {
+              this.answerIn = r(1.2, 2.6);
+              this.answerPan = Math.max(-1, Math.min(1, -pan * 0.8 + r(-0.2, 0.2)));
+            }
           } else {
             b.y = Math.max(b.trunk.top + b.size, b.y - b.size * 0.4);
             b.hitch = 0.25;

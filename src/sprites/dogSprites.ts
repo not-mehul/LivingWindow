@@ -16,14 +16,14 @@ export const DOG_BREEDS: readonly DogBreed[] = ['husky', 'shepherd', 'golden', '
 export type DogPose =
   | 'reach'
   | 'away' | 'away-breathe' | 'away-ear'
-  | 'side' | 'side-breathe' | 'side-blink' | 'side-ear' | 'side-pant-1' | 'side-pant-2' | 'side-pant-3' | 'side-lick' | 'side-sniff' | 'side-up' | 'side-up-pant'
+  | 'side' | 'side-breathe' | 'side-blink' | 'side-ear' | 'side-pant-1' | 'side-pant-2' | 'side-pant-3' | 'side-lick' | 'side-sniff' | 'side-up' | 'side-up-pant' | 'howl'
   | 'face' | 'face-blink' | 'face-pant-1' | 'face-pant-2' | 'face-pant-3' | 'face-tilt' | 'face-tilt-pant' | 'face-lick';
 
 export const DOG_PANT_SIDE: readonly DogPose[] = ['side-pant-1', 'side-pant-2', 'side-pant-3', 'side-pant-2'];
 export const DOG_PANT_FACE: readonly DogPose[] = ['face-pant-1', 'face-pant-2', 'face-pant-3', 'face-pant-2'];
 export const DOG_POSES: readonly DogPose[] = [
   'reach', 'away', 'away-breathe', 'away-ear',
-  'side', 'side-breathe', 'side-blink', 'side-ear', 'side-pant-1', 'side-pant-2', 'side-pant-3', 'side-lick', 'side-sniff', 'side-up', 'side-up-pant',
+  'side', 'side-breathe', 'side-blink', 'side-ear', 'side-pant-1', 'side-pant-2', 'side-pant-3', 'side-lick', 'side-sniff', 'side-up', 'side-up-pant', 'howl',
   'face', 'face-blink', 'face-pant-1', 'face-pant-2', 'face-pant-3', 'face-tilt', 'face-tilt-pant', 'face-lick',
 ];
 
@@ -238,6 +238,8 @@ interface Pose {
   ear?: boolean;
   /** Head turned about the neck (radians; − is up/back). */
   tilt?: number;
+  /** Howling: the mouth open in an O, no tongue. */
+  howl?: boolean;
 }
 
 function poseOf(pose: DogPose): Pose {
@@ -265,6 +267,9 @@ function poseOf(pose: DogPose): Pose {
       return { view: 'side', sniff: true, tilt: -0.1 };
     case 'side-up':
       return { view: 'side', tilt: -0.38 };
+    case 'howl':
+      // Muzzle to the sky, eyes shut, mouth rounded.
+      return { view: 'side', tilt: -0.8, howl: true, eyes: 'shut' };
     case 'side-up-pant':
       return { view: 'side', tilt: -0.38, tongue: 5 };
     case 'face':
@@ -459,7 +464,7 @@ export function drawWindowDog(look: DogLook, pose: DogPose): { grid: PixelGrid; 
   function drawSide(hgr: PixelGrid, x0: number, y0: number): void {
     const m = breed.muzzle;
     const sniff = p.sniff ? 1 : 0;
-    const open = p.tongue ? 1.5 : 0;
+    const open = p.tongue ? 1.5 : p.howl ? 2.4 : 0;
     ears(hgr, 'side', x0, y0);
     form(hgr, x0 - 2, y0, 14.5, 13.5, 'skull', 'side');
     // Lower jaw, dropped a little when it pants.

@@ -6,7 +6,7 @@ import { squirrelActivity } from '../../sim/wildlife';
 import { SQUIRREL_CLIMB, SQUIRREL_RUN, SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
 
-type State = 'run' | 'climb' | 'cling' | 'leave';
+type State = 'run' | 'climb' | 'cling' | 'nibble' | 'leave';
 
 interface Squirrel {
   coat: SquirrelCoat;
@@ -21,6 +21,8 @@ interface Squirrel {
   sprite: Sprite;
   size: number;
   floor: number;
+  /** Scolding something below (s left): it races up out of reach and chatters, its tail flicking. */
+  scold: number;
 }
 
 export interface TrunkLayers {
@@ -36,6 +38,8 @@ export class TrunkSquirrels {
   private readonly squirrels: Squirrel[] = [];
   private readonly sprites = new SquirrelSpriteCache();
   private spawnTimer = 8;
+  /** After rain there's more to forage: squirrels stop on the ground to sit up and nibble. */
+  private foraging = 0;
 
   constructor(
     private readonly trunks: Trunk[],
@@ -44,7 +48,27 @@ export class TrunkSquirrels {
     private readonly sound: LifeSoundSink,
   ) {}
 
+  /** One more squirrel out now. */
+  summon(): void {
+    this.spawn();
+  }
+
+  /** Danger on the ground near world x (a fox, a bear): squirrels nearby race up their trunks and scold it from a safe height. */
+  alarm(x: number, radius: number): void {
+    for (const sq of this.squirrels) {
+      if (sq.scold > 0 || sq.state === 'leave' || Math.abs(sq.x - x) > radius) continue;
+      sq.scold = r(5, 9);
+      if (sq.state === 'run' || sq.state === 'nibble') sq.x = sq.trunk.x;
+      sq.state = 'climb';
+      // Well up, out of reach.
+      sq.target = Math.max(sq.trunk.top + sq.size, sq.trunk.bottom - (sq.trunk.bottom - sq.trunk.top) * r(0.55, 0.8));
+      this.sound('squirrel-chatter', this.viewport.worldXToStereo(sq.x), sq.trunk.layer === 'near' ? 0.6 : 0.8);
+    }
+  }
+
   update(dt: number, env: Environment): void {
+    if (env.weather.kind === 'rain' && env.weather.precipitation > 0.3) this.foraging = 1;
+    else this.foraging = Math.max(0.25, this.foraging - dt / 600);
     const activity = squirrelActivity(env.lighting.hours) * (env.weather.kind === 'rain' ? 0.3 : 1);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
@@ -85,13 +109,15 @@ export class TrunkSquirrels {
       sprite,
       size,
       floor,
+      scold: 0,
     });
   }
 
   /** Returns true once it has gone. */
   private step(sq: Squirrel, dt: number): boolean {
     sq.timer += dt;
-    const speed = sq.size * 3.2;
+    if (sq.scold > 0) sq.scold -= dt;
+    const speed = sq.size * (sq.scold > 0 ? 4.5 : 3.2);
     switch (sq.state) {
       case 'run':
       case 'leave': {
@@ -100,6 +126,12 @@ export class TrunkSquirrels {
         sq.x += Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
         if (Math.abs(dx) < 0.5) {
           if (sq.state === 'leave') return true;
+          // At the foot of the tree it sometimes sits up to nibble something it's found first.
+          if (sq.timer < 30 && Math.random() < this.foraging * 0.5) {
+            sq.state = 'nibble';
+            sq.timer = -r(3, 7);
+            break;
+          }
           sq.state = 'climb';
           sq.target = sq.trunk.bottom - r(sq.size * 2, Math.max(sq.size * 2, sq.trunk.bottom - sq.trunk.top - sq.size));
         }
@@ -115,7 +147,19 @@ export class TrunkSquirrels {
         }
         break;
       }
+      case 'nibble':
+        if (sq.timer >= 0) {
+          sq.timer = 0;
+          sq.state = 'climb';
+          sq.target = sq.trunk.bottom - r(sq.size * 2, Math.max(sq.size * 2, sq.trunk.bottom - sq.trunk.top - sq.size));
+        }
+        break;
       case 'cling':
+        // Scolding: it stays put and chatters again now and then.
+        if (sq.scold > 0) {
+          if (Math.random() < dt * 0.5) this.sound('squirrel-chatter', this.viewport.worldXToStereo(sq.x), sq.trunk.layer === 'near' ? 0.6 : 0.8);
+          break;
+        }
         if (sq.timer > r(2, 6)) {
           sq.timer = 0;
           const atFloor = sq.y >= sq.floor - 1;
@@ -139,7 +183,8 @@ export class TrunkSquirrels {
     const onTrunk = sq.state === 'climb' || sq.state === 'cling';
     let pose: SquirrelPose;
     // Four-beat gallops along the ground and up the bark; clinging, its tail twitches now and then.
-    if (onTrunk) pose = sq.state === 'cling' ? (Math.floor(sq.timer * 1.7) % 5 === 0 ? 'cling-flick' : 'cling') : SQUIRREL_CLIMB[Math.floor(Math.abs(sq.y) / 1.6) % 4];
+    if (onTrunk) pose = sq.state === 'cling' ? (Math.floor(sq.timer * (sq.scold > 0 ? 6 : 1.7)) % (sq.scold > 0 ? 2 : 5) === 0 ? 'cling-flick' : 'cling') : SQUIRREL_CLIMB[Math.floor(Math.abs(sq.y) / 1.6) % 4];
+    else if (sq.state === 'nibble') pose = Math.floor(-sq.timer * 2.5) % 3 === 0 ? 'sit' : 'nibble';
     else pose = SQUIRREL_RUN[Math.floor(Math.abs(sq.x) / 1.6) % 4];
     sq.sprite.texture = this.sprites.get(sq.coat, pose, sq.size);
     const descending = sq.state === 'climb' && sq.target > sq.y;

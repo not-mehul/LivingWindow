@@ -55,6 +55,17 @@ export class Bats {
     for (let i = 0; i < n; i++) this.spawn();
   }
 
+  /** A few stream out of a roost at a world point (a hollow tree at dusk), one after another. */
+  emerge(x: number, y: number, n = 3): void {
+    for (let i = 0; i < n; i++) {
+      this.spawn();
+      const b = this.bats[this.bats.length - 1];
+      b.x = x + r(-2, 2);
+      b.y = y - i * 3;
+      b.retarget = 0.15 + i * 0.12;
+    }
+  }
+
   update(dt: number, env: Environment): void {
     const raining = env.weather.kind === 'rain' && env.weather.precipitation > 0.1;
     const target = Math.round(batActivity(env.lighting.hours, raining) * this.max);

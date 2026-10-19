@@ -84,8 +84,16 @@ export class NightCalls {
     private readonly sound: LifeSoundSink,
   ) {}
 
+  /** Called with the howling wolf's world x as each howl begins, for the wood to hear. */
+  onHowl: ((x: number) => void) | null = null;
+
   get wolvesOut(): number {
     return this.wolves.length;
+  }
+
+  /** Where the wolves are on the ground. */
+  get wolfSpots(): Array<{ gx: number; depth: number }> {
+    return this.wolves.map((w) => ({ gx: w.walker.gx, depth: w.walker.depth }));
   }
 
   /** Bring the wolves now (for the debug view). */
@@ -140,6 +148,7 @@ export class NightCalls {
           wolf.howls++;
           wolf.nextHowl = r(7, 11);
           this.sound('wolf-howl', this.viewport.worldXToStereo(p.x), 0.55);
+          this.onHowl?.(p.x);
         }
       } else if (wolf.delay > 0) {
         wolf.delay -= dt;

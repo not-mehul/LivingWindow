@@ -4,6 +4,7 @@ import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
 import type { GroundPlane } from '../../sim/groundPlane';
 import { GroundWalker, type Obstacle, type WalkArea } from '../../sim/groundWalker';
+import { alarmAt, groundDistance } from '../../sim/interplay';
 import { deerActivity } from '../../sim/wildlife';
 import { DEER_WALK, DeerSpriteCache, type DeerKind, type DeerPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
@@ -24,6 +25,9 @@ interface Deer {
   follows: Deer | null;
   /** Seconds spent dropping out of sight over the brow. */
   sinking: number;
+  /** A fawn kicking up its heels round its mother (s left). */
+  frolic: number;
+  frolicAngle: number;
 }
 
 /** A doe's height (world px) at depth 1, i.e. right in front of the window. */
@@ -63,6 +67,49 @@ export class DeerHerd {
   /** Startle every deer into bounding away. */
   startle(): void {
     for (const d of this.deer) this.bolt(d);
+  }
+
+  /** Where each deer stands. */
+  get spots(): Array<{ gx: number; depth: number }> {
+    return this.deer.map((d) => ({ gx: d.walker.gx, depth: d.walker.depth }));
+  }
+
+  /**
+   * Something dangerous at a ground point (`scale` for how dangerous: a
+   * bear further than a fox): deer near it bound away, and those a little
+   * further off lift their heads and stare.
+   */
+  alarm(gx: number, depth: number, scale = 1): void {
+    for (const d of this.deer) {
+      if (d.state === 'bound' || d.state === 'leave') continue;
+      const a = alarmAt('deer', groundDistance({ gx: d.walker.gx, depth: d.walker.depth }, { gx, depth }), scale);
+      if (a === 'bolt') {
+        this.bolt(d);
+        for (const f of this.deer) if (f.follows === d) this.bolt(f);
+      } else if (a === 'watch') this.freezeOne(d, 3, 6);
+    }
+  }
+
+  /** A sound in the night (wolves): every head comes up, and they stand stock-still a while. */
+  freeze(): void {
+    for (const d of this.deer) if (d.state !== 'bound' && d.state !== 'leave') this.freezeOne(d, 5, 10);
+  }
+
+  /** On a calm morning, a fawn bucks and sprints in loops round its mother. */
+  frolic(): boolean {
+    const fawn = this.deer.find((d) => d.kind === 'fawn' && d.follows && d.state !== 'bound' && d.state !== 'leave');
+    if (!fawn) return false;
+    fawn.frolic = r(4, 7);
+    fawn.frolicAngle = Math.random() * Math.PI * 2;
+    return true;
+  }
+
+  private freezeOne(d: Deer, min: number, max: number): void {
+    if (d.state === 'alert' && d.timer < 1) return;
+    d.state = 'alert';
+    d.timer = 0;
+    d.duration = r(min, max);
+    d.frolic = 0;
   }
 
   /** A tap on a deer startles it (and its fawn). */
@@ -149,6 +196,8 @@ export class DeerHerd {
       sprite,
       follows,
       sinking: 0,
+      frolic: 0,
+      frolicAngle: 0,
     };
     this.deer.push(deer);
     return deer;
@@ -179,8 +228,19 @@ export class DeerHerd {
     d.timer += dt;
     d.age += dt;
     const w = d.walker;
-    // Fawns copy their mother's mood and keep close.
-    if (d.follows) {
+    // Fawns copy their mother's mood and keep close (or kick up their heels round her).
+    if (d.follows && d.frolic > 0 && d.follows.state !== 'bound') {
+      d.frolic -= dt;
+      const m = d.follows.walker;
+      d.frolicAngle += dt * 2.2;
+      d.state = 'bound';
+      w.steering = { kind: 'seek', gx: m.gx + Math.cos(d.frolicAngle) * 40, depth: m.depth + (Math.sin(d.frolicAngle) * 25) / 700 };
+      if (d.frolic <= 0) {
+        d.state = 'graze';
+        d.timer = 0;
+        d.duration = r(3, 6);
+      }
+    } else if (d.follows) {
       const m = d.follows;
       if (!this.deer.includes(m)) d.follows = null;
       else if (m.state === 'bound' && d.state !== 'bound') this.bolt(d);
@@ -197,11 +257,11 @@ export class DeerHerd {
       }
     }
 
-    w.speed = d.state === 'bound' ? BOUND_SPEED : d.state === 'walk' || d.state === 'leave' ? WALK_SPEED * (d.kind === 'fawn' ? 1.15 : 1) : 0;
+    w.speed = d.state === 'bound' ? (d.frolic > 0 ? BOUND_SPEED * 0.55 : BOUND_SPEED) : d.state === 'walk' || d.state === 'leave' ? WALK_SPEED * (d.kind === 'fawn' ? 1.15 : 1) : 0;
     w.update(dt);
     d.stride += w.speed * w.point.scale * dt;
 
-    if (d.state === 'bound' || d.state === 'leave') {
+    if ((d.state === 'bound' && d.frolic <= 0) || d.state === 'leave') {
       // Over the brow, it drops down the slope into the valley and out of sight.
       if (w.steering.kind === 'seek' && w.depth >= this.area.maxDepth - 0.01) d.sinking += dt;
       return w.gone || d.sinking > SINK_SECONDS;
@@ -241,7 +301,8 @@ export class DeerHerd {
   }
 
   private bolt(d: Deer): void {
-    if (d.state === 'bound') return;
+    if (d.state === 'bound' && d.frolic <= 0) return;
+    d.frolic = 0;
     d.state = 'bound';
     this.exit(d);
   }

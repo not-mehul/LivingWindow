@@ -295,6 +295,40 @@ const dogBoof: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return t - when;
 };
 
+/** A dog joining in with something far off: a soft, rising, wavering howl, from indoors. */
+const dogHowl: SynthVoice = (ctx, out, when, gain, rate) => {
+  const length = rand(1.6, 2.3);
+  const formant = ctx.createBiquadFilter();
+  formant.type = 'bandpass';
+  formant.Q.value = 3;
+  formant.frequency.setValueAtTime(700 * rate, when);
+  formant.frequency.linearRampToValueAtTime(1100 * rate, when + length * 0.5);
+  formant.frequency.linearRampToValueAtTime(650 * rate, when + length);
+  formant.connect(out);
+  const [osc, amp] = tone(ctx, 'triangle', formant);
+  const f = rand(330, 400) * rate;
+  osc.frequency.setValueAtTime(f * 0.8, when);
+  osc.frequency.linearRampToValueAtTime(f * 1.35, when + length * 0.3);
+  osc.frequency.setValueAtTime(f * 1.35, when + length * 0.65);
+  osc.frequency.linearRampToValueAtTime(f * 0.95, when + length);
+  // The waver in its voice.
+  const lfo = ctx.createOscillator();
+  const depth = ctx.createGain();
+  lfo.frequency.value = 5.5;
+  depth.gain.value = f * 0.025;
+  lfo.connect(depth);
+  depth.connect(osc.frequency);
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.32 * gain, when + 0.25);
+  amp.gain.setValueAtTime(0.32 * gain, when + length * 0.7);
+  amp.gain.linearRampToValueAtTime(0, when + length);
+  osc.start(when);
+  lfo.start(when);
+  osc.stop(when + length + 0.05);
+  lfo.stop(when + length + 0.05);
+  return length;
+};
+
 const catPurr: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   const length = rand(1.6, 2.4);
   const src = ctx.createBufferSource();
@@ -872,6 +906,7 @@ export const SYNTH_VOICES = {
   'cat-meow': catMeow,
   'cat-purr': catPurr,
   'dog-boof': dogBoof,
+  'dog-howl': dogHowl,
   'woodpecker-drum': woodpeckerDrum,
   'jay-call': jayCall,
   'chickadee-call': chickadeeCall,

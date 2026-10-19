@@ -44,6 +44,16 @@ export class Bear {
     return this.walker !== null;
   }
 
+  /** Where it is on the ground, while it's about. */
+  get position(): { gx: number; depth: number } | null {
+    return this.walker ? { gx: this.walker.gx, depth: this.walker.depth } : null;
+  }
+
+  /** Where it is in the world (px, feet). */
+  get point(): { x: number; y: number } | null {
+    return this.walker ? { x: this.walker.point.x, y: this.walker.point.y } : null;
+  }
+
   summon(): void {
     this.timer = 0;
   }

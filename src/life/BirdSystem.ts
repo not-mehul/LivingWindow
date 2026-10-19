@@ -310,11 +310,11 @@ export class BirdSystem {
   }
 
   /** Bring a few birds down to a perch near a world point (e.g. where someone scatters crumbs). Returns how many came. */
-  summonToPerchNear(x: number, y: number, species: SpeciesId, count: number): number {
+  summonToPerchNear(x: number, y: number, species: SpeciesId, count: number, reach = 12): number {
     const sill = this.sill;
     if (!sill) return 0;
     const perch = this.perches
-      .filter((p) => p.ledge.x0 <= x + 40 && p.ledge.x1 >= x - 40 && Math.abs(p.ledge.y - y) < 12)
+      .filter((p) => p.ledge.x0 <= x + 40 + reach && p.ledge.x1 >= x - 40 - reach && Math.abs(p.ledge.y - y) < reach)
       .sort((a, b) => Math.abs(a.ledge.y - y) - Math.abs(b.ledge.y - y))[0];
     if (!perch) return 0;
     let n = 0;

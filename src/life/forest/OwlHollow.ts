@@ -32,6 +32,11 @@ export class OwlHollow {
   private lookTimer = 3;
   private stare = 0;
   private hootTimer = 20;
+  /** Shrunk back into the dark of the hole (s left): mobbed by small birds. */
+  private hiding = 0;
+  /** Turned to look towards a sound (−1 left, 1 right), for a while. */
+  private heed = 0;
+  private heedFor = 0;
 
   constructor(
     container: Container,
@@ -52,6 +57,23 @@ export class OwlHollow {
     return owlAtHome(hours) !== 'out';
   }
 
+  /** The hole (world px), for small birds to come and scold it. */
+  get mouth(): { x: number; y: number } {
+    return { x: this.hole.x, y: this.hole.y };
+  }
+
+  /** A sound off in the wood at world x (wolves howling): it turns its head that way and stares. */
+  heedSound(x: number): void {
+    this.heed = x < this.hole.x ? -1 : 1;
+    this.heedFor = 4 + Math.random() * 3;
+  }
+
+  /** Scolded by small birds: it blinks at them, then shrinks back out of sight a while. */
+  mobbed(): void {
+    this.stare = 1.2;
+    this.hiding = 8 + Math.random() * 8;
+  }
+
   tap(x: number, y: number, hours: number): boolean {
     if (Math.abs(x - this.hole.x) > this.hole.r + 3 || Math.abs(y - this.hole.y) > this.hole.r + 5) return false;
     if (!this.home(hours)) return false;
@@ -63,10 +85,15 @@ export class OwlHollow {
   update(dt: number, env: Environment): void {
     const where = owlAtHome(env.lighting.hours);
     let face: Face;
+    if (this.heedFor > 0) this.heedFor -= dt;
     if (where === 'out') face = 'empty';
+    else if (this.heedFor > 0) face = this.heed < 0 ? 'look-l' : 'look-r';
     else if (this.stare > 0) {
       this.stare -= dt;
-      face = 'awake';
+      face = this.hiding > 0 && Math.floor(this.stare * 6) % 3 === 0 ? 'blink' : 'awake';
+    } else if (this.hiding > 0) {
+      this.hiding -= dt;
+      face = 'empty';
     } else if (where === 'asleep') {
       // Dozing; one eye opens now and then to see what's about.
       this.nextBlink -= dt;
