@@ -186,13 +186,6 @@ export function drawDolphinSized(f: number, length = DOLPHIN_LENGTH): Drawn {
   return { grid: g, palette };
 }
 
-export class DolphinSprites {
-  readonly frames = Array.from({ length: DOLPHIN_FRAMES }, (_, i) => {
-    const { grid, palette } = drawDolphinSized(i);
-    return gridToTexture(grid, palette.colors);
-  });
-}
-
 // --- Crabs ------------------------------------------------------------------
 
 /**
@@ -202,7 +195,8 @@ export class DolphinSprites {
  */
 export function drawCrab(frame: number, size: number, hidden = false): Drawn {
   const W = Math.max(5, Math.round(size));
-  const H = Math.max(3, Math.round(W * 0.62));
+  // Room above the shell for the eyes up on their stalks.
+  const H = Math.max(3, Math.round(W * 0.62)) + (W >= 9 ? 2 : 0);
   const g = new PixelGrid(W, H);
   const s = W / 16;
   const palette = new Palette();
@@ -237,11 +231,14 @@ export function drawCrab(frame: number, size: number, hidden = false): Drawn {
     limb(g, [[cx + side * 2.4 * s, H - 5 * s], [cx + side * 3.6 * s, H - 6.6 * s]], Math.max(1, 1 * s), Math.max(1, 0.9 * s), leg, { max: 3 });
     shadedEllipse(g, cx + side * 3.8 * s, H - 7.4 * s, Math.max(0.7, 1.5 * s), Math.max(0.7, 1.2 * s), claw, { dither: false, min: 1 });
   }
-  // Eyes on stalks.
+  // Eyes up on their stalks (raised higher while it runs, watching).
+  const raise = f % 2 === 1 && W >= 12 ? 1 : 0;
   for (const side of [-1, 1]) {
-    g.set(Math.floor(cx + side * 1.4 * s), Math.floor(H - 7.6 * s), shell[3]);
-    g.set(Math.floor(cx + side * 1.4 * s), Math.floor(H - 8.4 * s), eye);
+    const ex = Math.floor(cx + side * 1.4 * s);
+    for (let y = Math.floor(H - 7.6 * s); y >= Math.floor(H - 8.2 * s) - raise; y--) g.set(ex, y, shell[3]);
+    g.set(ex, Math.floor(H - 8.4 * s) - 1 - raise, eye);
   }
+  if (W >= 12) selOut(g, palette, { bottomHeavy: true });
   return { grid: g, palette };
 }
 
@@ -279,7 +276,7 @@ export function drawHermitCrab(frame: number, size: number, withdrawn = false): 
 
 // --- Pelican -----------------------------------------------------------------
 
-export type PelicanPose = 'glide' | 'flap-up' | 'flap-down' | 'dive' | 'float';
+export type PelicanPose = 'glide' | 'flap-up' | 'flap-mid' | 'flap-down' | 'dive' | 'float' | 'pouch-0' | 'pouch-1';
 
 /**
  * A brown pelican, `size` px across, facing right: a heavy body, long broad
@@ -305,6 +302,15 @@ export function drawPelican(pose: PelicanPose, size: number): Drawn {
     limb(g, [P(6, 1), P(14, 9)], 4 * s, 2 * s, flight, { bias: -0.5 });
     shadedEllipse(g, 27 * s, 20 * s, 2.6 * s, 2.4 * s, head, { dither: false });
     limb(g, [P(28, 21), P(33, 23.5)], 2.4 * s, 1.2 * s, bill);
+  } else if (pose === 'pouch-0' || pose === 'pouch-1') {
+    // Just up from a dive: head thrown up, the pouch full and bulging, shaken from side to side to drain it.
+    const shake = pose === 'pouch-0' ? -1 : 1;
+    shadedEllipse(g, 18 * s, 18 * s, 11 * s, 5 * s, body, { dither: false, min: 1 });
+    limb(g, [P(10, 15), P(22, 14)], 4 * s, 3 * s, flight, { bias: -0.3 });
+    limb(g, [P(25, 15), P(27 + shake * 0.6, 7)], 3 * s, 2.6 * s, head);
+    shadedEllipse(g, (27.5 + shake * 0.6) * s, 5.6 * s, 2.6 * s, 2.2 * s, head, { dither: false });
+    limb(g, [P(29 + shake * 0.6, 5), P(35 + shake, 1.4)], 2 * s, 1.1 * s, bill);
+    shadedEllipse(g, (31.5 + shake * 1.2) * s, 6.4 * s, 3.4 * s, 2.4 * s, bill, { dither: false, bias: -0.3, angle: -0.5 });
   } else if (pose === 'float') {
     // Sitting on the water, bill tucked down on its chest.
     shadedEllipse(g, 18 * s, 18 * s, 11 * s, 5 * s, body, { dither: false, min: 1 });
@@ -313,7 +319,7 @@ export function drawPelican(pose: PelicanPose, size: number): Drawn {
     shadedEllipse(g, 28.5 * s, 8 * s, 2.6 * s, 2.2 * s, head, { dither: false });
     limb(g, [P(30, 8.5), P(36, 13)], 2.2 * s, 1.2 * s, bill);
   } else {
-    const wingY = pose === 'flap-up' ? -9 : pose === 'flap-down' ? 7 : -1;
+    const wingY = pose === 'flap-up' ? -9 : pose === 'flap-mid' ? -4 : pose === 'flap-down' ? 7 : -1;
     // Far wing, body, near wing.
     limb(g, [P(18, 11), P(13, 11 + wingY * 0.6), P(4, 10 + wingY)], 5 * s, 2.5 * s, flight, { bias: -1 });
     shadedEllipse(g, 19 * s, 12.5 * s, 10 * s, 3.6 * s, body, { dither: false, min: 1 });
@@ -325,8 +331,9 @@ export function drawPelican(pose: PelicanPose, size: number): Drawn {
     limb(g, [P(31, 12.3), P(37, 13.4)], 1.4 * s, 0.8 * s, bill, { bias: -0.8 });
   }
   if (W >= 16) {
-    const ex = pose === 'dive' ? 27.5 : pose === 'float' ? 29 : 29.6;
-    const ey = pose === 'dive' ? 19.5 : pose === 'float' ? 7.6 : 10;
+    const pouch = pose.startsWith('pouch') ? (pose === 'pouch-0' ? -0.6 : 0.6) : 0;
+    const ex = pose === 'dive' ? 27.5 : pose === 'float' ? 29 : pouch ? 28 + pouch : 29.6;
+    const ey = pose === 'dive' ? 19.5 : pose === 'float' ? 7.6 : pouch ? 5 : 10;
     g.set(Math.floor(ex * s), Math.floor(ey * s), eye);
     selOut(g, palette, { bottomHeavy: true });
   }
@@ -335,40 +342,115 @@ export function drawPelican(pose: PelicanPose, size: number): Drawn {
 
 // --- Jellyfish and hatchlings -------------------------------------------------
 
-/** A moon jellyfish seen from above, `size` px across: a translucent bell with four pale rings, pulsing (frames 0–2). */
+export const JELLY_FRAMES = 4;
+
+/**
+ * A moon jellyfish drifting just under the surface, seen at a slant, `size`
+ * px across the bell: a glassy dome with its four pale rings showing
+ * through and a frilled rim; the frilly oral arms hanging beneath; fine
+ * tentacles streaming out behind, waving. It pulses: the bell squeezes,
+ * pushes, and opens out again (four frames).
+ */
 export function drawJellyfish(frame: number, size: number): Drawn {
   const N = Math.max(3, Math.round(size));
-  const g = new PixelGrid(N, N);
+  const W = Math.round(N * 1.7) + 1;
+  const H = Math.max(3, Math.round(N * 1.05));
+  const g = new PixelGrid(W, H);
   const palette = new Palette();
-  const bell = palette.ramp(0xb8c8e8, 0.6);
-  const ring = palette.add(0xe8d0f0);
-  const c = (N - 1) / 2;
-  const squeeze = [1, 0.82, 0.9][((frame % 3) + 3) % 3];
-  g.ellipse(c + 0.5, c + 0.5, (N / 2) * squeeze, (N / 2) * (2 - squeeze) * 0.5 + N * 0.02, (u, v) => (u * u + v * v > 0.7 ? bell[1] : bell[3]));
-  if (N >= 5) {
-    // The four gonad rings in the middle.
-    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) g.set(Math.round(c + dx * N * 0.13), Math.round(c + dy * N * 0.13), ring);
+  const bell = palette.ramp(0xb8cce8, 0.55);
+  const ring = palette.add(0xead2f2);
+  const arm = palette.ramp(0xd0d8f0, 0.5);
+  const f = ((frame % JELLY_FRAMES) + JELLY_FRAMES) % JELLY_FRAMES;
+  // The pulse: wide and flat, squeezing narrow and tall, then opening.
+  const squeeze = [1, 0.84, 0.76, 0.9][f];
+  const cx = W - N / 2 - 0.5;
+  const top = 0.5;
+  const rx = (N / 2) * squeeze;
+  const ry = (N * 0.42) / squeeze;
+  const rim = Math.min(H - 1, top + ry);
+  if (N < 6) {
+    g.ellipse(cx, rim, rx, ry, (u, v) => (v > 0 ? 0 : u * u + v * v > 0.6 ? bell[1] : bell[3]));
+    // A trailing wisp.
+    g.set(Math.floor(cx - rx - 1), Math.floor(rim), bell[1]);
+    return { grid: g, palette };
   }
+  // Tentacles: fine, trailing back (left) from the rim, waving as it pulses.
+  for (let t = 0; t < 4; t++) {
+    const y0 = rim - 0.4 + t * 0.35;
+    const len = N * (0.8 + t * 0.12);
+    for (let k = 0; k <= len; k++) {
+      const x = cx - rx * 0.6 - k;
+      const y = y0 + Math.sin(k * 0.55 - f * 1.4 + t) * 0.9 + (k / len) * N * 0.15;
+      if (x < 0 || y >= H) break;
+      if ((k + t) % 3 !== 2) g.set(Math.floor(x), Math.floor(y), bell[k > len * 0.6 ? 1 : 2]);
+    }
+  }
+  // The oral arms: short frilly curtains hanging under the bell.
+  for (const dx of [-0.25, 0.15]) {
+    const ax = cx + dx * N;
+    for (let k = 0; k < N * 0.45; k++) {
+      const x = ax - k * 0.9 + Math.sin(k * 1.4 + f) * 0.5;
+      const y = rim + 0.6 + k * 0.45 + Math.cos(k * 1.1 + f) * 0.4;
+      if (y >= H) break;
+      g.set(Math.floor(x), Math.floor(y), arm[k % 2 ? 2 : 3]);
+    }
+  }
+  // The bell: a glassy dome, brighter at its crown and its frilled rim.
+  g.ellipse(cx, rim, rx, ry, (u, v, x) => {
+    if (v > 0.08) return 0;
+    const d = u * u + v * v;
+    if (d > 0.78) return (x + f) % 2 ? bell[3] : bell[2];
+    return v < -0.7 ? bell[4] : bell[2];
+  });
+  // The four rings through the top.
+  for (const [dx, dy] of [[-0.3, -0.5], [0.3, -0.5], [-0.12, -0.3], [0.12, -0.3]] as const) g.set(Math.floor(cx + dx * rx), Math.floor(rim + dy * ry), ring);
   return { grid: g, palette };
 }
 
-/** A turtle hatchling scrambling for the sea, seen from above, `size` px long, flippers rowing (frames 0–1). */
+export const HATCHLING_FRAMES = 4;
+
+/**
+ * A loggerhead hatchling scrambling for the sea, seen from above, `size` px
+ * long, head up the frame: a dark, keeled little shell with paler edges,
+ * a blunt head with its eyes, long front flippers rowing in turn and small
+ * back ones pushing (four frames).
+ */
 export function drawHatchling(frame: number, size: number): Drawn {
   const N = Math.max(3, Math.round(size));
-  const g = new PixelGrid(N + 2, N);
+  const W = Math.max(3, Math.round(N * 1.4));
+  const H = N + 1;
+  const g = new PixelGrid(W, H);
   const palette = new Palette();
-  const shell = palette.ramp(0x3a3428);
-  const flipper = palette.ramp(0x2a261e);
-  const c = (N + 1) / 2;
-  const f = frame % 2;
-  // Flippers out front and behind, alternating.
-  for (const side of [-1, 1]) {
-    const fy = side < 0 ? N * 0.3 : N * 0.65;
-    g.set(Math.floor(c - (N / 2) * (f === 0 ? 1 : 0.8)), Math.floor(fy), flipper[2]);
-    g.set(Math.ceil(c + (N / 2) * (f === 0 ? 0.8 : 1)), Math.floor(fy), flipper[2]);
+  const shell = palette.ramp(0x4a3e2c, 0.8);
+  const skin = palette.ramp(0x3a3428, 0.7);
+  const eyeC = palette.add(0x0e0c0a);
+  const f = ((frame % HATCHLING_FRAMES) + HATCHLING_FRAMES) % HATCHLING_FRAMES;
+  const cx = W / 2;
+  const s = N / 10;
+  if (N < 5) {
+    // Too small for its parts: a dark dot of a shell with its flippers out.
+    g.set(Math.floor(cx), 0, skin[3]);
+    g.rect(Math.floor(cx - 0.5), 1, 1, Math.max(1, N - 1), shell[2]);
+    g.set(Math.floor(cx - 1 - (f % 2)), 1 + (f % 2), skin[2]);
+    g.set(Math.ceil(cx + (f % 2)), 2 - (f % 2), skin[2]);
+    return { grid: g, palette };
   }
-  shadedEllipse(g, c, N / 2, Math.max(0.8, N * 0.3), Math.max(0.8, N * 0.42), shell, { dither: false });
-  // Head at the front (top).
-  g.set(Math.floor(c), 0, flipper[3]);
+  // Flippers: front ones sweeping (one forward as the other pulls back), back ones pushing.
+  const sweep = [-1.2, -0.3, 1, 0.2][f];
+  for (const side of [-1, 1]) {
+    const k = side < 0 ? sweep : -sweep;
+    limb(g, [[cx + side * 1.6 * s, 3.4 * s], [cx + side * 4.4 * s, (3.2 + k * 1.2) * s], [cx + side * 6 * s, (4.4 + k * 1.6) * s]], Math.max(1, 1.2 * s), Math.max(1, 0.7 * s), skin);
+    limb(g, [[cx + side * 1.4 * s, 7.6 * s], [cx + side * 2.8 * s, (8.8 - k * 0.5) * s]], Math.max(1, 0.9 * s), Math.max(1, 0.6 * s), skin);
+  }
+  // The shell, keeled down the middle, paler round the edge.
+  shadedEllipse(g, cx, 5.8 * s, 2.6 * s, 3.3 * s, shell, { dither: false, min: 1 });
+  for (let y = Math.floor(3.4 * s); y < 8.4 * s; y++) g.set(Math.floor(cx), y, shell[3]);
+  // The head out front, with its eyes either side.
+  shadedEllipse(g, cx, 1.6 * s + 0.4, 1.3 * s, 1.3 * s, skin, { dither: false, min: 1 });
+  if (N >= 8) {
+    g.set(Math.floor(cx - 0.9 * s), Math.floor(1.4 * s), eyeC);
+    g.set(Math.floor(cx + 0.9 * s), Math.floor(1.4 * s), eyeC);
+  }
+  if (N >= 8) selOut(g, palette);
   return { grid: g, palette };
 }

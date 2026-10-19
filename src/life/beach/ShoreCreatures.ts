@@ -258,7 +258,7 @@ export class Pelican {
         this.x += this.dir * 32 * dt;
         this.y = lerp(this.from.y, target.y - 34, Math.min(1, this.t / 5)) + Math.sin(this.t * 1.3) * 2;
         const beat = this.t % 3.2;
-        if (beat < 1.2) pose = Math.floor(beat * 2.5) % 2 === 0 ? 'flap-up' : 'flap-down';
+        if (beat < 1.2) pose = (['flap-up', 'flap-mid', 'flap-down', 'flap-mid'] as const)[Math.floor(beat * 5) % 4];
         if ((this.dir > 0 ? this.x > target.x - 18 : this.x < target.x + 18) && this.t > 3) {
           this.phase = 'dive';
           this.t = 0;
@@ -281,8 +281,8 @@ export class Pelican {
         break;
       }
       case 'float':
-        // Bobbing on the swell, swallowing.
-        pose = 'float';
+        // Bobbing on the swell: first shaking the water out of its pouch, then swallowing.
+        pose = this.t < 2.2 ? (Math.floor(this.t * 5) % 2 ? 'pouch-0' : 'pouch-1') : 'float';
         size = Math.max(16, Math.round(46 * target.scale));
         this.y = target.y - 1 + Math.sin(this.t * 2.2) * 1;
         if (this.t > r(4, 7)) {
@@ -294,7 +294,7 @@ export class Pelican {
       case 'leave':
         this.x += this.dir * 30 * dt;
         this.y -= 18 * dt;
-        pose = Math.floor(this.t * 2.5) % 2 === 0 ? 'flap-up' : 'flap-down';
+        pose = (['flap-up', 'flap-mid', 'flap-down', 'flap-mid'] as const)[Math.floor(this.t * 5) % 4];
         if (this.y < -40 || this.x < this.viewport.panX - 80 || this.x > this.viewport.panX + this.viewport.layout.visibleWorldWidth + 80) {
           this.phase = null;
           this.sprite.visible = false;

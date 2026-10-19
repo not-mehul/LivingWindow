@@ -779,7 +779,15 @@ const coconutThud: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return t - when + 0.2;
 };
 
+/** A dolphin blowing as it surfaces: a soft, breathy puff, and the quick draw back in. */
+const dolphinBlow: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  noiseBurst(ctx, noise, out, when, 0.22, { type: 'bandpass', frequency: 1400 * rate, Q: 0.8 }, 0.5 * gain, 0.015);
+  noiseBurst(ctx, noise, out, when + 0.26, 0.12, { type: 'bandpass', frequency: 900 * rate, Q: 1.2 }, 0.22 * gain, 0.03);
+  return 0.45;
+};
+
 export const SYNTH_VOICES = {
+  'dolphin-blow': dolphinBlow,
   'coconut-thud': coconutThud,
   'wolf-howl': wolfHowl,
   'elk-bugle': elkBugle,

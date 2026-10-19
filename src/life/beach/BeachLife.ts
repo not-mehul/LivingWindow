@@ -8,6 +8,7 @@ import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
 import { TidePools } from './TidePools';
 import { BeachAir } from './BeachAir';
 import { Froth } from './Froth';
+import { Egret, Frigatebird, Gulls, JumpingFish } from './ShoreBirds';
 import { Tracks } from './Tracks';
 import { Wrack } from './Wrack';
 
@@ -41,6 +42,10 @@ export class BeachLife implements SceneLife {
   readonly wrack: Wrack;
   readonly tracks: Tracks;
   readonly froth: Froth;
+  readonly egret: Egret;
+  readonly gulls: Gulls;
+  readonly frigatebird: Frigatebird;
+  readonly leapingFish: JumpingFish;
   private readonly deps: LandscapeDeps;
 
   constructor(scene: BeachScene, deps: LandscapeDeps) {
@@ -58,7 +63,7 @@ export class BeachLife implements SceneLife {
     this.sandpipers = new Sandpipers(scene, deps.viewport, deps.sound);
     this.sea = new FishAndGulls(scene, deps.viewport, deps.sound);
     this.turtles = new Turtles(scene, deps.viewport);
-    this.dolphins = new Dolphins(scene, deps.viewport);
+    this.dolphins = new Dolphins(scene, deps.viewport, deps.sound);
     this.crabs = new Crabs(scene);
     this.hermits = new HermitCrabs(scene);
     this.pelican = new Pelican(scene, this.sea, deps.viewport, deps.sound);
@@ -70,7 +75,11 @@ export class BeachLife implements SceneLife {
     this.wrack = new Wrack(scene);
     this.tracks = new Tracks(scene);
     this.froth = new Froth(scene);
-    for (const walker of [this.sandpipers, this.turtles, this.crabs, this.hermits, this.hatchlings]) walker.tracks = this.tracks;
+    this.egret = new Egret(scene, deps.viewport);
+    this.gulls = new Gulls(scene, deps.viewport, deps.sound);
+    this.frigatebird = new Frigatebird(scene, deps.viewport);
+    this.leapingFish = new JumpingFish(scene, deps.viewport);
+    for (const walker of [this.sandpipers, this.turtles, this.crabs, this.hermits, this.hatchlings, this.egret, this.gulls]) walker.tracks = this.tracks;
     this.air = new BeachAir(scene, deps.viewport, deps.sound);
     this.deps = deps;
   }
@@ -107,6 +116,10 @@ export class BeachLife implements SceneLife {
     this.hatchlings.update(dt, env);
     this.glow.update(env);
     this.pools.update(dt, env);
+    this.egret.update(dt, env);
+    this.gulls.update(dt, env);
+    this.frigatebird.update(dt, env);
+    this.leapingFish.update(dt, env);
     this.wrack.update(dt, env);
     this.tracks.update(dt, env);
     this.froth.update(dt, env);
