@@ -10,7 +10,8 @@ import { PixelGrid } from './raster';
  */
 
 export type PersonFacing = 'front' | 'back' | 'side';
-export type PersonPose = 'stand' | 'walk' | 'browse';
+/** Standing, walking, reaching to a stall; and for small moments: looking up, waving, hailing a cab, crouching, clapping. */
+export type PersonPose = 'stand' | 'walk' | 'browse' | 'look-up' | 'wave' | 'hail' | 'crouch' | 'clap';
 export type HairStyle = 'short' | 'long' | 'bun' | 'cap' | 'beanie' | 'crop';
 export type TopStyle = 'tee' | 'jacket' | 'coat' | 'dress' | 'hoodie';
 export type BagStyle = 'none' | 'shoulder' | 'backpack' | 'tote';
@@ -164,6 +165,11 @@ function drawTiny(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
       g.set(right, y, frame === 3 && last && facing !== 'side' ? 0 : c);
     }
   }
+  // A raised arm (waving, hailing) beside the head.
+  if ((pose === 'wave' || pose === 'hail') && h >= 5) {
+    const ax = facing === 'side' ? Math.min(w - 1, tx + torsoW) : Math.min(w - 1, tx + torsoW);
+    g.set(ax, pose === 'wave' ? top + (frame % 2) : torsoY, r.skin[2]);
+  }
   // Umbrella: a canopy over the head, lit on the left.
   if (umbrella) {
     for (let x = 0; x < w; x++) g.set(x, rise - 1, x === 0 ? r.umbrella[3] : x === w - 1 ? r.umbrella[1] : r.umbrella[2]);
@@ -196,7 +202,10 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
   const f = pose === 'walk' ? ((frame % 4) + 4) % 4 : -1;
   const side = facing === 'side';
   const bob = side && f >= 0 ? SIDE_LEGS[f].bob * u : f === 1 || f === 3 ? -0.1 * u : 0;
-  const Y = (v: number) => rise + v * u + bob;
+  // Crouching: everything above the knees comes down.
+  const squat = pose === 'crouch' ? 1.1 * u : 0;
+  const Y = (v: number) => rise + v * u + bob + squat;
+  const beat = ((frame % 2) + 2) % 2;
   const ground = rise + h - 0.5;
   const hipY = Y(3.55);
   const shoulderY = Y(1.4);
@@ -212,7 +221,11 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
   // --- Legs (behind everything) ---
   const legPaths: Array<{ path: Pt[]; near: boolean }> = [];
   if (side) {
-    const L = f >= 0 ? SIDE_LEGS[f] : { near: [[0.1, 1.8], [0.15, 3.6]] as [Pt, Pt], far: [[-0.1, 1.8], [-0.15, 3.6]] as [Pt, Pt] };
+    const L = f >= 0
+      ? SIDE_LEGS[f]
+      : squat
+        ? { near: [[0.75, 1.0], [0.3, 2.6]] as [Pt, Pt], far: [[0.55, 1.05], [-0.05, 2.6]] as [Pt, Pt] }
+        : { near: [[0.1, 1.8], [0.15, 3.6]] as [Pt, Pt], far: [[-0.1, 1.8], [-0.15, 3.6]] as [Pt, Pt] };
     const hx = cx - 0.05 * u;
     const leg = (k: [Pt, Pt]): Pt[] => [
       [hx, hipY],
@@ -229,10 +242,12 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
       const lift = lifting ? 0.35 * u : f === 1 || f === 3 ? 0.1 * u : 0;
       const out = stepping ? 0.12 * u * s : 0;
       const footY = ground - 0.4 * u - lift;
+      // Crouched, the knees splay out.
+      const knee = squat ? 0.3 * u * s : 0;
       legPaths.push({
         path: [
           [hx, hipY],
-          [hx + out * 0.5 + (lifting ? 0.08 * u * s : 0), (hipY + footY) / 2],
+          [hx + out * 0.5 + knee + (lifting ? 0.08 * u * s : 0), (hipY + footY) / 2],
           [hx + out, footY],
         ],
         near: s === -1,
@@ -306,10 +321,12 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
   if (look.topStyle === 'hoodie' && facing !== 'front') shadedEllipse(g, side ? cx - 0.45 * u : cx, torsoTop + 0.15 * u, 0.5 * u, 0.35 * u, r.top, { dither: false, bias: -0.5 });
 
   // --- Head ---
-  const headCy = Y(0.6);
+  // Looking up: the head tips back (from behind, it sinks a little between the shoulders).
+  const up = pose === 'look-up';
+  const headCy = Y(0.6) + (up && facing === 'back' ? 0.12 * u : up ? -0.05 * u : 0);
   const headRx = (side ? 0.52 : 0.5) * u;
   const headRy = 0.6 * u;
-  const hx = side ? cx + 0.1 * u : cx;
+  const hx = side ? cx + (up ? 0.02 : 0.1) * u : cx;
   const hairBack = look.hairStyle === 'long';
   if (hairBack) {
     // Long hair falls behind the shoulders.
@@ -347,7 +364,7 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
   }
   // Face.
   if (facing !== 'back' && h >= 18) {
-    const ey = headCy + 0.05 * u;
+    const ey = headCy + (up ? -0.2 : 0.05) * u;
     // Small dark eyes (a glint at this size reads as sunglasses), and the nose catching the light.
     if (side) {
       g.set(Math.floor(hx + headRx * 0.5), Math.floor(ey), r.ink);
@@ -363,6 +380,10 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
   if (side) {
     if (umbrella) drawArm(cx + 0.05 * u, shoulderY + 0.2 * u, [0.45, 0.75], [0.75, 0.15], 0);
     else if (pose === 'browse') drawArm(cx + 0.05 * u, shoulderY + 0.2 * u, [0.3, 1.0], [1.05, 1.35], 0);
+    else if (pose === 'wave') drawArm(cx + 0.05 * u, shoulderY + 0.2 * u, [0.35, -0.25], [0.3 + (beat ? 0.25 : -0.05), -1.15], 0);
+    else if (pose === 'hail') drawArm(cx + 0.05 * u, shoulderY + 0.2 * u, [0.55, 0.15], [1.15, -0.45], 0);
+    else if (pose === 'crouch') drawArm(cx + 0.05 * u, shoulderY + 0.2 * u, [0.45, 0.9], [0.95, 1.9], 0);
+    else if (pose === 'clap') drawArm(cx + 0.05 * u, shoulderY + 0.2 * u, [0.35, 0.85], [beat ? 0.75 : 0.95, 0.95], 0);
     else drawArm(cx + 0.05 * u, shoulderY + 0.2 * u, [0.2 * swing, 1.15], [-0.55 * swing, 2.25], 0);
   } else {
     for (const s of [-1, 1]) {
@@ -372,6 +393,10 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
       const fwd = f < 0 ? 0 : (s === -1 ? 1 : -1) * swing;
       if (holding) drawArm(ax, shoulderY + 0.15 * u, [0.15 * s, 0.9], [-0.15 * s, 0.6], -0.3);
       else if (pose === 'browse' && s === 1) drawArm(ax, shoulderY + 0.15 * u, [0.1 * s, 1.0], [-0.2 * s, 1.5], -0.3);
+      else if (pose === 'wave' && s === 1) drawArm(ax, shoulderY + 0.15 * u, [0.45 * s, -0.15], [(0.35 + (beat ? 0.2 : -0.1)) * s, -1.1], -0.3);
+      else if (pose === 'hail' && s === 1) drawArm(ax, shoulderY + 0.15 * u, [0.6 * s, 0.2], [1.15 * s, -0.4], -0.3);
+      else if (pose === 'crouch') drawArm(ax, shoulderY + 0.15 * u, [0.2 * s, 0.9], [0.15 * s, 1.75], s === -1 ? 0 : -0.5);
+      else if (pose === 'clap') drawArm(ax, shoulderY + 0.15 * u, [0.05 * s, 0.9], [(beat ? -0.5 : -0.3) * s, 1.25], s === -1 ? 0 : -0.5);
       else drawArm(ax, shoulderY + 0.15 * u, [0.12 * s, 1.1], [(0.15 - 0.12 * fwd) * s, 2.15 - 0.2 * fwd], s === -1 ? 0 : -0.5);
     }
   }
@@ -423,7 +448,8 @@ function drawFull(look: PersonLook, r: PersonRamps, facing: PersonFacing, pose: 
 
 /** The shape of a person's look stays put; only the pose changes frame to frame. */
 export function personKey(id: number, facing: PersonFacing, pose: PersonPose, frame: number, umbrella: boolean, height: number): string {
-  return `${id}:${facing}:${pose}:${pose === 'walk' ? frame % 4 : 0}:${umbrella ? 1 : 0}:${height}`;
+  const step = pose === 'walk' ? frame % 4 : pose === 'wave' || pose === 'clap' ? frame % 2 : 0;
+  return `${id}:${facing}:${pose}:${step}:${umbrella ? 1 : 0}:${height}`;
 }
 
 /**

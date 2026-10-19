@@ -33,6 +33,12 @@ export interface SceneLife {
   startleNear(sillX: number, radius: number): void;
   /** Landscape-specific activity for the ambience (crowd size, herd…), 0..1. */
   readonly ambienceLevel: number;
+  /** A lightning strike: `distance` 0 (overhead) … 1 (far off). Creatures that mind thunder react. */
+  thunder?(distance: number, intensity: number): void;
+  /** Dev: names of the little scenes `stage` can set going. */
+  readonly stages?: readonly string[];
+  /** Dev: set one of the landscape's interactions going now (for screenshots); false if it can't. */
+  stage?(name: string): boolean;
 }
 
 /** Screen-space containers a landscape's creatures draw into. */

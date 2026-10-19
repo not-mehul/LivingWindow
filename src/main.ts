@@ -265,6 +265,7 @@ async function boot(): Promise<void> {
     audio?.weather.thunder(intensity, distance, viewport.worldXToStereo(x));
     // A close crack sends birds flying.
     current.landscape.life.startleAll(distance < 0.4 ? 0.6 : 0.25);
+    current.landscape.life.thunder?.(distance, intensity);
   });
 
   const layout = () => {
@@ -455,6 +456,8 @@ async function boot(): Promise<void> {
           return current.lightning;
         },
         audio: () => audio,
+        /** Set one of the landscape's interactions going (see `life.stages`). */
+        stage: (name: string) => current.landscape.life.stage?.(name) ?? false,
         /** Run the simulation forward without drawing (for tests and demos). */
         fastForward: (seconds: number, step = 1 / 30) => {
           for (let t = 0; t < seconds; t += step) simulate(step);

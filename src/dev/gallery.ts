@@ -76,6 +76,15 @@ function sections(): Section[] {
     for (const h of [30, 16]) people.push(poses.map(([facing, pose, f, umbrella]) => ({ label: `${facing[0]}${pose[0]}${f}${umbrella ? 'u' : ''}`, draw: () => drawPerson(look, facing, pose, f, umbrella, h) })));
   }
   out.push({ title: 'People', rows: people });
+  // Small moments: looking up, waving, hailing, crouching, clapping.
+  const moments: Array<[PersonFacing, PersonPose, number]> = [];
+  for (const facing of ['front', 'back', 'side'] as const) {
+    moments.push([facing, 'look-up', 0], [facing, 'wave', 0], [facing, 'wave', 1], [facing, 'hail', 0], [facing, 'crouch', 0], [facing, 'clap', 0], [facing, 'clap', 1]);
+  }
+  out.push({
+    title: 'People moments',
+    rows: looks.slice(0, 4).flatMap((look) => [30, 14].map((h) => moments.map(([facing, pose, f]) => ({ label: `${facing[0]} ${pose}${f}`, draw: () => drawPerson(look, facing, pose, f, false, h) })))),
+  });
 
   const stalls: Item[][] = [];
   for (const kind of ['produce', 'tea', 'flowers', 'noodles', 'tech', 'skewers'] as StallKind[]) {
