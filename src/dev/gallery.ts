@@ -3,6 +3,7 @@ import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonPose 
 import type { PixelGrid } from '../sprites/raster';
 import { drawBird, drawBirdAt, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
 import { CLOSE_SPECIES, drawBirdClose } from '../sprites/birdClose';
+import { drawOwl, drawOwlInHollow, type HollowFace } from '../sprites/owlSprites';
 import { CAT_COATS, CAT_POSES, drawCat } from '../sprites/catSprites';
 import { DOG_BREEDS, DOG_POSES, drawWindowDog, type DogLook } from '../sprites/dogSprites';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
@@ -217,7 +218,7 @@ function sections(): Section[] {
   });
 
   const woodBirds: Item[][] = [];
-  for (const species of ['owl', 'chickadee', 'woodpecker', 'finch'] as SpeciesId[]) {
+  for (const species of ['chickadee', 'woodpecker', 'finch'] as SpeciesId[]) {
     const row: Item[] = [];
     for (const size of [10, 16, 24]) {
       for (const pose of ['idle', 'sleep', 'look-back', 'fly-up', 'fly-mid', 'fly-down', 'glide'] as const) row.push({ label: `${size}${pose.slice(0, 5)}`, draw: () => ({ grid: drawBird(species, pose, size), colors: SPECIES[species].palette }) });
@@ -225,6 +226,16 @@ function sections(): Section[] {
     woodBirds.push(row);
   }
   out.push({ title: 'Woodland birds', rows: woodBirds });
+  const owlPerched: BirdPose[] = ['idle', 'idle-breathe', 'blink', 'sleep', 'fluff', 'look-back', 'tilt', 'chirp', 'peck-reach', 'peck-down', 'hop'];
+  const owlFlying: BirdPose[] = ['fly-1', 'fly-2', 'fly-3', 'fly-4', 'fly-5', 'fly-6', 'glide', 'flare-1', 'flare-2'];
+  out.push({
+    title: 'Owls',
+    rows: [
+      ...[12, 18, 26, 40].map((size) => owlPerched.map((pose) => ({ label: `${size} ${pose}`, draw: () => drawOwl(pose, size) }))),
+      ...[12, 20, 30].map((size) => owlFlying.map((pose) => ({ label: `${size} ${pose}`, draw: () => drawOwl(pose, size) }))),
+      (['sleep', 'blink', 'awake', 'look-l', 'look-r', 'empty'] as HollowFace[]).map((face) => ({ label: `hollow ${face}`, draw: () => drawOwlInHollow(7, face) })),
+    ],
+  });
   out.push({ title: 'Eagle overhead', rows: [10, 14, 18].map((size) => [0, 1, 2, EAGLE_STOOP].map((frame) => ({ label: `${size} ${frame === EAGLE_STOOP ? 'stoop' : `flex${frame}`}`, draw: () => drawEagleSoar(frame, size) }))) });
 
   out.push({

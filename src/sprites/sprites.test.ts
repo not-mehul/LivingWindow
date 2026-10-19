@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { drawBird, SPECIES, type BirdPose, type SpeciesId } from './birdSprites';
+import { drawOwl } from './owlSprites';
 import { CAT_COATS, CAT_HEIGHT, CAT_POSES, CAT_STALK, CAT_WALK, CAT_WIDTH, drawCat, type CatPose } from './catSprites';
 import { PixelGrid } from './raster';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized } from './beachSprites';
@@ -261,6 +262,20 @@ describe('wild creatures', () => {
     for (const kind of ['monarch', 'white', 'blue', 'brimstone'] as const) for (const n of [4, 6, 9, 14]) for (const f of [0, 1, 2]) expect(drawButterfly(kind, f, n).grid.isEmpty()).toBe(false);
     for (const n of [5, 8, 13, 24]) for (const f of [0, 1, 2, 3]) expect(drawWoodpeckerCling(f, n).grid.isEmpty()).toBe(false);
     for (const kind of ['fly-agaric', 'bolete', 'cluster'] as const) for (const n of [3, 6, 10]) expect(drawMushroom(kind, n).grid.isEmpty()).toBe(false);
+  });
+
+  it('draws the owl perched and in flight at every size, with a slow, changing wingbeat', () => {
+    const poses: BirdPose[] = ['idle', 'idle-breathe', 'blink', 'sleep', 'fluff', 'look-back', 'chirp', 'peck-down', 'hop', 'fly-1', 'fly-3', 'fly-4', 'fly-up', 'fly-mid', 'fly-down', 'glide', 'flare-1'];
+    for (const n of [8, 12, 18, 26, 40]) for (const pose of poses) expect(drawOwl(pose, n).grid.isEmpty(), `${pose} ${n}`).toBe(false);
+    const beat = ['fly-1', 'fly-2', 'fly-3', 'fly-4', 'fly-5', 'fly-6'] as BirdPose[];
+    expect(new Set(beat.map((p) => Array.from(drawOwl(p, 24).grid.data).join(','))).size).toBe(6);
+    // Asleep its eyes are shut; awake they catch the light.
+    const glint = (pose: BirdPose) => {
+      const { grid, palette } = drawOwl(pose, 30);
+      return grid.data.some((c) => palette.colors[c] === 0xfff4e0);
+    };
+    expect(glint('idle')).toBe(true);
+    expect(glint('sleep')).toBe(false);
   });
 
   it('soars the eagle with wings that flex, and folds them to stoop', () => {

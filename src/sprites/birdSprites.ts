@@ -1,6 +1,7 @@
 import { Texture } from 'pixi.js';
 import { gridToTexture } from './cache';
 import { CLOSE_SPECIES, drawBirdClose, MID_SIZE } from './birdClose';
+import { drawOwl } from './owlSprites';
 import { PixelGrid, pixelHash } from './raster';
 
 export type SpeciesId =
@@ -695,6 +696,10 @@ function drawUprightBird(grid: PixelGrid, sp: SpeciesDef, pose: BirdPose, s: num
 export function drawBirdAt(species: SpeciesId, pose: BirdPose, size: number): { grid: PixelGrid; colors: readonly number[] } {
   if (size >= MID_SIZE && CLOSE_SPECIES.has(species)) {
     const { grid, palette } = drawBirdClose(species, pose, size);
+    return { grid, colors: palette.colors };
+  }
+  if (species === 'owl' && size >= 8) {
+    const { grid, palette } = drawOwl(pose, size);
     return { grid, colors: palette.colors };
   }
   return { grid: drawBird(species, pose, size), colors: SPECIES[species].palette };

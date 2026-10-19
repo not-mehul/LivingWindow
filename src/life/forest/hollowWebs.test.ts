@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { owlAtHome, owlInHole } from './OwlHollow';
+import { drawOwlInHollow, type HollowFace } from '../../sprites/owlSprites';
+import { owlAtHome } from './OwlHollow';
 import { drawWeb, webShine } from './Webs';
 
 describe('the owl in the oak', () => {
@@ -12,18 +13,16 @@ describe('the owl in the oak', () => {
   });
 
   it('shows its face in the hole, and an empty hole when it is out', () => {
-    const count = (b: ReturnType<typeof owlInHole>) => {
-      const colours = new Set<number>();
-      for (let y = 0; y < b.height; y++) for (let x = 0; x < b.width; x++) if (b.isSet(x, y)) colours.add(b.get(x, y));
-      return colours.size;
+    const colours = (face: HollowFace) => new Set(drawOwlInHollow(7, face).grid.data.filter((c) => c !== 0)).size;
+    expect(colours('empty')).toBeLessThanOrEqual(3);
+    expect(colours('awake')).toBeGreaterThan(8);
+    // Its eyes catch the light when it's awake, and are shut lids while it dozes.
+    const glinting = (face: HollowFace) => {
+      const { grid, palette } = drawOwlInHollow(7, face);
+      return grid.data.some((c) => palette.colors[c] === 0xfff4e0);
     };
-    expect(count(owlInHole(7, 'empty'))).toBe(1);
-    expect(count(owlInHole(7, 'awake'))).toBeGreaterThan(5);
-    // Its eyes open gold when it's awake.
-    const awake = owlInHole(7, 'awake');
-    let gold = false;
-    for (let y = 0; y < awake.height; y++) for (let x = 0; x < awake.width; x++) if (awake.get(x, y) === 0xf0c040) gold = true;
-    expect(gold).toBe(true);
+    expect(glinting('awake')).toBe(true);
+    expect(glinting('sleep')).toBe(false);
   });
 });
 
