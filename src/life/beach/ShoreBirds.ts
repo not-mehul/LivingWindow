@@ -57,6 +57,11 @@ export class Egret {
     return this.phase;
   }
 
+  /** Where it's standing or wading (shore coordinates), while it's down. */
+  get spot(): { depth: number; s: number } | null {
+    return this.phase && this.phase !== 'arrive' && this.phase !== 'leave' ? { depth: this.depth, s: this.s } : null;
+  }
+
   summon(): void {
     this.timer = 0;
     if (this.phase === 'leave') this.phase = null;
@@ -163,6 +168,16 @@ interface Floater {
   leaving: boolean;
   dir: 1 | -1;
   flap: number;
+  /** Down beside something (the pelican) for a while, then off again (s left). */
+  visit?: number;
+}
+
+interface Wheeler {
+  sprite: Sprite;
+  angle: number;
+  radius: number;
+  speed: number;
+  y: number;
 }
 
 interface Squabble {
@@ -194,6 +209,9 @@ export class Gulls {
   private hoverTimer = r(20, 60);
   private squabble: Squabble | null = null;
   private squabbleTimer = r(90, 240);
+  /** A little cloud of gulls wheeling over something in the water (feeding dolphins). */
+  private wheel: { x: number; y: number; t: number; dur: number; birds: Wheeler[] } | null = null;
+  private wind = 0;
 
   constructor(
     private readonly scene: BeachScene,
@@ -221,11 +239,76 @@ export class Gulls {
     this.hoverTimer = 0;
   }
 
+  /** A gull flies in and lands on the water at this shore spot, staying `stay` seconds (beside the pelican, hoping for scraps). */
+  landAt(depth: number, s: number, stay: number): void {
+    const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
+    this.scene.seaLife.addChild(sprite);
+    this.floaters.push({ depth, s, sprite, phase: Math.random() * 6, dip: 0, air: 50, leaving: false, dir: Math.random() < 0.5 ? 1 : -1, flap: 0, visit: stay });
+  }
+
+  /** Gulls gather over a spot out at sea (world px) and wheel about it, calling, for a while. */
+  wheelOver(x: number, y: number, seconds: number): void {
+    if (this.wheel) return;
+    const birds: Wheeler[] = [];
+    const n = 3 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < n; k++) {
+      const sprite = new Sprite({ anchor: 0.5 });
+      sprite.alpha = 0;
+      this.scene.birdsFar.addChild(sprite);
+      birds.push({ sprite, angle: Math.random() * Math.PI * 2, radius: r(8, 22), speed: r(0.6, 1.1) * (Math.random() < 0.5 ? 1 : -1), y: r(-14, -4) });
+    }
+    this.wheel = { x, y, t: 0, dur: seconds, birds };
+  }
+
+  /** Something out there worth following (the fishing boat's stern): gulls on the water lift off and head that way. */
+  headFor(x: number): void {
+    for (const f of this.floaters) {
+      if (f.leaving || Math.random() < 0.4) continue;
+      f.leaving = true;
+      f.dir = x > shorePoint(f.depth, f.s).x ? 1 : -1;
+    }
+    if (this.hover && this.hover.leaving === 0) this.hover.dur = this.hover.t;
+  }
+
+  /** A big swell: one of the gulls riding it gets up. */
+  bigWave(): void {
+    const f = this.floaters.find((g) => !g.leaving && g.air === 0);
+    if (f && Math.random() < 0.6) {
+      f.leaving = true;
+      f.dir = Math.random() < 0.5 ? 1 : -1;
+    }
+  }
+
   update(dt: number, env: Environment): void {
     const day = daylight(env);
+    this.wind = env.weather.wind ?? 0;
     this.updateFloaters(dt, env, day);
     this.updateHover(dt, env, day);
     this.updateSquabble(dt, env, day);
+    this.updateWheel(dt, env);
+  }
+
+  private updateWheel(dt: number, env: Environment): void {
+    const w = this.wheel;
+    if (!w) return;
+    w.t += dt;
+    const fade = Math.min(1, w.t / 2, Math.max(0, w.dur - w.t) / 2);
+    for (const b of w.birds) {
+      b.angle += b.speed * dt;
+      const x = w.x + Math.cos(b.angle) * b.radius;
+      const y = w.y + b.y + Math.sin(b.angle) * b.radius * 0.3;
+      const pose: GullPose = Math.floor(w.t * 2 + b.radius) % 3 === 0 ? GULL_FLAP[Math.floor(w.t * 9 + b.radius) % 4] : 'glide';
+      b.sprite.texture = this.gull(pose, 7);
+      b.sprite.scale.x = Math.sin(b.angle) * Math.sign(b.speed) > 0 ? -1 : 1;
+      b.sprite.position.set(Math.round(x), Math.round(y));
+      b.sprite.alpha = fade;
+      b.sprite.tint = env.lighting.ambient;
+    }
+    if (Math.random() < dt * 0.6) this.sound('gull-cry', this.viewport.worldXToStereo(w.x), 0.25);
+    if (w.t > w.dur) {
+      for (const b of w.birds) b.sprite.destroy();
+      this.wheel = null;
+    }
   }
 
   private gull(pose: GullPose, size: number) {
@@ -266,11 +349,22 @@ export class Gulls {
         pose = f.air > 4 ? 'glide' : 'hover-1';
         if (f.air === 0) this.scene.splash(shorePoint(f.depth, f.s).x, shorePoint(f.depth, f.s).y, 0.2);
       } else {
-        // Riding the swell, drifting; a head dipped under now and then.
+        // Riding the swell, drifting; a head dipped under now and then. In a breeze they all swing round to face into it, and drift back on it.
         f.s += Math.sin(f.phase * 0.05) * dt * 0.8;
+        if (Math.abs(this.wind) > 0.35) {
+          f.dir = this.wind > 0 ? -1 : 1;
+          f.depth += this.wind * 0.01 * dt;
+        }
         if (f.dip > 0) f.dip -= dt;
         else if (Math.random() < dt * 0.06) f.dip = r(0.6, 1.4);
         pose = f.dip > 0 ? 'float-dip' : 'float';
+        if (f.visit !== undefined) {
+          f.visit -= dt;
+          if (f.visit <= 0) {
+            f.visit = undefined;
+            f.leaving = true;
+          }
+        }
       }
       const p = shorePoint(f.depth, f.s);
       const bob = f.air > 0 ? 0 : Math.sin(f.phase * 1.3 + f.depth * 5) * 1.3 * p.scale + Math.sin(f.phase * 0.47) * 0.6 * p.scale;
@@ -368,8 +462,10 @@ export class Gulls {
     } else {
       // One has it and is off; the other calls after it.
       q.away += dt;
-      poseA = q.winner === 0 ? GULL_FLAP[Math.floor(q.away * 9) % 4] : q.away < 1.5 ? 'call' : 'stand';
-      poseB = q.winner === 1 ? GULL_FLAP[Math.floor(q.away * 9) % 4] : q.away < 1.5 ? 'call' : 'stand';
+      // The loser stands its ground, and in a stiff wind hunkers down, feathers ruffled.
+      const left = Math.abs(this.wind) > 0.6 && Math.floor(q.away * 1.5) % 2 === 1 ? 'stretch' : 'stand';
+      poseA = q.winner === 0 ? GULL_FLAP[Math.floor(q.away * 9) % 4] : q.away < 1.5 ? 'call' : left;
+      poseB = q.winner === 1 ? GULL_FLAP[Math.floor(q.away * 9) % 4] : q.away < 1.5 ? 'call' : left;
       if (q.away > 5) {
         q.a.destroy();
         q.b.destroy();

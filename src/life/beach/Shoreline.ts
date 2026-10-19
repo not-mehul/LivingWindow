@@ -73,6 +73,13 @@ export class Sandpipers {
     return this.flight !== null;
   }
 
+  /** The middle of the flock on the shore (null if none, or they're up). */
+  get centre(): { depth: number; s: number } | null {
+    if (this.flight || this.pipers.length === 0) return null;
+    const n = this.pipers.length;
+    return { depth: this.pipers.reduce((a, p) => a + p.depth, 0) / n, s: this.pipers.reduce((a, p) => a + p.s, 0) / n };
+  }
+
   /** Bring a little flock in now. */
   summon(): void {
     this.leave();
@@ -378,6 +385,12 @@ export class Turtles {
     private readonly viewport: Viewport,
   ) {}
 
+  /** Where the turtle is on the shore, and whether it's resting up the beach. */
+  get spot(): { depth: number; s: number; resting: boolean } | null {
+    const t = this.turtle;
+    return t ? { depth: t.depth, s: t.s, resting: t.phase === 'rest' } : null;
+  }
+
   summon(): void {
     this.timer = 0;
   }
@@ -472,6 +485,9 @@ export class Dolphins {
     this.timer = 0;
   }
 
+  /** Called with where a pod first breaks the surface (world px), for the fish and the gulls to notice. */
+  onSurface: ((x: number, y: number) => void) | null = null;
+
   update(dt: number, env: Environment): void {
     if (this.pod.length === 0) {
       this.timer -= dt;
@@ -483,7 +499,11 @@ export class Dolphins {
         const seaStart = shoreXAtY(this.podY) + (SHALLOWS_S + 40) / beachPlane.depthAtY(this.podY);
         const left = Math.max(seaStart, this.viewport.panX + 10);
         const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth - 40;
-        if (right > left) this.spawnPod(r(left, right));
+        if (right > left) {
+          const x = r(left, right);
+          this.spawnPod(x);
+          this.onSurface?.(x, this.podY);
+        }
       }
       return;
     }

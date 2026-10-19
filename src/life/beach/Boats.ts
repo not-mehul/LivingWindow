@@ -89,6 +89,14 @@ export class Boats {
     return this.fisher !== null;
   }
 
+  /** The fishing boat's stern, where the gulls are (world px), while it's out. */
+  get fisherAt(): { x: number; y: number; dir: 1 | -1 } | null {
+    const f = this.fisher;
+    if (!f) return null;
+    const dir = f.vx >= 0 ? 1 : -1;
+    return { x: f.x - (dir * f.size) / 2, y: f.y - f.size * 0.4, dir };
+  }
+
   summonFisher(): void {
     if (!this.fisher) this.spawnFisher();
   }

@@ -156,6 +156,14 @@ export class HermitCrabs {
     for (let i = 0; i < n; i++) this.spawn();
   }
 
+  /** A thump nearby (a coconut falling): hermits within `radius` pull into their shells. */
+  scare(x: number, y: number, radius: number): void {
+    for (const h of this.hermits) {
+      const p = shorePoint(h.depth, h.s);
+      if (Math.hypot(p.x - x, (p.y - y) * 2) < radius) h.withdrawn = Math.max(h.withdrawn, r(4, 8));
+    }
+  }
+
   tap(x: number, y: number): boolean {
     for (const h of this.hermits) {
       const p = shorePoint(h.depth, h.s);
@@ -236,6 +244,16 @@ export class Pelican {
 
   get present(): boolean {
     return this.phase !== null;
+  }
+
+  /** Where it sits on the water after a catch (world px), while it's there. */
+  get floatingAt(): { x: number; y: number } | null {
+    return this.phase === 'float' ? { x: this.x, y: this.y } : null;
+  }
+
+  /** A gull's come down beside it after its catch: it shakes its pouch at it again, and stays put a little longer. */
+  bothered(): void {
+    if (this.phase === 'float' && this.t > 2.2) this.t = 0.3;
   }
 
   summon(): void {

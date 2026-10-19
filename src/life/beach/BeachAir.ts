@@ -208,6 +208,9 @@ export class BeachAir {
   }
 
   /** Drop a coconut now (for the gallery and tests). */
+  /** Called where a coconut thumps down (world px). */
+  onCoconut: ((x: number, y: number) => void) | null = null;
+
   dropCoconut(): void {
     this.coconutTimer = 0;
   }
@@ -391,7 +394,10 @@ export class BeachAir {
         n.y += n.vy * dt;
         if (n.y >= n.ground) {
           n.y = n.ground;
-          if (n.bounces === 2) this.sound('coconut-thud', n.pan, 0.55);
+          if (n.bounces === 2) {
+            this.sound('coconut-thud', n.pan, 0.55);
+            this.onCoconut?.(n.x, n.y);
+          }
           n.vy = -n.vy * 0.28;
           n.vx = n.vx * 0.5 + r(-6, 6);
           n.bounces--;
