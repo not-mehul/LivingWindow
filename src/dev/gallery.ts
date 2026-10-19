@@ -14,6 +14,7 @@ import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from 
 import { ADS, drawAd, type AdId } from '../scene/city/ads';
 import type { PixelBuffer } from '../core/pixelBuffer';
 import { drawStallLightsSized, drawStallSized, STALL_LIGHT_PALETTE, type StallKind } from '../sprites/streetSprites';
+import { createRng } from '../core/random';
 
 /**
  * A dev page (open the app with `#gallery`) that lays out every procedural
@@ -29,17 +30,6 @@ interface Item {
 interface Section {
   title: string;
   rows: Item[][];
-}
-
-function seeded(seed: number): () => number {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
 }
 
 function sections(): Section[] {
@@ -65,7 +55,7 @@ function sections(): Section[] {
   out.push({ title: 'City ads', rows: ads });
   // People: one look per row at every size, then poses at a near size.
   const people: Item[][] = [];
-  const looks = Array.from({ length: 6 }, (_, i) => randomLook(seeded(i * 7919 + 101)));
+  const looks = Array.from({ length: 6 }, (_, i) => randomLook(createRng(i * 7919 + 101)));
   for (const look of looks.slice(0, 3)) {
     people.push([4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40].map((h) => ({ label: `${h}`, draw: () => drawPerson(look, 'front', 'walk', 0, false, h) })));
   }
@@ -96,7 +86,7 @@ function sections(): Section[] {
   }
   out.push({ title: 'Stalls', rows: stalls });
 
-  const riders = [0, 1, 2].map((i) => randomRiderLook(seeded(i * 31 + 7)));
+  const riders = [0, 1, 2].map((i) => randomRiderLook(createRng(i * 31 + 7)));
   const vehicles: Item[][] = [];
   for (const kind of ['bike', 'scooter'] as const) {
     const row: Item[] = [];

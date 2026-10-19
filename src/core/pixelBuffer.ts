@@ -1,7 +1,7 @@
 import type { Texture } from 'pixi.js';
 import { createNearestTexture } from './pixelTexture';
+import { hexToNumber } from './color';
 
-const parse = (color: string): number => Number.parseInt(color.slice(1), 16);
 
 /**
  * A small RGBA pixel buffer for drawing large procedural pieces (the frame,
@@ -21,7 +21,7 @@ export class PixelBuffer {
     x = Math.round(x);
     y = Math.round(y);
     if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    const c = typeof color === 'string' ? parse(color) : color;
+    const c = typeof color === 'string' ? hexToNumber(color) : color;
     const i = (y * this.width + x) * 4;
     this.data[i] = c >> 16;
     this.data[i + 1] = (c >> 8) & 0xff;

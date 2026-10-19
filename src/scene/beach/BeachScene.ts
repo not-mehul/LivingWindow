@@ -1,6 +1,6 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
-import { channels, lerpColor, multiplyColor, pack } from '../../core/color';
+import { channels, lerpColor, multiplyColor, pack, toPixel32 } from '../../core/color';
 import { Emitter } from '../../core/Emitter';
 import { lerp } from '../../core/math';
 import { PixelBuffer } from '../../core/pixelBuffer';
@@ -414,18 +414,18 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     const seaFar = grade(lerpColor(lighting.skyHorizon, multiplyColor(0x2a6496, amb), 0.55), 0x2c2a5c, 0x1a2450);
     const seaNear = grade(lerpColor(lighting.skyHorizon, multiplyColor(0x2a8cae, amb), 0.12), 0x34346c, 0x24366a);
     const shallow = grade(multiplyColor(0x4ec6c2, amb), 0x5a5280, 0x3a5888);
-    const crest = rgba(grade(lerpColor(seaNear, multiplyColor(0xe2f2f4, amb), 0.6), 0xc898ac, 0x8a9ccc, moon));
-    const ripple = rgba(grade(lerpColor(seaNear, multiplyColor(0xbfe2ea, amb), 0.45), 0x7a6890, 0x5a6ca4));
+    const crest = toPixel32(grade(lerpColor(seaNear, multiplyColor(0xe2f2f4, amb), 0.6), 0xc898ac, 0x8a9ccc, moon));
+    const ripple = toPixel32(grade(lerpColor(seaNear, multiplyColor(0xbfe2ea, amb), 0.45), 0x7a6890, 0x5a6ca4));
     const foamColor = grade(lerpColor(multiplyColor(0xf6f8f6, amb), 0xffffff, 0.15 + 0.2 * (1 - lighting.darkness)), 0xf4d4d4, 0xe4ecf8, moon);
-    const foam = rgba(foamColor);
+    const foam = toPixel32(foamColor);
     const sheetColor = grade(lerpColor(multiplyColor(0xd8c08a, amb), multiplyColor(0x9ad4d4, amb), 0.6), 0xb08a98, 0x7686b0);
-    const sheet = rgba(sheetColor, 215);
-    const sheetEdge = rgba(sheetColor);
+    const sheet = toPixel32(sheetColor, 215);
+    const sheetEdge = toPixel32(sheetColor);
     const wetColor = grade(multiplyColor(0x9a7c50, amb), 0x7a5a5e, 0x50506a);
-    const wet = rgba(wetColor, 225);
+    const wet = toPixel32(wetColor, 225);
     // Freshly drained sand shines with a film of water, holding the sky.
-    const glassy = rgba(lerpColor(wetColor, lerpColor(lighting.skyHorizon, lighting.skyTop, 0.3), 0.42), 225);
-    const surf = [0, 1, 2, 3].map((k) => rgba(lerpColor(shallow, foamColor, 0.95 - k * 0.16)));
+    const glassy = toPixel32(lerpColor(wetColor, lerpColor(lighting.skyHorizon, lighting.skyTop, 0.3), 0.42), 225);
+    const surf = [0, 1, 2, 3].map((k) => toPixel32(lerpColor(shallow, foamColor, 0.95 - k * 0.16)));
     // On a bloom night, the churning water sparks electric blue.
     const bio = this.bioluminescence;
     const tick = this.tick;
@@ -436,19 +436,19 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     const glintX = body ? lerp(70, WORLD_WIDTH - 70, body.progress) : -999;
     // The moon lays a broad silver path across the water.
     const glintStrength = body === lighting.sun ? body.glow * 1.2 + 0.2 : body ? body.glow * 2.2 : 0;
-    const glint = rgba(body ? lerpColor(body.color, 0xffffff, body === lighting.sun ? 0.3 : 0.6) : 0xffffff);
+    const glint = toPixel32(body ? lerpColor(body.color, 0xffffff, body === lighting.sun ? 0.3 : 0.6) : 0xffffff);
     const glintWidth = body === lighting.moon ? 2 : 1;
     // On a dark, clear night the stars show in the wet sand; on a bloom night, the sand the waves wash over sparks blue.
     const starsInSand = lighting.stars * lighting.nightness * (1 - lighting.moonlight * 0.5);
-    const starPixel = rgba(0xdce4ff, 230);
+    const starPixel = toPixel32(0xdce4ff, 230);
 
     // The sea's colour steps from the horizon towards us, each with its shallows ramp.
     const ramps = this.ramps;
     const faces = this.faces;
     for (let step = 0; step <= 5; step++) {
       const base = lerpColor(seaFar, seaNear, step / 5);
-      for (let i = 0; i < SHADES; i++) ramps[step * SHADES + i] = rgba(lerpColor(base, shallow, (i / (SHADES - 1)) * 0.85));
-      faces[step] = rgba(lerpColor(base, seaFar, 0.25));
+      for (let i = 0; i < SHADES; i++) ramps[step * SHADES + i] = toPixel32(lerpColor(base, shallow, (i / (SHADES - 1)) * 0.85));
+      faces[step] = toPixel32(lerpColor(base, seaFar, 0.25));
     }
 
     const swells = this.waves.swells();
@@ -609,12 +609,7 @@ const LINE_HALF = [1.4, 0.9, 0.9, 0.9];
 /** The 4×4 ordered dither, a row at a time. */
 const BAYER_ROWS = [0, 1, 2, 3].map((y) => Float32Array.from([0, 1, 2, 3], (x) => bayer(x, y)));
 /** The bloom's electric blues. */
-const BIO = [0x2a5aff, 0x3aa8ff, 0x7ae8ff].map((c) => rgba(c));
-
-/** A colour as a pixel in an RGBA image's 32-bit view (little-endian: alpha in the top byte). */
-function rgba(c: number, alpha = 255): number {
-  return ((alpha << 24) | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff)) >>> 0;
-}
+const BIO = [0x2a5aff, 0x3aa8ff, 0x7ae8ff].map((c) => toPixel32(c));
 
 /** What doesn't change about each row of the water: computed once. */
 function waterRows() {

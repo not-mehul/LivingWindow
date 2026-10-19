@@ -1,6 +1,6 @@
 import { Graphics, Sprite, type Container, type Texture } from 'pixi.js';
 import { WORLD_WIDTH } from '../../config';
-import { multiplyColor } from '../../core/color';
+import { multiplyColor, toPixel32 } from '../../core/color';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import type { Environment } from '../../scene/Environment';
 import { valueNoise } from '../../scene/common/paint';
@@ -85,7 +85,7 @@ export class Wrack {
       const ix = Math.round(x);
       const iy = Math.round(y) - TOP;
       if (ix < 0 || ix >= w || iy < 0 || iy >= BOTTOM - TOP) return;
-      px[iy * w + ix] = rgba(c);
+      px[iy * w + ix] = toPixel32(c);
     };
     for (let y = TOP; y < BOTTOM; y++) {
       const depth = beachPlane.depthAtY(y + 0.5);
@@ -151,8 +151,4 @@ export class Wrack {
       }
     }
   }
-}
-
-function rgba(c: number): number {
-  return ((255 << 24) | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff)) >>> 0;
 }

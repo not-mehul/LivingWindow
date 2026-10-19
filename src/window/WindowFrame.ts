@@ -7,6 +7,7 @@ import { HINGE_FRACTIONS, SASH_TUCK } from './casement';
 import { IRON, RUSTIC_THEME, type FrameTheme } from './palette';
 import { curtainWidth, nearness, plantSize, tabletSize } from './sillProps';
 import { paintPlank, PixelBuffer } from './woodArt';
+import { hexToNumber } from '../core/color';
 
 /** Width of each jamb (side post), in frame art pixels. */
 export const FRAME_SIDE = 19;
@@ -159,7 +160,7 @@ function drawSill(theme: FrameTheme, width: number, caps: boolean, jambs: Readon
   const W = theme.wood;
   const ramp = [W.outline, W.shadow, W.dark, W.base, W.light, W.highlight, W.shine];
   const p = new PixelBuffer(width, SILL_HEIGHT);
-  const index = new Map(ramp.map((c, i) => [Number.parseInt(c.slice(1), 16), i]));
+  const index = new Map(ramp.map((c, i) => [hexToNumber(c), i]));
   /** Step a pixel lighter (+) or darker (−) along the wood's ramp. */
   const shift = (x: number, y: number, by: number) => {
     const i = index.get(p.get(x, y));

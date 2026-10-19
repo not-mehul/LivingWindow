@@ -11,6 +11,7 @@ import { PLANT, SEED } from './palette';
 import { curtainWidth, plantSize, type PlantSize } from './sillProps';
 import type { SillSurface } from './WindowFrame';
 import { PixelBuffer } from './woodArt';
+import { hexToNumber } from '../core/color';
 
 /** Seeds that are always lying about; pours add more, birds tidy them up. */
 const BASE_SPECKS = 10;
@@ -151,7 +152,7 @@ function drawLeaves(size: PlantSize, clump: readonly number[]): PixelBuffer {
   return p;
 }
 
-const LEAF_COLORS = [PLANT.leafLight, PLANT.leaf, PLANT.leafDark, PLANT.leafVein].map((c) => Number.parseInt(c.slice(1), 16));
+const LEAF_COLORS = [PLANT.leafLight, PLANT.leaf, PLANT.leafDark, PLANT.leafVein].map((c) => hexToNumber(c));
 
 interface Speck {
   /** Position along the sill's visible width (0..1). */
@@ -163,7 +164,7 @@ interface Speck {
 }
 
 const seedColor = (rng: () => number) =>
-  Number.parseInt([SEED.dark, SEED.base, SEED.light, SEED.pale][Math.floor(rng() * 4)].slice(1), 16);
+  hexToNumber([SEED.dark, SEED.base, SEED.light, SEED.pale][Math.floor(rng() * 4)]);
 
 /**
  * Things on and around the sill that belong to the room: a potted plant at

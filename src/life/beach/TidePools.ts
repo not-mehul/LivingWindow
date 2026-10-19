@@ -1,5 +1,5 @@
 import { Sprite, type Container, type Texture } from 'pixi.js';
-import { lerpColor, multiplyColor } from '../../core/color';
+import { lerpColor, multiplyColor, toPixel32 } from '../../core/color';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import type { Environment } from '../../scene/Environment';
 import { pixelHash } from '../../sprites/raster';
@@ -189,7 +189,7 @@ export class TidePools {
       const ix = Math.round(x) - this.x0;
       const iy = Math.round(y) - this.y0;
       if (ix < 0 || iy < 0 || ix >= w || iy >= this.canvas.height) return;
-      px[iy * w + ix] = rgba(c);
+      px[iy * w + ix] = toPixel32(c);
     };
     const wind = Math.abs(env.weather.wind);
     for (const [i, p] of this.pools.entries()) {
@@ -259,8 +259,4 @@ export class TidePools {
     this.canvas.ctx.putImageData(this.image, 0, 0);
     this.texture.source.update();
   }
-}
-
-function rgba(c: number): number {
-  return ((255 << 24) | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff)) >>> 0;
 }

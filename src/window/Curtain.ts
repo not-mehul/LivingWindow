@@ -4,13 +4,12 @@ import { valueNoise } from '../scene/common/paint';
 import { pixelHash } from '../sprites/raster';
 import { LINEN } from './palette';
 import { clamp01 } from '../core/math';
+import { hexToNumber, toPixel32 } from '../core/color';
 
-const hex = (c: string) => Number.parseInt(c.slice(1), 16);
-const rgba = (c: number) => ((255 << 24) | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff)) >>> 0;
 /** Linen, outline to highlight, as pixels. */
-const TONES = [LINEN.outline, LINEN.shadow, LINEN.dark, LINEN.base, LINEN.light, LINEN.highlight].map((c) => rgba(hex(c)));
+const TONES = [LINEN.outline, LINEN.shadow, LINEN.dark, LINEN.base, LINEN.light, LINEN.highlight].map((c) => toPixel32(hexToNumber(c)));
 /** The hem's stitching. */
-const STITCH = rgba(hex(LINEN.light));
+const STITCH = toPixel32(hexToNumber(LINEN.light));
 
 /**
  * Paint the curtain into `out` (W×H pixels): linen drawn back to the right

@@ -13,13 +13,7 @@ import { Sky } from '../sky/Sky';
 import { ForestAtmosphere } from './ForestAtmosphere';
 import type { WorldScene } from '../WorldScene';
 import { BROW_Y, FOREST_FLOOR, FOREST_HORIZON, forestPlane, generateForest, type ForestLayout, type Placed } from './forestGenerator';
-
-const BAYER = [
-  [0, 8, 2, 10],
-  [12, 4, 14, 6],
-  [3, 11, 1, 9],
-  [15, 7, 13, 5],
-];
+import { bayer } from '../common/paint';
 
 const RAY_WIDTHS = [16, 24, 12, 20, 32];
 
@@ -33,7 +27,7 @@ function createRayTexture(width: number, height: number, slant: number): Texture
       const edge = 1 - Math.abs((i + 0.5) / width - 0.5) * 2;
       const level = fadeDown * edge;
       const x = Math.round(i + y * slant);
-      if (level * 0.9 <= (BAYER[y & 3][x & 3] + 0.5) / 16) continue;
+      if (level * 0.9 <= bayer(x, y)) continue;
       const k = (y * c.width + x) * 4;
       img.data[k] = 255;
       img.data[k + 1] = 236;

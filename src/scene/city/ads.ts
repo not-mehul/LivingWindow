@@ -2,6 +2,7 @@ import { lerpColor, scaleColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import { pixelHash } from '../../sprites/raster';
 import { drawGlyph, drawText, FONT_HEIGHT, textWidth, type FontFace } from './pixelFont';
+import { bayer } from '../common/paint';
 
 /**
  * The city's advertising: a catalogue of animated ads, each drawn pixel by
@@ -46,8 +47,6 @@ export function drawAd(id: AdId, frame: number, w: number, h: number, flaw: Scre
 
 // --- A little painter over a PixelBuffer ----------------------------------------------
 
-const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
-const bayer = (x: number, y: number) => (BAYER[(y & 3) * 4 + (x & 3)] + 0.5) / 16;
 
 type Fill = number | ((x: number, y: number) => number);
 

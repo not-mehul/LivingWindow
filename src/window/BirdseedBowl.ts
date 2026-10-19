@@ -8,6 +8,7 @@ import { CERAMIC, SEED } from './palette';
 import { dishSize, type DishSize } from './sillProps';
 import type { SillSurface } from './WindowFrame';
 import { PixelBuffer } from './woodArt';
+import { hexToNumber } from '../core/color';
 
 const SEED_COLORS = [SEED.dark, SEED.base, SEED.base, SEED.light, SEED.pale];
 
@@ -242,7 +243,7 @@ export class BirdseedBowl {
         vy: 0,
         delay: (i / count) * POUR_SECONDS,
         landY: rimRow - 1 + Math.floor(rng() * 4),
-        color: Number.parseInt(color.slice(1), 16),
+        color: hexToNumber(color),
       });
     }
     return true;

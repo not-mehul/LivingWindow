@@ -6,13 +6,8 @@ import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import { createRng, randomInt, randomRange } from '../../core/random';
 import type { Environment } from '../Environment';
 import type { CelestialBody } from '../lighting';
+import { bayer } from '../common/paint';
 
-const BAYER_4 = [
-  [0, 8, 2, 10],
-  [12, 4, 14, 6],
-  [3, 11, 1, 9],
-  [15, 7, 13, 5],
-];
 /** Number of flat colour steps in the sky gradient (dithered between). */
 const SKY_STEPS = 9;
 const CLOUD_COUNT = 16;
@@ -64,7 +59,7 @@ class SkyGradient {
       const base = Math.floor(t);
       const frac = t - base;
       for (let x = 0; x < 4; x++) {
-        const step = frac > (BAYER_4[y & 3][x] + 0.5) / 16 ? Math.min(base + 1, SKY_STEPS - 1) : base;
+        const step = frac > bayer(x, y) ? Math.min(base + 1, SKY_STEPS - 1) : base;
         const k = step / (SKY_STEPS - 1);
         const i = (y * 4 + x) * 4;
         data[i] = tr + (hr - tr) * k;
@@ -186,7 +181,7 @@ function createGlowTexture(radius: number): Texture {
       const d = Math.hypot(x - radius + 0.5, y - radius + 0.5) / radius;
       if (d >= 1) continue;
       const level = (1 - d) ** 2 * 4;
-      const step = Math.floor(level) + (level % 1 > (BAYER_4[y & 3][x & 3] + 0.5) / 16 ? 1 : 0);
+      const step = Math.floor(level) + (level % 1 > bayer(x, y) ? 1 : 0);
       const i = (y * size + x) * 4;
       image.data[i] = image.data[i + 1] = image.data[i + 2] = 255;
       image.data[i + 3] = Math.min(4, step) * 48;

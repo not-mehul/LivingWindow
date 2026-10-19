@@ -4,6 +4,11 @@ export function hexToNumber(hex: string): number {
   return Number.parseInt(hex.replace('#', ''), 16);
 }
 
+/** A colour as a pixel in an RGBA image's 32-bit view (little-endian: alpha in the top byte). */
+export function toPixel32(color: number, alpha = 255): number {
+  return ((alpha << 24) | ((color & 0xff) << 16) | (color & 0xff00) | ((color >> 16) & 0xff)) >>> 0;
+}
+
 export function channels(color: number): [number, number, number] {
   return [(color >> 16) & 255, (color >> 8) & 255, color & 255];
 }
