@@ -1,4 +1,4 @@
-import { eye, limb, Palette, rimShade, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
+import { bayer4, eye, limb, Palette, rimShade, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
 
 /**
@@ -165,6 +165,92 @@ export function drawBat(frame: number, size: number): Drawn {
     }
   }
   if (N >= 12) selOut(g, palette, { bottomHeavy: false });
+  return { grid: g, palette };
+}
+
+// --- Eagle overhead ----------------------------------------------------------
+
+/** Frames of the soaring eagle: wingtips raised, level, drooping (it flexes as it rides the air), and a stoop. */
+export const EAGLE_SOAR = 3;
+export const EAGLE_STOOP = 3;
+
+/**
+ * A bald eagle soaring overhead, seen from below: long broad wings held out
+ * flat, the primaries spread like fingers at the tips; a dark brown body and
+ * underwing, lit along the leading edge; the white head turned the way it
+ * flies, a hooked yellow bill, and the white tail fanned. Frames 0–2 flex
+ * the wings (tips up, level, down) as it rides the air; frame 3 is the
+ * stoop, wings half folded back. `size` is the old side-on box; the sprite
+ * is 1.7× as wide (its span) and 0.75× as tall. Authored at 40×18, head right.
+ */
+export function drawEagleSoar(frame: number, size: number): Drawn {
+  const W = Math.max(12, Math.round((size * 1.7) / 2) * 2);
+  const s = W / 40;
+  const H = Math.max(6, Math.round(18 * s));
+  const g = new PixelGrid(W, H);
+  const palette = new Palette();
+  const brown = palette.ramp(0x4e3626, 0.8);
+  const white = palette.ramp(0xeee8dc, 0.5);
+  const bill = palette.ramp(0xe8b830, 0.7);
+  const stoop = frame === EAGLE_STOOP;
+  const f = Math.min(2, Math.max(0, frame));
+  const cx = W / 2;
+  const shoulderY = (stoop ? 6 : 7) * s;
+  // Tip lift (authored units) and how far out the wings reach.
+  const lift = stoop ? -4.5 : [3.2, 1.1, -0.7][f];
+  const span = stoop ? 0.56 : [0.95, 1, 0.97][f];
+  const half = 20 * s * span;
+  // Fingered tips only when there's room for sky between them; small or stooping, the wing just tapers to a point.
+  const fingers = stoop || W < 24 ? 0 : W < 30 ? 3 : 4;
+  // Drawn after the outline, so the sky shows between them.
+  const primaries: Array<[number, number, number]> = [];
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const t = Math.abs(x + 0.5 - cx) / half;
+      if (t < 0.05 || t > 1) continue;
+      const c = shoulderY - lift * s * t ** 1.3 + (stoop ? 2.5 * s * t : 0);
+      const hand = fingers ? Math.max(0, (t - 0.55) / 0.23) : Math.max(0, (t - 0.5) / 0.5) * 2.2;
+      const lead = c - (2.2 - 0.7 * t - 0.4 * hand) * s * (stoop ? 0.75 : 1);
+      const trail = c + (3.4 - 1.4 * t + 0.9 * Math.sin(Math.min(1, t / 0.8) * Math.PI) - 0.9 * hand) * s * (stoop ? 0.75 : 1);
+      const py = y + 0.5;
+      if (fingers && t > 0.78) {
+        // The spread primaries: dark fingers reaching out from the hand, fanning a little, sky between them.
+        const k = (t - 0.78) / 0.22;
+        const mid = (fingers - 1) / 2;
+        let hit = false;
+        for (let i = 0; i < fingers; i++) {
+          const fy = c - 0.4 * s + (i - mid) * Math.max(1.8, (1.5 + k * 0.6) * s);
+          // The middle fingers reach furthest.
+          const reach = 1 - Math.abs(i - mid) * 0.07;
+          if (k <= reach && Math.abs(py - fy) < 0.5) hit = true;
+        }
+        if (hit) primaries.push([x, y, brown[t > 0.9 ? 0 : 1]]);
+        continue;
+      }
+      if (py < lead || py > trail) continue;
+      const v = (py - lead) / Math.max(0.5, trail - lead);
+      // Leading edge catching the sky's light; the coverts a shade paler than the flight feathers; dark trailing edge.
+      const d = bayer4(x, y) * 0.12;
+      g.set(x, y, v < 0.12 ? brown[3] : v + d < 0.5 ? brown[2] : v + d < 0.9 ? brown[1] : brown[0]);
+    }
+  }
+  // The tail, white and fanned (closed in the stoop).
+  const tailTop = shoulderY + 4.5 * s;
+  const tailEnd = shoulderY + (stoop ? 10 : 9.5) * s;
+  const tw0 = 1.3 * s;
+  const tw1 = (stoop ? 1.6 : 3) * s;
+  g.polygon([[cx - tw0, tailTop], [cx + tw0, tailTop], [cx + tw1, tailEnd], [cx - tw1, tailEnd]], white[2]);
+  if (W >= 20) for (let x = Math.floor(cx - tw1); x <= Math.ceil(cx + tw1); x++) if (g.get(x, Math.floor(tailEnd) - 1) === white[2]) g.set(x, Math.floor(tailEnd) - 1, white[1]);
+  // The body, and the white head turned the way it's flying.
+  shadedEllipse(g, cx, shoulderY + 1.6 * s, Math.max(1, 2.3 * s), Math.max(1.5, (stoop ? 5.4 : 4.6) * s), brown, { dither: W >= 24, bias: -0.2 });
+  const hx = cx + 0.8 * s;
+  const hy = shoulderY - (stoop ? 3.6 : 3) * s;
+  shadedEllipse(g, hx, hy, Math.max(1, 2 * s), Math.max(1, 1.9 * s), white, { dither: false });
+  g.set(Math.floor(hx + 1.9 * s), Math.floor(hy + 0.2 * s), bill[2]);
+  if (W >= 26) g.set(Math.floor(hx + 1.9 * s) + 1, Math.floor(hy + 0.2 * s) + 1, bill[1]);
+  if (W >= 30) g.set(Math.floor(hx + 0.9 * s), Math.floor(hy - 0.3 * s), brown[0]);
+  if (W >= 22) selOut(g, palette, { bottomHeavy: false });
+  for (const [x, y, c] of primaries) g.set(x, y, c);
   return { grid: g, palette };
 }
 

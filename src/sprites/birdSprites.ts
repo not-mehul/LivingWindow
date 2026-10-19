@@ -15,8 +15,7 @@ export type SpeciesId =
   | 'robin'
   | 'seagull'
   | 'sandpiper'
-  | 'owl'
-  | 'eagle';
+  | 'owl';
 
 export type BirdPose =
   | 'idle'
@@ -138,8 +137,6 @@ interface Features {
   tufts?: boolean;
   /** Wing length multiplier in flight. */
   wingSpan?: number;
-  /** Light tail (eagle). */
-  paleTail?: boolean;
 }
 
 interface SpeciesDef {
@@ -285,16 +282,6 @@ export const SPECIES: Record<SpeciesId, SpeciesDef> = {
     }),
     headR: 10, bodyRx: 12, bodyRy: 14, beakLen: 3, beakThick: 3, tailLen: 6, legLen: 3,
     features: { wing: 'streaks', streaky: true, upright: true, tufts: true },
-  },
-  eagle: {
-    size: 1.5,
-    palette: palette({
-      [C.Outline]: 0x1a120c, [C.Dark]: 0x2a1c12, [C.Body]: 0x4a3424, [C.BodyLight]: 0x6a4a30, [C.Belly]: 0x3e2c1e,
-      [C.Head]: 0xf2f0ea, [C.Sheen]: 0xf2f0ea, [C.Sheen2]: 0xf2f0ea, [C.Wing]: 0x3e2a1c, [C.WingDark]: 0x22160e,
-      [C.Beak]: 0xe8c040, [C.Eye]: 0xe0c040, [C.Leg]: 0xe8c040, [C.Accent]: 0xf2f0ea,
-    }),
-    headR: 6, bodyRx: 16, bodyRy: 9.5, beakLen: 6, beakThick: 3.5, tailLen: 10, legLen: 5,
-    features: { wing: 'plain', wingSpan: 1.5, paleTail: true },
   },
 };
 
@@ -475,7 +462,7 @@ function drawProfileBird(
       P(tailBase.x - sp.tailLen + 1, tailBase.y + tailDrop + 3),
       P(tailBase.x + 3, tailBase.y + 4),
     ],
-    f.paleTail ? C.Accent : detailed ? C.WingDark : C.Dark,
+    detailed ? C.WingDark : C.Dark,
   );
 
   // --- Legs (standing poses) ---

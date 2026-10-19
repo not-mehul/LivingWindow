@@ -9,7 +9,7 @@ import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCr
 import { drawEgret, drawFishingBoat, drawFrigatebird, drawGull, drawJumpFish, drawNightjar, drawSailboat, drawSandpiper, NIGHTJAR_FRAMES, JUMP_FRAMES, SANDPIPER_FLY, SANDPIPER_RUN, type EgretPose, type GullPose, type SandpiperPose } from '../sprites/shoreSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type DogPose, type HorsePose, type RabbitPose, type SheepPose } from '../sprites/meadowSprites';
-import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind, drawWolf, type WolfPose } from '../sprites/wildSprites';
+import { drawBat, drawBear, drawEagleSoar, EAGLE_STOOP, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind, drawWolf, type WolfPose } from '../sprites/wildSprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from '../sprites/vehicleSprites';
 import { ADS, drawAd, type AdId } from '../scene/city/ads';
 import type { PixelBuffer } from '../core/pixelBuffer';
@@ -217,7 +217,7 @@ function sections(): Section[] {
   });
 
   const woodBirds: Item[][] = [];
-  for (const species of ['owl', 'chickadee', 'woodpecker', 'finch', 'eagle'] as SpeciesId[]) {
+  for (const species of ['owl', 'chickadee', 'woodpecker', 'finch'] as SpeciesId[]) {
     const row: Item[] = [];
     for (const size of [10, 16, 24]) {
       for (const pose of ['idle', 'sleep', 'look-back', 'fly-up', 'fly-mid', 'fly-down', 'glide'] as const) row.push({ label: `${size}${pose.slice(0, 5)}`, draw: () => ({ grid: drawBird(species, pose, size), colors: SPECIES[species].palette }) });
@@ -225,6 +225,7 @@ function sections(): Section[] {
     woodBirds.push(row);
   }
   out.push({ title: 'Woodland birds', rows: woodBirds });
+  out.push({ title: 'Eagle overhead', rows: [10, 14, 18].map((size) => [0, 1, 2, EAGLE_STOOP].map((frame) => ({ label: `${size} ${frame === EAGLE_STOOP ? 'stoop' : `flex${frame}`}`, draw: () => drawEagleSoar(frame, size) }))) });
 
   out.push({
     title: 'Sea turtles and dolphins',

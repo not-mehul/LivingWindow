@@ -72,7 +72,6 @@ export const SPECIES_VOICE: Record<SpeciesId, SoundId> = {
   seagull: 'gull-cry',
   sandpiper: 'sandpiper-peep',
   owl: 'owl-hoot',
-  eagle: 'eagle-cry',
 };
 
 /**

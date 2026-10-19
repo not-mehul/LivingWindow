@@ -47,7 +47,6 @@ export const TEMPERAMENTS: Record<SpeciesId, Temperament> = {
   seagull: { chirp: 1.8, hop: 1, peck: 1.6, look: 2.2, stay: [25, 80], speed: 145, flapRate: 6, glide: 0.8, wariness: 45 },
   sandpiper: { chirp: 1.2, hop: 2.5, peck: 3, look: 1.4, stay: [15, 45], speed: 180, flapRate: 16, glide: 0.2, wariness: 60 },
   owl: { chirp: 1.4, hop: 0.2, peck: 0.3, look: 3.2, stay: [60, 180], speed: 120, flapRate: 6, glide: 0.7, wariness: 50 },
-  eagle: { chirp: 0.4, hop: 0, peck: 0.3, look: 2, stay: [40, 90], speed: 130, flapRate: 4, glide: 0.95, wariness: 80 },
 };
 
 export interface PerchContext {

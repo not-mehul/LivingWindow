@@ -257,7 +257,7 @@ function drawPerched(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: (x
   // --- Tail, fanned behind ---
   const tailBase: Pt = [bx - rx * 0.72, by + 3];
   const tailTip: Pt = [tailBase[0] - sp.tailLen, tailBase[1] + 6 - tailLift];
-  limb(g, [P(tailBase[0] + 2, tailBase[1] - 1), P(tailTip[0], tailTip[1])], 4.6 * s, 3.4 * s, f.paleTail ? ink.belly : ink.dark, { bias: -0.2 });
+  limb(g, [P(tailBase[0] + 2, tailBase[1] - 1), P(tailTip[0], tailTip[1])], 4.6 * s, 3.4 * s, ink.dark, { bias: -0.2 });
   if (s * 48 >= 26) {
     // The feather tips: a darker notch, pale edges.
     g.set(Math.floor(tailTip[0] * s), Math.floor((tailTip[1] + 1) * s), ink.dark[0]);
@@ -437,7 +437,7 @@ function drawFlight(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: (x:
   };
   wing(true);
   // The tail, fanned out in a flare.
-  limb(g, [P(bx - sp.bodyRx * 0.7, by + (flare ? 3 : 0.5)), P(bx - sp.bodyRx * 0.7 - sp.tailLen, by + (flare ? 9 : 1.5))], (flare ? 5 : 3.6) * s, (flare ? 6 : 3) * s, f.paleTail ? ink.belly : ink.dark);
+  limb(g, [P(bx - sp.bodyRx * 0.7, by + (flare ? 3 : 0.5)), P(bx - sp.bodyRx * 0.7 - sp.tailLen, by + (flare ? 9 : 1.5))], (flare ? 5 : 3.6) * s, (flare ? 6 : 3) * s, ink.dark);
   form(bx, by, sp.bodyRx * 0.95, sp.bodyRy * 0.62, angle, (u, v) => (f.breast && u > 0.1 && v > -0.3 ? ink.breast : v > 0.25 ? ink.belly : ink.body));
   // Legs: tucked in flight, swung forward to land.
   if (flare) {
@@ -487,7 +487,7 @@ function drawFlightMid(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: 
   };
   // The far wing, raised a little behind the body and in shade.
   wing(-2, -1.5, () => ink.dark[1]);
-  limb(g, [P(bx - sp.bodyRx * 0.7, by + 0.5), P(bx - sp.bodyRx * 0.7 - sp.tailLen, by + 1.5)], 3.6 * s, 3 * s, f.paleTail ? ink.belly : ink.dark);
+  limb(g, [P(bx - sp.bodyRx * 0.7, by + 0.5), P(bx - sp.bodyRx * 0.7 - sp.tailLen, by + 1.5)], 3.6 * s, 3 * s, ink.dark);
   form(bx, by, sp.bodyRx * 0.95, sp.bodyRy * 0.62, -0.06, (u, v) => (f.breast && u > 0.1 && v > -0.3 ? ink.breast : v > 0.25 ? ink.belly : ink.body));
   limb(g, [P(bx + sp.bodyRx * 0.55, by - 2), P(hx - 1, hy + 1)], sp.headR * 1.5 * s, sp.headR * 1.3 * s, f.breast ? ink.breast : ink.head);
   form(hx, hy, sp.headR * 0.95, sp.headR * 0.9, 0, (_u, v) => (f.cap && v < -0.2 ? ink.cap : ink.head));

@@ -7,7 +7,7 @@ import { drawDeerSized, drawSquirrelSized } from './forestSprites';
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
 import { drawBusker, drawPerson, randomLook } from './people';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from './vehicleSprites';
-import { drawBat, drawBear, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling } from './wildSprites';
+import { drawBat, drawBear, drawButterfly, drawEagleSoar, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, EAGLE_STOOP } from './wildSprites';
 import { drawStallLightsSized, drawStallSized, STALL_STAGES, type StallKind } from './streetSprites';
 
 const POSES: BirdPose[] = ['idle', 'idle-breathe', 'look-up', 'look-back', 'peck-reach', 'peck-down', 'chirp', 'hop', 'fly-up', 'fly-mid', 'fly-down', 'glide', 'sleep'];
@@ -261,6 +261,17 @@ describe('wild creatures', () => {
     for (const kind of ['monarch', 'white', 'blue', 'brimstone'] as const) for (const n of [4, 6, 9, 14]) for (const f of [0, 1, 2]) expect(drawButterfly(kind, f, n).grid.isEmpty()).toBe(false);
     for (const n of [5, 8, 13, 24]) for (const f of [0, 1, 2, 3]) expect(drawWoodpeckerCling(f, n).grid.isEmpty()).toBe(false);
     for (const kind of ['fly-agaric', 'bolete', 'cluster'] as const) for (const n of [3, 6, 10]) expect(drawMushroom(kind, n).grid.isEmpty()).toBe(false);
+  });
+
+  it('soars the eagle with wings that flex, and folds them to stoop', () => {
+    for (const n of [10, 14, 18]) {
+      const all = [0, 1, 2, EAGLE_STOOP].map((f) => drawEagleSoar(f, n).grid);
+      for (const g of all) {
+        expect(g.isEmpty()).toBe(false);
+        expect(g.width).toBeGreaterThan(g.height * 1.8);
+      }
+      expect(new Set(all.map((g) => Array.from(g.data).join(','))).size).toBe(4);
+    }
   });
 });
 

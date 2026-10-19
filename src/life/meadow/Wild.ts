@@ -5,7 +5,7 @@ import type { Environment } from '../../scene/Environment';
 import { FOCAL } from '../../sim/groundPlane';
 import { meadowCreek, meadowPlane } from '../../sim/meadowGeometry';
 import { rabbitActivity } from '../../sim/wildlife';
-import { BirdSpriteCache } from '../../sprites/birdSprites';
+import { DrawnCache, drawEagleSoar, EAGLE_STOOP } from '../../sprites/wildSprites';
 import { RABBIT_HOP, RabbitSprites, TOP_FISH_HEADINGS, TopFishSprites, type FishKind, type RabbitPose } from '../../sprites/meadowSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
@@ -346,8 +346,9 @@ export class StreamFishes {
  * pass, hunting, with a cry, before climbing back up.
  */
 export class SoaringEagle {
-  private readonly sprites = new BirdSpriteCache();
+  private readonly sprites = new DrawnCache();
   private sprite: Sprite | null = null;
+  private flex = 0;
   private centre = { x: 0, y: 0 };
   private angle = 0;
   private radius = 50;
@@ -407,19 +408,26 @@ export class SoaringEagle {
     if (this.stoop < 0 && this.life > 8 && Math.random() < dt / 90) this.stoop = 0;
     let drop = 0;
     let size = 10;
+    // Riding the air: the wings flex now and then, tips lifting and settling.
+    this.flex += dt * (0.4 + Math.abs(env.weather.wind) * 0.8);
+    const sway = Math.sin(this.flex) + Math.sin(this.flex * 2.3) * 0.4;
+    let frame = sway > 0.8 ? 0 : sway < -0.8 ? 2 : 1;
     if (this.stoop >= 0) {
       this.stoop += dt;
       const k = Math.min(1, this.stoop / this.stoopLength);
       const dip = Math.sin(k * Math.PI);
       drop = dip * 75;
       size = 10 + Math.round(dip * 4) * 2;
+      // Wings half folded on the way down; spread wide and raised to pull out of it.
+      if (k > 0.15 && k < 0.55) frame = EAGLE_STOOP;
+      else if (k >= 0.55 && k < 0.8) frame = 0;
       if (this.stoop - dt < 1.2 && this.stoop >= 1.2) this.sound('eagle-cry', this.viewport.worldXToStereo(this.at.x), 1);
       if (k >= 1) this.stoop = -1;
     }
     const x = this.centre.x + Math.cos(this.angle) * this.radius;
     const y = this.centre.y + Math.sin(this.angle) * this.radius * 0.25 + drop;
     this.at = { x, y };
-    this.sprite.texture = this.sprites.get('eagle', 'glide', size);
+    this.sprite.texture = this.sprites.get(`${frame}:${size}`, () => drawEagleSoar(frame, size));
     this.sprite.scale.x = Math.sin(this.angle) > 0 ? -1 : 1;
     this.sprite.position.set(Math.round(x), Math.round(y));
     this.sprite.tint = env.lighting.ambient;
