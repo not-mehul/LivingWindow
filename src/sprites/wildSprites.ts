@@ -428,40 +428,176 @@ export function drawWolf(pose: WolfPose, height: number): Drawn {
 
 export type ButterflyKind = 'monarch' | 'white' | 'blue' | 'brimstone';
 
-const BUTTERFLY: Record<ButterflyKind, { wing: number; edge: number }> = {
-  monarch: { wing: 0xe8862a, edge: 0x2a1e18 },
-  white: { wing: 0xf2f0e8, edge: 0x6a6a70 },
-  blue: { wing: 0x6a9ae8, edge: 0x2a3a6a },
-  brimstone: { wing: 0xe8e060, edge: 0xb0a030 },
+interface ButterflyStyle {
+  /** Upper side of the wings, and its border. */
+  wing: number;
+  edge: number;
+  /** The underside, shown when the wings are closed up. */
+  under: number;
+  /** The brimstone's wings end in leaf points. */
+  leaf?: boolean;
+}
+
+const BUTTERFLY: Record<ButterflyKind, ButterflyStyle> = {
+  monarch: { wing: 0xe8862a, edge: 0x2a1e18, under: 0xe0a86a },
+  white: { wing: 0xf2f0e8, edge: 0x3a3a40, under: 0xdde4c8 },
+  blue: { wing: 0x5a8ae8, edge: 0x24305a, under: 0xb8bcc8 },
+  brimstone: { wing: 0xece05a, edge: 0xa89a30, under: 0xd8e08a, leaf: true },
 };
 
-/** Hand-placed butterflies (they're only ever a few pixels): e edge, w wing, d shade, b body. */
-const BUTTERFLY_FRAMES: Record<'small' | 'large', string[][]> = {
-  small: [
-    ['e...e', 'wwbww', '.wbw.', '.d.d.'],
-    ['.e.e.', '.wbw.', '..b..', '.....'],
-    ['..e..', '..w..', '..b..', '.....'],
-  ],
-  large: [
-    ['ee.....ee', 'ewwd.dwwe', '.wwwbwww.', '..wdbdw..', '..wwbww..', '..dw.wd..'],
-    ['.e.....e.', '.ww...ww.', '..wwbww..', '...dbd...', '...wbw...', '...d.d...'],
-    ['....e....', '....w....', '...ww....', '...wb....', '....b....', '.........'],
-  ],
-};
+/** Frames: wings open flat (0), raised half way (1), closed up over the back (2), and swept down below flat (3). */
+export const BUTTERFLY_FLIGHT: readonly number[] = [0, 1, 2, 1, 0, 3];
 
-/** A butterfly, wings open (frame 0), half (1) or closed up (2), `size` px across. */
+/** Far off, a butterfly is a few hand-placed pixels: e edge, w wing, d shade, b body. */
+const TINY_BUTTERFLY = [
+  ['e...e', 'wwbww', '.wbw.', '.d.d.'],
+  ['.e.e.', '.wbw.', '..b..', '.....'],
+  ['..e..', '..w..', '..b..', '.....'],
+  ['.....', 'wwbww', 'e.b.e', '.d.d.'],
+];
+
+type Pt2 = readonly [number, number];
+/** Wing outlines for the right side (u out from the body, v down), in −1..1 of the box. */
+const FOREWING: readonly Pt2[] = [[0.08, -0.12], [0.3, -0.62], [0.62, -0.9], [0.9, -0.82], [0.86, -0.42], [0.62, -0.04], [0.12, 0.06]];
+const HINDWING: readonly Pt2[] = [[0.1, 0.02], [0.6, 0.04], [0.68, 0.36], [0.52, 0.72], [0.24, 0.84], [0.1, 0.5]];
+const LEAF_TIP: Pt2 = [1, -0.98];
+const LEAF_TAIL: Pt2 = [0.66, 0.66];
+
+/**
+ * A butterfly seen from above, `size` px across, head up: pointed
+ * forewings and rounded hindwings with a waist between, shaded from the
+ * body out and edged, with each species' marks — the monarch's black veins
+ * and white-spotted border, the white's black tips and spot, the blue's
+ * pale fringe, the brimstone's leaf-pointed wings and orange dots; a thin
+ * dark body and its antennae. Frame 2 shows the closed wings' underside;
+ * 1 and 3 are the wings raised and lowered through the beat. Under 6 px
+ * it's a few hand-placed pixels.
+ */
 export function drawButterfly(kind: ButterflyKind, frame: number, size: number): Drawn {
+  const st = BUTTERFLY[kind];
   const palette = new Palette();
-  const style = BUTTERFLY[kind];
-  const wing = palette.ramp(style.wing);
-  const ink: Record<string, number> = { e: palette.add(style.edge), w: wing[3], d: wing[1], b: palette.add(0x2a2420) };
-  const rows = BUTTERFLY_FRAMES[size < 7 ? 'small' : 'large'][((frame % 3) + 3) % 3];
-  const g = new PixelGrid(rows[0].length, rows.length);
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) if (row[x] !== '.') g.set(x, y, ink[row[x]]);
-  });
-  const N = Math.round(size);
-  return { grid: N > 10 ? g.resampled(N, Math.round((N * rows.length) / rows[0].length)) : g, palette };
+  const wing = palette.ramp(st.wing, 0.7);
+  const under = palette.ramp(st.under, 0.6);
+  const edge = palette.add(st.edge);
+  const body = palette.add(0x2a2420);
+  const pale = palette.add(0xf8f4ea);
+  const orange = palette.add(0xe87a20);
+  const f = ((frame % 4) + 4) % 4;
+  const N = Math.max(3, Math.round(size));
+  if (N < 6) {
+    const ink: Record<string, number> = { e: edge, w: wing[3], d: wing[1], b: body };
+    const rows = TINY_BUTTERFLY[f];
+    const g = new PixelGrid(rows[0].length, rows.length);
+    rows.forEach((row, y) => {
+      for (let x = 0; x < row.length; x++) if (row[x] !== '.') g.set(x, y, ink[row[x]]);
+    });
+    return { grid: g, palette };
+  }
+  const W = N % 2 === 0 ? N + 1 : N;
+  const H = Math.max(5, Math.round(N * 0.85));
+  const g = new PixelGrid(W, H);
+  const cx = (W - 1) / 2;
+  const cy = H / 2;
+  const toPx = ([u, v]: Pt2): [number, number] => [cx + 0.5 + u * (W / 2), cy + v * (H / 2)];
+  const fine = N >= 9;
+
+  if (f === 2) {
+    // Closed up over the back: the underside of the pair, a sail above the body, shaded to its base.
+    const sail: Pt2[] = [[-0.08, 0.5], [-0.02, -0.95], [0.42, -0.6], [0.55, -0.1], [0.46, 0.5], [0.22, 0.78], [-0.06, 0.7]];
+    if (st.leaf) sail.splice(1, 1, [0.06, -1]);
+    const mask = new PixelGrid(W, H);
+    mask.polygon(sail.map(toPx), 1);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        if (!mask.get(x, y)) continue;
+        const v = (y - cy) / (H / 2);
+        const rim = fine && (!mask.get(x + 1, y) || !mask.get(x, y - 1));
+        g.set(x, y, rim ? under[1] : v > 0.25 ? under[1] : v < -0.4 ? under[3] : under[2]);
+      }
+    }
+    if (fine && kind === 'blue') for (const [u, v] of [[0.2, -0.2], [0.3, 0.2], [0.12, 0.45]] as const) g.set(Math.floor(toPx([u, v])[0]), Math.floor(toPx([u, v])[1]), edge);
+    if (fine && kind === 'monarch') for (let k = 0; k < 4; k++) g.set(Math.floor(toPx([0.05 + k * 0.1, -0.5 + k * 0.28])[0]), Math.floor(toPx([0.05 + k * 0.1, -0.5 + k * 0.28])[1]), edge);
+    // The body along the base of the wings.
+    for (let y = Math.floor(cy + H * 0.25); y < Math.min(H, Math.ceil(cy + H * 0.5)); y++) g.set(Math.floor(cx - 0.04 * W), y, body);
+    return { grid: g, palette };
+  }
+
+  // Open (0), raised half way (1: narrower, the outer halves turned from the light), or swept down (3).
+  const span = f === 1 ? 0.58 : 1;
+  const tilt = f === 3 ? 0.32 : f === 1 ? -0.1 : 0;
+  const place = ([u, v]: Pt2, side: number): Pt2 => {
+    const c = Math.cos(tilt);
+    const sn = Math.sin(tilt);
+    return [side * (u * c - v * sn) * span, u * sn + v * c];
+  };
+  const fore = st.leaf ? [...FOREWING.slice(0, 3), LEAF_TIP, ...FOREWING.slice(4)] : FOREWING;
+  const hind = st.leaf ? [...HINDWING.slice(0, 3), LEAF_TAIL, ...HINDWING.slice(4)] : HINDWING;
+  const foreMask = new PixelGrid(W, H);
+  const hindMask = new PixelGrid(W, H);
+  for (const side of [-1, 1]) {
+    foreMask.polygon(fore.map((p) => toPx(place(p, side))), 1);
+    hindMask.polygon(hind.map((p) => toPx(place(p, side))), 1);
+  }
+  const inWing = (x: number, y: number) => foreMask.get(x, y) || hindMask.get(x, y);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const isFore = foreMask.get(x, y) !== 0;
+      if (!isFore && !hindMask.get(x, y)) continue;
+      const u = (x + 0.5 - cx - 0.5) / (W / 2);
+      const v = (y + 0.5 - cy) / (H / 2);
+      const out = Math.abs(u) / span;
+      const border = fine && (!inWing(x - 1, y) || !inWing(x + 1, y) || !inWing(x, y - 1) || !inWing(x, y + 1));
+      let c = out < 0.3 ? wing[2] : isFore ? wing[3] : wing[2];
+      if (f === 1 && out > 0.55) c = wing[1];
+      switch (kind) {
+        case 'monarch':
+          // The black border, white-spotted when there's room; small, just round the outer edge.
+          if (border && (N >= 11 || out > 0.6)) c = N >= 11 && (x + y) % 3 === 0 ? pale : edge;
+          else if (isFore && v < -0.62 && out > 0.55) c = edge;
+          break;
+        case 'white':
+          if (isFore && v < -0.5 && out > 0.6) c = edge;
+          else if (border) c = wing[1];
+          break;
+        case 'blue':
+          if (border) c = v < -0.5 || out > 0.5 ? pale : edge;
+          else if (out < 0.35) c = wing[1];
+          break;
+        case 'brimstone':
+          if (border) c = wing[1];
+          break;
+      }
+      g.set(x, y, c);
+    }
+  }
+  if (fine) {
+    for (const side of [-1, 1]) {
+      const mark = (p: Pt2, color: number) => {
+        const [x, y] = toPx(place(p, side));
+        g.set(Math.floor(x), Math.floor(y), color);
+      };
+      if (kind === 'monarch') {
+        // Black veins out from the body.
+        for (const p of [[0.32, -0.36], [0.46, -0.28], [0.36, 0.3], [0.48, 0.18]] as const) mark(p, edge);
+      } else if (kind === 'white') mark([0.55, -0.32], edge);
+      else if (kind === 'brimstone') {
+        mark([0.5, -0.4], orange);
+        mark([0.38, 0.36], orange);
+      }
+    }
+  }
+  // The thin body, head and antennae.
+  const bx = Math.floor(cx);
+  for (let y = Math.floor(cy - H * 0.22); y < Math.ceil(cy + H * 0.3); y++) g.set(bx, y, body);
+  const top = Math.floor(cy - H * 0.3);
+  g.set(bx, top + 1, body);
+  g.set(bx - 1, top, body);
+  g.set(bx + 1, top, body);
+  if (N >= 10) {
+    g.set(bx - 1, top - 1, body);
+    g.set(bx + 1, top - 1, body);
+  }
+  return { grid: g, palette };
 }
 
 // --- Woodpecker on a trunk ------------------------------------------------------

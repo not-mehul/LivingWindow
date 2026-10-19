@@ -1,7 +1,7 @@
 import { Sprite, type Container } from 'pixi.js';
 import type { Environment } from '../../scene/Environment';
 import { butterflyActivity } from '../../sim/wildlife';
-import { drawButterfly, DrawnCache, type ButterflyKind } from '../../sprites/wildSprites';
+import { BUTTERFLY_FLIGHT, drawButterfly, DrawnCache, type ButterflyKind } from '../../sprites/wildSprites';
 import { rand as r } from '../../core/random';
 
 interface Butterfly {
@@ -94,8 +94,8 @@ export class Butterflies {
           // A wavering, bobbing flight.
           b.y += (dy / d) * speed * dt + Math.sin(b.t * 9) * 10 * dt;
         }
-        b.flap += dt * 10;
-        frame = Math.floor(b.flap) % 3;
+        b.flap += dt * 12;
+        frame = BUTTERFLY_FLIGHT[Math.floor(b.flap) % BUTTERFLY_FLIGHT.length];
       }
       const size = Math.max(3, Math.round(this.sizeAt(b.y)));
       b.sprite.texture = this.sprites.get(`${b.kind}:${frame}:${size}`, () => drawButterfly(b.kind, frame, size));

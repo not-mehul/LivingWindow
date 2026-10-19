@@ -259,7 +259,10 @@ describe('wild creatures', () => {
     expect(frames((k) => drawBear((['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6'] as const)[k], 30), 6)).toBe(6);
     expect(frames((k) => drawBat(k, 16), 4)).toBe(4);
     expect(frames((k) => drawWoodpeckerCling(k, 16), 4)).toBe(4);
-    for (const kind of ['monarch', 'white', 'blue', 'brimstone'] as const) for (const n of [4, 6, 9, 14]) for (const f of [0, 1, 2]) expect(drawButterfly(kind, f, n).grid.isEmpty()).toBe(false);
+    for (const kind of ['monarch', 'white', 'blue', 'brimstone'] as const) {
+      for (const n of [4, 6, 9, 14]) for (const f of [0, 1, 2, 3]) expect(drawButterfly(kind, f, n).grid.isEmpty()).toBe(false);
+      expect(frames((k) => drawButterfly(kind, k, 12), 4)).toBe(4);
+    }
     for (const n of [5, 8, 13, 24]) for (const f of [0, 1, 2, 3]) expect(drawWoodpeckerCling(f, n).grid.isEmpty()).toBe(false);
     for (const kind of ['fly-agaric', 'bolete', 'cluster'] as const) for (const n of [3, 6, 10]) expect(drawMushroom(kind, n).grid.isEmpty()).toBe(false);
   });

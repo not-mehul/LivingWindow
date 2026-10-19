@@ -114,10 +114,14 @@ function sections(): Section[] {
       [8, 12, 18].flatMap((h) => (['walk-1', 'walk-4', 'sniff'] as BearPose[]).map((pose) => ({ label: `bear ${pose} ${h}`, draw: () => drawBear(pose, h) }))),
       (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6', 'sniff', 'sniff-air'] as BearPose[]).map((pose) => ({ label: `bear ${pose}`, draw: () => drawBear(pose, 32) })),
       [8, 12, 18, 30].flatMap((h) => (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'sit', 'howl'] as WolfPose[]).map((pose) => ({ label: `wolf ${pose} ${h}`, draw: () => drawWolf(pose, h) }))),
-      (['monarch', 'white', 'blue', 'brimstone'] as ButterflyKind[]).flatMap((kind) => [4, 6, 9].flatMap((n) => [0, 1, 2].map((f) => ({ label: `${kind[0]}${n}/${f}`, draw: () => drawButterfly(kind, f, n) })))),
       [6, 8, 12, 16, 24].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `wp ${n}/${f}`, draw: () => drawWoodpeckerCling(f, n) }))),
       (['fly-agaric', 'bolete', 'cluster'] as MushroomKind[]).flatMap((kind) => [3, 5, 8, 12].map((n) => ({ label: `${kind} ${n}`, draw: () => drawMushroom(kind, n) }))),
     ],
+  });
+
+  out.push({
+    title: 'Butterflies',
+    rows: (['monarch', 'white', 'blue', 'brimstone'] as ButterflyKind[]).map((kind) => [4, 6, 9, 12].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `${kind[0]}${n}/${f}`, draw: () => drawButterfly(kind, f, n) })))),
   });
 
   const cows: Item[][] = [];
