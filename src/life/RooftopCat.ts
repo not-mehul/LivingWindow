@@ -11,13 +11,19 @@ import {
   chooseCatState,
   type CatState,
 } from '../sim/catBrain';
-import { CAT_COATS, CAT_WALK, CAT_WIDTH, CatSpriteCache, type CatCoat, type CatPose } from '../sprites/catSprites';
+import { CAT_COATS, CAT_GROOM, CAT_STALK, CAT_WALK, CAT_WIDTH, CatSpriteCache, type CatCoat, type CatPose } from '../sprites/catSprites';
+import { sillContacts } from '../window/sillContacts';
 import { sillWidth, type LifeSoundSink, type SillState } from './types';
 
+/** The wiggle before a pounce, seconds. */
+const WINDUP = 0.9;
+
 /**
- * A rare feline visitor to the windowsill. It strolls in, wanders, sits,
- * stretches and naps, stalks any birds (who scatter), and eventually leaves.
- * Tap it for a meow, or a purr if it's napping.
+ * A rare feline visitor to the windowsill. It strolls in, wanders, sits
+ * (breathing, blinking slowly, flicking an ear, swishing its tail, glancing
+ * round at you), washes, loafs, yawns, stretches and naps, chatters at birds
+ * or stalks them (who scatter), and eventually leaves. Tap it for a meow, or
+ * a purr if it's napping.
  */
 export class RooftopCat {
   readonly container = new Container({ label: 'rooftop-cat' });
@@ -40,6 +46,10 @@ export class RooftopCat {
   private pounceFrom = 0;
   private exitSpeed = 1;
   private sill: SillState | null = null;
+  /** A little thing it does while sitting: a blink, a glance, an ear flick, a swish. */
+  private micro: { kind: 'blink' | 'look' | 'ear' | 'swish'; t: number; length: number } | null = null;
+  private microIn = 2;
+  private brush = 0;
 
   constructor(
     private readonly emitSound: LifeSoundSink,
@@ -102,7 +112,7 @@ export class RooftopCat {
         if (this.state === 'stalk' && birdsOnSill.length > 0) {
           const prey = birdsOnSill.reduce((a, b) => (Math.abs(b - this.x) < Math.abs(a - this.x) ? b : a));
           this.targetX = prey;
-          if (Math.abs(prey - this.x) < 26) {
+          if (Math.abs(prey - this.x) < 40) {
             this.pounceFrom = this.x;
             this.begin('pounce');
             break;
@@ -113,6 +123,12 @@ export class RooftopCat {
         const step = Math.sign(dx) * Math.min(Math.abs(dx), speed * dt);
         this.x += step;
         this.walked += Math.abs(step);
+        // Brushing past the plant sets it nodding.
+        this.brush -= Math.abs(step);
+        if (this.brush <= 0 && this.sill) {
+          this.brush = 12;
+          sillContacts.touch(this.sill.surface.left + this.x * this.sill.surface.frameScale, this.state === 'exit' && this.exitSpeed > 1 ? 0.5 : 0.25);
+        }
         if (Math.abs(dx) > 0.5) this.facing = dx > 0 ? 1 : -1;
         if (Math.abs(this.targetX - this.x) < 0.5) {
           if (this.state === 'exit') {
@@ -124,24 +140,26 @@ export class RooftopCat {
         break;
       }
       case 'pounce': {
-        const t = Math.min(1, this.timer / this.duration);
-        this.x = this.pounceFrom + this.facing * 16 * t;
+        const t = clamp((this.timer - WINDUP) / (this.duration - WINDUP), 0, 1);
+        this.x = this.pounceFrom + this.facing * 26 * t;
         if (this.timer >= this.duration) {
+          if (this.sill) sillContacts.touch(this.sill.surface.left + this.x * this.sill.surface.frameScale, 0.8);
           if (this.rng() < 0.5) this.meow();
           this.decide(0, wet);
         }
         break;
       }
       default:
+        if (this.state === 'sit') this.fidget(dt);
         if (this.timer >= this.duration) this.decide(birdsOnSill.length, wet);
     }
-    this.x = this.state === 'exit' || this.state === 'enter' ? this.x : clamp(this.x, 20, width - 20);
+    this.x = this.state === 'exit' || this.state === 'enter' ? this.x : clamp(this.x, 34, width - 34);
     this.render(env, sill);
   }
 
   private arrive(sill: SillState): void {
     const width = sillWidth(sill);
-    if (width < 120) {
+    if (width < 170) {
       this.nextVisit = 30;
       return;
     }
@@ -188,15 +206,38 @@ export class RooftopCat {
     this.state = state;
     this.timer = 0;
     this.duration = catStateDuration(state, this.rng);
+    this.micro = null;
+    this.microIn = 1 + this.rng() * 2;
+  }
+
+  /** Every few seconds while it sits, one of its little habits. */
+  private fidget(dt: number): void {
+    if (this.micro) {
+      this.micro.t += dt;
+      if (this.micro.t >= this.micro.length) this.micro = null;
+      return;
+    }
+    this.microIn -= dt;
+    if (this.microIn > 0) return;
+    this.microIn = 1.5 + this.rng() * 3.5;
+    const roll = this.rng();
+    this.micro =
+      roll < 0.35
+        ? { kind: 'blink', t: 0, length: 0.5 }
+        : roll < 0.6
+          ? { kind: 'swish', t: 0, length: 0.9 }
+          : roll < 0.8
+            ? { kind: 'look', t: 0, length: 1.5 + this.rng() * 2 }
+            : { kind: 'ear', t: 0, length: 0.25 };
   }
 
   /** Somewhere to stroll to, away from the bowl. */
   private pickSpot(width: number, sill: SillState): number {
     for (let i = 0; i < 10; i++) {
-      const x = 30 + this.rng() * (width - 60);
-      if (Math.abs(x - sill.bowlX) > sill.bowlHalfWidth + 30) return x;
+      const x = 40 + this.rng() * (width - 80);
+      if (Math.abs(x - sill.bowlX) > sill.bowlHalfWidth + 40) return x;
     }
-    return 30 + this.rng() * (width - 60);
+    return 40 + this.rng() * (width - 80);
   }
 
   private pet(): void {
@@ -205,7 +246,11 @@ export class RooftopCat {
       this.begin('stretch');
     } else {
       this.meow();
-      if (this.state !== 'exit' && this.state !== 'pounce') this.begin('sit');
+      if (this.state !== 'exit' && this.state !== 'pounce') {
+        this.begin('sit');
+        // It turns to look at you.
+        this.micro = { kind: 'look', t: 0, length: 2.5 };
+      }
     }
   }
 
@@ -223,35 +268,64 @@ export class RooftopCat {
   }
 
   private pose(): CatPose {
+    const t = this.timer;
     switch (this.state) {
       case 'enter':
       case 'walk':
       case 'exit':
-        return CAT_WALK[Math.floor(this.walked / 3.5) % 4];
+        return CAT_WALK[Math.floor(this.walked / 2.5) % CAT_WALK.length];
       case 'stalk':
-        return Math.floor(this.walked / 2.5) % 2 === 0 ? 'crouch-1' : 'crouch-2';
-      case 'pounce':
-        return 'pounce';
-      case 'sit':
-        // An occasional slow blink.
-        return this.timer % 4 > 3.75 ? 'sit-blink' : 'sit';
-      case 'stretch':
-        return 'stretch';
+        return CAT_STALK[Math.floor(this.walked / 2.8) % CAT_STALK.length];
+      case 'pounce': {
+        if (t < WINDUP) return Math.floor(t / 0.11) % 2 === 0 ? 'wiggle-1' : 'wiggle-2';
+        const k = (t - WINDUP) / (this.duration - WINDUP);
+        return k < 0.3 ? 'pounce-1' : k < 0.7 ? 'pounce-2' : 'pounce-3';
+      }
+      case 'sit': {
+        const m = this.micro;
+        if (m?.kind === 'blink') return m.t > 0.08 && m.t < 0.42 ? 'sit-blink' : 'sit';
+        if (m?.kind === 'look') return 'sit-look';
+        if (m?.kind === 'ear') return 'sit-ear';
+        if (m?.kind === 'swish') {
+          const f = Math.floor((m.t / m.length) * 6);
+          return (['sit-swish-1', 'sit-swish-2', 'sit-swish-3', 'sit-swish-3', 'sit-swish-2', 'sit-swish-1'] as const)[Math.min(5, f)];
+        }
+        // Breathing, slow.
+        return t % 2.6 < 1.3 ? 'sit' : 'sit-breathe';
+      }
+      case 'groom':
+        // Licks at the paw, then a wash over the ear, with a pause now and then.
+        return t % 5 > 4.3 ? 'sit-blink' : CAT_GROOM[Math.floor(t / 0.24) % CAT_GROOM.length];
+      case 'loaf':
+        return t % 5 > 4.6 ? 'loaf-blink' : 'loaf';
+      case 'yawn': {
+        const k = t / this.duration;
+        return k < 0.15 ? 'yawn-1' : k < 0.3 ? 'yawn-2' : k < 0.7 ? 'yawn-3' : k < 0.85 ? 'yawn-2' : 'yawn-1';
+      }
+      case 'stretch': {
+        const k = t / this.duration;
+        return k < 0.2 ? 'stretch-1' : k < 0.65 ? 'stretch-2' : k < 0.85 ? 'stretch-1' : 'stretch-3';
+      }
       case 'nap':
-        return Math.floor(this.timer / 1.6) % 2 === 0 ? 'nap-1' : 'nap-2';
+        return Math.floor(t / 1.6) % 2 === 0 ? 'nap-1' : 'nap-2';
+      case 'chatter':
+        // Bursts of chattering, between stares.
+        return t % 1.8 < 1.1 && Math.floor(t / 0.08) % 2 === 0 ? 'chatter-1' : 'chatter-2';
     }
   }
 
   private render(env: Environment, sill: SillState): void {
     const fs = sill.surface.frameScale;
-    const lift = this.state === 'pounce' ? Math.sin(Math.PI * Math.min(1, this.timer / this.duration)) * 8 : 0;
+    const leap = this.state === 'pounce' ? clamp((this.timer - WINDUP) / (this.duration - WINDUP), 0, 1) : 0;
+    const lift = Math.sin(Math.PI * leap) * 6;
     this.sprite.texture = this.sprites.get(this.coat, this.pose());
     this.sprite.scale.set(fs * this.facing, fs);
     const x = Math.round((sill.surface.left + this.x * fs) / fs) * fs;
     this.sprite.position.set(x, sill.surface.y + Math.round(2 - lift) * fs);
     this.sprite.tint = interiorTint(env.lighting);
     this.shadow.clear();
-    this.shadow.ellipse(0, 0, 18, 1.6).fill({ color: 0x000000, alpha: 0.22 });
+    const sitting = this.state === 'sit' || this.state === 'groom' || this.state === 'yawn' || this.state === 'chatter';
+    this.shadow.ellipse(sitting ? -4 * this.facing : 0, 0, sitting ? 18 : 28, 2).fill({ color: 0x000000, alpha: 0.22 * (1 - lift / 12) });
     this.shadow.scale.set(fs);
     this.shadow.position.set(x, sill.surface.y + fs);
   }

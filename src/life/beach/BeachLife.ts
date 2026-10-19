@@ -2,6 +2,7 @@ import type { LandscapeDeps, SceneLife, SillBase } from '../../landscapes/types'
 import type { BeachScene } from '../../scene/beach/BeachScene';
 import { poolShapes } from '../../scene/beach/rocks';
 import type { Environment } from '../../scene/Environment';
+import { WindowDog } from '../WindowDog';
 import { BirdSystem, type BirdEcology } from '../BirdSystem';
 import { Bioluminescence, Crabs, Hatchlings, HermitCrabs, Jellyfish, Pelican } from './ShoreCreatures';
 import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
@@ -30,6 +31,7 @@ export const BEACH_ECOLOGY: BirdEcology = {
  */
 export class BeachLife implements SceneLife {
   readonly birds: BirdSystem;
+  readonly dog: WindowDog;
   readonly sandpipers: Sandpipers;
   readonly sea: FishAndGulls;
   readonly turtles: Turtles;
@@ -66,6 +68,9 @@ export class BeachLife implements SceneLife {
       canTap: deps.canTap,
       ecology: BEACH_ECOLOGY,
     });
+    // The household dog, up at the window now and then.
+    this.dog = new WindowDog(deps.sound, deps.canTap, (x) => this.birds.startleNear(x, 50));
+    deps.layers.room.addChild(this.dog.container);
     this.sandpipers = new Sandpipers(scene, deps.viewport, deps.sound);
     this.sea = new FishAndGulls(scene, deps.viewport, deps.sound);
     this.turtles = new Turtles(scene, deps.viewport);
@@ -114,7 +119,9 @@ export class BeachLife implements SceneLife {
   }
 
   update(dt: number, env: Environment, sill: SillBase): void {
-    this.birds.update(dt, env, { ...sill, catX: null, catStalking: false });
+    const state = { ...sill, catX: null, catStalking: false };
+    this.dog.update(dt, env, state, this.birds.sillBirds());
+    this.birds.update(dt, env, state);
     this.sandpipers.update(dt, env);
     this.sea.update(dt, env);
     this.turtles.update(dt, env);

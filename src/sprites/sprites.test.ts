@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { drawBird, SPECIES, type BirdPose, type SpeciesId } from './birdSprites';
-import { CAT_HEIGHT, CAT_WIDTH, drawCat, type CatPose } from './catSprites';
+import { CAT_COATS, CAT_HEIGHT, CAT_POSES, CAT_STALK, CAT_WALK, CAT_WIDTH, drawCat, type CatPose } from './catSprites';
 import { PixelGrid } from './raster';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized } from './beachSprites';
 import { drawDeerSized, drawSquirrelSized } from './forestSprites';
@@ -62,13 +62,30 @@ describe('procedural birds', () => {
 
 describe('other sprites', () => {
   it('draws every cat pose inside its box', () => {
-    const poses: CatPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'sit', 'sit-blink', 'stretch', 'nap-1', 'nap-2', 'crouch-1', 'crouch-2', 'pounce'];
-    for (const pose of poses) {
-      const g = drawCat('orange-tabby', pose);
-      expect(g.width).toBe(CAT_WIDTH);
-      expect(g.height).toBe(CAT_HEIGHT);
-      expect(g.isEmpty()).toBe(false);
+    for (const coat of CAT_COATS) {
+      for (const pose of CAT_POSES) {
+        const { grid } = drawCat(coat, pose);
+        expect(grid.width).toBe(CAT_WIDTH);
+        expect(grid.height).toBe(CAT_HEIGHT);
+        expect(grid.isEmpty()).toBe(false);
+      }
     }
+  });
+
+  it('stands the cat on the bottom of its box, and animates every cycle', () => {
+    const bottom = (pose: CatPose) => {
+      const { grid } = drawCat('grey-tabby', pose);
+      return [...Array(grid.height).keys()].reverse().find((y) => [...Array(grid.width).keys()].some((x) => grid.get(x, y)));
+    };
+    for (const pose of ['sit', 'walk-1', 'loaf', 'nap-1', 'crouch-1'] as const) expect(bottom(pose)).toBeGreaterThanOrEqual(CAT_HEIGHT - 2);
+    const key = (pose: CatPose) => drawCat('calico', pose).grid.data.join();
+    for (const cycle of [CAT_WALK, CAT_STALK]) expect(new Set(cycle.map(key)).size).toBe(cycle.length);
+    expect(key('sit')).not.toBe(key('sit-blink'));
+    expect(key('yawn-1')).not.toBe(key('yawn-3'));
+  });
+
+  it('is clearly bigger than the plant pot', () => {
+    expect(CAT_WIDTH).toBeGreaterThan(34 * 2);
   });
 
   it('draws pedestrians from every side, walking or not, with umbrellas, at every height', () => {

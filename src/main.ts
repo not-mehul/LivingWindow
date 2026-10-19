@@ -153,7 +153,8 @@ async function boot(): Promise<void> {
   const sillLayer = new Container({ label: 'sill-layer' });
   const sillBack = new Container({ label: 'sill-back' });
   const sillFront = new Container({ label: 'sill-front' });
-  sillLayer.addChild(decor.back, sillBack, bowl.container, sillFront);
+  const roomLayer = new Container({ label: 'room' });
+  sillLayer.addChild(decor.back, sillBack, bowl.container, sillFront, roomLayer);
   /** Creatures flying close to the window, drawn in screen space outside the glass. */
   const nearLayer = new Container({ label: 'near-flight' });
   nearLayer.eventMode = 'none';
@@ -202,10 +203,12 @@ async function boot(): Promise<void> {
       near: new Container({ label: `${id}-near` }),
       sillBack: new Container({ label: `${id}-sill-back` }),
       sillFront: new Container({ label: `${id}-sill-front` }),
+      room: new Container({ label: `${id}-room` }),
     };
     nearLayer.addChild(layers.near);
     sillBack.addChild(layers.sillBack);
     sillFront.addChild(layers.sillFront);
+    roomLayer.addChild(layers.room);
     const landscape = await createLandscape(id, {
       viewport,
       layers,
@@ -225,7 +228,7 @@ async function boot(): Promise<void> {
   const show = (next: Mounted) => {
     for (const m of all) {
       const active = m === next;
-      m.layers.near.visible = m.layers.sillBack.visible = m.layers.sillFront.visible = active;
+      m.layers.near.visible = m.layers.sillBack.visible = m.layers.sillFront.visible = m.layers.room.visible = active;
     }
     viewport.world.removeChildren();
     viewport.world.addChild(next.landscape.scene.container, next.lightning.overlay);

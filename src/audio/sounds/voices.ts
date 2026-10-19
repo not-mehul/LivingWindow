@@ -271,6 +271,30 @@ const catMeow: SynthVoice = (ctx, out, when, gain, rate) => {
   return length;
 };
 
+/** A dog's soft, closed-mouth "boof" at something outside: one or two low, chesty huffs. */
+const dogBoof: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  const boofs = Math.random() < 0.6 ? 1 : 2;
+  let t = when;
+  for (let i = 0; i < boofs; i++) {
+    const body = ctx.createBiquadFilter();
+    body.type = 'lowpass';
+    body.frequency.value = 700 * rate;
+    body.Q.value = 1.5;
+    body.connect(out);
+    const [osc, amp] = tone(ctx, 'triangle', body);
+    const f = rand(150, 190) * rate;
+    osc.frequency.setValueAtTime(f * 1.3, t);
+    osc.frequency.exponentialRampToValueAtTime(f * 0.75, t + 0.16);
+    envelope(amp.gain, t, 0.012, 0.5 * gain, 0.16);
+    osc.start(t);
+    osc.stop(t + 0.24);
+    // The breath through it.
+    noiseBurst(ctx, noise, body, t, 0.14, { type: 'bandpass', frequency: 420 * rate, Q: 1.2 }, 0.22 * gain, 0.01);
+    t += rand(0.28, 0.4);
+  }
+  return t - when;
+};
+
 const catPurr: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   const length = rand(1.6, 2.4);
   const src = ctx.createBufferSource();
@@ -847,6 +871,7 @@ export const SYNTH_VOICES = {
   'car-horn': carHorn,
   'cat-meow': catMeow,
   'cat-purr': catPurr,
+  'dog-boof': dogBoof,
   'woodpecker-drum': woodpeckerDrum,
   'jay-call': jayCall,
   'chickadee-call': chickadeeCall,

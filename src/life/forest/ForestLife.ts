@@ -6,6 +6,7 @@ import type { Environment } from '../../scene/Environment';
 import type { ForestScene } from '../../scene/forest/ForestScene';
 import { forestPlane } from '../../scene/forest/forestGenerator';
 import { owlActivity } from '../../sim/wildlife';
+import { WindowDog } from '../WindowDog';
 import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
 import { SillSquirrel } from '../SillSquirrel';
 import { Bats } from '../common/Bats';
@@ -46,6 +47,7 @@ export const FOREST_ECOLOGY: BirdEcology = {
  */
 export class ForestLife implements SceneLife {
   readonly birds: BirdSystem;
+  readonly dog: WindowDog;
   readonly deer: DeerHerd;
   readonly squirrels: TrunkSquirrels;
   readonly sillSquirrel: SillSquirrel;
@@ -79,6 +81,9 @@ export class ForestLife implements SceneLife {
       canTap: deps.canTap,
       ecology: FOREST_ECOLOGY,
     });
+    // The household dog, up at the window now and then.
+    this.dog = new WindowDog(deps.sound, deps.canTap, (x) => this.birds.startleNear(x, 50));
+    deps.layers.room.addChild(this.dog.container);
     this.deer = new DeerHerd(scene.midground, scene.plane, scene.floorArea, scene.layout.obstacles, deps.viewport, deps.sound);
     this.squirrels = new TrunkSquirrels(scene.layout.trunks, { mid: scene.midground, near: scene.birdsNear }, deps.viewport, deps.sound);
     this.sillSquirrel = new SillSquirrel(deps.birdseed, deps.sound, deps.canTap);
@@ -175,6 +180,7 @@ export class ForestLife implements SceneLife {
     const squirrelX = this.sillSquirrel.position;
     const state = { ...sill, catX: squirrelX, catStalking: false };
     this.sillSquirrel.update(dt, env, state);
+    this.dog.update(dt, env, state, this.birds.sillBirds());
     this.birds.update(dt, env, { ...state, catX: this.sillSquirrel.position });
     this.deer.update(dt, env);
     this.squirrels.update(dt, env);

@@ -4,6 +4,7 @@ import type { Environment } from '../../scene/Environment';
 import type { MeadowScene } from '../../scene/meadow/MeadowScene';
 import { meadowPlane } from '../../sim/meadowGeometry';
 import { chickensOut, owlActivity } from '../../sim/wildlife';
+import { WindowDog } from '../WindowDog';
 import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
 import { Bats } from '../common/Bats';
 import { Butterflies } from '../common/Butterflies';
@@ -43,6 +44,7 @@ export const MEADOW_ECOLOGY: BirdEcology = {
  */
 export class MeadowLife implements SceneLife {
   readonly birds: BirdSystem;
+  readonly dog: WindowDog;
   readonly cows: CowHerd;
   readonly chickens: Chickens;
   readonly rabbits: Rabbits;
@@ -77,6 +79,9 @@ export class MeadowLife implements SceneLife {
       canTap: deps.canTap,
       ecology: MEADOW_ECOLOGY,
     });
+    // The household dog, up at the window now and then.
+    this.dog = new WindowDog(deps.sound, deps.canTap, (x) => this.birds.startleNear(x, 50));
+    deps.layers.room.addChild(this.dog.container);
     this.cows = new CowHerd(scene.midground, scene.plane, scene.pasture, scene.layout.obstacles, deps.viewport, deps.sound);
     this.chickens = new Chickens(scene.midground, scene.plane, scene.layout.coop, deps.viewport, deps.sound);
     this.rabbits = new Rabbits(scene.bushes, scene.midground);
@@ -147,7 +152,9 @@ export class MeadowLife implements SceneLife {
 
   update(dt: number, env: Environment, sill: SillBase): void {
     this.time += dt;
-    this.birds.update(dt, env, { ...sill, catX: null, catStalking: false });
+    const state = { ...sill, catX: null, catStalking: false };
+    this.dog.update(dt, env, state, this.birds.sillBirds());
+    this.birds.update(dt, env, state);
     this.cows.update(dt, env);
     this.chickens.update(dt, env);
     this.rabbits.update(dt, env);

@@ -3,6 +3,8 @@ import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonPose 
 import type { PixelGrid } from '../sprites/raster';
 import { drawBird, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
 import { CLOSE_SPECIES, drawBirdClose } from '../sprites/birdClose';
+import { CAT_COATS, CAT_POSES, drawCat } from '../sprites/catSprites';
+import { DOG_BREEDS, DOG_POSES, drawWindowDog, type DogLook } from '../sprites/dogSprites';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
 import { drawEgret, drawFishingBoat, drawFrigatebird, drawGull, drawJumpFish, drawNightjar, drawSailboat, drawSandpiper, NIGHTJAR_FRAMES, JUMP_FRAMES, SANDPIPER_FLY, SANDPIPER_RUN, type EgretPose, type GullPose, type SandpiperPose } from '../sprites/shoreSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
@@ -190,6 +192,29 @@ function sections(): Section[] {
   out.push({
     title: 'Close birds',
     rows: [...CLOSE_SPECIES].map((species) => closePoses.map((pose) => ({ label: `${species.slice(0, 4)} ${pose}`, draw: () => drawBirdClose(species, pose, closeSizes || Math.round(48 * SPECIES[species].size)) }))),
+  });
+
+  // The sill cat: every pose in one coat, then every coat.
+  out.push({
+    title: 'Window cat',
+    rows: [
+      CAT_POSES.slice(0, 16).map((pose) => ({ label: pose, draw: () => drawCat('orange-tabby', pose) })),
+      CAT_POSES.slice(16).map((pose) => ({ label: pose, draw: () => drawCat('orange-tabby', pose) })),
+      ...CAT_COATS.map((coat) => (['sit', 'walk-3', 'groom-1', 'loaf', 'nap-1', 'crouch-2', 'pounce-2', 'yawn-3', 'sit-look'] as const).map((pose) => ({ label: `${coat} ${pose}`, draw: () => drawCat(coat, pose) }))),
+    ],
+  });
+
+  // The dog at the window: every pose for a husky, then each breed and coat.
+  const husky: DogLook = { breed: 'husky', coat: 0, eyes: 'odd', collar: 1 };
+  out.push({
+    title: 'Window dog',
+    rows: [
+      DOG_POSES.slice(0, 12).map((pose) => ({ label: pose, draw: () => drawWindowDog(husky, pose) })),
+      DOG_POSES.slice(12).map((pose) => ({ label: pose, draw: () => drawWindowDog(husky, pose) })),
+      ...DOG_BREEDS.flatMap((breed) =>
+        [0, 1, 2].map((coat) => (['away', 'side', 'side-pant-2', 'face', 'face-tilt-pant', 'side-up'] as const).map((pose) => ({ label: `${breed}${coat} ${pose}`, draw: () => drawWindowDog({ breed, coat, eyes: 'brown', collar: coat }, pose) }))),
+      ),
+    ],
   });
 
   const woodBirds: Item[][] = [];

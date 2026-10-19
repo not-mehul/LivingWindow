@@ -43,6 +43,8 @@ export interface LandscapeLayers {
   sillBack: Container;
   /** Sill visitors in front of the bowl (birds). */
   sillFront: Container;
+  /** In the room, in front of the sill (the dog at the window). */
+  room: Container;
 }
 
 export interface LandscapeDeps {
