@@ -4,7 +4,9 @@ import { createRng } from '../core/random';
 import type { ViewportLayout } from '../core/viewportLayout';
 import { SwayMesh } from '../scene/common/SwayMesh';
 import type { BirdseedState } from '../state/BirdseedState';
+import { rustleTextures } from '../scene/common/rustle';
 import { Curtain } from './Curtain';
+import { sillContacts } from './sillContacts';
 import { PLANT, SEED } from './palette';
 import { curtainWidth, plantSize, type PlantSize } from './sillProps';
 import type { SillSurface } from './WindowFrame';
@@ -67,8 +69,15 @@ function drawPot(size: PlantSize): Texture {
   return p.toTexture();
 }
 
-/** A leafy herb: arching stems with pointed oval leaves, inked like the reference. */
-function drawLeaves(size: PlantSize): Texture {
+/** The plant's stems (degrees from upright), in the clumps that sway on their own. */
+const CLUMPS = [
+  [-70, -52, -34],
+  [-16, 0, 14],
+  [30, 48, 66],
+];
+
+/** A leafy herb: arching stems with pointed oval leaves, inked like the reference (just the stems of one clump). */
+function drawLeaves(size: PlantSize, clump: readonly number[]): PixelBuffer {
   const W = size.leavesWidth;
   const H = size.leavesHeight;
   const scale = H / 50;
@@ -78,11 +87,11 @@ function drawLeaves(size: PlantSize): Texture {
   const baseY = H - 1;
   const leaves: Array<{ x: number; y: number; angle: number; length: number }> = [];
   const stemPixels: Array<[number, number]> = [];
-  const stems = [-70, -52, -34, -16, 0, 14, 30, 48, 66];
-  for (const degrees of stems) {
+  for (const degrees of CLUMPS.flat()) {
     const a = (degrees * Math.PI) / 180;
     const length = (28 + rng() * 18 - Math.abs(degrees) * 0.12) * scale;
     // Stems arch outward: a quadratic curve from the soil.
+    const mine = clump.includes(degrees);
     const tipX = baseX + Math.sin(a) * length;
     const tipY = baseY - Math.cos(a) * length * 0.95;
     const ctrlX = baseX + Math.sin(a) * length * 0.25;
@@ -95,8 +104,8 @@ function drawLeaves(size: PlantSize): Texture {
       const t = i / steps;
       const x = (1 - t) ** 2 * baseX + 2 * (1 - t) * t * ctrlX + t * t * tipX;
       const y = (1 - t) ** 2 * baseY + 2 * (1 - t) * t * ctrlY + t * t * tipY;
-      stemPixels.push([Math.round(x), Math.round(y)]);
-      if (i % every === Math.floor(every / 2) && t > 0.2) {
+      if (mine) stemPixels.push([Math.round(x), Math.round(y)]);
+      if (mine && i % every === Math.floor(every / 2) && t > 0.2) {
         const side = Math.floor(i / every) % 2 === 0 ? 1 : -1;
         const dir = Math.atan2(y - lastY, x - lastX) + side * 0.9;
         leaves.push({ x, y, angle: dir, length: (5 + rng() * 2.2) * scale });
@@ -104,7 +113,8 @@ function drawLeaves(size: PlantSize): Texture {
       lastX = x;
       lastY = y;
     }
-    leaves.push({
+    if (mine)
+      leaves.push({
       x: tipX,
       y: tipY,
       angle: Math.atan2(tipY - lastY, tipX - lastX) - Math.PI / 2 + a * 0.3,
@@ -138,8 +148,10 @@ function drawLeaves(size: PlantSize): Texture {
   inkOutline(p, PLANT.leafOutline);
   // Stems are plain inked lines, showing between and behind the leaves.
   for (const [x, y] of stemPixels) if (!p.isSet(x, y)) p.set(x, y, PLANT.leafDark);
-  return p.toTexture();
+  return p;
 }
+
+const LEAF_COLORS = [PLANT.leafLight, PLANT.leaf, PLANT.leafDark, PLANT.leafVein].map((c) => Number.parseInt(c.slice(1), 16));
 
 interface Speck {
   /** Position along the sill's visible width (0..1). */
@@ -167,7 +179,11 @@ export class SillDecor {
   readonly front = new Container({ label: 'sill-decor-front' });
 
   private readonly pot = new Sprite({ anchor: { x: 0.5, y: 1 } });
-  private leaves: SwayMesh | null = null;
+  private leaves: SwayMesh[] = [];
+  /** A knock to the plant (a bird landing beside it), dying away. */
+  private kick = 0;
+  private kickTime = 0;
+  private lastTime = Number.NaN;
   private plantSize: PlantSize | null = null;
   private readonly plant = new Container({ label: 'plant' });
   private curtain: Curtain | null = null;
@@ -181,6 +197,7 @@ export class SillDecor {
   private frameScale = 1;
 
   constructor(birdseed: BirdseedState) {
+    sillContacts.on('contact', ({ x, strength }) => this.nudge(x, strength));
     this.plant.addChild(this.pot);
     this.front.addChild(this.plant);
     this.back.addChild(this.seeds);
@@ -249,22 +266,43 @@ export class SillDecor {
     const oldPot = this.pot.texture;
     this.pot.texture = drawPot(size);
     if (oldPot && oldPot !== Texture.EMPTY) oldPot.destroy(true);
-    if (this.leaves) {
-      this.plant.removeChild(this.leaves.mesh);
-      this.leaves.mesh.texture.destroy(true);
-      this.leaves.mesh.destroy();
+    for (const leaves of this.leaves) {
+      this.plant.removeChild(leaves.mesh);
+      leaves.mesh.texture.destroy(true);
+      leaves.mesh.destroy();
     }
-    this.leaves = new SwayMesh(drawLeaves(size), { anchor: 'bottom', amplitude: 2.5, frequency: 1.3 });
+    // Each clump of stems sways on its own, its leaves flicking over in the air.
+    this.leaves = CLUMPS.map((clump, i) => {
+      const art = drawLeaves(size, clump);
+      return new SwayMesh(art.toTexture(), { anchor: 'bottom', amplitude: 4.5 * (size.leavesHeight / 90), frequency: 1.1 + i * 0.17, phase: i * 1.9, rustle: rustleTextures(art, LEAF_COLORS, 60 + i, 3), rustleRate: 3 });
+    });
     // The stems rise out of the soil just below the pot's rim.
     const rimDrop = Math.max(3, Math.round(size.potHeight * 0.12));
-    this.leaves.mesh.position.set(-size.leavesWidth / 2, -(size.potHeight + 1) - size.leavesHeight + rimDrop);
-    this.plant.addChildAt(this.leaves.mesh, 0);
+    for (const [i, leaves] of [...this.leaves].reverse().entries()) {
+      leaves.mesh.position.set(-size.leavesWidth / 2, -(size.potHeight + 1) - size.leavesHeight + rimDrop);
+      this.plant.addChildAt(leaves.mesh, i);
+    }
   }
 
-  /** Breeze through the open window stirs the leaves and curtain. */
+  /** Something knocked the sill at screen x: the plant shivers if it's near. */
+  nudge(x: number, strength: number): void {
+    if (!this.plantSize) return;
+    const reach = (this.plantSize.leavesWidth / 2 + 24) * this.frameScale;
+    const d = Math.abs(x - this.plant.x);
+    if (d > reach) return;
+    this.kick = Math.min(1.5, this.kick + strength * (1 - d / reach) * 1.2);
+  }
+
+  /** Breeze through the open window stirs the leaves and curtain; the room's own air keeps them just moving when it's shut. */
   update(time: number, wind: number, openness: number): void {
-    const calm = openness * openness;
-    this.leaves?.update(time, wind * 0.6, calm);
+    const dt = Number.isNaN(this.lastTime) ? 0 : Math.max(0, Math.min(0.25, time - this.lastTime));
+    this.lastTime = time;
+    const calm = 0.22 + 0.78 * openness * openness;
+    // A knock sets the stems shivering, dying away over a couple of seconds.
+    this.kick *= Math.exp(-dt * 1.6);
+    this.kickTime += dt;
+    const shiver = this.kick * Math.sin(this.kickTime * 9);
+    for (const [i, leaves] of this.leaves.entries()) leaves.update(time, wind * 0.6 + shiver * (1 + i * 0.3) / calm, calm);
     this.curtain?.update(time, wind, openness);
   }
 

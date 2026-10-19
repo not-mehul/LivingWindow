@@ -18,6 +18,7 @@ import { interiorTint } from '../scene/lighting';
 import type { BirdseedState } from '../state/BirdseedState';
 import { BirdSpriteCache, FLAP_CYCLE, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
 import { sillWidth, type Ledge, type LifeSoundSink, type SillState } from './types';
+import { sillContacts } from '../window/sillContacts';
 
 /** Below this depth birds are drawn in screen space, at the window's pixel scale. */
 const NEAR_Z = 0.33;
@@ -598,6 +599,7 @@ export class BirdSystem {
       bird.y = world.y;
       bird.z = 0.02;
       bird.onSill = false;
+      sillContacts.touch(screenX, 0.35 + SPECIES[bird.species].size * 0.3);
     }
     const goElsewhere = this.rng() < 0.3 && this.activity(this.env!) > 0.3;
     const perch = goElsewhere ? this.choosePerch(bird.species) : null;
@@ -688,6 +690,7 @@ export class BirdSystem {
       bird.onSill = true;
       bird.sillX = f.arrive.sillX;
       bird.z = 0;
+      sillContacts.touch(sill.surface.left + bird.sillX * sill.surface.frameScale, 0.5 + SPECIES[bird.species].size * 0.4);
     } else {
       bird.perch = f.arrive.perch;
       bird.x = f.arrive.x;
