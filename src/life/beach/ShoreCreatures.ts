@@ -74,7 +74,9 @@ export class Crabs {
   }
 
   update(dt: number, env: Environment): void {
-    const target = Math.round(crabActivity(env.lighting.hours) * 5 * (env.weather.kind === 'rain' ? 0.5 : 1));
+    // Ghost crabs come out in force after dark.
+    const night = env.lighting.darkness > 0.55;
+    const target = Math.round(crabActivity(env.lighting.hours) * (night ? 10 : 5) * (env.weather.kind === 'rain' ? 0.5 : 1));
     this.timer -= dt;
     if (this.timer <= 0) {
       this.timer = r(4, 12);
@@ -90,8 +92,8 @@ export class Crabs {
       else {
         // A dash sideways along the beach, then stock-still again.
         c.run -= dt;
-        c.depth += c.dir * 0.12 * dt;
-        c.frame += dt * 14;
+        c.depth += c.dir * (night ? 0.2 : 0.12) * dt;
+        c.frame += dt * (night ? 20 : 14);
         if (c.run <= 0 || c.depth < NEAR || c.depth > FAR) {
           if (c.depth < NEAR || c.depth > FAR) c.dir = c.depth < NEAR ? 1 : -1;
           else if (Math.random() < 0.4) c.dir = c.dir > 0 ? -1 : 1;
@@ -110,7 +112,8 @@ export class Crabs {
       c.sprite.texture = this.sprites.get(`${hidden}:${frame}:${size}`, () => drawCrab(frame, size, hidden));
       c.sprite.position.set(Math.round(p.x), Math.round(p.y));
       c.sprite.zIndex = p.y;
-      c.sprite.tint = env.lighting.ambient;
+      // Pale as the sand: they catch the moonlight.
+      c.sprite.tint = lerpColor(env.lighting.ambient, 0xffffff, env.lighting.nightness * 0.35 * env.lighting.moonlight);
     }
   }
 

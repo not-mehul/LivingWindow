@@ -139,7 +139,7 @@ export class Tracks {
       case 'turtle': {
         // A broad furrow from the plastron, with the flippers' scoops in pairs along both sides.
         const half = Math.max(2, k * 9);
-        for (let t = -half * 0.35; t <= half * 0.35; t += 1) dot(p.x + ax * t, p.y + ay * t, 40);
+        if (foot) for (let t = -half * 0.35; t <= half * 0.35; t += 1) dot(p.x + ax * t, p.y + ay * t, 16);
         for (const sgn of [-1, 1]) {
           dot(p.x + ax * sgn * half, p.y + ay * sgn * half, 70);
           dot(p.x + ax * sgn * (half - 1) + hx, p.y + ay * sgn * (half - 1) + hy * 0.5, 55);
@@ -190,7 +190,7 @@ export class Tracks {
         const i = m.pixels[k];
         // A shadowed dent: dark, warm.
         const prev = px[i] >>> 24;
-        px[i] = ((Math.min(200, prev + a) << 24) | (0x10 << 16) | (0x1c << 8) | 0x2a) >>> 0;
+        px[i] = ((Math.min(120, prev + a) << 24) | (0x10 << 16) | (0x1c << 8) | 0x2a) >>> 0;
       }
     }
     this.canvas.ctx.putImageData(this.image, 0, 0);

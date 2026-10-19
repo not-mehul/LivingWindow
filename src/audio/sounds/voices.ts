@@ -786,7 +786,49 @@ const dolphinBlow: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return 0.45;
 };
 
+/**
+ * A nightjar churring from the dunes: a long, dry, mechanical trill, about
+ * forty notes a second, that shifts up and down in pitch now and then.
+ */
+const nightjarChurr: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  const length = rand(2.4, 4.5);
+  const src = ctx.createBufferSource();
+  src.buffer = noise.get('white');
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.Q.value = 3;
+  // The churr changes gear: alternating between two pitches.
+  let t = when;
+  let high = Math.random() < 0.5;
+  while (t < when + length) {
+    band.frequency.setValueAtTime((high ? 2100 : 1700) * rate, t);
+    high = !high;
+    t += rand(0.4, 1.1);
+  }
+  // Pulsed: a square LFO chopping the noise into notes.
+  const notes = ctx.createGain();
+  notes.gain.value = 0.5;
+  const lfo = ctx.createOscillator();
+  lfo.type = 'square';
+  lfo.frequency.value = rand(36, 42);
+  const depth = ctx.createGain();
+  depth.gain.value = 0.5;
+  lfo.connect(depth).connect(notes.gain);
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.3 * gain, when + 0.25);
+  amp.gain.setValueAtTime(0.3 * gain, when + length - 0.3);
+  amp.gain.linearRampToValueAtTime(0, when + length);
+  src.connect(band).connect(notes).connect(amp).connect(out);
+  src.loop = true;
+  src.start(when, Math.random() * 2, length + 0.05);
+  lfo.start(when);
+  lfo.stop(when + length + 0.05);
+  return length;
+};
+
 export const SYNTH_VOICES = {
+  'nightjar-churr': nightjarChurr,
   'dolphin-blow': dolphinBlow,
   'coconut-thud': coconutThud,
   'wolf-howl': wolfHowl,

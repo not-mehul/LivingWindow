@@ -435,9 +435,12 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     const body = lighting.sun.visible && lighting.sun.elevation > 0.02 ? lighting.sun : lighting.moon.visible ? lighting.moon : null;
     const glintX = body ? lerp(70, WORLD_WIDTH - 70, body.progress) : -999;
     // The moon lays a broad silver path across the water.
-    const glintStrength = body === lighting.sun ? body.glow * 1.2 + 0.2 : body ? body.glow * 1.6 : 0;
+    const glintStrength = body === lighting.sun ? body.glow * 1.2 + 0.2 : body ? body.glow * 2.2 : 0;
     const glint = rgba(body ? lerpColor(body.color, 0xffffff, body === lighting.sun ? 0.3 : 0.6) : 0xffffff);
-    const glintWidth = body === lighting.moon ? 1.6 : 1;
+    const glintWidth = body === lighting.moon ? 2 : 1;
+    // On a dark, clear night the stars show in the wet sand; on a bloom night, the sand the waves wash over sparks blue.
+    const starsInSand = lighting.stars * lighting.nightness * (1 - lighting.moonlight * 0.5);
+    const starPixel = rgba(0xdce4ff, 230);
 
     // The sea's colour steps from the horizon towards us, each with its shallows ramp.
     const ramps = this.ramps;
@@ -480,7 +483,11 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
           out[o + x] = !atEdge ? sheet : pixelHash(x, y, tick >> 1) > 0.3 ? glow(x, y, 0.6) || foam : sheetEdge;
         } else if (-s < wetTo && (wetTo + s) / Math.max(1, wetTo) > dRow[x & 3] * 0.5) {
           // The sheen dries off from the top of the washed band down towards the water.
-          out[o + x] = gloss > 0 && (-s - reach) / band < gloss - dRow[x & 3] * 0.35 ? glassy : wet;
+          const shiny = gloss > 0 && (-s - reach) / band < gloss - dRow[x & 3] * 0.35;
+          let c = shiny ? glassy : wet;
+          if (starsInSand > 0.05 && pixelHash(x, y, 501) > 1 - 0.022 * starsInSand && pixelHash(x, y, 502 + (tick >> 3)) > 0.35) c = starPixel;
+          if (bio > 0 && shiny) c = glow(x, y, 0.1 * gloss) || c;
+          out[o + x] = c;
         } else out[o + x] = 0;
       }
       if (xs >= W) continue;

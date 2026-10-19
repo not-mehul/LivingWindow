@@ -381,3 +381,41 @@ export function drawJumpFish(frame: number, size: number): Drawn {
   }
   return { grid: g, palette };
 }
+
+// --- Nightjar -------------------------------------------------------------------------
+
+export const NIGHTJAR_FRAMES = 4;
+
+/**
+ * A nightjar hawking moths in the dusk, seen from below, `span` px across:
+ * long, pointed, soft-mottled wings with a white spot near each tip, a long
+ * tail with white corners, a small head; wings beating loose and deep
+ * (four frames), the shape that flickers over the dunes like a big moth.
+ */
+export function drawNightjar(frame: number, span: number): Drawn {
+  const W = Math.max(7, Math.round(span));
+  const H = Math.max(5, Math.round(W * 0.6));
+  const g = new PixelGrid(W, H);
+  const s = W / 20;
+  const P = (x: number, y: number): Pt => [x * s, y * s];
+  const palette = new Palette();
+  const brown = palette.ramp(0x6a5a48, 0.8);
+  const white = palette.add(0xf0ece0);
+  const f = ((frame % NIGHTJAR_FRAMES) + NIGHTJAR_FRAMES) % NIGHTJAR_FRAMES;
+  const tipY = [-3.6, -0.8, 3.4, 0.8][f];
+  const reach = [0.85, 1, 0.8, 0.95][f];
+  for (const side of [-1, 1]) {
+    const tip = P(10 + side * 9.6 * reach, 5 + tipY);
+    limb(g, [P(10, 5), P(10 + side * 5 * reach, 4.4 + tipY * 0.45), tip], 2.6 * s, 0.6 * s, brown, { bias: -0.2 });
+    if (W >= 12) g.set(Math.floor(10 * s + side * 7.4 * reach * s), Math.floor((4.9 + tipY * 0.75) * s), white);
+  }
+  // Body, the head, the long tail.
+  shadedEllipse(g, 10 * s, 5.4 * s, 1.5 * s, 2.4 * s, brown, { dither: false, min: 1 });
+  shadedEllipse(g, 10 * s, 3 * s, 1.2 * s, 1 * s, brown, { dither: false, min: 1 });
+  limb(g, [P(10, 7), P(10, 11.4)], 2 * s, 2.4 * s, brown, { bias: -0.3 });
+  if (W >= 14) {
+    g.set(Math.floor(9 * s), Math.floor(11 * s), white);
+    g.set(Math.floor(11 * s), Math.floor(11 * s), white);
+  }
+  return { grid: g, palette };
+}

@@ -1,18 +1,23 @@
 import type { BeachScene } from '../../scene/beach/BeachScene';
 import type { Environment } from '../../scene/Environment';
 import type { AudioEngine } from '../AudioEngine';
+import { Crickets } from './nature';
 import { Soundscape } from './Soundscape';
 
 const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 /**
  * The shore: a low roar of distant swells, every breaking wave as a crash
- * followed by the hiss of the backwash, a coastal breeze and far-off gulls.
+ * followed by the hiss of the backwash, a coastal breeze and far-off gulls;
+ * after dark, crickets in the dunes and the surf a little hushed.
  */
 export class BeachSoundscape extends Soundscape {
   private readonly swell: GainNode;
   private readonly breeze: GainNode;
   private readonly unsubscribe: () => void;
+  private readonly crickets: Crickets;
+  /** How dark it is (the night surf sounds softer). */
+  private darkness = 0;
   private time = 0;
   private gullTimer = rand(8, 20);
 
@@ -22,6 +27,7 @@ export class BeachSoundscape extends Soundscape {
     (bed ? this.loop(bed) : this.noise('brown')).connect(this.filter('lowpass', bed ? 20000 : 300)).connect(this.swell).connect(this.bed);
     this.breeze = this.gain();
     this.noise('pink').connect(this.filter('bandpass', 1000, 0.5)).connect(this.breeze).connect(this.bed);
+    this.crickets = new Crickets(engine, this.bed, 4);
     this.unsubscribe = scene.on('break', ({ amplitude, pan }) => this.wave(amplitude, pan));
   }
 
@@ -38,6 +44,9 @@ export class BeachSoundscape extends Soundscape {
     // The distant sea breathes on a slow cycle.
     this.swell.gain.setTargetAtTime(0.5 + 0.18 * Math.sin(this.time * 0.55) + 0.3 * wind, now, 0.8);
     this.breeze.gain.setTargetAtTime(0.04 + 0.22 * wind, now, 1);
+    this.darkness = env.lighting.darkness;
+    const rain = env.weather.kind === 'rain' ? Math.min(1, env.weather.precipitation * 2) : 0;
+    this.crickets.update(dt, env.lighting.darkness > 0.6 ? (1 - rain) * (1 - wind) * 0.55 : 0);
 
     this.gullTimer -= dt;
     if (this.gullTimer <= 0) {
@@ -51,7 +60,7 @@ export class BeachSoundscape extends Soundscape {
     if (!this.engine.running || this.isDisposed) return;
     const ctx = this.engine.context;
     const when = ctx.currentTime + 0.02;
-    const level = Math.min(1, amplitude / 26);
+    const level = Math.min(1, amplitude / 26) * (1 - this.darkness * 0.25);
     const panner = ctx.createStereoPanner();
     panner.pan.value = pan;
     panner.connect(this.bed);
