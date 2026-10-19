@@ -20,6 +20,19 @@ export interface Placed {
   x: number;
   y: number;
   baseY: number;
+  /** Its leaf colours, if it's leafy (they rustle in the wind). */
+  leaves?: readonly number[];
+  /** How far it sways in a strong wind (art px), if not the default for its height. */
+  amp?: number;
+}
+
+/** A palm near enough to see its parts move: the trunk bends slowly, the fronds bob about the crown. */
+export interface PlacedPalm extends Placed {
+  /** The parts, positioned in the world. */
+  parts?: { trunk: PalmPart; fronds: Frond[]; hub: PalmPart; crown: { x: number; y: number } };
+  /** The gull perch on its crown, if it has one. */
+  ledge?: Ledge;
+  haze: number;
 }
 
 export interface BeachLayout {
@@ -27,12 +40,12 @@ export interface BeachLayout {
   land: PixelBuffer;
   /** All the sand, damp near the water, rippled, with the dune path. */
   sand: PixelBuffer;
-  /** Dense scrub, far dune plants and palm saplings, painted in once (they don't sway). */
+  /** Dense scrub and the far dune plants, painted in once (too small to see sway). */
   scrub: PixelBuffer;
   /** Driftwood and the dune fence. */
   props: PixelBuffer;
-  /** Palms (they sway, rooted at the base). */
-  palms: Placed[];
+  /** Palms (they sway, rooted at the base; the near ones in parts). */
+  palms: PlacedPalm[];
   /** The dune bank along the front, and its grass and flowers (they sway). */
   dune: PixelBuffer;
   tufts: Placed[];
@@ -56,18 +69,97 @@ const PALM = {
   nut: 0x5a4024,
 };
 
+/** A piece of a palm, cut out of its frame: its art and where its top-left sits in the frame. */
+export interface PalmPart {
+  art: PixelBuffer;
+  x: number;
+  y: number;
+}
+
+/** A frond: rooted at the crown (`pivotX` art px from its left), bobbing either side of that. */
+export interface Frond extends PalmPart {
+  pivotX: number;
+  /** Which way it reaches: -1 left, 1 right. */
+  side: -1 | 1;
+}
+
+export interface PalmArt {
+  trunk: PalmPart;
+  fronds: Frond[];
+  /** The coconuts at the heart of the crown. */
+  hub: PalmPart;
+  /** The frame's size, where the trunk's base sits in it, and the crown. */
+  width: number;
+  height: number;
+  baseX: number;
+  baseY: number;
+  crown: { x: number; y: number };
+}
+
+/** The colours of a palm's leaves (what rustles). */
+export const FROND_COLORS = [PALM.frondDark, PALM.frond, PALM.frondLight, PALM.frondShine];
+
+/**
+ * Something drawn a pixel at a time into a shared frame, keeping track of
+ * where it went, then cut out (with a pixel spare all round for its ink) and
+ * wiped from the frame for the next piece.
+ */
+class Cutter {
+  x0 = Infinity;
+  y0 = Infinity;
+  x1 = -Infinity;
+  y1 = -Infinity;
+
+  constructor(readonly frame: PixelBuffer) {}
+
+  set(x: number, y: number, color: number): void {
+    const rx = Math.round(x);
+    const ry = Math.round(y);
+    if (rx < 0 || ry < 0 || rx >= this.frame.width || ry >= this.frame.height) return;
+    this.frame.set(rx, ry, color);
+    if (rx < this.x0) this.x0 = rx;
+    if (ry < this.y0) this.y0 = ry;
+    if (rx > this.x1) this.x1 = rx;
+    if (ry > this.y1) this.y1 = ry;
+  }
+
+  cut(ink: number): PalmPart {
+    const x = this.x0 - 1;
+    const y = this.y0 - 1;
+    const w = Math.max(1, this.x1 - this.x0 + 3);
+    const h = Math.max(1, this.y1 - this.y0 + 3);
+    const art = new PixelBuffer(w, h);
+    const f = this.frame;
+    for (let j = 0; j < h; j++) {
+      for (let i = 0; i < w; i++) {
+        const fx = x + i;
+        const fy = y + j;
+        if (!f.isSet(fx, fy)) continue;
+        art.set(i, j, f.get(fx, fy));
+        f.data[(fy * f.width + fx) * 4 + 3] = 0;
+      }
+    }
+    art.outline(ink);
+    this.x0 = this.y0 = Infinity;
+    this.x1 = this.y1 = -Infinity;
+    return { art, x, y };
+  }
+}
+
 /**
  * A coconut palm: a long, curving, ringed trunk leaning by `lean` px, and a
  * crown of drooping fronds whose leaflets hang down either side of the spine.
- * Returns the art and where its base sits within it.
+ * Each part is cut out on its own, so the trunk can bend slowly while the
+ * fronds bob and whip about the crown.
  */
-function drawPalm(height: number, lean: number, seed: number): { art: PixelBuffer; baseX: number; baseY: number; crown: { x: number; y: number } } {
+export function drawPalm(height: number, lean: number, seed: number): PalmArt {
   const H = Math.round(height);
   const frond = H * 0.42;
   const padX = Math.ceil(frond * 1.15) + 4;
   const padTop = Math.ceil(frond * 0.6) + 4;
   const W = Math.ceil(Math.abs(lean) + padX * 2);
-  const p = new PixelBuffer(W, H + padTop + 2);
+  const frame = new PixelBuffer(W, H + padTop + 2);
+  const pen = new Cutter(frame);
   const baseX = lean >= 0 ? padX : W - padX;
   const baseY = H + padTop;
   const topX = baseX + lean;
@@ -88,18 +180,21 @@ function drawPalm(height: number, lean: number, seed: number): { art: PixelBuffe
       const u = (j + w / 2) / w;
       let color = u < 0.3 ? PALM.trunkLight : u > 0.72 ? PALM.trunkDark : PALM.trunk;
       if (ring && pixelHash(Math.round(x + j), Math.round(y), seed) < 0.7) color = u > 0.5 ? PALM.ring : PALM.trunkDark;
-      p.set(x + j, y, color);
+      pen.set(x + j, y, color);
     }
   }
+  const trunk = pen.cut(PALM.ink);
   // Fronds radiating from the crown, drooping under their own weight: a thin
-  // spine with narrow leaflets hanging from both sides, like a feather.
+  // spine with narrow leaflets hanging from both sides, like a feather. The
+  // upright ones are drawn first, so the drooping ones hang over them.
   const rng = createRng(seed);
-  const fronds = 10 + randomInt(rng, 0, 3);
+  const count = 10 + randomInt(rng, 0, 3);
   const leafColor = (v: number) => (v < 0.2 ? PALM.frondShine : v < 0.5 ? PALM.frondLight : v < 0.8 ? PALM.frond : PALM.frondDark);
-  for (let f = 0; f < fronds; f++) {
-    const a = -Math.PI * 1.05 + (f / (fronds - 1)) * Math.PI * 1.1 + randomRange(rng, -0.15, 0.15);
-    const len = frond * randomRange(rng, 0.75, 1.1);
-    const droop = len * randomRange(rng, 0.55, 0.85);
+  const angles = Array.from({ length: count }, (_, f) => -Math.PI * 1.05 + (f / (count - 1)) * Math.PI * 1.1 + randomRange(rng, -0.15, 0.15));
+  const order = angles.map((a, f) => ({ a, f, len: frond * randomRange(rng, 0.75, 1.1), droop: randomRange(rng, 0.55, 0.85) })).sort((p, q) => Math.abs(Math.cos(p.a)) - Math.abs(Math.cos(q.a)));
+  const fronds: Frond[] = [];
+  for (const { a, f, len, droop: d } of order) {
+    const droop = len * d;
     const segs = Math.ceil(len * 1.6);
     let px = topX;
     let py = topY;
@@ -111,7 +206,7 @@ function drawPalm(height: number, lean: number, seed: number): { art: PixelBuffe
       const dy = y - py;
       px = x;
       py = y;
-      p.set(x, y, PALM.frondDark);
+      pen.set(x, y, PALM.frondDark);
       // A leaflet every other step on each side, angled back and down.
       if (i % 2 !== 0 || t < 0.08) continue;
       const leaf = Math.max(1.5, len * 0.22 * Math.sin(Math.PI * Math.min(1, t * 1.05)));
@@ -123,22 +218,33 @@ function drawPalm(height: number, lean: number, seed: number): { art: PixelBuffe
           const lx = x + Math.cos(la) * k;
           const ly = y + Math.sin(la) * k + v * v * leaf * 0.35;
           if (pixelHash(Math.round(lx), Math.round(ly), seed + f) < 0.06) break;
-          p.set(lx, ly, leafColor(side < 0 ? v * 0.7 : 0.3 + v * 0.7));
+          pen.set(lx, ly, leafColor(side < 0 ? v * 0.7 : 0.3 + v * 0.7));
         }
       }
     }
+    // The frond's root, so it's held at the crown even if no pixel landed there.
+    pen.set(topX, topY, PALM.frondDark);
+    const part = pen.cut(PALM.ink);
+    fronds.push({ ...part, pivotX: topX - part.x, side: Math.cos(a) < 0 ? -1 : 1 });
   }
   // Coconuts in the crown.
+  const r = Math.max(1, H * 0.012);
   for (const [dx, dy] of [
     [-2, 2],
     [2, 3],
     [0, 4],
   ]) {
-    const r = Math.max(1, H * 0.012);
-    for (let j = -r; j <= r; j++) for (let k = -r; k <= r; k++) if (j * j + k * k <= r * r) p.set(topX + dx * r + k, topY + dy * r * 0.6 + j, PALM.nut);
+    for (let j = -r; j <= r; j++) for (let k = -r; k <= r; k++) if (j * j + k * k <= r * r) pen.set(topX + dx * r + k, topY + dy * r * 0.6 + j, PALM.nut);
   }
-  p.outline(PALM.ink);
-  return { art: p, baseX, baseY, crown: { x: topX, y: topY } };
+  const hub = pen.cut(PALM.ink);
+  return { trunk, fronds, hub, width: frame.width, height: frame.height, baseX, baseY, crown: { x: topX, y: topY } };
+}
+
+/** A whole palm in one piece (for the far ones and the saplings, too small to see their fronds move apart). */
+export function flattenPalm(palm: PalmArt): PixelBuffer {
+  const p = new PixelBuffer(palm.width, palm.height);
+  for (const part of [palm.trunk, ...palm.fronds, palm.hub]) p.draw(part.art, part.x, part.y);
+  return p;
 }
 
 /** Beach grass: a fan of thin, wind-bent blades. */
@@ -155,6 +261,76 @@ function drawGrass(rng: () => number, scale = 1): PixelBuffer {
     }
   }
   return p;
+}
+
+/** Sea oats' seed heads, light to dark (what flutters). */
+const SEED_HEADS = [0xeadcaa, 0xd8c48a, 0xbea66a, 0x9a8450];
+
+/**
+ * Sea oats: a few tall stems standing out of a fountain of long, arching
+ * leaves, each stem bowed under a nodding head of flat, papery seeds hanging
+ * from short sprays.
+ */
+export function drawSeaOats(rng: () => number, scale = 1): PixelBuffer {
+  const h = Math.max(10, Math.round(randomRange(rng, 30, 44) * scale));
+  const w = Math.round(h * 0.8) + 6;
+  const p = new PixelBuffer(w, h + 2);
+  const cx = w / 2;
+  const foot = h + 1;
+  // Leaves: long and thin, arching up and out and over.
+  for (let i = 0, n = randomInt(rng, 5, 8); i < n; i++) {
+    const side = i % 2 ? 1 : -1;
+    const len = randomRange(rng, h * 0.3, h * 0.55);
+    const out = randomRange(rng, 0.2, 0.7) * side;
+    for (let t = 0; t < len; t++) {
+      const u = t / len;
+      p.set(cx + side * 0.5 + out * t + side * u * u * len * 0.3, foot - t * (1 - u * 0.55), u > 0.7 ? 0xa4aa62 : u > 0.3 ? 0x8a9a52 : 0x6e7e44);
+    }
+  }
+  // Stems, each bowing over at the top under its head.
+  for (let i = 0, n = randomInt(rng, 2, 4); i < n; i++) {
+    const len = randomRange(rng, h * 0.72, h);
+    const lean = randomRange(rng, -0.18, 0.18);
+    const nod = (lean >= 0 ? 1 : -1) * randomRange(rng, 0.25, 0.5);
+    const x0 = cx + randomRange(rng, -2, 2);
+    let tipX = x0;
+    let tipY = foot;
+    for (let t = 0; t < len; t++) {
+      const u = t / len;
+      tipX = x0 + lean * t + nod * u ** 3 * len * 0.5;
+      tipY = foot - t + u ** 4 * len * 0.12;
+      p.set(tipX, tipY, u > 0.6 ? 0xc4b47c : 0x9c9060);
+    }
+    // The head: sprays of seeds hanging off the last stretch of stem, downwind.
+    const sprays = randomInt(rng, 4, 7);
+    for (let k = 0; k < sprays; k++) {
+      const u = 1 - (k / sprays) * 0.35;
+      const t = len * u;
+      const sx = x0 + lean * t + nod * u ** 3 * len * 0.5;
+      const sy = foot - t + u ** 4 * len * 0.12;
+      const dir = nod >= 0 ? 1 : -1;
+      const reach = Math.max(1, Math.round(randomRange(rng, 1.5, 3.5) * Math.max(0.6, scale)));
+      for (let j = 0; j <= reach; j++) {
+        const x = sx + dir * j * 0.8;
+        const y = sy + j * 0.9;
+        if (j % 2 === 0 || j === reach) {
+          // A flat seed: light above, shaded below.
+          p.set(x, y, SEED_HEADS[k % 2]);
+          p.set(x, y + 1, SEED_HEADS[2 + (j % 2)]);
+        } else p.set(x, y, SEED_HEADS[2]);
+      }
+    }
+    p.set(tipX, tipY, SEED_HEADS[0]);
+  }
+  return p;
+}
+
+/** A copy of some art faded into the haze. */
+function hazeArt(art: PixelBuffer, haze: number): PixelBuffer {
+  if (haze <= 0) return art;
+  const out = new PixelBuffer(art.width, art.height);
+  out.draw(art, 0, 0, (c) => lerpColor(c, HAZE, haze));
+  return out;
 }
 
 /** A clump of wildflowers on the dune: daisies or purple sea-lavender. */
@@ -193,9 +369,14 @@ const BUSH_PALETTES = [
   [0x2a4428, 0x385a30, 0x4a7036, 0x628a42],
 ];
 
+/** A dune bush's leaf colours, as `stampBush` paints them. */
+function bushLeaves(kind: number, haze: number): number[] {
+  return BUSH_PALETTES[kind].map((c) => lerpColor(c, HAZE, haze));
+}
+
 /** A leafy dune bush stamped into a buffer. */
 function stampBush(p: PixelBuffer, cx: number, baseY: number, h: number, seed: number, haze: number, kind = 0): void {
-  const pal = BUSH_PALETTES[kind].map((c) => lerpColor(c, HAZE, haze));
+  const pal = bushLeaves(kind, haze);
   for (let k = 0; k < 3; k++) {
     const r = h * (k === 1 ? 0.55 : 0.42);
     const ccx = cx + (k - 1) * h * 0.55;
@@ -342,7 +523,8 @@ export function generateBeach(seed = 2718): BeachLayout {
       }
     }
   }
-  // Young palms coming up through the scrub.
+  // Young palms coming up through the scrub, each out of a bush of its own.
+  const saplings: Placed[] = [];
   for (let i = 0; i < 9; i++) {
     const y = randomRange(scrubRng, BEACH_HORIZON + 22, 262);
     const x = randomRange(scrubRng, 20, 480);
@@ -350,8 +532,15 @@ export function generateBeach(seed = 2718): BeachLayout {
     if (backEdge(depth) - across < 80) continue;
     const scale = beachPlane.scaleAtY(y);
     const haze = Math.max(0, 0.5 - scale * 0.7);
-    const sapling = drawPalm(randomRange(scrubRng, 50, 90) * scale, randomRange(scrubRng, -14, 14) * scale, 900 + i);
-    stamps.push({ y, paint: () => scrub.draw(sapling.art, x - sapling.baseX, y - sapling.baseY, (c) => lerpColor(c, HAZE, haze)) });
+    const hazed = (c: number) => lerpColor(c, HAZE, haze);
+    const palm = drawPalm(randomRange(scrubRng, 50, 90) * scale, randomRange(scrubRng, -14, 14) * scale, 900 + i);
+    const flat = flattenPalm(palm);
+    const art = new PixelBuffer(flat.width, flat.height);
+    art.draw(flat, 0, 0, hazed);
+    saplings.push({ art, x: Math.round(x - palm.baseX), y: Math.round(y - palm.baseY), baseY: Math.round(y), leaves: FROND_COLORS.map(hazed), amp: 0.8 + art.height / 40 });
+    const kind = Math.floor(scrubRng() * 3);
+    const bush = drawScrub(scrubRng, (8 + scrubRng() * 6) * (0.3 + scale), haze, kind);
+    saplings.push({ art: bush, x: Math.round(x - bush.width / 2), y: Math.round(y + 3 - bush.height + 2), baseY: Math.round(y + 3), leaves: bushLeaves(kind, haze), amp: 0.4 + bush.height / 30 });
   }
 
   // --- Driftwood and an old dune fence ---
@@ -400,7 +589,7 @@ export function generateBeach(seed = 2718): BeachLayout {
   props.outline(0x3a3024);
 
   // --- Palms leaning in from the left ---
-  const palms: Placed[] = [];
+  const palms: PlacedPalm[] = [];
   const palmSpots: Array<[x: number, baseY: number, height: number, lean: number]> = [
     [400, 188, 150, 10],
     [345, 196, 190, -18],
@@ -419,12 +608,22 @@ export function generateBeach(seed = 2718): BeachLayout {
   for (const [i, [x, baseY, real, lean]] of palmSpots.entries()) {
     const s = beachPlane.scaleAtY(baseY);
     const palm = drawPalm(real * s, lean * s, 300 + i * 17);
-    palms.push({ art: palm.art, x: Math.round(x - palm.baseX), y: Math.round(baseY - palm.baseY), baseY });
+    const ox = Math.round(x - palm.baseX);
+    const oy = Math.round(baseY - palm.baseY);
+    const haze = Math.max(0, 0.6 - s);
+    const at = <T extends PalmPart>(part: T): T => ({ ...part, x: ox + part.x, y: oy + part.y });
+    // The far ones are too small to see their fronds move apart: one piece.
+    const placed: PlacedPalm =
+      real * s < 40
+        ? { art: flattenPalm(palm), x: ox, y: oy, baseY, haze, leaves: FROND_COLORS }
+        : { art: palm.trunk.art, x: ox + palm.trunk.x, y: oy + palm.trunk.y, baseY, haze, parts: { trunk: at(palm.trunk), fronds: palm.fronds.map(at), hub: at(palm.hub), crown: { x: ox + palm.crown.x, y: oy + palm.crown.y } } };
+    palms.push(placed);
     // Gulls sit on the crowns of the nearer palms.
     if (s > 0.5) {
-      const cx = Math.round(x - palm.baseX + palm.crown.x);
-      const cy = Math.round(baseY - palm.baseY + palm.crown.y);
-      ledges.push({ x0: cx - 3, x1: cx + 3, y: cy - 1, layer: 'mid', kind: 'palm', z: birdZ(baseY) });
+      const cx = ox + palm.crown.x;
+      const cy = oy + palm.crown.y;
+      placed.ledge = { x0: cx - 3, x1: cx + 3, y: cy - 1, layer: 'mid', kind: 'palm', z: birdZ(baseY) };
+      ledges.push(placed.ledge);
     }
   }
 
@@ -441,6 +640,9 @@ export function generateBeach(seed = 2718): BeachLayout {
     dune.set(x, Math.floor(top), dry[4]);
   }
   dune.outline(0x8a744e);
+  const tufts: Placed[] = [...saplings];
+  const addTuft = (art: PixelBuffer, x: number, baseY: number, extra: Partial<Placed> = {}) =>
+    tufts.push({ art, x: Math.round(x - art.width / 2), y: Math.round(baseY - art.height + 1), baseY: Math.round(baseY), ...extra });
   // Scrub along the bank's crest, inked so it stands out against the sand.
   for (const [x, h, kind] of [
     [118, 22, 0],
@@ -449,11 +651,13 @@ export function generateBeach(seed = 2718): BeachLayout {
     [452, 14, 0],
   ] as const) {
     const art = drawScrub(rng, h, 0, kind);
-    dune.draw(art, x - art.width / 2, duneTop(x) - art.height + 6);
+    addTuft(art, x, duneTop(x) + 4, { leaves: bushLeaves(kind, 0), amp: 0.5 + h / 25 });
   }
-  const tufts: Placed[] = [];
-  const addTuft = (art: PixelBuffer, x: number, baseY: number) => tufts.push({ art, x: Math.round(x - art.width / 2), y: Math.round(baseY - art.height + 1), baseY: Math.round(baseY) });
   for (let x = 4; x < 466; x += randomInt(rng, 9, 20)) addTuft(drawGrass(rng, randomRange(rng, 1.4, 2.1)), x, duneTop(x) + randomInt(rng, 2, 9));
+  // Sea oats along the bank, their heads nodding over the grass.
+  for (const x of [34, 96, 158, 214, 300, 352, 418]) {
+    addTuft(drawSeaOats(rng, randomRange(rng, 1.3, 1.8)), x + randomInt(rng, -8, 8), duneTop(x) + randomInt(rng, 3, 8), { leaves: SEED_HEADS });
+  }
   // Big hero clumps of marram at the front, as in the drawing.
   for (const [x, baseY, scale] of [
     [178, 352, 2.9],
@@ -482,7 +686,7 @@ export function generateBeach(seed = 2718): BeachLayout {
   const plantRng = createRng(seed + 3);
   let placedPlants = 0;
   let bushes = 0;
-  for (let attempt = 0; attempt < 3000 && placedPlants < 200; attempt++) {
+  for (let attempt = 0; attempt < 4000 && placedPlants < 260; attempt++) {
     const y = randomRange(plantRng, BEACH_HORIZON + 8, 300);
     const x = randomRange(plantRng, 0, WORLD_WIDTH);
     const { depth, s: across } = shoreCoords(x, y);
@@ -494,22 +698,30 @@ export function generateBeach(seed = 2718): BeachLayout {
     const lush = Math.min(1, (backEdge(depth) - across) / 300);
     const roll = plantRng();
     let art: PixelBuffer;
+    let extra: Partial<Placed> = {};
     if (roll < 0.1 + lush * 0.06) {
       art = drawFlowers(plantRng, plantRng() < 0.5 ? 'daisy' : 'violet', Math.max(0.3, scale * 1.2));
-    } else if (bushes >= 60 || roll < 0.72 - lush * 0.3) {
+    } else if (lush < 0.35 && roll < 0.3) {
+      // Sea oats on the seaward face of the dunes.
+      art = hazeArt(drawSeaOats(plantRng, Math.max(0.35, scale * (0.9 + plantRng() * 0.5))), haze);
+      extra = { leaves: SEED_HEADS.map((c) => lerpColor(c, HAZE, haze)) };
+    } else if (bushes >= 70 || roll < 0.72 - lush * 0.3) {
       // Marram: tall, varied clumps.
       art = drawGrass(plantRng, Math.max(0.3, scale * (1 + plantRng() * 0.8) * (1 + lush * 0.4)));
     } else {
-      art = drawScrub(plantRng, (10 + plantRng() * 18) * scale * (1 + lush * 0.6), haze, Math.floor(plantRng() * 3));
+      const kind = Math.floor(plantRng() * 3);
+      const h = (10 + plantRng() * 18) * scale * (1 + lush * 0.6);
+      art = drawScrub(plantRng, h, haze, kind);
+      extra = { leaves: bushLeaves(kind, haze), amp: 0.5 + art.height / 28 };
       bushes++;
     }
-    if (scale < 0.35) {
+    if (scale < 0.3) {
       const px = Math.round(x - art.width / 2);
       const py = Math.round(y - art.height + 1);
       stamps.push({ y, paint: () => scrub.draw(art, px, py, (c) => lerpColor(c, HAZE, haze)) });
       continue;
     }
-    addTuft(art, x, y);
+    addTuft(art, x, y, extra);
     placedPlants++;
   }
   stamps.sort((a, b) => a.y - b.y);

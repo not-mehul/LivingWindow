@@ -26,6 +26,12 @@ export interface SwayOptions {
   rustle?: readonly Texture[];
   /** Leaf flicks per second in a full wind. */
   rustleRate?: number;
+  /**
+   * Side anchors only: the column (art px from the left) the piece is held
+   * at, when that isn't its anchored edge. Both sides of it bob, more the
+   * further out they are: a palm frond held at its root, leaflets either side.
+   */
+  pivotX?: number;
 }
 
 /**
@@ -54,6 +60,7 @@ export class SwayMesh {
   private readonly offsets: Float32Array;
   private readonly rustle: readonly Texture[];
   private readonly rustleRate: number;
+  private readonly pivotX: number | undefined;
   private rustleClock = 0;
   private rustleFrame = 0;
   private lastTime = Number.NaN;
@@ -71,6 +78,7 @@ export class SwayMesh {
     this.frequency = options.frequency ?? 0.9 + Math.random() * 0.4;
     this.rustle = options.rustle && options.rustle.length > 1 ? options.rustle : [];
     this.rustleRate = options.rustleRate ?? 5;
+    this.pivotX = side ? options.pivotX : undefined;
     this.rustleClock = Math.random() * 10;
   }
 
@@ -84,7 +92,14 @@ export class SwayMesh {
     let moved = false;
     if (this.anchor === 'left' || this.anchor === 'right') {
       // A bough: it bobs up and down along its length (and gives a little sideways), all rows together.
-      swayOffsets(offsets, time, wind, this.mesh.x + base[(cols - 1) * 2] / 2, amplitude, this.frequency, this.phase, this.anchor === 'right' ? 'bottom' : 'top');
+      const width = base[(cols - 1) * 2];
+      if (this.pivotX === undefined) swayOffsets(offsets, time, wind, this.mesh.x + width / 2, amplitude, this.frequency, this.phase, this.anchor === 'right' ? 'bottom' : 'top');
+      else {
+        const pivot = this.pivotX;
+        const reach = Math.max(1, pivot, width - pivot);
+        const at = swayState(time, wind, this.mesh.x + pivot, this.frequency, this.phase);
+        for (let i = 0; i < cols; i++) offsets[i] = swayAt(at, Math.abs(base[i * 2] - pivot) / reach, amplitude, wind, this.phase);
+      }
       for (let j = 0; j < rows; j++) {
         for (let i = 0; i < cols; i++) {
           const k = (j * cols + i) * 2;
@@ -158,18 +173,36 @@ export class SwayMesh {
  */
 export function swayOffsets(out: Float32Array, time: number, wind: number, x: number, amplitude: number, frequency: number, phase: number, anchor: 'bottom' | 'top'): Float32Array {
   const rows = out.length;
-  const calm = Math.min(1, Math.abs(wind));
-  const strength = 0.3 + calm * 0.7;
-  // A gust front sweeping across the panorama every half-minute or so, in the wind's direction.
-  const gust = 0.75 + 0.25 * Math.sin(time * 0.21 - x * 0.011 * Math.sign(wind || 1) + phase * 0.3) + 0.15 * calm * Math.sin(time * 0.53 - x * 0.023);
-  const t = time * frequency + phase;
+  const at = swayState(time, wind, x, frequency, phase);
   for (let j = 0; j < rows; j++) {
     const along = j / (rows - 1); // 0 at the top row
-    const free = anchor === 'bottom' ? 1 - along : along;
-    const bend = free ** 1.6;
-    const lag = free * 0.55;
-    const wave = 0.65 * Math.sin(t - lag) + 0.35 * Math.sin(t * 2.3 + phase * 1.7 - lag * 1.6);
-    out[j] = amplitude * bend * (wind * 0.6 * gust + wave * strength * gust);
+    out[j] = swayAt(at, anchor === 'bottom' ? 1 - along : along, amplitude, wind, phase);
   }
   return out;
+}
+
+interface SwayState {
+  strength: number;
+  gust: number;
+  t: number;
+}
+
+const state: SwayState = { strength: 0, gust: 0, t: 0 };
+
+/** The wind at a plant this moment (shared by all its vertices). */
+function swayState(time: number, wind: number, x: number, frequency: number, phase: number): SwayState {
+  const calm = Math.min(1, Math.abs(wind));
+  state.strength = 0.3 + calm * 0.7;
+  // A gust front sweeping across the panorama every half-minute or so, in the wind's direction.
+  state.gust = 0.75 + 0.25 * Math.sin(time * 0.21 - x * 0.011 * Math.sign(wind || 1) + phase * 0.3) + 0.15 * calm * Math.sin(time * 0.53 - x * 0.023);
+  state.t = time * frequency + phase;
+  return state;
+}
+
+/** The offset at a point `free` (0 at the root .. 1 at the free end) along the plant. */
+function swayAt(at: SwayState, free: number, amplitude: number, wind: number, phase: number): number {
+  const bend = free ** 1.6;
+  const lag = free * 0.55;
+  const wave = 0.65 * Math.sin(at.t - lag) + 0.35 * Math.sin(at.t * 2.3 + phase * 1.7 - lag * 1.6);
+  return amplitude * bend * (wind * 0.6 * at.gust + wave * at.strength * at.gust);
 }
