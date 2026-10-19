@@ -152,7 +152,7 @@ export class Overlay {
           <button type="button" class="icon-btn icon-btn--filled" data-action="pause" aria-keyshortcuts="Space"></button>
           <input type="range" class="slider" min="0" max="1439" step="1" aria-label="Time of day" data-time />
         </div>
-        <div class="pills" data-presets>
+        <div class="pills">
           ${PHASE_PRESETS.map(
             (p) =>
               `<button type="button" class="pill" data-hours="${p.hours}" title="${PHASE_LABELS[p.phase]}">${PRESET_SHORT[p.phase]}</button>`,

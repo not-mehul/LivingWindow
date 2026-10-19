@@ -266,13 +266,6 @@ export function eye(g: PixelGrid, x: number, y: number, size: number, dark: numb
   }
 }
 
-/** How much detail a sprite drawn `size` px across can carry. */
-export type Tier = 'full' | 'mid' | 'tiny';
-
-export function tierFor(size: number): Tier {
-  return size >= 24 ? 'full' : size >= 12 ? 'mid' : 'tiny';
-}
-
 /** Round a size to an even number of pixels (keeps sprite caches small). */
 export function evenSize(size: number, min = 2): number {
   return Math.max(min, Math.round(size / 2) * 2);

@@ -158,27 +158,6 @@ const seedPour: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return duration;
 };
 
-const windowSlide: SynthVoice = (ctx, out, when, gain, rate, noise) => {
-  const duration = 0.6;
-  const src = ctx.createBufferSource();
-  src.buffer = noise.get('pink');
-  const band = ctx.createBiquadFilter();
-  band.type = 'bandpass';
-  band.Q.value = 2;
-  band.frequency.setValueAtTime(320 * rate, when);
-  band.frequency.linearRampToValueAtTime(520 * rate, when + duration);
-  const amp = ctx.createGain();
-  amp.gain.setValueAtTime(0, when);
-  // Stick-slip friction of wood on wood: an uneven, juddering level.
-  for (let t = 0; t < duration; t += 0.03) {
-    amp.gain.linearRampToValueAtTime(gain * rand(0.15, 0.45), when + t);
-  }
-  amp.gain.linearRampToValueAtTime(0, when + duration);
-  src.connect(band).connect(amp).connect(out);
-  src.start(when, Math.random() * 5, duration + 0.05);
-  return duration;
-};
-
 /** Iron hinges turning: a dry, rising squeal with a woody groan underneath. */
 const windowCreak: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   const duration = 0.9;
@@ -911,7 +890,6 @@ export const SYNTH_VOICES = {
   'wing-flap': wingFlap,
   'glass-tap': glassTap,
   'seed-pour': seedPour,
-  'window-slide': windowSlide,
   'window-thunk': windowThunk,
   'window-creak': windowCreak,
   'car-horn': carHorn,

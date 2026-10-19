@@ -95,7 +95,7 @@ export class TidePools {
     shore.poolLayer.addChild(sprite);
   }
 
-  /** Is the octopus showing (for tests and the gallery). */
+  /** Is the octopus showing (for the debug view). */
   get octopusOut(): number {
     return this.octopus.out;
   }

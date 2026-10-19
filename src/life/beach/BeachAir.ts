@@ -207,10 +207,10 @@ export class BeachAir {
     return this.coconuts.length;
   }
 
-  /** Drop a coconut now (for the gallery and tests). */
   /** Called where a coconut thumps down (world px). */
   onCoconut: ((x: number, y: number) => void) | null = null;
 
+  /** Drop a coconut now (dev staging). */
   dropCoconut(): void {
     this.coconutTimer = 0;
   }

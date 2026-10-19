@@ -67,16 +67,6 @@ export abstract class Soundscape {
     return source;
   }
 
-  /** A held oscillator (e.g. a drone) that is stopped on dispose. */
-  protected oscillator(type: OscillatorType, frequency: number): OscillatorNode {
-    const osc = this.engine.context.createOscillator();
-    osc.type = type;
-    osc.frequency.value = frequency;
-    osc.start();
-    this.sources.push(osc);
-    return osc;
-  }
-
   protected gain(value = 0): GainNode {
     const g = this.engine.context.createGain();
     g.gain.value = value;

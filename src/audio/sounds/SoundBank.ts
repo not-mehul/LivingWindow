@@ -18,10 +18,6 @@ export class SoundBank {
     private readonly noise: NoiseBank,
   ) {}
 
-  hasSamples(id: SoundId): boolean {
-    return (this.samples.get(id)?.length ?? 0) > 0;
-  }
-
   /** Register decoded recordings for a sound (replacing its synth voice). */
   addSamples(id: SoundId, buffers: AudioBuffer[]): void {
     if (buffers.length > 0) this.samples.set(id, [...(this.samples.get(id) ?? []), ...buffers]);

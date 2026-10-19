@@ -515,4 +515,4 @@ Dockerfile, docker-compose.yml  One-command local hosting
 - `Viewport.world` is where scene layers go, in native world pixels;
   `Viewport.worldXToStereo()` maps a world x to a stereo pan for spatial audio.
 - The `sill-layer` container (in `main.ts`) holds z = 0 foreground entities.
-  `BirdseedBowl.perchPoint` and `BirdseedState.attraction` feed the bird FSM.
+  `BirdseedState.attraction` feeds the bird FSM, and the bowl's place on the sill comes through `SillState.bowlX`.

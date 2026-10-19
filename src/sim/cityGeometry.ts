@@ -95,7 +95,7 @@ let lastFace: Face = 'front';
 
 /**
  * Just the depth at which a ray meets a box (−1 if it misses); the face it
- * met is left in `lastCastFace()`. Allocation-free, for casting a ray
+ * met is left in `lastFace` (for `castBox`). Allocation-free, for casting a ray
  * through every pixel.
  */
 export function castDepth(p: PreparedBox, a: number, b: number, eye = CITY_EYE): number {
@@ -151,10 +151,6 @@ export function castDepth(p: PreparedBox, a: number, b: number, eye = CITY_EYE):
   if (enter > exit) return -1;
   lastFace = face;
   return enter;
-}
-
-export function lastCastFace(): Face {
-  return lastFace;
 }
 
 /** Screen position of a point on or above the ground. */

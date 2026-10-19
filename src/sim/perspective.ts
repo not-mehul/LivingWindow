@@ -20,11 +20,6 @@ export function spriteSizeAt(z: number, relativeSize = 1): number {
   return Math.max(4, Math.round(FULL_DETAIL_SIZE * perspectiveScale(z) * relativeSize));
 }
 
-/** Movement speed scales with apparent size, so distant things drift slowly. */
-export function speedScaleAt(z: number): number {
-  return perspectiveScale(z);
-}
-
 /**
  * The depth z at which S(z) equals `scale` (the inverse of `perspectiveScale`),
  * so perches laid out on a ground plane get matching bird sizes.

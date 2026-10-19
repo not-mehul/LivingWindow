@@ -12,7 +12,6 @@ import {
 
 export interface ViewportEvents {
   layout: ViewportLayout;
-  pan: { panX: number };
 }
 
 /** Exponential decay rate of pan inertia, per second. */
@@ -103,7 +102,6 @@ export class Viewport extends Emitter<ViewportEvents> {
     if (next === this._panX) return;
     this._panX = next;
     this.applyTransform();
-    this.emit('pan', { panX: next });
   }
 
   /** Pan by a distance in world pixels (positive looks further right). */

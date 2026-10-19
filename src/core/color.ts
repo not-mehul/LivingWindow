@@ -47,7 +47,3 @@ export function multiplyColor(a: number, b: number): number {
   const [br, bg, bb] = channels(b);
   return pack((ar * br) / 255, (ag * bg) / 255, (ab * bb) / 255);
 }
-
-export function toCss(color: number): string {
-  return `#${color.toString(16).padStart(6, '0')}`;
-}

@@ -180,7 +180,6 @@ export class BirdseedBowl {
   private seeds: FallingSeed[] = [];
   private bump = 1;
   private bumpKind: 'fill' | 'wiggle' = 'fill';
-  private surface: SillSurface | null = null;
   private readonly presence = new BowlPresence(true);
 
   constructor(
@@ -199,14 +198,6 @@ export class BirdseedBowl {
     state.on('change', () => {
       this.sprite.texture = this.textures[state.stage];
     });
-  }
-
-  /**
-   * Where a bird should stand to peck at the seed, in screen CSS px.
-   * Anchored to the sill surface so it holds across layouts.
-   */
-  get perchPoint(): { x: number; y: number } {
-    return { x: this.container.x, y: this.surface?.y ?? this.container.y };
   }
 
   /** Half the dish's width (art px), for creatures lining up beside it. */
@@ -259,7 +250,6 @@ export class BirdseedBowl {
 
   /** Place the dish on the sill, drawn at the size for this view's `nearness`. */
   layout(surface: SillSurface, devicePixelRatio: number, nearness = 1): void {
-    this.surface = surface;
     this.resize(dishSize(nearness));
     const fs = surface.frameScale;
     const margin = (this.halfWidth + 10) * fs;

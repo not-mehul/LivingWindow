@@ -406,7 +406,7 @@ export function drawCat(coat: CatCoat, pose: CatPose): { grid: PixelGrid; palett
   }
   for (const leg of rig.legs.filter((l) => l.near)) drawLeg(leg);
   if (rig.tailFront) drawTail();
-  const ink = { base, light, mark, white, pink, nose, mouthDark, tongue, eyeC, pupil, glint, whisker };
+  const ink = { base, light, mark, white, pink, nose, mouthDark, tongue, eyeC, pupil, glint };
   const whiskers = drawHead(g, rig.head, S, ink, def, coatAt);
   if (rig.paw) {
     const pts = rig.paw.map(([x, y]) => P(x, y));
@@ -432,7 +432,6 @@ interface HeadInk {
   eyeC: number;
   pupil: number;
   glint: number;
-  whisker: number;
 }
 
 /** The cat's head: in profile (facing right) or turned to look at you. Returns where its whiskers go. */

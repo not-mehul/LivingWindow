@@ -459,7 +459,11 @@ async function boot(): Promise<void> {
           return current.lightning;
         },
         audio: () => audio,
-        /** Set one of the landscape's interactions going (see `life.stages`). */
+        /** The interactions this landscape can set going with `stage`. */
+        get stages() {
+          return current.landscape.life.stages ?? [];
+        },
+        /** Set one of the landscape's interactions going (see `stages`). */
         stage: (name: string) => current.landscape.life.stage?.(name) ?? false,
         /** Run the simulation forward without drawing (for tests and demos). */
         fastForward: (seconds: number, step = 1 / 30) => {

@@ -33,8 +33,6 @@ import { PROP_BODIES, roofClutter, shadeProp, terraceScene, type Mast, type Prop
  * band for the time of day and weather.
  */
 
-export const HORIZON_Y = CITY_HORIZON;
-
 export type CityLayerName = 'far' | 'mid' | 'near';
 
 export interface WindowRecord {

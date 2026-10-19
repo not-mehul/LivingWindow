@@ -12,8 +12,6 @@ import { paintPlank, PixelBuffer } from './woodArt';
 export const FRAME_SIDE = 19;
 /** Height of the head beam across the top, in frame art pixels. */
 export const FRAME_TOP = 21;
-/** Kept for callers that only need "the frame's thickness". */
-export const FRAME_BORDER = FRAME_SIDE;
 /** Total height of the windowsill, in frame art pixels: a deep top you look down on, its nosing, and the apron below. */
 export const SILL_HEIGHT = 46;
 /** Rows from the top of the sill art to where objects stand (about two-thirds of the way back across its top). */
@@ -51,47 +49,18 @@ export interface ClearOpening {
   frameScale: number;
 }
 
+/** The wall round the window: vertical tongue-and-groove boards. */
 function createWallTexture(theme: FrameTheme): Texture {
   const WALL = theme.wall;
   return drawPixelTexture(16, 16, (c) => {
     c.rect(0, 0, 16, 16, WALL.base);
-    if (theme.wallPattern === 'logs') {
-      for (const y of [0, 8]) {
-        c.hline(0, y, 16, WALL.light);
-        c.hline(0, y + 6, 16, WALL.dark);
-        c.hline(0, y + 7, 16, WALL.trim);
-      }
-      c.px(5, 3, WALL.dark);
-      c.px(12, 11, WALL.dark);
-    } else if (theme.wallPattern === 'boards') {
-      // Vertical tongue-and-groove boards.
-      for (const x of [0, 8]) {
-        c.vline(x, 0, 16, WALL.trim);
-        c.vline(x + 1, 0, 16, WALL.light);
-      }
-      c.px(4, 6, WALL.dark);
-      c.px(12, 13, WALL.dark);
-      c.px(5, 12, WALL.dark);
-    } else {
-      for (const [x, y] of [
-        [2, 3],
-        [9, 1],
-        [13, 7],
-        [5, 10],
-        [11, 13],
-        [1, 14],
-      ]) {
-        c.px(x, y, WALL.light);
-      }
-      for (const [x, y] of [
-        [7, 6],
-        [14, 2],
-        [3, 7],
-        [10, 9],
-      ]) {
-        c.px(x, y, WALL.dark);
-      }
+    for (const x of [0, 8]) {
+      c.vline(x, 0, 16, WALL.trim);
+      c.vline(x + 1, 0, 16, WALL.light);
     }
+    c.px(4, 6, WALL.dark);
+    c.px(12, 13, WALL.dark);
+    c.px(5, 12, WALL.dark);
   });
 }
 
@@ -304,11 +273,6 @@ export class WindowFrame {
 
   get sillSurface(): SillSurface {
     return this._surface;
-  }
-
-  /** Y (CSS px) of the underside of the head beam. */
-  get innerTop(): number {
-    return this._clear.y;
   }
 
   /** How large the sill's props are drawn for this view (see `sillProps`). */

@@ -102,11 +102,6 @@ export class PixelGrid {
     for (const i of add) this.data[i] = color;
   }
 
-  /** Recolour every filled pixel (for flat silhouettes at tiny sizes). */
-  flatten(color: number): void {
-    for (let i = 0; i < this.data.length; i++) if (this.data[i]) this.data[i] = color;
-  }
-
   /** Mirror horizontally in place. */
   flip(): void {
     for (let y = 0; y < this.height; y++) {
