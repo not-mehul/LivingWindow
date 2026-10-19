@@ -1,37 +1,39 @@
 import type { AudioSystem } from '../audio/AudioSystem';
 import { BUS_IDS, BUS_LABELS, type BusId } from '../audio/mixer';
+import { paintSlider } from './slider';
 
 /** Mixer sliders and radio controls, added to the overlay once audio is ready. */
 export function createSoundPanel(audio: AudioSystem): DocumentFragment {
   const { engine, radio } = audio;
   const template = document.createElement('template');
   template.innerHTML = `
-    <details class="overlay__section" data-section="sound" open>
-      <summary>Sound</summary>
-      <button type="button" class="pixel-button pixel-button--accent" data-action="enable-sound">Tap to enable sound</button>
-      <div class="mixer">
+    <details class="group" data-section="sound" open>
+      <summary class="group__label">Sound</summary>
+      <button type="button" class="btn btn--accent" data-action="enable-sound">Tap to turn sound on</button>
+      <div class="list">
         ${BUS_IDS.map(
           (bus) => `
-          <label class="mixer__row">
+          <label class="list__row mixer__row">
             <span class="mixer__label">${BUS_LABELS[bus]}</span>
-            <input type="range" class="pixel-range pixel-range--volume" min="0" max="100" step="1" data-bus="${bus}" aria-label="${BUS_LABELS[bus]} volume" />
+            <input type="range" class="slider" min="0" max="100" step="1" data-bus="${bus}" aria-label="${BUS_LABELS[bus]} volume" />
             <span class="mixer__value" data-bus-value="${bus}"></span>
           </label>`,
         ).join('')}
+        <button type="button" class="list__row" role="switch" data-action="mute" aria-keyshortcuts="M"><span>Mute</span><span class="switch" aria-hidden="true"></span></button>
       </div>
-      <button type="button" class="chip" data-action="mute" aria-keyshortcuts="M">Mute</button>
     </details>
-    <details class="overlay__section" data-section="radio" open>
-      <summary>Radio</summary>
-      <div class="overlay__row">
-        <button type="button" class="pixel-button" data-action="radio" aria-keyshortcuts="R"></button>
-        <button type="button" class="pixel-button pixel-button--small" data-action="radio-next">Next</button>
+    <details class="group" data-section="radio" open>
+      <summary class="group__label">Radio</summary>
+      <div class="list">
+        <button type="button" class="list__row" role="switch" data-action="radio" aria-keyshortcuts="R"><span>Radio <small data-radio-title aria-live="polite"></small></span><span class="switch" aria-hidden="true"></span></button>
+        <div class="list__row">
+          <form class="radio__tune" data-radio-form>
+            <input type="url" class="field" placeholder="Stream URL (optional)" aria-label="Internet radio stream URL" data-radio-url />
+            <button type="submit" class="text-btn">Tune</button>
+            <button type="button" class="text-btn" data-action="radio-next">Next</button>
+          </form>
+        </div>
       </div>
-      <div class="radio__title" data-radio-title aria-live="polite"></div>
-      <form class="radio__tune" data-radio-form>
-        <input type="url" class="pixel-input" placeholder="Stream URL (optional)" aria-label="Internet radio stream URL" data-radio-url />
-        <button type="submit" class="pixel-button pixel-button--small">Tune</button>
-      </form>
     </details>
   `;
   const fragment = template.content;
@@ -61,23 +63,25 @@ export function createSoundPanel(audio: AudioSystem): DocumentFragment {
       const bus = slider.dataset.bus as BusId;
       const percent = Math.round(engine.volume(bus) * 100);
       slider.value = String(percent);
+      paintSlider(slider);
       values.get(bus)!.textContent = String(percent);
     }
-    muteButton.textContent = engine.muted ? 'Unmute' : 'Mute';
-    muteButton.setAttribute('aria-pressed', String(engine.muted));
+    muteButton.setAttribute('aria-checked', String(engine.muted));
   };
   const refreshRadio = () => {
-    radioButton.textContent = radio.isOn ? 'Radio off' : 'Radio on';
-    radioButton.setAttribute('aria-pressed', String(radio.isOn));
+    radioButton.setAttribute('aria-checked', String(radio.isOn));
     nextButton.disabled = !radio.isOn;
-    radioTitle.textContent = radio.isOn ? `♪ ${radio.title}` : 'Off';
+    radioTitle.textContent = radio.isOn ? radio.title : '';
     if (document.activeElement !== radioUrl) radioUrl.value = radio.streamUrl;
   };
 
   enableButton.addEventListener('click', () => void engine.unlock());
   muteButton.addEventListener('click', () => engine.setMuted(!engine.muted));
   for (const slider of sliders) {
-    slider.addEventListener('input', () => engine.setVolume(slider.dataset.bus as BusId, Number(slider.value) / 100));
+    slider.addEventListener('input', () => {
+      paintSlider(slider);
+      engine.setVolume(slider.dataset.bus as BusId, Number(slider.value) / 100);
+    });
   }
   radioButton.addEventListener('click', () => {
     void engine.unlock().then(() => radio.toggle());
