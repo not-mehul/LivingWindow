@@ -15,6 +15,8 @@ import {
   type PersonLook,
   type StallKind,
 } from '../sprites/streetSprites';
+import type { PersonPose } from '../sprites/people';
+import { chance } from '../sim/interplay';
 
 interface Person {
   id: number;
@@ -39,6 +41,23 @@ interface Person {
   stride: number;
   sprite: Sprite;
   vendor: boolean;
+  /** A small moment: they stop and do something (look up, wave, hail a cab) for a while. */
+  moment: { pose: PersonPose; left: number; facing: PersonFacing; dir: 1 | -1 } | null;
+  /** After a wave, how long the chat goes on. */
+  chatAfter?: number;
+  /** Sheltering from the rain under a stall's awning: where they stand, and whether they've got there. */
+  shelter: { gx: number; depth: number; under: boolean; goal: { gx: number; depth: number }; goalIsDoor: boolean } | null;
+}
+
+/** A walker on the street, as others see them. */
+export interface Walker {
+  id: number;
+  gx: number;
+  depth: number;
+  /** Ground px/s along the street (+ away); 0 when stopped. */
+  heading: number;
+  busy: boolean;
+  look: PersonLook;
 }
 
 interface Stall {
@@ -124,6 +143,41 @@ export class StreetLife {
     return this.people.filter((p) => !p.vendor).length;
   }
 
+  /** Everyone walking the street (not the vendors). */
+  walkers(): Walker[] {
+    return this.people
+      .filter((p) => !p.vendor)
+      .map((p) => ({ id: p.id, gx: p.gx, depth: p.depth, heading: p.moment || p.browse > 0 || p.shelter?.under ? 0 : Math.sign(p.goal.depth - p.depth) * p.speed, busy: p.moment !== null || p.browse > 0 || p.shelter !== null || p.hurrying, look: p.look }));
+  }
+
+  /** Have someone stop and strike a pose a while (look up at the sky, wave, hail a cab). */
+  moment(id: number, pose: PersonPose, seconds: number, facing: PersonFacing, dir?: 1 | -1): boolean {
+    const p = this.people.find((q) => q.id === id && !q.vendor);
+    if (!p || p.moment || p.hurrying) return false;
+    p.moment = { pose, left: seconds, facing, dir: dir ?? p.dir };
+    return true;
+  }
+
+  /** Someone leaves the street without walking off it (into a taxi, into the busker's crowd). */
+  take(id: number): boolean {
+    const i = this.people.findIndex((q) => q.id === id && !q.vendor);
+    if (i < 0) return false;
+    this.removePerson(i);
+    return true;
+  }
+
+  /** People near the skyline end of the street, or anyone with a chance, stop and look up (fireworks, a searchlight overhead). */
+  lookUp(odds: number, seconds: [number, number], near?: { gx: number; depth: number; radius: number }): number {
+    let n = 0;
+    for (const p of this.people) {
+      if (p.vendor || p.moment || p.hurrying || this.rng() >= odds) continue;
+      if (near && Math.hypot(p.gx - near.gx, (p.depth - near.depth) * FOCAL) > near.radius) continue;
+      p.moment = { pose: 'look-up', left: seconds[0] + this.rng() * (seconds[1] - seconds[0]), facing: 'back', dir: p.dir };
+      n++;
+    }
+    return n;
+  }
+
   update(dt: number, env: Environment): void {
     const { weather, lighting } = env;
     const raining = weather.kind === 'rain' && weather.precipitation > RAIN_THRESHOLD;
@@ -136,7 +190,9 @@ export class StreetLife {
     }
 
     if (raining && !this.wasRaining) this.onRainStart();
+    if (!raining && this.wasRaining) this.onRainStop();
     this.wasRaining = raining;
+    this.meetFriends(dt);
 
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0 && this.pedestrianCount < target) {
@@ -210,6 +266,8 @@ export class StreetLife {
       stride: this.rng() * 2,
       sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }),
       vendor: false,
+      moment: null,
+      shelter: null,
     };
     // Some are heading into a building along the street.
     if (doors.length > 0 && this.rng() < 0.3) {
@@ -223,15 +281,58 @@ export class StreetLife {
     this.people.push(person);
   }
 
-  /** Rain arrives: most open umbrellas, the rest hurry for cover. */
+  /** Rain arrives: most open umbrellas, some duck under the nearest stall's awning to wait it out, the rest hurry for cover. */
   private onRainStart(): void {
+    const open = this.stalls.filter((s) => stallProgress(s.shift, this.hours, s.offset) >= 1);
+    const taken = new Map<Stall, number>();
     for (const p of this.people) {
       if (p.vendor || p.umbrella) continue;
-      if (this.rng() < 0.6) p.umbrellaIn = 0.3 + this.rng() * 2.2;
+      const stall = open.find((s) => Math.abs(s.depth - p.depth) < 0.9 && (taken.get(s) ?? 0) < 3);
+      if (stall && this.rng() < 0.55) {
+        // Under the awning, in front of the counter, a step apart from the others there.
+        const n = taken.get(stall) ?? 0;
+        taken.set(stall, n + 1);
+        const side = Math.sign(stall.gx) || 1;
+        p.shelter = { gx: stall.gx - side * (8 + n * 3), depth: stall.depth + (n - 1) * 0.04, under: false, goal: p.goal, goalIsDoor: p.goalIsDoor };
+        p.goal = { gx: p.shelter.gx, depth: p.shelter.depth };
+        p.goalIsDoor = false;
+        p.browse = 0;
+        p.moment = null;
+      } else if (this.rng() < 0.6) p.umbrellaIn = 0.3 + this.rng() * 2.2;
       else {
         p.hurrying = true;
         this.headIndoors(p);
       }
+    }
+  }
+
+  /** The rain's stopped: those sheltering look out, and go on their way. */
+  private onRainStop(): void {
+    for (const p of this.people) {
+      if (!p.shelter) continue;
+      p.goal = p.shelter.goal;
+      p.goalIsDoor = p.shelter.goalIsDoor;
+      // A moment's pause, looking up at the sky, before stepping out.
+      p.moment = { pose: 'look-up', left: 0.6 + this.rng() * 1.6, facing: 'front', dir: p.dir };
+      p.shelter = null;
+    }
+  }
+
+  /** Now and then two people passing each other turn out to know each other: they stop, one waves, they chat, and part. */
+  private meetFriends(dt: number): void {
+    if (!chance(0.8, dt, this.rng)) return;
+    const free = this.people.filter((p) => !p.vendor && !p.moment && !p.hurrying && !p.shelter && p.browse <= 0 && p.depth > 1.3 && p.depth < 6);
+    for (const a of free) {
+      const da = Math.sign(a.goal.depth - a.depth);
+      const b = free.find((q) => q !== a && Math.sign(q.goal.depth - q.depth) === -da && Math.abs(q.depth - a.depth) < 0.18 && Math.abs(q.gx - a.gx) < 26);
+      if (!b) continue;
+      const seconds = 3 + this.rng() * 5;
+      const aDir: 1 | -1 = b.gx > a.gx ? 1 : -1;
+      a.moment = { pose: 'wave', left: 1.4, facing: 'side', dir: aDir };
+      b.moment = { pose: 'stand', left: seconds, facing: 'side', dir: aDir === 1 ? -1 : 1 };
+      // After the wave, a chat.
+      a.chatAfter = seconds - 1.4;
+      return;
     }
   }
 
@@ -260,6 +361,18 @@ export class StreetLife {
     }
     if (!raining && p.umbrella && this.rng() < dt * 0.2) p.umbrella = false;
 
+    if (p.moment) {
+      p.moment.left -= dt;
+      if (p.moment.left <= 0) {
+        p.moment = null;
+        if (p.chatAfter && p.chatAfter > 0) {
+          p.moment = { pose: 'stand', left: p.chatAfter, facing: 'side', dir: p.dir };
+          p.chatAfter = 0;
+        }
+      }
+      return false;
+    }
+    if (p.shelter?.under) return false;
     if (p.browse > 0) {
       p.browse -= dt;
       return false;
@@ -282,6 +395,12 @@ export class StreetLife {
     const dz = (p.goal.depth - p.depth) * FOCAL;
     const dx = p.goal.gx - p.gx;
     const distance = Math.hypot(dx, dz);
+    if (distance < 2 && p.shelter) {
+      // Under the awning: turn to face out at the rain.
+      p.shelter.under = true;
+      p.facing = 'front';
+      return false;
+    }
     if (distance < 2) return true;
     // Walk mostly along the street; drift across it on the way (straight over to a doorway near the end).
     const step = Math.min(distance, speed * dt);
@@ -305,9 +424,13 @@ export class StreetLife {
   }
 
   private draw(p: Person): void {
-    const pose = p.browse > 0 ? 'browse' : 'walk';
-    p.sprite.texture = this.personSprites.get(p.look, p.id, p.facing, pose, Math.floor(p.stride) % 4, p.umbrella, this.heightAt(p.depth));
-    p.sprite.scale.x = p.dir;
+    const m = p.moment;
+    const pose: PersonPose = m ? m.pose : p.shelter?.under ? 'stand' : p.browse > 0 ? 'browse' : 'walk';
+    const facing = m ? m.facing : p.facing;
+    // Waving: the hand goes back and forth.
+    const frame = m ? Math.floor(performance.now() / 220) % 2 : Math.floor(p.stride) % 4;
+    p.sprite.texture = this.personSprites.get(p.look, p.id, facing, pose, frame, p.umbrella && pose !== 'wave' && pose !== 'hail', this.heightAt(p.depth));
+    p.sprite.scale.x = m ? (facing === 'side' ? m.dir : 1) : p.dir;
     const pt = this.options.project(p.gx, p.depth);
     p.sprite.position.set(Math.round(pt.x), Math.round(pt.y));
     p.sprite.zIndex = pt.y;
@@ -389,6 +512,8 @@ export class StreetLife {
           stride: 0,
           sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }),
           vendor: true,
+          moment: null,
+          shelter: null,
         };
         vendor.sprite.texture = this.personSprites.get(vendor.look, vendor.id, 'side', 'stand', 0, false, this.heightAt(stall.depth));
         const at = this.options.project(gx, stall.depth);

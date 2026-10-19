@@ -119,7 +119,11 @@ export class Fireworks {
     });
   }
 
+  /** Called with each burst's world x, for anyone watching. */
+  onBurst: ((x: number) => void) | null = null;
+
   private burst(rk: Rocket): void {
+    this.onBurst?.(rk.x);
     const n = rk.kind === 'ring' ? 56 : rk.kind === 'willow' ? 64 : 84;
     const speed = rk.kind === 'willow' ? r(28, 34) : r(36, 48);
     for (let i = 0; i < n; i++) {

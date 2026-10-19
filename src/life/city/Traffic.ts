@@ -35,6 +35,8 @@ interface Vehicle {
   /** Seconds left stopped (the food cart serving, the taxi waiting for a fare). */
   stop: number;
   stopped: boolean;
+  /** Pulling in for a fare who hailed it, here (depth), rather than at its usual spot. */
+  stopAt: number | null;
   sprite: Sprite;
   lamps: Sprite[];
   /** The taxi's headlight beam on the road ahead. */
@@ -88,6 +90,32 @@ export class Traffic {
   /** Send one of each kind out now (for demos and tests). */
   summon(kind: VehicleKind): void {
     this.spawn(kind, this.rng() < 0.5);
+  }
+
+  /** What's on the street, and where. */
+  traffic(): Array<{ kind: VehicleKind; gx: number; depth: number; speed: number; stopped: boolean }> {
+    return this.vehicles.map(({ kind, gx, depth, speed, stopped }) => ({ kind, gx, depth, speed, stopped }));
+  }
+
+  /** The taxi, if one's coming that hasn't a fare: where it is and which way it's going. */
+  get freeTaxi(): { depth: number; speed: number } | null {
+    const t = this.vehicles.find((v) => v.kind === 'taxi' && v.stopAt === null && !v.stopped);
+    return t ? { depth: t.depth, speed: t.speed } : null;
+  }
+
+  /** Someone at this depth has hailed the taxi: it pulls in there and waits a moment for them to get in. */
+  hail(depth: number): boolean {
+    const t = this.vehicles.find((v) => v.kind === 'taxi' && v.stopAt === null);
+    if (!t || (depth - t.depth) * Math.sign(t.speed) < 0.2) return false;
+    t.stopAt = depth;
+    t.stop = 4 + this.rng() * 2;
+    return true;
+  }
+
+  /** The taxi standing at the kerb for its fare, if it's there now. */
+  get taxiWaiting(): number | null {
+    const t = this.vehicles.find((v) => v.kind === 'taxi' && v.stopAt !== null && v.stopped);
+    return t ? t.depth : null;
   }
 
   update(dt: number, env: Environment): void {
@@ -165,6 +193,7 @@ export class Traffic {
       // The food cart stops a while mid-street to serve; the taxi pulls up for a fare now and then.
       stop: kind === 'cart' ? 40 + this.rng() * 60 : kind === 'taxi' && this.rng() < 0.4 ? 6 + this.rng() * 10 : 0,
       stopped: false,
+      stopAt: null,
       sprite,
       lamps: [],
       beam,
@@ -175,8 +204,9 @@ export class Traffic {
   /** Returns true once it has left the street. */
   private move(v: Vehicle, dt: number): boolean {
     const mid = (NEAR_END + FAR_END) / 2;
-    // Stopping mid-street once, if it has a reason to.
-    if (v.stop > 0 && Math.abs(v.depth - mid * 0.6) < 0.15) {
+    // Stopping mid-street once, if it has a reason to (or where its fare is waiting).
+    const at = v.stopAt ?? mid * 0.6;
+    if (v.stop > 0 && Math.abs(v.depth - at) < 0.15) {
       v.stopped = true;
       v.stop -= dt;
       return false;

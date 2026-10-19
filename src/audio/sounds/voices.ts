@@ -329,6 +329,18 @@ const dogHowl: SynthVoice = (ctx, out, when, gain, rate) => {
   return length;
 };
 
+/** A small street crowd clapping: a patter of claps that swells and dies away. */
+const applause: SynthVoice = (ctx, out, when, gain, rate, noise) => {
+  const length = rand(2.2, 3.4);
+  const claps = Math.round(length * rand(14, 20));
+  for (let i = 0; i < claps; i++) {
+    const t = (i / claps) * length + rand(-0.03, 0.03);
+    const swell = Math.sin((t / length) * Math.PI) ** 0.6;
+    noiseBurst(ctx, noise, out, when + Math.max(0, t), 0.025, { type: 'bandpass', frequency: rand(1400, 2600) * rate, Q: 1.4 }, rand(0.08, 0.18) * swell * gain, 0.001);
+  }
+  return length;
+};
+
 const catPurr: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   const length = rand(1.6, 2.4);
   const src = ctx.createBufferSource();
@@ -907,6 +919,7 @@ export const SYNTH_VOICES = {
   'cat-purr': catPurr,
   'dog-boof': dogBoof,
   'dog-howl': dogHowl,
+  applause,
   'woodpecker-drum': woodpeckerDrum,
   'jay-call': jayCall,
   'chickadee-call': chickadeeCall,

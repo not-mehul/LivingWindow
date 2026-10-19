@@ -23,6 +23,8 @@ interface Bystander {
   textures: Map<string, Texture>;
   /** Walking away once they're done (ground px/s along the street; 0 while they stand). */
   leaving: number;
+  /** Looking up at the sky (fireworks) for this long. */
+  gazing?: number;
 }
 
 export interface PerformersOptions {
@@ -45,7 +47,8 @@ const PITCH = { gx: 60, depth: 2.02 };
 /**
  * The street's evening entertainment: a busker playing under the lamp with
  * a little crowd swaying in front and now and then tossing a coin into the
- * open guitar case; and a queue at the noodle stall.
+ * open guitar case, clapping when each song ends; and a queue at the
+ * noodle stall.
  */
 export class Performers {
   private readonly busker: { look: PersonLook; sprite: Sprite; textures: Map<string, Texture> };
@@ -58,6 +61,9 @@ export class Performers {
   private strumTimer = 0;
   private crowdTimer = 0;
   private queueTimer = 0;
+  /** Seconds left of this song; then a pause for applause. */
+  private song = r(30, 60);
+  private applause = 0;
 
   constructor(private readonly options: PerformersOptions) {
     this.busker = { look: randomLook(), sprite: new Sprite({ anchor: { x: 0.5, y: 1 } }), textures: new Map() };
@@ -83,6 +89,29 @@ export class Performers {
     return this.playing;
   }
 
+  /** Where the busker plays. */
+  get pitch(): { gx: number; depth: number } {
+    return { ...PITCH };
+  }
+
+  /** A passer-by stops to listen: they join the ring as they are. */
+  addListener(look: PersonLook): boolean {
+    if (!this.playing || this.crowdSize >= 6) return false;
+    this.joinCrowd(look);
+    return true;
+  }
+
+  /** A passer-by drops a coin in the case as they go. */
+  tossFrom(gx: number, depth: number): void {
+    if (!this.playing) return;
+    this.coinArc(gx, depth);
+  }
+
+  /** Everyone standing watching looks up at the sky a while (fireworks). */
+  lookUp(seconds: number): void {
+    for (const b of [...this.crowd, ...this.queue]) if (!b.leaving) b.gazing = seconds * r(0.7, 1.1);
+  }
+
   update(dt: number, env: Environment): void {
     const raining = env.weather.kind === 'rain' && env.weather.precipitation > 0.15;
     const out = this.forced || buskerOut(env.lighting.hours, raining);
@@ -101,7 +130,7 @@ export class Performers {
     if (out) {
       const p = project(PITCH.gx, PITCH.depth);
       const h = Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / PITCH.depth));
-      const frame = Math.floor(env.time * 4) % 2;
+      const frame = this.applause > 0 ? 0 : Math.floor(env.time * 4) % 2;
       const key = `${frame}:${h}`;
       let t = b.textures.get(key);
       if (!t) {
@@ -120,11 +149,21 @@ export class Performers {
       this.props.rect(Math.round(c.x) - 1, Math.round(c.y) - 2, 1, 1).fill(0xe8c050);
       this.props.tint = tintAt(PITCH.gx, PITCH.depth);
       this.props.zIndex = c.y;
-      // A strummed chord every few seconds.
-      this.strumTimer -= dt;
-      if (this.strumTimer <= 0) {
-        this.strumTimer = r(1.6, 3.2);
-        this.options.sound('guitar-strum', this.options.pan(p.x), 0.55);
+      // A strummed chord every few seconds; between songs, a pause while the crowd claps.
+      this.song -= dt;
+      if (this.song <= 0 && this.applause <= 0) {
+        this.applause = r(3, 4.5);
+        if (this.crowdSize > 0) this.options.sound('applause', this.options.pan(p.x), 0.4 + Math.min(0.4, this.crowdSize * 0.08));
+      }
+      if (this.applause > 0) {
+        this.applause -= dt;
+        if (this.applause <= 0) this.song = r(30, 70);
+      } else {
+        this.strumTimer -= dt;
+        if (this.strumTimer <= 0) {
+          this.strumTimer = r(1.6, 3.2);
+          this.options.sound('guitar-strum', this.options.pan(p.x), 0.55);
+        }
       }
       // People stop to listen.
       this.crowdTimer -= dt;
@@ -140,15 +179,20 @@ export class Performers {
     this.updateCoins(dt, env);
   }
 
-  private joinCrowd(): void {
+  private joinCrowd(look?: PersonLook): void {
     // A loose half-ring in front of the busker, on the street side.
     const a = r(-0.9, 0.9);
     const gx = PITCH.gx - 22 - Math.cos(a) * r(6, 14);
     const depth = PITCH.depth + (Math.sin(a) * r(14, 30)) / FOCAL;
-    this.crowd.push(this.bystander(gx, depth, 1, r(20, 60)));
+    this.crowd.push(this.bystander(gx, depth, 1, r(20, 60), look));
   }
 
   private tossCoin(from: Bystander): void {
+    this.coinArc(from.gx, from.depth);
+  }
+
+  private coinArc(gx: number, depth: number): void {
+    const from = { gx, depth };
     const { project, lights } = this.options;
     const a = project(from.gx, from.depth);
     const b = project(PITCH.gx - 10, PITCH.depth - 0.03);
@@ -199,10 +243,10 @@ export class Performers {
 
   // --- Shared ----------------------------------------------------------
 
-  private bystander(gx: number, depth: number, dir: 1 | -1, stay: number): Bystander {
+  private bystander(gx: number, depth: number, dir: 1 | -1, stay: number, look?: PersonLook): Bystander {
     const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
     this.options.container.addChild(sprite);
-    return { look: randomLook(), gx, depth, dir, stay, phase: Math.random() * 6, sprite, textures: new Map(), leaving: 0 };
+    return { look: look ?? randomLook(), gx, depth, dir, stay, phase: Math.random() * 6, sprite, textures: new Map(), leaving: 0 };
   }
 
   /** Stand, sway, and when their time's up (or the show's over) walk off up or down the street. */
@@ -230,7 +274,18 @@ export class Performers {
           list.splice(i, 1);
           continue;
         }
-      } else onStand(b);
+      } else {
+        onStand(b);
+        if (b.gazing && b.gazing > 0) {
+          // Heads tipped back at the sky.
+          b.gazing -= dt;
+          facing = 'back';
+          pose = 'look-up';
+        } else if (this.applause > 0 && list === this.crowd) {
+          pose = 'clap';
+          frame = Math.floor(env.time * 7 + b.phase) % 2;
+        }
+      }
       const p = project(b.gx, b.depth);
       const h = Math.max(3, Math.round(PERSON_HEIGHT_AT_1 / b.depth));
       const key = `${facing}:${pose}:${frame}:${h}`;
@@ -242,7 +297,7 @@ export class Performers {
       }
       b.sprite.texture = t;
       // Swaying to the music while they stand.
-      const sway = !b.leaving ? Math.round(Math.sin(env.time * 2.2 + b.phase) * 0.6) : 0;
+      const sway = !b.leaving && pose === 'stand' && this.applause <= 0 ? Math.round(Math.sin(env.time * 2.2 + b.phase) * 0.6) : 0;
       b.sprite.position.set(Math.round(p.x) + sway, Math.round(p.y));
       b.sprite.zIndex = p.y;
       b.sprite.scale.x = b.dir;

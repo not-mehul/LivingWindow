@@ -140,7 +140,10 @@ class RoofGarden {
   private readonly washing = new Graphics();
   private readonly drops = new Graphics();
   private readonly gardener = new Figure(randomLook(), 22);
-  private state: 'away' | 'walk-out' | 'water' | 'walk-back' = 'away';
+  private state: 'away' | 'walk-out' | 'water' | 'walk-back' | 'to-line' | 'unpeg' | 'peg' = 'away';
+  /** How many things are pegged out on the line. */
+  private pegged = 6;
+  private wasRaining = false;
   private target = 0;
   private pos = { ...STAIR_DOOR };
   private timer = 0;
@@ -171,12 +174,26 @@ class RoofGarden {
     }
   }
 
+  /** Rain coming on with the washing out: up the stairs at a run to get it in (dev: now). */
+  rescueWashing(): boolean {
+    if (this.pegged === 0 || (this.state !== 'away' && this.state !== 'walk-back')) return false;
+    if (this.state === 'away') this.pos = { ...STAIR_DOOR };
+    this.state = 'to-line';
+    return true;
+  }
+
   update(dt: number, env: Environment, out: boolean): void {
+    const raining = env.weather.kind === 'rain' && env.weather.precipitation > 0.15;
+    const h = env.lighting.hours;
+    if (raining && !this.wasRaining && h > 6.5 && h < 22.5) this.rescueWashing();
+    this.wasRaining = raining;
     const tint = env.lighting.ambient;
     this.planters.tint = tint;
     this.drawWashing(env);
     this.washing.tint = tint;
-    const speed = 22;
+    // Running for the washing.
+    const speed = this.state === 'to-line' ? 40 : 22;
+    const linePoint = { gx: (LINE.gx0 + LINE.gx1) / 2 + 10, depth: LINE.depth + 0.05 };
     const step = (to: { gx: number; depth: number }) => {
       const dx = to.gx - this.pos.gx;
       const dz = (to.depth - this.pos.depth) * 700;
@@ -223,10 +240,34 @@ class RoofGarden {
         }
         if (this.timer <= 0) {
           this.target++;
-          this.state = this.target < PLANTERS.length && out ? 'walk-out' : 'walk-back';
+          // Done watering: out with the washing again, if it was taken in for the rain.
+          this.state = this.target < PLANTERS.length && out ? 'walk-out' : this.pegged < 6 && !raining ? 'peg' : 'walk-back';
         }
         break;
       }
+      case 'to-line':
+        dir = linePoint.gx > this.pos.gx ? 1 : -1;
+        if (step(linePoint)) {
+          this.state = 'unpeg';
+          this.timer = 0.5;
+        }
+        break;
+      case 'unpeg':
+      case 'peg':
+        // Reaching up to the line, unpegging (or pegging out) one thing at a time.
+        if (this.state === 'peg' && this.pos.gx !== linePoint.gx && !step(linePoint)) {
+          dir = linePoint.gx > this.pos.gx ? 1 : -1;
+          break;
+        }
+        pose = 'browse';
+        facing = 'back';
+        this.timer -= dt;
+        if (this.timer <= 0) {
+          this.timer = this.state === 'unpeg' ? 0.45 : 0.8;
+          this.pegged = Math.max(0, Math.min(6, this.pegged + (this.state === 'unpeg' ? -1 : 1)));
+          if (this.pegged === 0 || this.pegged === 6) this.state = 'walk-back';
+        }
+        break;
       case 'walk-back':
         dir = STAIR_DOOR.gx > this.pos.gx ? 1 : -1;
         facing = 'back';
@@ -253,7 +294,7 @@ class RoofGarden {
     const items = [3, 5, 3, 6, 2, 4];
     let x = 2;
     items.forEach((w, i) => {
-      if (x + w >= span - 1) return;
+      if (x + w >= span - 1 || i >= this.pegged) return;
       const sag = Math.sin(((x + w / 2) / span) * Math.PI) * 1.5;
       const top = Math.round(a.y + sag) + 1;
       const h = w >= 5 ? 6 : w === 2 ? 2 : 4;

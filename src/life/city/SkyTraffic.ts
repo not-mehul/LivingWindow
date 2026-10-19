@@ -122,6 +122,16 @@ export class SkyTraffic {
     this.nearContainer.addChild(this.nearGfx, this.nearLights);
   }
 
+  /** Where the helicopter's searchlight beam meets the ground at world row `groundY`, while it's lit. */
+  searchlightAt(groundY: number): number | null {
+    const c = this.crafts.find((k) => k.searchlight?.visible);
+    if (!c?.searchlight) return null;
+    const s = c.searchlight;
+    const cos = Math.cos(s.rotation);
+    if (cos < 0.2) return null;
+    return s.x - (Math.sin(s.rotation) * (groundY - s.y)) / cos;
+  }
+
   get counts(): Record<CraftKind, number> {
     const out: Record<CraftKind, number> = { plane: 0, helicopter: 0, drone: 0, blimp: 0, addrone: 0 };
     for (const c of this.crafts) out[c.kind]++;
