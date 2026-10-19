@@ -1,6 +1,6 @@
 import { eye, limb, Palette, selOut, shadeStep, type Drawn, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
-import { SLOT, SPECIES, type BirdPose, type SpeciesId } from './birdSprites';
+import { SLOT, SPECIES, spanWing, WING_SHAPES, type BirdPose, type SpeciesId } from './birdSprites';
 
 type Pt = readonly [number, number];
 
@@ -8,6 +8,11 @@ type Pt = readonly [number, number];
 export const CLOSE_SPECIES: ReadonlySet<SpeciesId> = new Set(['pigeon', 'sparrow', 'crow', 'woodpecker', 'jay', 'chickadee', 'finch', 'bluebird', 'robin', 'seagull', 'sandpiper']);
 /** At this size and up, a bird is near enough to draw in full. */
 export const CLOSE_SIZE = 18;
+/** From this size the same renderer draws mid-distance birds, with the finer marks left off. */
+export const MID_SIZE = 10;
+
+/** The close renderer's beat for each of the far renderer's four flight frames. */
+const FLIGHT_BEAT: Partial<Record<BirdPose, BirdPose>> = { 'fly-up': 'fly-1', 'fly-mid': 'fly-3', 'fly-down': 'fly-4' };
 
 /** The six beats of a close bird's wings. */
 export const FLAP_CYCLE_6: readonly BirdPose[] = ['fly-1', 'fly-2', 'fly-3', 'fly-4', 'fly-5', 'fly-6'];
@@ -47,7 +52,8 @@ interface Ink {
  * crouching and springing to take off; a six-beat flight, a glide and the
  * flare to land.
  */
-export function drawBirdClose(species: SpeciesId, pose: BirdPose, size: number): Drawn {
+export function drawBirdClose(species: SpeciesId, requested: BirdPose, size: number): Drawn {
+  const pose = FLIGHT_BEAT[requested] ?? requested;
   const sp = SPECIES[species];
   const f = sp.features;
   const N = Math.max(8, Math.round(size));
@@ -102,7 +108,9 @@ export function drawBirdClose(species: SpeciesId, pose: BirdPose, size: number):
   };
 
   const flying = pose.startsWith('fly') || pose === 'glide' || pose === 'takeoff-2' || pose.startsWith('flare');
-  if (flying) drawFlight(g, sp, pose, s, P, ink, form);
+  // Further off, a beating wing reads by its broad outline rather than its foreshortening.
+  if (flying && N < CLOSE_SIZE) drawFlightMid(g, sp, pose, s, P, ink, form);
+  else if (flying) drawFlight(g, sp, pose, s, P, ink, form);
   else drawPerched(g, sp, pose, s, P, ink, form, f);
   if (N >= 14) selOut(g, palette, { bottomHeavy: !flying });
   return { grid: g, palette };
@@ -353,7 +361,8 @@ function drawPerched(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: (x
     const fu = u * beakDir;
     if (f.cap && v < -0.2) return ink.cap;
     if (f.nape && fu < -0.35 && v < 0.3) return ink.sheen;
-    if (f.cheek && v > 0.1 && v < 0.72 && fu > -0.45 && fu < 0.55) return ink.accent;
+    // The pale cheek: its own colour close up, shaded like the belly further off (where a flat patch reads as a glare).
+    if (f.cheek && v > 0.1 && v < 0.72 && fu > -0.45 && fu < 0.55) return s * 48 >= 24 ? ink.accent : ink.belly;
     if (f.breast && v > 0.6) return ink.breast;
     return ink.head;
   });
@@ -368,8 +377,8 @@ function drawPerched(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: (x
   const ty = by0 + len * Math.sin(beakTilt) + 0.6;
   limb(g, [P(bx0, by0 - 0.4 - open * 0.3), P(tx, ty - open * 0.6)], sp.beakThick * 0.9 * s, 0.6 * s, ink.beak, { bias: 0.4 });
   limb(g, [P(bx0, by0 + 0.6), P(tx - beakDir * 0.6, ty + open * 0.7)], sp.beakThick * 0.65 * s, 0.5 * s, ink.beak, { bias: -0.6 });
-  if (f.cere) g.set(Math.floor(bx0 * s), Math.floor((by0 - 1.2) * s), ink.accent);
-  if (f.wing === 'black-tips') g.set(Math.floor((tx - beakDir * 1.6) * s), Math.floor((ty + 0.6) * s), ink.breast[2] === ink.belly[2] ? ink.dark[0] : ink.breast[2]);
+  if (f.cere && s * 48 >= 24) g.set(Math.floor(bx0 * s), Math.floor((by0 - 1.2) * s), ink.accent);
+  if (f.wing === 'black-tips' && s * 48 >= 24) g.set(Math.floor((tx - beakDir * 1.6) * s), Math.floor((ty + 0.6) * s), ink.breast[2] === ink.belly[2] ? ink.dark[0] : ink.breast[2]);
   // The eye: dark, with a glint and (some) a pale ring; shut, a curved line.
   const ex = hx + beakDir * hr * 0.28;
   const ey = hy - hr * 0.18;
@@ -378,8 +387,9 @@ function drawPerched(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: (x
     g.set(Math.floor(ex * s), Math.floor(ey * s) + 1, ink.head[0]);
     g.set(Math.floor(ex * s) + 1, Math.floor(ey * s), ink.head[0]);
   } else {
-    const big = s * 48 >= 34 ? 3 : 2;
-    if (f.eyeRing) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) g.set(Math.floor(ex * s) + dx * (big === 3 ? 2 : 1), Math.floor(ey * s) + dy * (big === 3 ? 2 : 1), ink.accent);
+    // A glint only once the eye is big enough to hold one; far off, just a dark dot.
+    const big = s * 48 >= 34 ? 3 : s * 48 >= 16 ? 2 : 1;
+    if (f.eyeRing && big > 1) for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) g.set(Math.floor(ex * s) + dx * (big === 3 ? 2 : 1), Math.floor(ey * s) + dy * (big === 3 ? 2 : 1), ink.accent);
     const dark = sp.palette[SLOT.eye] === 0 || sp.palette[SLOT.eye] < 0x303030 ? ink.eyeDark : ink.iris;
     eye(g, ex * s + (big === 3 ? 0.5 : 0), ey * s + (big === 3 ? 0.5 : 0), big, dark, ink.glint);
     if (dark === ink.iris) g.set(Math.floor(ex * s), Math.floor(ey * s), ink.eyeDark);
@@ -437,6 +447,53 @@ function drawFlight(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: (x:
   form(hx, hy, sp.headR * 0.95, sp.headR * 0.9, 0, (u, v) => (f.cap && v < -0.2 ? ink.cap : f.cheek && v > 0.1 && v < 0.7 && u > -0.4 ? ink.accent : ink.head));
   const bx0 = hx + sp.headR * 0.75;
   limb(g, [P(bx0, hy + 0.4), P(bx0 + sp.beakLen, hy + 1)], sp.beakThick * 0.85 * s, 0.6 * s, ink.beak, { bias: 0.3 });
-  eye(g, (hx + sp.headR * 0.28) * s, (hy - sp.headR * 0.2) * s, s * 48 >= 34 ? 3 : 2, ink.eyeDark, ink.glint);
+  eye(g, (hx + sp.headR * 0.28) * s, (hy - sp.headR * 0.2) * s, s * 48 >= 34 ? 3 : s * 48 >= 16 ? 2 : 1, ink.eyeDark, ink.glint);
   wing(false);
+}
+
+/** Which of the far wing outlines each beat is closest to. */
+const MID_WING: Partial<Record<BirdPose, string>> = { 'fly-1': 'fly-up', 'fly-2': 'fly-up', 'fly-3': 'fly-mid', 'fly-6': 'fly-mid', 'fly-4': 'fly-down', 'fly-5': 'fly-down', 'takeoff-2': 'fly-up', 'flare-1': 'fly-up', 'flare-2': 'fly-mid' };
+
+/**
+ * A bird in the air at middle distance (10–17 px): a broad wing outline
+ * that changes shape through the beat, lit along its leading edge and dark
+ * through the primaries, the far wing in shade behind; a shaded body,
+ * head, tail and beak, and the eye a dark dot.
+ */
+function drawFlightMid(g: PixelGrid, sp: Species, pose: BirdPose, s: number, P: (x: number, y: number) => Pt, ink: Ink, form: Form): void {
+  const f = sp.features;
+  const base = WING_SHAPES[MID_WING[pose] ?? 'glide'];
+  const shape = f.wingSpan ? spanWing(base, f.wingSpan) : base;
+  const bx = 23;
+  const by = 25;
+  const hx = 37;
+  const hy = 21;
+  const wing = (dx: number, dy: number, color: (x: number, y: number, mask: PixelGrid) => number) => {
+    const mask = new PixelGrid(g.width, g.height);
+    mask.polygon(shape.map(([x, y]) => P(x + dx, y + dy)), 1);
+    const [tx, ty] = [(shape[2][0] + shape[3][0]) / 2 + dx, (shape[2][1] + shape[3][1]) / 2 + dy];
+    const [sx, sy] = [(shape[0][0] + shape[1][0]) / 2 + dx, (shape[0][1] + shape[1][1]) / 2 + dy];
+    const len = Math.hypot(tx - sx, ty - sy) * s || 1;
+    for (let y = 0; y < g.height; y++) {
+      for (let x = 0; x < g.width; x++) {
+        if (!mask.get(x, y)) continue;
+        // How far out along the wing (0 at the shoulder, 1 at the tip).
+        const t = ((x + 0.5 - sx * s) * (tx - sx) * s + (y + 0.5 - sy * s) * (ty - sy) * s) / (len * len);
+        g.set(x, y, color(x, y, mask) ?? 0);
+        if (t > 0.62) g.set(x, y, f.wing === 'black-tips' ? ink.dark[0] : ink.dark[mask.get(x + 1, y) ? 1 : 2]);
+        else if (f.wing === 'white-bar' && t > 0.3 && t < 0.42) g.set(x, y, ink.accent);
+      }
+    }
+  };
+  // The far wing, raised a little behind the body and in shade.
+  wing(-2, -1.5, () => ink.dark[1]);
+  limb(g, [P(bx - sp.bodyRx * 0.7, by + 0.5), P(bx - sp.bodyRx * 0.7 - sp.tailLen, by + 1.5)], 3.6 * s, 3 * s, f.paleTail ? ink.belly : ink.dark);
+  form(bx, by, sp.bodyRx * 0.95, sp.bodyRy * 0.62, -0.06, (u, v) => (f.breast && u > 0.1 && v > -0.3 ? ink.breast : v > 0.25 ? ink.belly : ink.body));
+  limb(g, [P(bx + sp.bodyRx * 0.55, by - 2), P(hx - 1, hy + 1)], sp.headR * 1.5 * s, sp.headR * 1.3 * s, f.breast ? ink.breast : ink.head);
+  form(hx, hy, sp.headR * 0.95, sp.headR * 0.9, 0, (_u, v) => (f.cap && v < -0.2 ? ink.cap : ink.head));
+  const bx0 = hx + sp.headR * 0.75;
+  limb(g, [P(bx0, hy + 0.4), P(bx0 + sp.beakLen, hy + 1)], Math.max(1, sp.beakThick * 0.85 * s), 0.6 * s, ink.beak, { bias: 0.3 });
+  g.set(Math.floor((hx + sp.headR * 0.28) * s), Math.floor((hy - sp.headR * 0.2) * s), ink.eyeDark);
+  // The near wing over the body: its leading edge catching the light, the trailing edge in shade.
+  wing(0, 0, (x, y, mask) => (!mask.get(x + 1, y) || !mask.get(x, y - 1) ? ink.wing[4] : !mask.get(x - 1, y) || !mask.get(x, y + 1) ? ink.wing[1] : ink.wing[2]));
 }

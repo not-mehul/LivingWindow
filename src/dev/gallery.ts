@@ -1,7 +1,7 @@
 import type { Drawn } from '../sprites/kit';
 import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonPose } from '../sprites/people';
 import type { PixelGrid } from '../sprites/raster';
-import { drawBird, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
+import { drawBird, drawBirdAt, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
 import { CLOSE_SPECIES, drawBirdClose } from '../sprites/birdClose';
 import { CAT_COATS, CAT_POSES, drawCat } from '../sprites/catSprites';
 import { DOG_BREEDS, DOG_POSES, drawWindowDog, type DogLook } from '../sprites/dogSprites';
@@ -178,8 +178,8 @@ function sections(): Section[] {
   const birds: Item[][] = [];
   for (const species of ['sparrow', 'pigeon', 'crow', 'robin', 'jay', 'seagull', 'sandpiper', 'bluebird'] as SpeciesId[]) {
     const row: Item[] = [];
-    for (const size of [6, 8, 9, 12, 16]) {
-      for (const pose of ['idle', 'peck-down', 'fly-mid'] as const) row.push({ label: `${size}${pose[0]}`, draw: () => ({ grid: drawBird(species, pose, size), colors: SPECIES[species].palette }) });
+    for (const size of [6, 8, 10, 13, 16]) {
+      for (const pose of ['idle', 'peck-down', 'fly-up', 'fly-mid', 'fly-down'] as const) row.push({ label: `${size}${pose.slice(0, 5)}`, draw: () => drawBirdAt(species, pose, size) });
     }
     birds.push(row);
   }

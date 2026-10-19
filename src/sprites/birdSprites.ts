@@ -1,6 +1,6 @@
 import { Texture } from 'pixi.js';
 import { gridToTexture } from './cache';
-import { CLOSE_SIZE, CLOSE_SPECIES, drawBirdClose } from './birdClose';
+import { CLOSE_SPECIES, drawBirdClose, MID_SIZE } from './birdClose';
 import { PixelGrid, pixelHash } from './raster';
 
 export type SpeciesId =
@@ -305,7 +305,8 @@ interface Pt {
   y: number;
 }
 
-const WING_SHAPES: Record<string, Array<[number, number]>> = {
+/** The far renderer's flight wings, in the 48-unit box: shoulder (back, front), tip (trailing, leading) and the leading edge's bend. */
+export const WING_SHAPES: Record<string, Array<[number, number]>> = {
   'fly-up': [
     [28, 23],
     [21, 23],
@@ -336,10 +337,11 @@ const WING_SHAPES: Record<string, Array<[number, number]>> = {
   ],
 };
 
-/** Stretch a wing shape away from its shoulder (for long-winged gulls and eagles). */
-function spanWing(shape: Array<[number, number]>, span: number): Array<[number, number]> {
+/** Stretch a wing shape away from its shoulder (for long-winged gulls and eagles), keeping the tip inside the box. */
+export function spanWing(shape: Array<[number, number]>, span: number): Array<[number, number]> {
   const [sx, sy] = [(shape[0][0] + shape[1][0]) / 2, (shape[0][1] + shape[1][1]) / 2];
-  return shape.map(([x, y], i) => (i === 2 || i === 3 ? [sx + (x - sx) * span, sy + (y - sy) * span] : [x, y]));
+  const inBox = (v: number) => Math.min(47.5, Math.max(0.5, v));
+  return shape.map(([x, y], i) => (i === 2 || i === 3 ? [inBox(sx + (x - sx) * span), inBox(sy + (y - sy) * span)] : [x, y]));
 }
 
 /**
@@ -702,6 +704,15 @@ function drawUprightBird(grid: PixelGrid, sp: SpeciesDef, pose: BirdPose, s: num
   }
 }
 
+/** A bird at any size: shaded forms once it's near enough to see its shape (in full detail close to the window), a few flat tones when tiny. */
+export function drawBirdAt(species: SpeciesId, pose: BirdPose, size: number): { grid: PixelGrid; colors: readonly number[] } {
+  if (size >= MID_SIZE && CLOSE_SPECIES.has(species)) {
+    const { grid, palette } = drawBirdClose(species, pose, size);
+    return { grid, colors: palette.colors };
+  }
+  return { grid: drawBird(species, pose, size), colors: SPECIES[species].palette };
+}
+
 /** Caches generated textures by species, pose and size. */
 export class BirdSpriteCache {
   private readonly cache = new Map<string, Texture>();
@@ -710,11 +721,8 @@ export class BirdSpriteCache {
     const key = `${species}:${pose}:${size}`;
     let texture = this.cache.get(key);
     if (!texture) {
-      if (size >= CLOSE_SIZE && CLOSE_SPECIES.has(species)) {
-        // Near the window: drawn in full.
-        const { grid, palette } = drawBirdClose(species, pose, size);
-        texture = gridToTexture(grid, palette.colors);
-      } else texture = gridToTexture(drawBird(species, pose, size), SPECIES[species].palette);
+      const { grid, colors } = drawBirdAt(species, pose, size);
+      texture = gridToTexture(grid, colors);
       this.cache.set(key, texture);
     }
     return texture;
