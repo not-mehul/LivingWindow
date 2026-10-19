@@ -1,21 +1,24 @@
 import type { LandscapeDeps, SceneLife, SillBase } from '../../landscapes/types';
 import type { BeachScene } from '../../scene/beach/BeachScene';
+import { poolShapes } from '../../scene/beach/rocks';
 import type { Environment } from '../../scene/Environment';
 import { BirdSystem, type BirdEcology } from '../BirdSystem';
 import { Bioluminescence, Crabs, Hatchlings, HermitCrabs, Jellyfish, Pelican } from './ShoreCreatures';
 import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
+import { TidePools } from './TidePools';
 
 export const BEACH_ECOLOGY: BirdEcology = {
   mix: () => ({ seagull: 1 }),
   maxPerSpecies: { seagull: 6 },
   flockSpecies: ['seagull'],
-  perchPreference: (_species, kind) => (kind === 'post' ? 3 : kind === 'log' ? 1.5 : 1.2),
+  perchPreference: (_species, kind) => (kind === 'post' ? 3 : kind === 'rock' ? 2 : kind === 'log' ? 1.5 : 1.2),
 };
 
 /**
  * Gulls, sandpipers, a fish school in the shallows, turtles and dolphins;
  * crabs at the water's edge and hermit crabs on the dry sand; a pelican
- * fishing; jellyfish; and on some nights a glowing sea or a hatching nest.
+ * fishing; jellyfish; life in the tide pools; and on some nights a glowing
+ * sea or a hatching nest.
  */
 export class BeachLife implements SceneLife {
   readonly birds: BirdSystem;
@@ -29,6 +32,7 @@ export class BeachLife implements SceneLife {
   readonly jellyfish: Jellyfish;
   readonly hatchlings: Hatchlings;
   readonly glow: Bioluminescence;
+  readonly pools: TidePools;
   private readonly deps: LandscapeDeps;
 
   constructor(scene: BeachScene, deps: LandscapeDeps) {
@@ -53,6 +57,7 @@ export class BeachLife implements SceneLife {
     this.jellyfish = new Jellyfish(scene);
     this.hatchlings = new Hatchlings(scene);
     this.glow = new Bioluminescence(scene);
+    this.pools = new TidePools(scene, poolShapes());
     this.deps = deps;
   }
 
@@ -87,5 +92,6 @@ export class BeachLife implements SceneLife {
     this.jellyfish.update(dt, env);
     this.hatchlings.update(dt, env);
     this.glow.update(env);
+    this.pools.update(dt, env);
   }
 }

@@ -8,6 +8,7 @@ import { quality } from '../../core/quality';
 import { createRng } from '../../core/random';
 import type { Ledge } from '../../life/types';
 import { BEACH_HORIZON, beachPlane, BREAK_S, SHALLOWS_S, shorePoint, shoreXAtY } from '../../sim/shore';
+import { TIDE_RANGE, tideClock, tideLevel } from '../../sim/tides';
 import { WaveModel, type BreakEvent } from '../../sim/waves';
 import { pixelHash } from '../../sprites/raster';
 import { bayer } from '../common/paint';
@@ -91,7 +92,9 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   bioluminescence = 0;
   readonly horizonLayer = new Container({ label: 'horizon-life' });
   readonly splashLayer = new Graphics();
-  /** Turtles and shorebirds on the sand, sorted by depth. */
+  /** The tide pools on the rock shelf: under the water, so waves and the tide wash over them. */
+  readonly poolLayer = new Container({ label: 'tide-pools' });
+  /** Turtles and shorebirds on the sand, sorted by depth (the rocks among them). */
   readonly shoreLayer = new Container({ label: 'shore-life', sortableChildren: true });
   readonly ledges: Ledge[];
   readonly waves: WaveModel;
@@ -120,6 +123,16 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   private readonly palmLayer = new Container({ label: 'palms', sortableChildren: true });
   private readonly tufts: SwayMesh[] = [];
   private readonly tuftLayer = new Container({ label: 'tufts' });
+  private readonly rocks: DayNightSprite[] = [];
+  /** Spray waiting to burst off the rocks as a breaker reaches them. */
+  private readonly sprays: Array<{ x: number; y: number; delay: number; size: number }> = [];
+  /** The tide: hours since the epoch at midnight today, and how high it is now (-1..1). */
+  private readonly tideMidnight = tideClock(new Date(), 0);
+  private tideDays = 0;
+  private lastHours = Number.NaN;
+  private tide = 0;
+  /** How churned up the water round the rocks is, after the last breaker (0..1). */
+  private surge = 0;
   private waterTimer = 0;
   private tick = 0;
   private readonly splashes: Array<{ x: number; y: number; vx: number; vy: number; life: number }> = [];
@@ -203,11 +216,20 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
       }
     }
 
+    for (const c of this.layout.outcrop.clusters) {
+      const rock = new DayNightSprite(c.art, NIGHT.props, DUSK.props);
+      rock.container.position.set(c.x, c.y);
+      rock.container.zIndex = c.baseY;
+      this.shoreLayer.addChild(rock.container);
+      this.rocks.push(rock);
+    }
+
     this.container.addChild(
       this.sky.container,
       this.land.container,
       this.sand.container,
       this.scrub.container,
+      this.poolLayer,
       this.water,
       this.fishLayer,
       this.seaLife,
@@ -226,10 +248,20 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     );
   }
 
-  /** How far the water has run up the sand at a depth along the beach (ground px, ≥ 0). */
+  /** How far the water has run up the sand at a depth along the beach (ground px from the still waterline; below it at low tide). */
   reachAt(depth: number): number {
     const y = beachPlane.project(0, depth).y;
-    return this.waves.runUp(Math.round(y * 3)) * RUN_UP_SCALE;
+    return this.waves.runUp(Math.round(y * 3)) * RUN_UP_SCALE + this.tideS;
+  }
+
+  /** How high the tide is (-1 low .. 1 high springs). */
+  get tideLevel(): number {
+    return this.tide;
+  }
+
+  /** How far the tide has moved the waterline up the sand (ground px; negative when it's out). */
+  get tideS(): number {
+    return this.tide * TIDE_RANGE;
   }
 
   /** World position of the water's edge right now at a depth along the beach, offset `up` ground px up the sand. */
@@ -237,7 +269,7 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     return shorePoint(depth, -this.reachAt(depth) - up);
   }
 
-  /** How far up the sand is still wet at a depth (ground px from the still waterline). */
+  /** How far up the sand is still wet at a depth (ground px from the still waterline; below it at low tide). */
   wetAt(depth: number): number {
     const y = Math.round(beachPlane.project(0, depth).y);
     return this.wetLine[Math.max(0, Math.min(WATER_HEIGHT - 1, y - WATER_TOP))];
@@ -250,6 +282,14 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     }
   }
 
+  /** Spray dashed up off a rock: a tall, spreading fountain of drops, carried off by the wind. */
+  private burst(x: number, y: number, size: number, wind: number): void {
+    for (let i = 0; i < 22 * size; i++) {
+      const up = 35 + Math.random() * 45 * size;
+      this.splashes.push({ x: x + (Math.random() - 0.5) * 8 * size, y: y + Math.random() * 3, vx: (Math.random() - 0.5) * 26 * size + wind * 14, vy: -up, life: 0.7 + Math.random() * 0.7 });
+    }
+  }
+
   update(dt: number, env: Environment): void {
     const { lighting, weather, time } = env;
     this.sky.update(dt, env);
@@ -258,6 +298,12 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     this.scrub.update(lighting.ambient, lighting);
     this.props.update(lighting.ambient, lighting);
     this.dune.update(lighting.ambient, lighting);
+    for (const rock of this.rocks) rock.update(lighting.ambient, lighting);
+    // The tide follows the clock (counting the days as it goes round).
+    if (lighting.hours < this.lastHours - 12) this.tideDays++;
+    else if (lighting.hours > this.lastHours + 12) this.tideDays--;
+    this.lastHours = lighting.hours;
+    this.tide = tideLevel(this.tideMidnight + this.tideDays * 24 + lighting.hours);
     // By moonlight the palms and grasses are dark grey-green against pale sand.
     const plants = lerpColor(lerpColor(lighting.ambient, DUSK_PLANTS, lighting.twilight * 0.6), NIGHT_PLANTS, lighting.nightness * 0.85);
     this.tuftLayer.tint = plants;
@@ -283,11 +329,26 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     for (const event of this.waves.update(dt, energy)) {
       // The sea is to the right: breaks sound from the right-hand side.
       this.emit('break', { ...event, pan: 0.15 + Math.random() * 0.6 });
+      this.surge = Math.min(1, 0.4 + event.amplitude / 40);
+      // Spray thrown up off the rocks out in the surf, the outer ones first.
+      for (const p of this.layout.outcrop.spray) {
+        if (Math.random() < 0.25) continue;
+        this.sprays.push({ x: p.x, y: p.y, delay: Math.max(0, (120 - p.s) / 300) + Math.random() * 0.2, size: Math.min(1.6, (0.4 + event.amplitude / 30) * beachPlane.scaleAtY(p.y) * 2) });
+      }
+    }
+    this.surge = Math.max(0, this.surge - dt * 0.25);
+    for (let i = this.sprays.length - 1; i >= 0; i--) {
+      const p = this.sprays[i];
+      p.delay -= dt;
+      if (p.delay > 0) continue;
+      this.burst(p.x + (Math.random() - 0.5) * 6, p.y, p.size, env.weather.wind);
+      this.sprays.splice(i, 1);
     }
     for (let row = 0; row < WATER_HEIGHT; row++) {
       const reach = this.waves.runUp(Math.round((row + WATER_TOP) * 3)) * RUN_UP_SCALE;
       this.reach[row] = reach;
-      this.wetLine[row] = Math.max(reach, this.wetLine[row] - DRY_RATE * dt);
+      // Kept from the still waterline, so the tide going out leaves the sand behind it wet.
+      this.wetLine[row] = Math.max(reach + this.tideS, this.wetLine[row] - DRY_RATE * dt);
     }
 
     this.waterTimer -= dt;
@@ -347,13 +408,15 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     const out = this.waterPixels;
     const rows = this.rows;
     const W = WORLD_WIDTH;
+    const tideS = this.tideS;
 
     for (let row = 0; row < WATER_HEIGHT; row++) {
       const y = row + WATER_TOP;
       const depth = rows.depth[row];
-      const shoreX = rows.shoreX[row];
+      // Everything is measured from where the tide has the waterline now.
+      const shoreX = rows.shoreX[row] - tideS / depth;
       const reach = this.reach[row];
-      const wetTo = this.wetLine[row];
+      const wetTo = this.wetLine[row] - tideS;
       const level = rows.level[row];
       const o = row * W;
       const x0 = Math.min(W, Math.max(0, Math.floor(shoreX - (wetTo + 4) / depth)));
@@ -434,6 +497,20 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
           if (off > -thick && off < thick) {
             if (pixelHash(x, y + tick, seed) > 0.22 + (Math.abs(off) / thick) * 0.4) out[o + x] = glow(x, y, 0.75) || foam;
           } else if (off > thick && off < thick + 30 && pixelHash(x, y, seed + (tick >> 2)) > 0.9) out[o + x] = glow(x, y, 0.5) || foam;
+        }
+      }
+      // Foam swirling round the feet of the rocks standing in the sea, thicker after a breaker.
+      for (const f of this.layout.outcrop.feet) {
+        const ry = f.ry + 1.5;
+        if (Math.abs(y - f.y) > ry) continue;
+        const rx = f.rx * 1.2;
+        const a = Math.max(xs, Math.floor(f.x - rx));
+        const b = Math.min(W - 1, Math.ceil(f.x + rx));
+        for (let x = a; x <= b; x++) {
+          const u = (x - f.x) / rx;
+          const v = (y - f.y) / ry;
+          const d = u * u + v * v;
+          if (d < 1 && d > 0.35 && pixelHash(x, y + (tick >> 1), 91) > 0.75 - this.surge * 0.4 - d * 0.1) out[o + x] = glow(x, y, 0.6) || foam;
         }
       }
       // Sun or moon glitter: short sparkles fanning out towards us.

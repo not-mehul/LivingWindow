@@ -5,8 +5,10 @@ import { createRng, randomInt, randomRange } from '../../core/random';
 import type { Ledge } from '../../life/types';
 import { depthForScale } from '../../sim/perspective';
 import { BEACH_HORIZON, beachPlane, shoreCoords, shoreXAtY } from '../../sim/shore';
+import { TIDE_RANGE } from '../../sim/tides';
 import { pixelHash } from '../../sprites/raster';
 import { ditherRamp, valueNoise } from '../common/paint';
+import { drawOutcrop, paintShelf, rockHaze, ROCKS_DEPTH, type Outcrop } from './rocks';
 
 /**
  * The beach after the reference drawing: palms leaning in from the left over
@@ -49,6 +51,8 @@ export interface BeachLayout {
   /** The dune bank along the front, and its grass and flowers (they sway). */
   dune: PixelBuffer;
   tufts: Placed[];
+  /** The rocks running out into the surf, and the shelf of pools in front of them. */
+  outcrop: Outcrop;
   ledges: Ledge[];
 }
 
@@ -444,8 +448,8 @@ export function generateBeach(seed = 2718): BeachLayout {
     const rowEdge = backEdge(depth);
     const rowPath = pathS(depth);
     const pathHalf = 24 + 8 * Math.sin(depth * 7);
-    // The sea covers everything beyond the waterline.
-    const xEnd = Math.min(WORLD_WIDTH, Math.ceil(shoreX + 2));
+    // The sea covers everything beyond the waterline, but the low tide uncovers a strip more.
+    const xEnd = Math.min(WORLD_WIDTH, Math.ceil(shoreX + (TIDE_RANGE + 8) / depth + 2));
     for (let x = 0; x < xEnd; x++) {
       const across = (x - shoreX) * depth;
       // The far beach tucks under the wooded point.
@@ -481,6 +485,12 @@ export function generateBeach(seed = 2718): BeachLayout {
       sand.set(x, y, lerpColor(color, HAZE, hazeAmount));
     }
   }
+
+  // --- The rock shelf and its pools, lying in the sand where the rocks run out into the surf ---
+  const rockHazeAmount = Math.max(0, 0.5 - beachPlane.scaleAtY(beachPlane.project(0, ROCKS_DEPTH).y) * 0.7);
+  paintShelf(sand, rockHaze(rockHazeAmount));
+  const outcrop = drawOutcrop(rockHaze(rockHazeAmount));
+  ledges.push(...outcrop.ledges);
 
   // --- Scrub: thick, overlapping bushes deep in the dunes, under the palms ---
   // Everything in this layer is painted far to near, so nearer bushes overlap.
@@ -732,5 +742,5 @@ export function generateBeach(seed = 2718): BeachLayout {
   ledges.push({ x0: 120, x1: 440, y: 290, layer: 'near', kind: 'sand', z: birdZ(290) });
   ledges.push({ x0: 300, x1: 560, y: 250, layer: 'mid', kind: 'sand', z: birdZ(250) });
 
-  return { land, sand, scrub, props, palms, dune, tufts, ledges };
+  return { land, sand, scrub, props, palms, dune, tufts, outcrop, ledges };
 }

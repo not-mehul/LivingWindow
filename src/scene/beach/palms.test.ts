@@ -40,7 +40,7 @@ describe('palms in parts', () => {
 describe('a frond held at its root', () => {
   it('stays put at the pivot and bobs on both sides of it', () => {
     const texture = new Texture({ source: new TextureSource({ width: 120, height: 40 }) });
-    const frond = new SwayMesh(texture, { anchor: 'left', pivotX: 40, amplitude: 5, phase: 1 });
+    const frond = new SwayMesh(texture, { anchor: 'left', pivotX: 40, amplitude: 5, phase: 1, frequency: 1.2 });
     frond.update(2.3, 0.8);
     expect(Math.abs(frond.offsetAt(40, 10).y)).toBeLessThan(0.3);
     expect(Math.abs(frond.offsetAt(119, 10).y)).toBeGreaterThan(1);
