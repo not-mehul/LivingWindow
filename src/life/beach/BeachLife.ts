@@ -7,6 +7,9 @@ import { Bioluminescence, Crabs, Hatchlings, HermitCrabs, Jellyfish, Pelican } f
 import { Dolphins, FishAndGulls, Sandpipers, Turtles } from './Shoreline';
 import { TidePools } from './TidePools';
 import { BeachAir } from './BeachAir';
+import { Froth } from './Froth';
+import { Tracks } from './Tracks';
+import { Wrack } from './Wrack';
 
 export const BEACH_ECOLOGY: BirdEcology = {
   mix: () => ({ seagull: 1 }),
@@ -35,6 +38,9 @@ export class BeachLife implements SceneLife {
   readonly glow: Bioluminescence;
   readonly pools: TidePools;
   readonly air: BeachAir;
+  readonly wrack: Wrack;
+  readonly tracks: Tracks;
+  readonly froth: Froth;
   private readonly deps: LandscapeDeps;
 
   constructor(scene: BeachScene, deps: LandscapeDeps) {
@@ -60,6 +66,11 @@ export class BeachLife implements SceneLife {
     this.hatchlings = new Hatchlings(scene);
     this.glow = new Bioluminescence(scene);
     this.pools = new TidePools(scene, poolShapes());
+    // On the sand, bottom to top: the strandline, the tracks, the froth (the blowing sand over them all).
+    this.wrack = new Wrack(scene);
+    this.tracks = new Tracks(scene);
+    this.froth = new Froth(scene);
+    for (const walker of [this.sandpipers, this.turtles, this.crabs, this.hermits, this.hatchlings]) walker.tracks = this.tracks;
     this.air = new BeachAir(scene, deps.viewport, deps.sound);
     this.deps = deps;
   }
@@ -96,6 +107,9 @@ export class BeachLife implements SceneLife {
     this.hatchlings.update(dt, env);
     this.glow.update(env);
     this.pools.update(dt, env);
+    this.wrack.update(dt, env);
+    this.tracks.update(dt, env);
+    this.froth.update(dt, env);
     this.air.update(dt, env);
   }
 }

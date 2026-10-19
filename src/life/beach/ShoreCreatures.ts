@@ -12,6 +12,7 @@ import { drawCrab, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, ty
 import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import type { FishAndGulls } from './Shoreline';
+import type { Tracks } from './Tracks';
 
 const r = (min: number, max: number) => min + Math.random() * (max - min);
 
@@ -44,6 +45,7 @@ const CRAB_SIZE = 20;
  * comes up the sand or a tap comes near.
  */
 export class Crabs {
+  tracks: Tracks | null = null;
   private readonly crabs: Crab[] = [];
   private readonly sprites = new DrawnCache();
   private timer = 2;
@@ -101,6 +103,7 @@ export class Crabs {
         c.s += Math.sign(want - c.s) * Math.min(Math.abs(want - c.s), 30 * dt);
       }
       const p = shorePoint(c.depth, c.s);
+      if (c.hidden <= 0) this.tracks?.walk(c, 'crab', c.depth, c.s);
       const size = Math.max(4, Math.round((CRAB_SIZE * p.scale) / 2) * 2);
       const hidden = c.hidden > 0;
       const frame = Math.floor(c.frame) % 4;
@@ -135,6 +138,7 @@ const HERMIT_SIZE = 17;
 
 /** Hermit crabs trundling about the dry sand in their borrowed shells, and pulling in at a tap. */
 export class HermitCrabs {
+  tracks: Tracks | null = null;
   private readonly hermits: Hermit[] = [];
   private readonly sprites = new DrawnCache();
   private timer = 3;
@@ -178,6 +182,7 @@ export class HermitCrabs {
         h.frame += dt * 3;
       }
       const p = shorePoint(h.depth, h.s);
+      this.tracks?.walk(h, 'hermit', h.depth, h.s);
       const size = Math.max(4, Math.round((HERMIT_SIZE * p.scale) / 2) * 2);
       const tucked = h.withdrawn > 0;
       const frame = Math.floor(h.frame) % 2;
@@ -383,6 +388,7 @@ const NEST = { depth: 1.65, s: -128 };
  * to the sea, vanishing one by one into the surf.
  */
 export class Hatchlings {
+  tracks: Tracks | null = null;
   private readonly young: Hatchling[] = [];
   private readonly sprites = new DrawnCache();
   private readonly nest = new Graphics();
@@ -447,6 +453,7 @@ export class Hatchlings {
         }
       }
       const p = shorePoint(h.depth, h.s);
+      if (h.fade >= 1.2) this.tracks?.walk(h, 'hatchling', h.depth, h.s);
       const ahead = shorePoint(h.depth + Math.sin(h.wobble) * 0.01, h.s + 4);
       const size = Math.max(3, Math.round(7 * p.scale));
       const frame = Math.floor(h.frame) % 2;

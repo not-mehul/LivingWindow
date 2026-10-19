@@ -11,6 +11,7 @@ import { School } from '../../sim/boids';
 import { BirdSpriteCache, FLAP_CYCLE, type BirdPose } from '../../sprites/birdSprites';
 import { DOLPHIN_FRAMES, DolphinSprites, TurtleSprites } from '../../sprites/beachSprites';
 import type { LifeSoundSink } from '../types';
+import type { Tracks } from './Tracks';
 
 const r = (min: number, max: number) => min + Math.random() * (max - min);
 
@@ -33,6 +34,8 @@ interface Piper {
 const PIPER_SIZE = 12;
 
 export class Sandpipers {
+  /** Where they leave their footprints. */
+  tracks: Tracks | null = null;
   private readonly pipers: Piper[] = [];
   private readonly sprites = new BirdSpriteCache();
   private presenceTimer = 10;
@@ -69,6 +72,7 @@ export class Sandpipers {
       p.drift = Math.max(-0.08, Math.min(0.08, p.drift));
       p.depth = Math.max(1.35, Math.min(4, p.depth + p.drift * dt));
       const pt = shorePoint(p.depth, p.s);
+      this.tracks?.walk(p, 'bird', p.depth, p.s);
       let pose: BirdPose;
       if (running) {
         pose = Math.floor(performance.now() / 70) % 2 === 0 ? 'idle' : 'hop';
@@ -299,6 +303,7 @@ const TURTLE_LENGTH = 36;
 const CRAWL = 5;
 
 export class Turtles {
+  tracks: Tracks | null = null;
   private readonly sprites = new TurtleSprites();
   private turtle: Turtle | null = null;
   private timer = r(120, 240);
@@ -358,6 +363,7 @@ export class Turtles {
     }
     const moving = tt.phase === 'crawl-up' || tt.phase === 'crawl-down';
     const p = shorePoint(tt.depth, tt.s);
+    if (moving) this.tracks?.walk(tt, 'turtle', tt.depth, tt.s);
     tt.sprite.texture = this.sprites.frame(moving ? Math.floor(tt.t * 2.5) : 0, TURTLE_LENGTH * p.scale);
     // Up the sand is leftwards on screen; back to the sea is rightwards.
     tt.sprite.scale.x = tt.phase === 'crawl-down' || tt.phase === 'submerge' ? 1 : -1;

@@ -118,6 +118,8 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
   private readonly waterTexture: Texture;
   /** Per world row (along the beach): how far up the sand is still wet, in ground px. */
   private readonly wetLine = new Float32Array(WATER_HEIGHT);
+  /** Per world row: how glassy the sand the last wave ran over still is (1 just drained .. 0 dried off). */
+  private readonly gloss = new Float32Array(WATER_HEIGHT);
   /** Per world row: how far up the sand the water has run this moment (ground px). */
   private readonly reach = new Float32Array(WATER_HEIGHT);
   /** Per world row, fixed: its depth, where the still waterline is, how near, and its colour band. */
@@ -285,6 +287,11 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     return p;
   }
 
+  /** The tide's clock: hours since the epoch, as the clock has it now. */
+  get tideHours(): number {
+    return this.tideMidnight + this.tideDays * 24 + (Number.isNaN(this.lastHours) ? 12 : this.lastHours);
+  }
+
   /** How high the tide is (-1 low .. 1 high springs). */
   get tideLevel(): number {
     return this.tide;
@@ -380,7 +387,10 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
       const reach = this.waves.runUp(Math.round((row + WATER_TOP) * 3)) * RUN_UP_SCALE;
       this.reach[row] = reach;
       // Kept from the still waterline, so the tide going out leaves the sand behind it wet.
-      this.wetLine[row] = Math.max(reach + this.tideS, this.wetLine[row] - DRY_RATE * dt);
+      const top = reach + this.tideS;
+      // While the water is still running up, the sand it leaves will be glassy; it dries off after.
+      this.gloss[row] = top >= this.wetLine[row] - 0.5 ? 1 : Math.max(0, this.gloss[row] - dt / 3);
+      this.wetLine[row] = Math.max(top, this.wetLine[row] - DRY_RATE * dt);
     }
 
     this.waterTimer -= dt;
@@ -411,7 +421,10 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
     const sheetColor = grade(lerpColor(multiplyColor(0xd8c08a, amb), multiplyColor(0x9ad4d4, amb), 0.6), 0xb08a98, 0x7686b0);
     const sheet = rgba(sheetColor, 215);
     const sheetEdge = rgba(sheetColor);
-    const wet = rgba(grade(multiplyColor(0x9a7c50, amb), 0x7a5a5e, 0x50506a), 225);
+    const wetColor = grade(multiplyColor(0x9a7c50, amb), 0x7a5a5e, 0x50506a);
+    const wet = rgba(wetColor, 225);
+    // Freshly drained sand shines with a film of water, holding the sky.
+    const glassy = rgba(lerpColor(wetColor, lerpColor(lighting.skyHorizon, lighting.skyTop, 0.3), 0.42), 225);
     const surf = [0, 1, 2, 3].map((k) => rgba(lerpColor(shallow, foamColor, 0.95 - k * 0.16)));
     // On a bloom night, the churning water sparks electric blue.
     const bio = this.bioluminescence;
@@ -456,6 +469,8 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
       const xs = Math.min(W, Math.max(x0, Math.ceil(shoreX)));
       out.fill(0, o, o + x0);
       const dRow = BAYER_ROWS[y & 3];
+      const gloss = this.gloss[row] * 1.25;
+      const band = Math.max(1, wetTo - reach);
 
       // The sand: a thin sheet of a wave washing up it, edged with lacy foam, and wet sand drying back from its top edge.
       for (let x = x0; x < xs; x++) {
@@ -463,8 +478,10 @@ export class BeachScene extends Emitter<BeachEvents> implements WorldScene {
         if (-s < reach) {
           const atEdge = reach + s < 3 * depth;
           out[o + x] = !atEdge ? sheet : pixelHash(x, y, tick >> 1) > 0.3 ? glow(x, y, 0.6) || foam : sheetEdge;
-        } else if (-s < wetTo && (wetTo + s) / Math.max(1, wetTo) > dRow[x & 3] * 0.5) out[o + x] = wet;
-        else out[o + x] = 0;
+        } else if (-s < wetTo && (wetTo + s) / Math.max(1, wetTo) > dRow[x & 3] * 0.5) {
+          // The sheen dries off from the top of the washed band down towards the water.
+          out[o + x] = gloss > 0 && (-s - reach) / band < gloss - dRow[x & 3] * 0.35 ? glassy : wet;
+        } else out[o + x] = 0;
       }
       if (xs >= W) continue;
 
