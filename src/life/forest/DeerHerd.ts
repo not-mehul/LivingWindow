@@ -175,7 +175,7 @@ export class DeerHerd {
 
   private makeWalker(gx: number, depth: number, heading: number): GroundWalker {
     // Spawning just off-screen sideways is allowed: the area's limit is only enforced while wandering.
-    const walker = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 60 * d }, gx, depth, heading);
+    const walker = new GroundWalker(this.plane, GroundWalker.widened(this.plane, this.area, 60), gx, depth, heading);
     walker.speed = WALK_SPEED;
     walker.obstacles = this.obstacles;
     walker.steering = this.wanderTarget();

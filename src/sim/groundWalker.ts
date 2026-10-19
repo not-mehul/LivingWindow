@@ -93,6 +93,16 @@ export class GroundWalker {
     this.pushOut();
   }
 
+  /** The area widened `slack` ground px (per unit of depth) past the panorama's sides, so walkers can come and go off-screen. */
+  static widened(plane: GroundPlane, area: WalkArea, slack: number): WalkArea {
+    return { ...area, halfWidth: (d) => plane.halfWidthAt(d) + slack * d };
+  }
+
+  /** A walker standing `offset` ground px (per unit of depth) beyond the panorama's `side` edge, facing in. */
+  static fromSide(plane: GroundPlane, area: WalkArea, side: -1 | 1, depth: number, slack = 60, offset = 30): GroundWalker {
+    return new GroundWalker(plane, GroundWalker.widened(plane, area, slack), side * (plane.halfWidthAt(depth) + offset * depth), depth, side > 0 ? Math.PI : 0);
+  }
+
   /** Whether a ground point lies inside any obstacle. */
   static blocked(obstacles: readonly Obstacle[], gx: number, depth: number, margin = 0): boolean {
     return obstacles.some((o) => Math.hypot(gx - o.gx, (depth - o.depth) * FOCAL) < o.r + margin);

@@ -42,6 +42,16 @@ describe('GroundWalker', () => {
     }
   });
 
+  it('starts just off the panorama when made from a side, facing in', () => {
+    for (const side of [-1, 1] as const) {
+      const w = GroundWalker.fromSide(plane, area, side, 2);
+      const p = w.point;
+      expect(side < 0 ? p.x < 0 : p.x > plane.vanishX * 2).toBe(true);
+      expect(w.facing).toBe(-side);
+      expect(w.area.halfWidth(2)).toBeGreaterThan(Math.abs(w.gx));
+    }
+  });
+
   it('really moves in depth, not just sideways', () => {
     const w = new GroundWalker(plane, area, 0, 2, 0, createRng(4));
     w.speed = 25;

@@ -113,7 +113,7 @@ export class NightCalls {
   private spawnWalker(depthFraction: number): GroundWalker {
     const side = Math.random() < 0.5 ? -1 : 1;
     const depth = this.area.maxDepth - depthFraction * (this.area.maxDepth - this.area.minDepth);
-    const w = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 80 * d }, side * (this.plane.halfWidthAt(depth) + 40 * depth), depth, side > 0 ? Math.PI : 0);
+    const w = GroundWalker.fromSide(this.plane, this.area, side, depth, 80, 40);
     w.obstacles = this.obstacles;
     w.steering = { kind: 'exit', side: side > 0 ? -1 : 1 };
     return w;
@@ -177,7 +177,7 @@ export class NightCalls {
     const side = lead.gx > 0 ? 1 : -1;
     for (let k = 0; k < 2; k++) {
       // The second comes along the same way a little behind the first.
-      const w = k === 0 ? lead : new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 80 * d }, lead.gx, lead.depth - 0.04, side > 0 ? Math.PI : 0);
+      const w = k === 0 ? lead : new GroundWalker(this.plane, GroundWalker.widened(this.plane, this.area, 80), lead.gx, lead.depth - 0.04, side > 0 ? Math.PI : 0);
       w.obstacles = this.obstacles;
       w.steering = { kind: 'exit', side: side > 0 ? -1 : 1 };
       const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });

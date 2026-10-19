@@ -402,7 +402,7 @@ export class BirdSystem {
   private choosePerch(species: SpeciesId): Perch | null {
     const { viewport } = this.options;
     const left = viewport.panX - 40;
-    const right = viewport.panX + viewport.layout.visibleWorldWidth + 40;
+    const right = viewport.visibleRight + 40;
     const preference = this.ecology.perchPreference ?? (() => 1);
     const weight = (p: Perch) => preference(species, p.ledge.kind);
     const candidates = this.perches.filter(
@@ -989,7 +989,7 @@ export class BirdSystem {
         sprite.tint = ambient;
       });
       const left = viewport.panX - 120;
-      const right = viewport.panX + viewport.layout.visibleWorldWidth + 120;
+      const right = viewport.visibleRight + 120;
       if (flock.x < left || flock.x > right) {
         for (const sprite of flock.sprites) sprite.destroy();
         this.flocks.splice(i, 1);

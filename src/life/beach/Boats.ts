@@ -138,7 +138,7 @@ export class Boats {
       b.sprite.tint = sailTint;
       b.light.visible = night;
       b.light.position.set(Math.round(b.x + (b.vx >= 0 ? -1 : 1) * b.size * 0.06), b.y - b.size + 1);
-      const out = !this.inView(b.x, -80);
+      const out = !this.viewport.inView(b.x, -80);
       if (out && (want < this.sails.length || Math.random() < dt * 0.02)) {
         b.sprite.destroy();
         b.light.destroy();
@@ -213,15 +213,11 @@ export class Boats {
         gg.rect(Math.round(gx), Math.round(gy), Math.sin(a * 3) > 0 ? 2 : 1, 1).fill({ color: white, alpha: 0.9 });
       }
     }
-    if (!this.inView(f.x, -120)) {
+    if (!this.viewport.inView(f.x, -120)) {
       f.sprite.destroy();
       for (const l of f.lights) l.destroy();
       this.fisher = null;
     }
-  }
-
-  private inView(x: number, margin: number): boolean {
-    return x > this.viewport.panX + margin && x < this.viewport.panX + this.viewport.layout.visibleWorldWidth - margin;
   }
 
   private spawnSail(inView: boolean): void {
@@ -229,7 +225,7 @@ export class Boats {
     const size = Math.round(6 + (y - BEACH_HORIZON - 1) * 1.5 + Math.random() * 2);
     const sea = shoreXAtY(y) + 20;
     const left = Math.max(sea, this.viewport.panX);
-    const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth;
+    const right = this.viewport.visibleRight;
     const fromRight = Math.random() < 0.5;
     const x = inView ? r(left, Math.max(left + 1, right - 10)) : fromRight ? right + 40 : left - 40;
     const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
@@ -242,7 +238,7 @@ export class Boats {
   private spawnFisher(): void {
     const y = BEACH_HORIZON + 4 + Math.floor(Math.random() * 8);
     const size = Math.round(14 + (y - BEACH_HORIZON - 4) * 1.1);
-    const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth;
+    const right = this.viewport.visibleRight;
     const fromRight = Math.random() < 0.6;
     const x = fromRight ? right + 60 : Math.max(shoreXAtY(y) + 30, this.viewport.panX) - 60;
     const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });

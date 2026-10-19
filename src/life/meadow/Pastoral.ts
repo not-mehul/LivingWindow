@@ -404,7 +404,7 @@ export class Sheepdog {
   private start(nearGx?: number): void {
     const side = nearGx !== undefined ? (nearGx < 0 ? -1 : 1) : Math.random() < 0.5 ? -1 : 1;
     const depth = r(1.8, 2.8);
-    const w = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 60 * d }, side * (this.plane.halfWidthAt(depth) + 30 * depth), depth, side > 0 ? Math.PI : 0);
+    const w = GroundWalker.fromSide(this.plane, this.area, side, depth);
     w.obstacles = this.obstacles;
     this.walker = w;
     this.state = 'outrun';

@@ -67,7 +67,7 @@ export class PelicanLine {
     });
     const last = L.x - L.dir * L.birds.length * L.size * 1.1;
     const left = this.viewport.panX - 60;
-    const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth + 60;
+    const right = this.viewport.visibleRight + 60;
     if ((L.dir > 0 && last > right) || (L.dir < 0 && last < left)) {
       for (const b of L.birds) b.sprite.destroy();
       this.line = null;
@@ -79,7 +79,7 @@ export class PelicanLine {
     const y = BEACH_HORIZON + r(10, 22);
     const size = Math.round(12 + (y - BEACH_HORIZON) * 0.35);
     const n = 3 + Math.floor(Math.random() * 3);
-    const x = dir > 0 ? this.viewport.panX - 30 : this.viewport.panX + this.viewport.layout.visibleWorldWidth + 30;
+    const x = dir > 0 ? this.viewport.panX - 30 : this.viewport.visibleRight + 30;
     const birds = Array.from({ length: n }, () => {
       const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
       this.scene.horizonLayer.addChild(sprite);

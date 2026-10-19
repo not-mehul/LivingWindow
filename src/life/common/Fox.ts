@@ -120,7 +120,7 @@ export class Fox {
     // Called up towards somewhere: in from the nearer side, at about its depth.
     const side = this.toward ? -1 : Math.random() < 0.5 ? -1 : 1;
     const depth = this.toward ? Math.min(area.maxDepth, Math.max(area.minDepth, this.toward.depth)) : r(area.minDepth + (area.maxDepth - area.minDepth) * 0.3, area.maxDepth);
-    const w = new GroundWalker(plane, { ...area, halfWidth: (d) => plane.halfWidthAt(d) + 60 * d }, side * (plane.halfWidthAt(depth) + 30 * depth), depth, side > 0 ? Math.PI : 0);
+    const w = GroundWalker.fromSide(plane, area, side, depth);
     w.obstacles = obstacles;
     w.speed = TROT;
     w.steering = this.toward ? { kind: 'seek', ...this.toward } : this.wanderTarget();

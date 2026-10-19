@@ -16,11 +16,6 @@ const GULL_FLAP: readonly GullPose[] = ['flap-up', 'glide', 'flap-down', 'glide'
 const GULL_SIZE = 26;
 const EGRET_SIZE = 46;
 
-/** The beach's view, for picking places that are on screen. */
-function inView(viewport: Viewport, x: number, margin = 20): boolean {
-  return x > viewport.panX + margin && x < viewport.panX + viewport.layout.visibleWorldWidth - margin;
-}
-
 // --- The little egret ----------------------------------------------------------
 
 type EgretPhase = 'arrive' | 'walk' | 'freeze' | 'strike' | 'swallow' | 'leave';
@@ -145,7 +140,7 @@ export class Egret {
 
   private arrive(): void {
     let depth = r(1.4, 2.8);
-    for (let i = 0; i < 10 && !inView(this.viewport, shorePoint(depth, 0).x, 40); i++) depth = r(1.4, 3);
+    for (let i = 0; i < 10 && !this.viewport.inView(shorePoint(depth, 0).x, 40); i++) depth = r(1.4, 3);
     this.depth = depth;
     this.s = -this.scene.reachAt(depth);
     this.dir = Math.random() < 0.5 ? 1 : -1;
@@ -379,7 +374,7 @@ export class Gulls {
   private land(): void {
     let depth = r(1.5, 3.6);
     let s = r(BREAK_S + 40, 260);
-    for (let i = 0; i < 10 && !inView(this.viewport, shorePoint(depth, s).x); i++) {
+    for (let i = 0; i < 10 && !this.viewport.inView(shorePoint(depth, s).x, 20); i++) {
       depth = r(1.5, 3.6);
       s = r(BREAK_S + 40, 240);
     }
@@ -424,7 +419,7 @@ export class Gulls {
     h.sprite.scale.x = h.leaving > 0 ? -dir : dir;
     h.sprite.position.set(Math.round(x), Math.round(y));
     h.sprite.tint = env.lighting.ambient;
-    if (!inView(this.viewport, h.x, -40)) {
+    if (!this.viewport.inView(h.x, -40)) {
       h.sprite.destroy();
       this.hover = null;
     }
@@ -500,7 +495,7 @@ export class Gulls {
 
   private startSquabble(): void {
     let depth = r(1.4, 2.6);
-    for (let i = 0; i < 10 && !inView(this.viewport, shorePoint(depth, -60).x, 40); i++) depth = r(1.4, 2.8);
+    for (let i = 0; i < 10 && !this.viewport.inView(shorePoint(depth, -60).x, 40); i++) depth = r(1.4, 2.8);
     const s = -this.scene.wetAt(depth) - r(8, 40);
     const a = new Sprite({ anchor: { x: 0.5, y: 1 } });
     const b = new Sprite({ anchor: { x: 0.5, y: 1 } });
@@ -558,7 +553,7 @@ export class Frigatebird {
     this.sprite.texture = this.sprites.get(`${frame}`, () => drawFrigatebird(frame, 15));
     this.sprite.position.set(Math.round(x), Math.round(y));
     this.sprite.tint = lerpColor(env.lighting.ambient, env.lighting.skyTop, 0.35);
-    if (!inView(this.viewport, f.x, -80)) {
+    if (!this.viewport.inView(f.x, -80)) {
       this.flight = null;
       this.sprite.visible = false;
     }
@@ -605,7 +600,7 @@ export class JumpingFish {
       if (env.lighting.darkness < 0.7) {
         let depth = r(1.3, 3.6);
         let s = r(BREAK_S + 30, 320);
-        for (let i = 0; i < 10 && !inView(this.viewport, shorePoint(depth, s).x); i++) {
+        for (let i = 0; i < 10 && !this.viewport.inView(shorePoint(depth, s).x, 20); i++) {
           depth = r(1.3, 3.6);
           s = r(BREAK_S + 30, 320);
         }

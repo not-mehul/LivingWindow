@@ -98,7 +98,7 @@ export class Bear {
     const side = Math.random() < 0.5 ? -1 : 1;
     // Along the far side of the clearing, by the brow.
     const depth = this.area.maxDepth - r(0.02, 0.12) * (this.area.maxDepth - this.area.minDepth);
-    const w = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 80 * d }, side * (this.plane.halfWidthAt(depth) + 40 * depth), depth, side > 0 ? Math.PI : 0);
+    const w = GroundWalker.fromSide(this.plane, this.area, side, depth, 80, 40);
     w.obstacles = this.obstacles;
     w.steering = { kind: 'exit', side: side > 0 ? -1 : 1 };
     this.walker = w;

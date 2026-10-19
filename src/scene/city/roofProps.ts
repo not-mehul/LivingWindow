@@ -1,5 +1,6 @@
 import { lerpColor, scaleColor } from '../../core/color';
 import { boxFrom, type Box, type Hit } from '../../sim/cityGeometry';
+import { FOCAL } from '../../sim/groundPlane';
 import { pixelHash } from '../../sprites/raster';
 import { bayer, valueNoise } from '../common/paint';
 
@@ -201,8 +202,8 @@ export function roofClutter(box: Box, rng: () => number): { boxes: PropBox[]; ma
   const boxes: PropBox[] = [];
   const masts: Mast[] = [];
   const h = box.h1;
-  const d0 = box.depth - box.halfW / 700;
-  const d1 = box.depth + box.halfW / 700;
+  const d0 = box.depth - box.halfW / FOCAL;
+  const d1 = box.depth + box.halfW / FOCAL;
   const gx0 = box.gx - box.halfU;
   const gx1 = box.gx + box.halfU;
   const n = 1 + Math.floor(rng() * 3);

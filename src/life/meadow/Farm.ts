@@ -189,7 +189,7 @@ export class CowHerd {
     const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
     this.container.addChild(sprite);
     // Spawning just off the side is allowed: the area's limit only applies while wandering.
-    const walker = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 60 * d }, gx, depth, Math.random() * Math.PI * 2);
+    const walker = new GroundWalker(this.plane, GroundWalker.widened(this.plane, this.area, 60), gx, depth, Math.random() * Math.PI * 2);
     walker.obstacles = this.obstacles;
     walker.steering = { kind: 'seek', gx, depth };
     const cow: Cow = { coat: coats[Math.floor(Math.random() * coats.length)], walker, state: 'graze', timer: 0, duration: r(5, 25), stride: 0, sprite };

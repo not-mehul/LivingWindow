@@ -72,6 +72,16 @@ export class Viewport extends Emitter<ViewportEvents> {
     return this._panX;
   }
 
+  /** Right edge of the visible slice of the world, in world pixels. */
+  get visibleRight(): number {
+    return this._panX + this._layout.visibleWorldWidth;
+  }
+
+  /** Is world x on screen, at least `margin` px in from both edges (a negative margin reaches past them)? */
+  inView(x: number, margin = 0): boolean {
+    return x > this._panX + margin && x < this.visibleRight - margin;
+  }
+
   get isPannable(): boolean {
     return this._layout.maxPanX > 0;
   }

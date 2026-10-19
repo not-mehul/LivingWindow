@@ -161,7 +161,7 @@ export class Sandpipers {
 
   private arrive(): void {
     // Somewhere along the shore that's in view.
-    const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth - 20;
+    const right = this.viewport.visibleRight - 20;
     let depth = r(1.5, 3.2);
     for (let i = 0; i < 10 && shorePoint(depth, 0).x > right; i++) depth = r(1.5, 3.4);
     for (let i = 0; i < 3 + Math.floor(Math.random() * 4); i++) {
@@ -401,7 +401,7 @@ export class Turtles {
       this.timer -= dt * (env.lighting.darkness > 0.5 ? 2 : 1);
       if (this.timer <= 0) {
         this.timer = r(300, 600);
-        const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth - 30;
+        const right = this.viewport.visibleRight - 30;
         let depth = r(1.5, 2.6);
         for (let i = 0; i < 10 && shorePoint(depth, 0).x > right; i++) depth = r(1.6, 3);
         const sprite = new Sprite({ anchor: { x: 0.5, y: 1 }, alpha: 0 });
@@ -498,7 +498,7 @@ export class Dolphins {
         this.podY = BEACH_HORIZON + 4 + Math.round(Math.random() ** 1.6 * 26);
         const seaStart = shoreXAtY(this.podY) + (SHALLOWS_S + 40) / beachPlane.depthAtY(this.podY);
         const left = Math.max(seaStart, this.viewport.panX + 10);
-        const right = this.viewport.panX + this.viewport.layout.visibleWorldWidth - 40;
+        const right = this.viewport.visibleRight - 40;
         if (right > left) {
           const x = r(left, right);
           this.spawnPod(x);

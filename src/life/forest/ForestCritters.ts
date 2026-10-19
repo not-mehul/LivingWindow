@@ -131,7 +131,7 @@ export class Hare {
   private spawn(): void {
     const side = Math.random() < 0.5 ? -1 : 1;
     const depth = r(this.area.minDepth + (this.area.maxDepth - this.area.minDepth) * 0.4, this.area.maxDepth);
-    const w = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 60 * d }, side * (this.plane.halfWidthAt(depth) + 20 * depth), depth, side > 0 ? Math.PI : 0);
+    const w = GroundWalker.fromSide(this.plane, this.area, side, depth, 60, 20);
     w.obstacles = this.obstacles;
     w.steering = this.target();
     this.walker = w;

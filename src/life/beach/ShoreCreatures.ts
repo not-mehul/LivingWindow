@@ -316,7 +316,7 @@ export class Pelican {
         this.x += this.dir * 30 * dt;
         this.y -= 18 * dt;
         pose = (['flap-up', 'flap-mid', 'flap-down', 'flap-mid'] as const)[Math.floor(this.t * 5) % 4];
-        if (this.y < -40 || this.x < this.viewport.panX - 80 || this.x > this.viewport.panX + this.viewport.layout.visibleWorldWidth + 80) {
+        if (this.y < -40 || this.x < this.viewport.panX - 80 || this.x > this.viewport.visibleRight + 80) {
           this.phase = null;
           this.sprite.visible = false;
           return;
