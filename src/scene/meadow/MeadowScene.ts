@@ -18,6 +18,7 @@ import type { Trunk } from '../forest/forestGenerator';
 import { Sky } from '../sky/Sky';
 import type { WorldScene } from '../WorldScene';
 import { generateMeadow, type MeadowLayout, type MeadowOak } from './meadowGenerator';
+import { clamp01 } from '../../core/math';
 
 export { MEADOW_HORIZON };
 
@@ -246,7 +247,7 @@ export class MeadowScene implements WorldScene {
     const byMoon = !sun.visible && moon.visible;
     const body = byMoon ? moon : sun;
     const strength = body.visible ? Math.min(1, body.elevation * 4) * clear * (byMoon ? 0.9 * nightness * moonlight : 1) : 0;
-    const step = Math.round((Math.max(0, Math.min(1, body.progress)) - 0.5) * (SHADOW_STEPS - 1));
+    const step = Math.round((clamp01(body.progress) - 0.5) * (SHADOW_STEPS - 1));
     const progress = 0.5 + step / (SHADOW_STEPS - 1);
     const cast = shadowCast(progress, Math.max(0.2, body.elevation));
     for (const s of this.shadows) {

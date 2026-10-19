@@ -3,6 +3,7 @@ import { createNearestTexture, PixelCanvas } from '../core/pixelTexture';
 import { valueNoise } from '../scene/common/paint';
 import { pixelHash } from '../sprites/raster';
 import { LINEN } from './palette';
+import { clamp01 } from '../core/math';
 
 const hex = (c: string) => Number.parseInt(c.slice(1), 16);
 const rgba = (c: number) => ((255 << 24) | ((c & 0xff) << 16) | (c & 0xff00) | ((c >> 16) & 0xff)) >>> 0;
@@ -25,7 +26,7 @@ export function paintCurtain(out: Uint32Array, W: number, H: number, phase: numb
   for (let y = 0; y < H; y++) {
     const t = y / H;
     // Narrow where it's gathered, swelling lower down.
-    const s = Math.min(1, Math.max(0, (t - 0.03) / 0.5));
+    const s = clamp01((t - 0.03) / 0.5);
     const ease = s * s * (3 - 2 * s);
     // The pleats sway more the lower they hang.
     const drift = phase * (0.3 + t * 1.4);

@@ -3,6 +3,7 @@ import { lerpColor, multiplyColor } from '../../core/color';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import type { Environment } from '../../scene/Environment';
 import { pixelHash } from '../../sprites/raster';
+import { clamp01 } from '../../core/math';
 
 /** A pool as the scene lays it out: screen ellipse, and where it is on the shore. */
 export interface PoolShape {
@@ -200,7 +201,7 @@ export class TidePools {
           const v = (y + 0.5 - cy) / Math.max(1, p.hh);
           const d = u * u + v * v;
           if (d > 1) continue;
-          const t = Math.max(0, Math.min(1, v * 0.5 + 0.5));
+          const t = clamp01(v * 0.5 + 0.5);
           let c = lerpColor(far, near, t);
           // Shallow at the edges: the bed shows through.
           c = lerpColor(c, bed, d > 0.7 ? 0.55 : 0.2);

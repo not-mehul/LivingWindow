@@ -22,3 +22,8 @@ export function easeInOutCubic(t: number): number {
 export function snapToDevicePixel(value: number, devicePixelRatio: number): number {
   return Math.round(value * devicePixelRatio) / devicePixelRatio;
 }
+
+/** Clamp to the range 0–1. */
+export function clamp01(value: number): number {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
+}

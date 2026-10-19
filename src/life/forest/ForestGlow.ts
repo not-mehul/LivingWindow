@@ -3,15 +3,16 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
 import { glowTexture } from '../../scene/common/glow';
 import { pixelHash } from '../../sprites/raster';
+import { clamp01 } from '../../core/math';
 
 /** How strongly the fungi glow (0..1): only in the dark, a little brighter when it's damp. */
 export function fungusGlow(darkness: number, damp: number): number {
-  return Math.max(0, Math.min(1, (darkness - 0.55) / 0.35)) * (0.8 + damp * 0.2);
+  return clamp01((darkness - 0.55) / 0.35) * (0.8 + damp * 0.2);
 }
 
 /** Whether wisps are about: a deep, misty night. */
 export function wispWeather(darkness: number, mist: number): number {
-  return Math.max(0, Math.min(1, (darkness - 0.7) / 0.2)) * Math.max(0, Math.min(1, (mist - 0.4) / 0.3));
+  return clamp01((darkness - 0.7) / 0.2) * clamp01((mist - 0.4) / 0.3);
 }
 
 interface Cluster {

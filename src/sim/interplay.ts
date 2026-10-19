@@ -1,5 +1,6 @@
 import type { GroundSpot } from './flock';
 import { groundDistance } from './flock';
+import { wrapHours } from '../state/timeOfDay';
 
 /**
  * Small shared pieces for creatures noticing one another: how near is too
@@ -85,9 +86,9 @@ export class Cooldown {
 
 /** A gentle 0..1 window between hours `from` and `to`, ramping over `ramp` hours at each end (wraps past midnight). */
 export function hourWindow(hours: number, from: number, to: number, ramp = 0.5): number {
-  const h = ((hours % 24) + 24) % 24;
-  const span = (((to - from) % 24) + 24) % 24;
-  const t = (((h - from) % 24) + 24) % 24;
+  const h = wrapHours(hours);
+  const span = wrapHours(to - from);
+  const t = wrapHours(h - from);
   if (t > span) return 0;
   return Math.min(1, t / ramp, (span - t) / ramp);
 }
@@ -96,13 +97,13 @@ export function hourWindow(hours: number, from: number, to: number, ramp = 0.5):
 
 /** Dusk: small birds about now settle down for the night where they're perched. */
 export function roostTime(hours: number): boolean {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   return h >= 19.4 && h < 22;
 }
 
 /** First light: roosting birds wake. */
 export function wakeTime(hours: number): boolean {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   return h >= 5.8 && h < 12;
 }
 

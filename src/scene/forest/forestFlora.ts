@@ -4,6 +4,7 @@ import { randomRange } from '../../core/random';
 import { pixelHash } from '../../sprites/raster';
 import { valueNoise } from '../common/paint';
 import type { TreePalette } from '../common/trees';
+import { clamp01 } from '../../core/math';
 
 /**
  * The deep wood's plants and trunks: bare columns of pine, beech, birch and
@@ -305,7 +306,7 @@ export function drawCanopyClump(w: number, h: number, pal: TreePalette, rng: () 
       if (x < 2 || x > w - 2 || y > h - 2) break;
       // Leaves thicken towards the twig's end.
       const along = d / t.len;
-      if (rng() < 0.55 + along * 0.4) sprays.push({ x, y, depth: Math.min(1, Math.max(0, t.depth + randomRange(rng, -0.15, 0.15))), size: 2.2 + along * 2.4 + rng() * 1.2 });
+      if (rng() < 0.55 + along * 0.4) sprays.push({ x, y, depth: clamp01(t.depth + randomRange(rng, -0.15, 0.15)), size: 2.2 + along * 2.4 + rng() * 1.2 });
       if (rng() < 0.05 && twigs.length < 60) twigs.push({ x, y, a: a + (rng() < 0.5 ? -0.7 : 0.7), len: (t.len - d) * 0.7, depth: t.depth + randomRange(rng, -0.2, 0.2) });
     }
   }

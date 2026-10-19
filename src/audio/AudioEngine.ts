@@ -4,6 +4,7 @@ import { BUS_IDS, dbToGain, volumeToGain, type AudioSettings, type BusId } from 
 import { NoiseBank } from './noise';
 import { SoundBank, type SoundId } from './sounds/SoundBank';
 import { spatialParams } from './spatial';
+import { clamp01 } from '../core/math';
 
 export interface AudioEngineEvents {
   /** The context started or stopped running (e.g. after the first user gesture). */
@@ -148,7 +149,7 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
   }
 
   setVolume(bus: BusId, volume: number): void {
-    this.settings.volumes[bus] = Math.min(1, Math.max(0, volume));
+    this.settings.volumes[bus] = clamp01(volume);
     this.applyVolume(bus);
     this.emit('volume', { bus, volume: this.settings.volumes[bus] });
   }

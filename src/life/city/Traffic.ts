@@ -17,6 +17,7 @@ import { glowTexture } from '../../scene/common/glow';
 import { FOCAL } from '../../sim/groundPlane';
 import { deliveryRiders, foodCartOut, sweeperOut, taxiHours } from '../../sim/wildlife';
 import { FAR_END, NEAR_END, PERSON_HEIGHT_AT_1 } from '../StreetLife';
+import { evenSize } from '../../sprites/kit';
 
 type VehicleKind = 'bike' | 'scooter' | 'sweeper' | 'taxi' | 'cart';
 
@@ -241,7 +242,7 @@ export class Traffic {
 
   private draw(v: Vehicle, env: Environment): void {
     const { project, tintAt, lights } = this.options;
-    const height = Math.max(4, Math.round(HEIGHT_AT_1[v.kind] / v.depth / 2) * 2);
+    const height = evenSize(HEIGHT_AT_1[v.kind] / v.depth, 4);
     const { texture, drawn } = this.texture(v, height);
     const p = project(v.gx, v.depth);
     v.sprite.texture = texture;

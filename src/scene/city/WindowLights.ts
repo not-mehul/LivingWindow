@@ -2,6 +2,7 @@ import { Sprite, type Texture } from 'pixi.js';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import type { WindowRecord } from './cityGenerator';
+import { clamp01 } from '../../core/math';
 
 // Mostly a soft cream-white, as in the night drawing, with the odd warmer lamp.
 const WARM = [0xfff0c8, 0xfff0c8, 0xffe8b8, 0xffdc9a, 0xfff6dc];
@@ -73,7 +74,7 @@ export class WindowLights {
     const nudges = Math.max(1, Math.ceil(this.windows.length * 0.006));
     for (let i = 0; i < nudges; i++) {
       const w = this.windows[Math.floor(this.rng() * this.windows.length)];
-      if (w) w.threshold = Math.min(1, Math.max(0, w.threshold + (this.rng() - 0.5) * 0.3));
+      if (w) w.threshold = clamp01(w.threshold + (this.rng() - 0.5) * 0.3);
     }
 
     for (const w of this.windows) {

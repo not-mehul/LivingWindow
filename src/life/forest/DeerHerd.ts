@@ -9,6 +9,7 @@ import { deerActivity } from '../../sim/wildlife';
 import { DEER_WALK, DeerSpriteCache, type DeerKind, type DeerPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { evenSize } from '../../sprites/kit';
 
 type DeerState = 'walk' | 'graze' | 'alert' | 'bound' | 'leave';
 
@@ -309,7 +310,7 @@ export class DeerHerd {
   private heightOf(d: Deer, scale: number): number {
     const k = d.kind === 'buck' ? 1.22 : d.kind === 'fawn' ? 0.68 : 1;
     // Even sizes only: sprites are generated per size, so this bounds the cache.
-    return Math.max(8, Math.round((DOE_HEIGHT * k * scale) / 2) * 2);
+    return evenSize(DOE_HEIGHT * k * scale, 8);
   }
 
   private pose(d: Deer): DeerPose {

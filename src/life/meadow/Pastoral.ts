@@ -11,6 +11,7 @@ import { drawDogSized, drawHorseSized, drawSheepSized, HORSE_WALK, SHEEP_WALK, t
 import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { evenSize } from '../../sprites/kit';
 
 /** Heights (world px) at depth 1. */
 const SHEEP_HEIGHT = 30;
@@ -229,7 +230,7 @@ export class SheepFlock {
 
   private draw(s: Sheep, tint: number): void {
     const p = s.walker.point;
-    const h = Math.max(4, Math.round((SHEEP_HEIGHT * s.size * p.scale) / 2) * 2);
+    const h = evenSize(SHEEP_HEIGHT * s.size * p.scale, 4);
     const pose: SheepPose = s.state === 'lie' ? 'lie' : s.walker.speed > 0 ? SHEEP_WALK[Math.floor(s.stride / (s.mother ? 1.8 : 2.5)) % 4] : Math.floor(s.timer * 1.5) % 4 === 0 ? 'stand' : Math.floor(s.timer * 2) % 2 === 0 ? 'graze-1' : 'graze-2';
     s.sprite.texture = this.sprites.get(`${pose}:${h}`, () => drawSheepSized(pose, h));
     s.sprite.scale.x = s.walker.facing;
@@ -373,7 +374,7 @@ export class Sheepdog {
     w.update(dt);
     this.stride += w.speed * w.point.scale * dt;
     const p = w.point;
-    const h = Math.max(6, Math.round((DOG_HEIGHT * p.scale) / 2) * 2);
+    const h = evenSize(DOG_HEIGHT * p.scale, 6);
     const settled = this.state === 'crouch' || this.state === 'sit' || this.state === 'lie';
     const pose: DogPose = this.state === 'crouch' || this.state === 'sit' || this.state === 'lie'
       ? this.state
@@ -561,7 +562,7 @@ export class HorsePaddock {
       this.whinnyTimer = r(60, 180);
       if (!night || this.state === 'canter') this.sound('horse-whinny', this.viewport.worldXToStereo(p.x), 0.75);
     }
-    const h = Math.max(6, Math.round((HORSE_HEIGHT * p.scale) / 2) * 2);
+    const h = evenSize(HORSE_HEIGHT * p.scale, 6);
     let pose: HorsePose;
     // Flies about: the tail goes more often, even with its head down grazing.
     const swishEvery = flies > 0.3 ? 2 : 5;

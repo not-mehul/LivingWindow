@@ -10,6 +10,7 @@ import { chickensOut, cowsResting } from '../../sim/wildlife';
 import { ChickenSpriteCache, COW_WALK, CowSpriteCache, type ChickenCoat, type ChickenPose, type CowCoat, type CowPose } from '../../sprites/meadowSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { evenSize } from '../../sprites/kit';
 
 type CowState = 'graze' | 'walk' | 'stand' | 'lie' | 'leave';
 
@@ -231,7 +232,7 @@ export class CowHerd {
   private draw(cow: Cow, tint: number): void {
     const p = cow.walker.point;
     // Even sizes only: sprites are generated per size, so this bounds the cache.
-    const height = Math.max(8, Math.round((COW_HEIGHT * p.scale) / 2) * 2);
+    const height = evenSize(COW_HEIGHT * p.scale, 8);
     let pose: CowPose;
     switch (cow.state) {
       case 'walk':

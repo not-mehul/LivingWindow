@@ -12,6 +12,7 @@ import { drawDeerSized, type DeerPose } from '../../sprites/forestSprites';
 import { DrawnCache, drawWolf, WOLF_WALK, type WolfPose } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { evenSize } from '../../sprites/kit';
 
 const WOLF_HEIGHT = 30;
 const STAG_HEIGHT = 58;
@@ -161,7 +162,7 @@ export class NightCalls {
         this.wolves.splice(i, 1);
         continue;
       }
-      const h = Math.max(6, Math.round((WOLF_HEIGHT * p.scale) / 2) * 2);
+      const h = evenSize(WOLF_HEIGHT * p.scale, 6);
       const pose: WolfPose = wolf.sit > 0 ? (wolf.howling > 0 ? 'howl' : 'sit') : WOLF_WALK[Math.floor(wolf.stride / 2.2) % 4];
       wolf.sprite.texture = this.wolfSprites.get(`${pose}:${h}`, () => drawWolf(pose, h));
       wolf.sprite.scale.x = w.facing;
@@ -216,7 +217,7 @@ export class NightCalls {
       this.stag = null;
       return;
     }
-    const h = Math.max(8, Math.round((STAG_HEIGHT * p.scale) / 2) * 2);
+    const h = evenSize(STAG_HEIGHT * p.scale, 8);
     const pose: DeerPose = st.stand > 0 ? (st.stand > 3 ? 'alert' : 'stand') : (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'walk-5', 'walk-6'] as const)[Math.floor(st.stride / 2.7) % 6];
     st.sprite.texture = this.stagSprites.get(`${pose}:${h}`, () => drawDeerSized('elk', pose, h));
     st.sprite.scale.x = w.facing;

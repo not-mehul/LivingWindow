@@ -5,6 +5,7 @@ import type { Lighting } from '../lighting';
 import { glowTexture } from '../common/glow';
 import { ADS, drawAd } from './ads';
 import type { Billboard } from './cityGenerator';
+import { clamp01 } from '../../core/math';
 
 interface Screen {
   board: Billboard;
@@ -46,7 +47,7 @@ export class Billboards {
 
   update(dt: number, lighting: Lighting, tints: Record<'far' | 'mid' | 'near' | 'over', number>): void {
     // Screens run brighter than the day around them, and blaze at night.
-    const lit = Math.max(0, Math.min(1, (lighting.emissive - 0.15) / 0.7));
+    const lit = clamp01((lighting.emissive - 0.15) / 0.7);
     for (const s of this.screens) {
       const spec = ADS[s.board.ad];
       s.timer -= dt;

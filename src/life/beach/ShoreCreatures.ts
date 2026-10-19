@@ -14,6 +14,7 @@ import type { LifeSoundSink } from '../types';
 import type { FishAndGulls } from './Shoreline';
 import type { Tracks } from './Tracks';
 import { rand as r } from '../../core/random';
+import { evenSize } from '../../sprites/kit';
 
 /** Depths along the beach that are comfortably in view. */
 const NEAR = 1.3;
@@ -105,7 +106,7 @@ export class Crabs {
       }
       const p = shorePoint(c.depth, c.s);
       if (c.hidden <= 0) this.tracks?.walk(c, 'crab', c.depth, c.s);
-      const size = Math.max(4, Math.round((CRAB_SIZE * p.scale) / 2) * 2);
+      const size = evenSize(CRAB_SIZE * p.scale, 4);
       const hidden = c.hidden > 0;
       const frame = Math.floor(c.frame) % 4;
       c.sprite.texture = this.sprites.get(`${hidden}:${frame}:${size}`, () => drawCrab(frame, size, hidden));
@@ -193,7 +194,7 @@ export class HermitCrabs {
       }
       const p = shorePoint(h.depth, h.s);
       this.tracks?.walk(h, 'hermit', h.depth, h.s);
-      const size = Math.max(4, Math.round((HERMIT_SIZE * p.scale) / 2) * 2);
+      const size = evenSize(HERMIT_SIZE * p.scale, 4);
       const tucked = h.withdrawn > 0;
       const frame = Math.floor(h.frame) % 2;
       h.sprite.texture = this.sprites.get(`${tucked}:${frame}:${size}`, () => drawHermitCrab(frame, size, tucked));

@@ -1,3 +1,5 @@
+import { clamp01 } from '../core/math';
+
 /** The five user-facing volume buses. */
 export type BusId = 'master' | 'wildlife' | 'weather' | 'ambience' | 'radio';
 
@@ -38,7 +40,7 @@ const STORAGE_KEY = 'livingWindow.audio';
 
 /** Slider position (0..1) to linear gain. Squared so the slider feels even to the ear. */
 export function volumeToGain(volume: number): number {
-  const v = Math.min(1, Math.max(0, volume));
+  const v = clamp01(volume);
   return v * v;
 }
 
@@ -66,7 +68,7 @@ export function loadAudioSettings(storage: Storage | null = safeStorage()): Audi
     const parsed = JSON.parse(raw) as Partial<AudioSettings>;
     for (const id of BUS_IDS) {
       const v = parsed.volumes?.[id];
-      if (typeof v === 'number' && Number.isFinite(v)) settings.volumes[id] = Math.min(1, Math.max(0, v));
+      if (typeof v === 'number' && Number.isFinite(v)) settings.volumes[id] = clamp01(v);
     }
     if (typeof parsed.muted === 'boolean') settings.muted = parsed.muted;
     if (typeof parsed.radioOn === 'boolean') settings.radioOn = parsed.radioOn;

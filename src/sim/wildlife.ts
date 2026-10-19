@@ -1,4 +1,10 @@
 import { wrapHours } from '../state/timeOfDay';
+import { clamp01 } from '../core/math';
+
+/** 1 at hour `center`, falling linearly to 0 at `width` hours either side. */
+function hourPeak(h: number, center: number, width: number): number {
+  return Math.max(0, 1 - Math.abs(h - center) / width);
+}
 
 /**
  * Deer are crepuscular: most active around dawn and dusk, sometimes seen by
@@ -6,8 +12,7 @@ import { wrapHours } from '../state/timeOfDay';
  */
 export function deerActivity(hours: number): number {
   const h = wrapHours(hours);
-  const near = (center: number, width: number) => Math.max(0, 1 - Math.abs(h - center) / width);
-  return Math.max(0.12, near(6.8, 2.2), near(18.8, 2.4), h > 8 && h < 17 ? 0.35 : 0);
+  return Math.max(0.12, hourPeak(h, 6.8, 2.2), hourPeak(h, 18.8, 2.4), h > 8 && h < 17 ? 0.35 : 0);
 }
 
 /** Owls hunt from late evening until just before dawn. */
@@ -30,94 +35,90 @@ export function sillVisitInterval(seedOut: boolean, rng: () => number = Math.ran
 
 /** Cows graze by day; after dark most lie down (and a few wander off). */
 export function cowsResting(hours: number): boolean {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   return h >= 20.5 || h < 5.5;
 }
 
 /** Chickens are out from first light until dusk. */
 export function chickensOut(hours: number): boolean {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   return h >= 6 && h < 19.5;
 }
 
 /** Rabbits come out to feed around dawn and dusk. */
 export function rabbitActivity(hours: number): number {
-  const h = ((hours % 24) + 24) % 24;
-  const near = (c: number, w: number) => Math.max(0, 1 - Math.abs(h - c) / w);
-  return Math.max(0.2, near(6.5, 2.5), near(19, 2.5));
+  const h = wrapHours(hours);
+  return Math.max(0.2, hourPeak(h, 6.5, 2.5), hourPeak(h, 19, 2.5));
 }
 
 /** Fireflies glow on warm, dry evenings and into the night. */
 export function fireflyLevel(hours: number, darkness: number, raining: boolean): number {
   if (raining || darkness < 0.5) return 0;
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   return h >= 19 || h < 2 ? Math.min(1, (darkness - 0.5) * 2.5) : 0.3;
 }
 
 // --- The city's rhythm ---------------------------------------------------
 
-const wrap = (hours: number) => ((hours % 24) + 24) % 24;
-
 /** How many delivery riders are out on the street: busy at lunch and dinner, busier still in the rain. */
 export function deliveryRiders(hours: number, raining: boolean): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if (h < 7 || h >= 23) return 0;
-  const near = (c: number, w: number) => Math.max(0, 1 - Math.abs(h - c) / w);
-  const base = 1 + 2 * Math.max(near(12.5, 1.5), near(19.5, 2));
+  const base = 1 + 2 * Math.max(hourPeak(h, 12.5, 1.5), hourPeak(h, 19.5, 2));
   return Math.round(base + (raining ? 1 : 0));
 }
 
 /** The street sweeper does its rounds at first light. */
 export function sweeperOut(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 5.5 && h < 8;
 }
 
 /** A late-night food cart is pushed along after the market closes. */
 export function foodCartOut(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 23.5 || h < 2;
 }
 
 /** Taxis creep up the empty street in the small hours. */
 export function taxiHours(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 1 && h < 5;
 }
 
 /** A busker plays under a street lamp through the evening, unless it's raining. */
 export function buskerOut(hours: number, raining: boolean): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return !raining && h >= 19 && h < 23;
 }
 
 /** Window cleaners work the glass tower through the working day. */
 export function windowCleanersOut(hours: number, raining: boolean): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return !raining && h >= 9 && h < 16;
 }
 
 /** The rooftop gardener waters in the cool of the morning and the evening. */
 export function gardenerOut(hours: number, raining: boolean): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return !raining && ((h >= 7 && h < 9) || (h >= 18 && h < 20));
 }
 
 /** Someone feeds the pigeons on the terrace mid-morning and mid-afternoon. */
 export function pigeonFeederOut(hours: number, raining: boolean): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return !raining && ((h >= 9.5 && h < 10.5) || (h >= 15 && h < 16));
 }
 
 /** The advertising blimp only goes up on fair days. */
 export function blimpOut(hours: number, clear: boolean): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return clear && h >= 10 && h < 17;
 }
 
 /** How bright the city's holograms over the skyline are (0..1): on from dusk, blazing through the evening, fading before dawn. */
 export function hologramLevel(hours: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   const ease = (t: number) => t * t * (3 - 2 * t);
   if (h >= 19 && h < 20) return ease(h - 19);
   if (h >= 20 || h < 3) return 1;
@@ -127,7 +128,7 @@ export function hologramLevel(hours: number): number {
 
 /** Ad drones work the evening crowds: from five in the afternoon until two. */
 export function adDronesOut(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 17 || h < 2;
 }
 
@@ -150,7 +151,7 @@ export function fireworksNight(key: string): boolean {
 
 /** Fireworks go up over the skyline for an hour from nine. */
 export function fireworksTime(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 21 && h < 22;
 }
 
@@ -158,15 +159,14 @@ export function fireworksTime(hours: number): boolean {
 
 /** Foxes hunt at dusk, through the night and at dawn, and are rarely seen by day. */
 export function foxActivity(hours: number): number {
-  const h = wrap(hours);
-  const near = (c: number, w: number) => Math.max(0, 1 - Math.abs(h - c) / w);
-  return Math.max(h >= 21 || h < 5 ? 0.45 : 0.06, near(6, 1.6), near(19.8, 1.8));
+  const h = wrapHours(hours);
+  return Math.max(h >= 21 || h < 5 ? 0.45 : 0.06, hourPeak(h, 6, 1.6), hourPeak(h, 19.8, 1.8));
 }
 
 /** Bats hunt insects at dusk and into the night, and again before dawn; never in rain. */
 export function batActivity(hours: number, raining: boolean): number {
   if (raining) return 0;
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if (h >= 19.3 && h < 22) return 1;
   if (h >= 22 || h < 3) return 0.4;
   if (h >= 4 && h < 5.4) return 0.6;
@@ -175,7 +175,7 @@ export function batActivity(hours: number, raining: boolean): number {
 
 /** Butterflies fly in warm sunshine. */
 export function butterflyActivity(hours: number, cloudCover: number, raining: boolean): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if (raining || h < 8.5 || h >= 18) return 0;
   const ramp = Math.min(1, (h - 8.5) / 1.5, (18 - h) / 1.5);
   return Math.max(0, ramp * (1 - cloudCover * 0.85));
@@ -183,7 +183,7 @@ export function butterflyActivity(hours: number, cloudCover: number, raining: bo
 
 /** Woodpeckers drum through the morning, less into the afternoon. */
 export function woodpeckerActivity(hours: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if (h >= 6.5 && h < 13) return 1;
   if (h >= 13 && h < 18) return 0.4;
   return 0;
@@ -191,12 +191,12 @@ export function woodpeckerActivity(hours: number): number {
 
 /** Eyes shine in the undergrowth only when it's properly dark. */
 export function nightEyesLevel(darkness: number): number {
-  return Math.max(0, Math.min(1, (darkness - 0.72) * 4));
+  return clamp01((darkness - 0.72) * 4);
 }
 
 /** A black bear wanders through the valley now and then, mostly in the morning and evening. */
 export function bearActivity(hours: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if ((h >= 6 && h < 9) || (h >= 17 && h < 20)) return 1;
   if (h >= 9 && h < 17) return 0.3;
   return 0;
@@ -204,7 +204,7 @@ export function bearActivity(hours: number): number {
 
 /** Elk graze the far slopes in the early light. */
 export function elkOut(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 5 && h < 7.8;
 }
 
@@ -220,7 +220,7 @@ export function mushroomLevel(hoursSinceRain: number): number {
 
 /** Ghost crabs come out of their burrows at dusk and through the night; a few by day. */
 export function crabActivity(hours: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if ((h >= 18 && h < 23) || (h >= 4 && h < 7.5)) return 1;
   if (h >= 23 || h < 4) return 0.7;
   return 0.25;
@@ -228,7 +228,7 @@ export function crabActivity(hours: number): number {
 
 /** Hermit crabs trundle over the dry sand at either end of the day, and on dull days. */
 export function hermitActivity(hours: number, cloudCover: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if ((h >= 6 && h < 9) || (h >= 17 && h < 21)) return 1;
   if (h >= 9 && h < 17) return 0.35 + 0.45 * cloudCover;
   return 0.3;
@@ -236,7 +236,7 @@ export function hermitActivity(hours: number, cloudCover: number): number {
 
 /** Pelicans fish the swell by day, most in the morning and evening. */
 export function pelicanActivity(hours: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if (h < 6.5 || h >= 19) return 0;
   return (h < 10 || h >= 16) ? 1 : 0.5;
 }
@@ -248,7 +248,7 @@ export function bioluminescenceNight(key: string): boolean {
 
 /** How brightly the bloom shows: only when it's properly dark, best under a weak moon. */
 export function bioluminescenceLevel(darkness: number, moonlight: number): number {
-  return Math.max(0, Math.min(1, (darkness - 0.7) * 3.3)) * (1 - 0.5 * moonlight);
+  return clamp01((darkness - 0.7) * 3.3) * (1 - 0.5 * moonlight);
 }
 
 /** About one night in six, a turtle nest at the foot of the dune hatches. */
@@ -258,7 +258,7 @@ export function hatchlingNight(key: string): boolean {
 
 /** Hatchlings dig out late in the evening, when the sand has cooled. */
 export function hatchlingTime(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 21.5 || h < 1.5;
 }
 
@@ -266,20 +266,20 @@ export function hatchlingTime(hours: number): boolean {
 
 /** The sheepdog is sent round the flock now and then through the working day. */
 export function sheepdogTime(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 8.5 && h < 17.5;
 }
 
 /** Hedgehogs snuffle out after dark, through the night. */
 export function hedgehogActivity(hours: number, raining: boolean): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   if (h >= 21.5 || h < 4.5) return raining ? 0.5 : 1;
   return 0;
 }
 
 /** Roe deer step out of the tree line in the half-light of dawn. */
 export function roeDeerOut(hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 5 && h < 7.6;
 }
 
@@ -287,19 +287,19 @@ export function roeDeerOut(hours: number): boolean {
 
 /** Wolves come to the brow to howl on moonlit nights (0..1 by the hour and the moonlight). */
 export function wolfActivity(hours: number, moonlight: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   const night = h >= 21.5 || h < 4 ? 1 : 0;
-  return night * Math.max(0, Math.min(1, (moonlight - 0.15) / 0.4));
+  return night * clamp01((moonlight - 0.15) / 0.4);
 }
 
 /** In the autumn rut (September and October), stags bugle in the first light. */
 export function stagRut(month: number, hours: number): boolean {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return (month === 8 || month === 9) && h >= 5.3 && h < 8.5;
 }
 
 /** Ravens cross high over the wood through the day. */
 export function ravenActivity(hours: number): number {
-  const h = wrap(hours);
+  const h = wrapHours(hours);
   return h >= 6.5 && h < 19 ? 1 : 0;
 }

@@ -5,10 +5,11 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
 import { pixelHash } from '../../sprites/raster';
 import type { LifeSoundSink } from '../types';
+import { wrapHours } from '../../state/timeOfDay';
 
 /** Where the owl is through the day: asleep in the hollow, awake and peering out at dusk, out hunting by night. */
 export function owlAtHome(hours: number): 'asleep' | 'peering' | 'out' {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   if (h >= 20.4 || h < 5.2) return 'out';
   if (h >= 18.6 || h < 6.4) return 'peering';
   return 'asleep';

@@ -6,10 +6,11 @@ import { drawNightjar, NIGHTJAR_FRAMES } from '../../sprites/shoreSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { wrapHours } from '../../state/timeOfDay';
 
 /** How much the nightjars are about (0..1): from the last of the dusk well into the night, and again before dawn. */
 export function nightjarActivity(hours: number): number {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   if (h >= 19.2 && h < 22.5) return 1;
   if (h >= 22.5 || h < 3.5) return 0.35;
   if (h >= 3.5 && h < 5.6) return 0.8;

@@ -8,10 +8,11 @@ import { BEACH_HORIZON, shoreXAtY } from '../../sim/shore';
 import { drawFishingBoat, drawSailboat } from '../../sprites/shoreSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
 import { rand as r } from '../../core/random';
+import { wrapHours } from '../../state/timeOfDay';
 
 /** How many sailboats are out (0..1 of the most): fair-weather daytime sailors, a breeze but not a blow. */
 export function sailingWeather(hours: number, wind: number, precipitation: number, lightning: number): number {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   if (lightning > 0.2 || precipitation > 0.3) return 0;
   const day = h >= 8.5 && h < 19 ? 1 : h >= 7 && h < 21 ? 0.4 : 0.1;
   const w = Math.abs(wind);
@@ -21,7 +22,7 @@ export function sailingWeather(hours: number, wind: number, precipitation: numbe
 
 /** How likely the fishing boat is to be going out or coming home now (relative chance): at first light, and towards evening. */
 export function fishingTide(hours: number): number {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   if (h >= 4.5 && h < 9) return 1;
   if (h >= 16.5 && h < 21) return 0.8;
   if (h >= 21 || h < 4.5) return 0.3;

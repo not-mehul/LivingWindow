@@ -11,10 +11,11 @@ import { BEACH_HORIZON, beachPlane, BREAK_S, shoreCoords, shorePoint, shoreXAtY 
 import { pixelHash } from '../../sprites/raster';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { clamp01 } from '../../core/math';
 
 /** How hard the sand is blowing (0..1): only in a real wind, and not once rain has wet it. */
 export function sandDrift(wind: number, precipitation: number): number {
-  const blow = Math.max(0, Math.min(1, (Math.abs(wind) - 0.2) / 0.35));
+  const blow = clamp01((Math.abs(wind) - 0.2) / 0.35);
   return precipitation > 0.08 ? 0 : blow;
 }
 

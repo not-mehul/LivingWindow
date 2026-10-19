@@ -15,6 +15,7 @@ import { RoofAmbience } from './RoofAmbience';
 import { StreetLamps } from './StreetLamps';
 import { WindowLife } from './WindowLife';
 import { WindowLights } from './WindowLights';
+import { clamp01 } from '../../core/math';
 
 /** Night grades for the city's depth bands: deep teal concrete, the distance going violet in the city's own glow. */
 const NIGHT: Record<CityLayerName, NightGrade> = {
@@ -207,7 +208,7 @@ export class CityScene implements WorldScene {
 
   /** Neon comes on as dusk deepens. Each sign buzzes on its own now and then; a worn one stutters. */
   private updateSigns(dt: number, emissive: number): void {
-    const target = Math.max(0, Math.min(1, (emissive - 0.3) / 0.55));
+    const target = clamp01((emissive - 0.3) / 0.55);
     this.signsLevel += (target - this.signsLevel) * Math.min(1, dt * 2);
     for (const sign of this.signs) {
       if (sign.dip > 0) sign.dip -= dt;

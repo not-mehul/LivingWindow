@@ -10,6 +10,7 @@ import { DEER_WALK, drawDeerSized } from '../../sprites/forestSprites';
 import { BEAR_WALK, drawBear, DrawnCache, type BearPose } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { evenSize } from '../../sprites/kit';
 
 /** A bear's height (world px) at depth 1. */
 const BEAR_HEIGHT = 40;
@@ -83,7 +84,7 @@ export class Bear {
       return;
     }
     const p = w.point;
-    const h = Math.max(6, Math.round((BEAR_HEIGHT * p.scale) / 2) * 2);
+    const h = evenSize(BEAR_HEIGHT * p.scale, 6);
     // Stopped, it noses the ground, and now and then lifts its head to scent the air.
     const pose: BearPose = this.sniff > 0 ? (this.sniff % 2.4 > 1.6 ? 'sniff-air' : 'sniff') : BEAR_WALK[Math.floor(this.stride / 2) % BEAR_WALK.length];
     this.sprite.texture = this.sprites.get(`${pose}:${h}`, () => drawBear(pose, h));

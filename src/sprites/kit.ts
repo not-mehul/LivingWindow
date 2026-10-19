@@ -1,5 +1,6 @@
 import { channels, lerpColor, pack, scaleColor } from '../core/color';
 import { PixelGrid, pixelHash } from './raster';
+import { clamp01 } from '../core/math';
 
 /**
  * A small kit for drawing creatures and people as proper pixel art rather
@@ -39,8 +40,8 @@ function toHsl(color: number): [number, number, number] {
 
 function fromHsl(h: number, s: number, l: number): number {
   h = ((h % 360) + 360) % 360;
-  s = Math.max(0, Math.min(1, s));
-  l = Math.max(0, Math.min(1, l));
+  s = clamp01(s);
+  l = clamp01(l);
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
@@ -189,7 +190,7 @@ export function limb(g: PixelGrid, points: ReadonlyArray<readonly [number, numbe
         const dx = bx - ax;
         const dy = by - ay;
         const len2 = dx * dx + dy * dy || 1;
-        const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+        const t = clamp01(((px - ax) * dx + (py - ay) * dy) / len2);
         const qx = ax + dx * t;
         const qy = ay + dy * t;
         const d = Math.hypot(px - qx, py - qy);

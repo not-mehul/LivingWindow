@@ -2,10 +2,11 @@ import { Container, Graphics, Sprite } from 'pixi.js';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
 import { pixelHash } from '../../sprites/raster';
+import { wrapHours } from '../../state/timeOfDay';
 
 /** How much the silk shows (0..1): it glistens in low morning sun, beaded with dew; by day it's faint, at night all but gone. */
 export function webShine(hours: number, sunUp: boolean, clear: number): number {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   const morning = h > 5.5 && h < 10 ? Math.min(1, (h - 5.5) * 1.2) * Math.min(1, (10 - h) * 0.8) : 0;
   const evening = h > 16 && h < 19.5 ? Math.min(1, (h - 16) * 0.8) * Math.min(1, (19.5 - h) * 1.2) * 0.6 : 0;
   const lit = sunUp ? 0.25 + Math.max(morning, evening) * 0.75 * clear : 0.08;

@@ -5,6 +5,7 @@ import { glowTexture } from '../scene/common/glow';
 import { drawText, textWidth } from '../scene/city/pixelFont';
 import type { SillSurface } from './WindowFrame';
 import { tabletSize } from './sillProps';
+import { wrapHours } from '../state/timeOfDay';
 
 /** What the tablet's lock screen shows. */
 export interface TabletStatus {
@@ -166,7 +167,7 @@ const APPS = [0x34c759, 0x0a84ff, 0xff9f0a, 0xff375f, 0xbf5af2, 0x64d2ff, 0xffd6
 
 /** The wallpaper's colours, top to bottom, for the hour: dawn, day, dusk, night. */
 function wallpaper(hours: number): [number, number, number] {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   if (h < 5 || h >= 21) return [0x0e1434, 0x2a2058, 0x4a2a6a];
   if (h < 8) return [0x3a4a8a, 0xb07aa8, 0xf0a88a];
   if (h < 17.5) return [0x1a6ad0, 0x4aa8e8, 0x9ad8f0];

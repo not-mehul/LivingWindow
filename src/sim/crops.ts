@@ -1,3 +1,5 @@
+import { clamp01 } from '../core/math';
+
 /**
  * The farm's year: what each field looks like on a given date, following a
  * northern farming calendar. Winter wheat is sown in the autumn, greens up in
@@ -62,7 +64,7 @@ export function cropState(kind: CropKind, date: Date): CropState {
   while (i > 0 && segs[i][0] > day) i--;
   const [d0, stage, h0, h1, r0, r1] = segs[i];
   const d1 = i + 1 < segs.length ? segs[i + 1][0] : 366;
-  const t = Math.max(0, Math.min(1, (day - d0) / Math.max(1, d1 - d0)));
+  const t = clamp01((day - d0) / Math.max(1, d1 - d0));
   return { stage, height: h0 + (h1 - h0) * t, ripeness: r0 + (r1 - r0) * t };
 }
 

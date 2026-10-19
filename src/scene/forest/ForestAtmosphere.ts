@@ -6,10 +6,11 @@ import { quality } from '../../core/quality';
 import { bayer, valueNoise } from '../common/paint';
 import type { Environment } from '../Environment';
 import type { Placed } from './forestGenerator';
+import { wrapHours } from '../../state/timeOfDay';
 
 /** How thick the mist lies (0..1) at an hour: heavy at dawn, lingering into the night, burnt off by midday. */
 export function mistDensity(hours: number, damp: number): number {
-  const h = ((hours % 24) + 24) % 24;
+  const h = wrapHours(hours);
   let d: number;
   if (h < 4) d = 0.6;
   else if (h < 6.5) d = 0.6 + ((h - 4) / 2.5) * 0.4;

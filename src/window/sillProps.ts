@@ -1,3 +1,5 @@
+import { evenSize } from '../sprites/kit';
+
 /**
  * Sizes of the things standing on the sill, nearest the viewer: the seed
  * dish and the potted plant. They're drawn large, like in the reference
@@ -18,7 +20,6 @@ export function nearness(visibleArtWidth: number): number {
   return Math.round(k * 20) / 20;
 }
 
-const even = (v: number) => Math.max(2, Math.round(v / 2) * 2);
 
 export interface DishSize {
   /** Width of the dish, rim to rim. */
@@ -30,7 +31,7 @@ export interface DishSize {
 }
 
 export function dishSize(k: number): DishSize {
-  const width = even(78 * k);
+  const width = evenSize(78 * k);
   return { width, height: Math.round(width * 0.34), mound: Math.max(4, Math.round(width * 0.13)) };
 }
 
@@ -44,11 +45,11 @@ export interface PlantSize {
 }
 
 export function plantSize(k: number): PlantSize {
-  const potWidth = even(34 * k);
+  const potWidth = evenSize(34 * k);
   return {
     potWidth,
     potHeight: Math.round(28 * k),
-    leavesWidth: even(100 * k),
+    leavesWidth: evenSize(100 * k),
     leavesHeight: Math.round(90 * k),
     reserve: potWidth + Math.round(10 * k),
   };
@@ -68,6 +69,6 @@ export interface TabletSize {
 
 /** The settings iPad stood on the sill's right-hand corner, in landscape. */
 export function tabletSize(k: number): TabletSize {
-  const width = even(46 * k);
+  const width = evenSize(46 * k);
   return { width, height: Math.round(width * 0.72), reserve: width + Math.round(8 * k) };
 }

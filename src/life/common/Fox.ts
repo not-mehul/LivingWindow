@@ -8,6 +8,7 @@ import { foxActivity } from '../../sim/wildlife';
 import { drawFox, DrawnCache, FOX_TROT, type FoxPose } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { evenSize } from '../../sprites/kit';
 
 type FoxState = 'trot' | 'sniff' | 'sit' | 'crouch' | 'pounce' | 'visit' | 'bolt' | 'leave';
 
@@ -258,7 +259,7 @@ export class Fox {
   private draw(env: Environment): void {
     const w = this.walker!;
     const p = w.point;
-    const h = Math.max(6, Math.round((FOX_HEIGHT * p.scale) / 2) * 2);
+    const h = evenSize(FOX_HEIGHT * p.scale, 6);
     const pose = this.pose();
     this.sprite.texture = this.sprites.get(`${pose}:${h}`, () => drawFox(pose, h));
     this.sprite.scale.x = w.facing;

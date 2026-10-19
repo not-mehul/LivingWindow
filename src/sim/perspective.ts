@@ -1,3 +1,5 @@
+import { clamp01 } from '../core/math';
+
 /**
  * 2.5D depth: z = 0 is the windowsill, z = 1 the horizon. An entity's render
  * scale follows S(z) = S_min + (1 − S_min)(1 − z)², the curve from the design
@@ -11,7 +13,7 @@ export const FULL_DETAIL_SIZE = 48;
 export const MIN_SCALE = 6 / FULL_DETAIL_SIZE;
 
 export function perspectiveScale(z: number): number {
-  const d = 1 - Math.min(1, Math.max(0, z));
+  const d = 1 - clamp01(z);
   return MIN_SCALE + (1 - MIN_SCALE) * d * d;
 }
 

@@ -10,6 +10,8 @@ import { RABBIT_HOP, RabbitSprites, type RabbitPose } from '../../sprites/meadow
 import { drawMushroom, drawWoodpeckerCling, DrawnCache, type MushroomKind } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import { rand as r } from '../../core/random';
+import { wrapHours } from '../../state/timeOfDay';
+import { clamp01 } from '../../core/math';
 
 // --- The hare -------------------------------------------------------------------
 
@@ -420,14 +422,14 @@ export class Mushrooms {
   update(env: Environment): void {
     const h = env.lighting.hours;
     if (this.lastHours >= 0) {
-      const dh = (((h - this.lastHours) % 24) + 24) % 24;
+      const dh = wrapHours(h - this.lastHours);
       if (dh < 6) this.sinceRain += dh;
     }
     this.lastHours = h;
     if (env.weather.kind === 'rain' && env.weather.precipitation > 0.35) this.sinceRain = 0;
     const level = this.level;
     for (const m of this.items) {
-      const a = Math.max(0, Math.min(1, (level - m.threshold * 0.85) * 5));
+      const a = clamp01((level - m.threshold * 0.85) * 5);
       m.sprite.visible = a > 0.02;
       if (!m.sprite.visible) continue;
       m.sprite.texture = this.sprites.get(`${m.kind}:${m.size}`, () => drawMushroom(m.kind, m.size));
