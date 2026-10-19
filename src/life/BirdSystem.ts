@@ -17,6 +17,28 @@ import { birdActivity } from '../audio/soundscapes/schedules';
 import { interiorTint } from '../scene/lighting';
 import type { BirdseedState } from '../state/BirdseedState';
 import { BirdSpriteCache, FLAP_CYCLE, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
+import { FLAP_CYCLE_6 } from '../sprites/birdClose';
+
+/**
+ * A bird's sprite size near the window: drawn a little larger than the
+ * world's perspective alone would make it, so a bird on the sill shows its
+ * detail, easing back to perspective size as it flies off into the view.
+ */
+function nearSize(z: number, relative: number): number {
+  const boost = 1 + 0.35 * Math.max(0, 1 - z / NEAR_Z);
+  return Math.round(spriteSizeAt(z, relative) * boost);
+}
+
+/** How long each frame of a little standing-about action shows (s). */
+const MICRO_FRAME = 0.16;
+const MICRO: Record<'blink' | 'tilt' | 'tail' | 'preen' | 'scratch' | 'fluff', readonly BirdPose[]> = {
+  blink: ['blink'],
+  tilt: ['tilt', 'tilt', 'tilt', 'tilt', 'idle', 'look-up'],
+  tail: ['tail-flick', 'idle', 'tail-flick'],
+  preen: ['preen-1', 'preen-2', 'preen-1', 'preen-2', 'preen-1', 'preen-2', 'preen-1', 'idle', 'blink'],
+  scratch: ['scratch-1', 'scratch-2', 'scratch-1', 'scratch-2', 'scratch-1', 'scratch-2', 'idle'],
+  fluff: ['fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'fluff', 'idle-breathe'],
+};
 import { sillWidth, type Ledge, type LifeSoundSink, type SillState } from './types';
 import { sillContacts } from '../window/sillContacts';
 
@@ -128,6 +150,9 @@ interface Bird {
   hop: { from: number; to: number; t: number } | null;
   pose: BirdPose;
   poseTimer: number;
+  /** A little action while it stands about (a blink, a preen, a scratch …): its frames and how far through. */
+  micro: { frames: readonly BirdPose[]; step: number; t: number } | null;
+  microIn: number;
   startleIn: number | null;
   sprite: Sprite;
   shadow: Graphics;
@@ -424,6 +449,8 @@ export class BirdSystem {
       hop: null,
       pose: 'fly-mid',
       poseTimer: 0,
+      micro: null,
+      microIn: 1 + this.rng() * 3,
       startleIn: null,
       sprite,
       shadow,
@@ -535,6 +562,7 @@ export class BirdSystem {
         bird.pose = Math.floor(bird.poseTimer / 0.7) % 2 === 0 ? 'idle' : 'idle-breathe';
         // An owl blinks slowly now and then.
         if (bird.species === 'owl' && bird.poseTimer % 4.3 < 0.22) bird.pose = 'sleep';
+        else this.microAction(bird, dt);
         break;
       case 'look-around': {
         const phase = Math.floor(bird.poseTimer / 0.45) % 3;
@@ -542,7 +570,9 @@ export class BirdSystem {
         break;
       }
       case 'hop': {
-        bird.pose = 'hop';
+        // Crouch, spring, sail through the air, land.
+        const t = bird.hop ? bird.hop.t : 1;
+        bird.pose = t < 0.14 ? 'hop-crouch' : t < 0.86 ? 'hop-air' : 'hop-land';
         if (bird.hop) {
           bird.hop.t = Math.min(1, bird.timer / bird.duration);
           const x = lerp(bird.hop.from, bird.hop.to, bird.hop.t);
@@ -555,7 +585,7 @@ export class BirdSystem {
       case 'peck-seed': {
         bird.peckTimer += dt;
         const inPeck = bird.peckTimer % PECK_INTERVAL;
-        bird.pose = inPeck < PECK_INTERVAL * 0.35 ? 'peck-reach' : inPeck < PECK_INTERVAL * 0.7 ? 'peck-down' : 'idle';
+        bird.pose = inPeck < PECK_INTERVAL * 0.35 ? 'peck-reach' : inPeck < PECK_INTERVAL * 0.7 ? 'peck-down' : 'peck-swallow';
         if (bird.peckTimer >= PECK_INTERVAL) {
           bird.peckTimer -= PECK_INTERVAL;
           if (bird.onSill && this.atBowl(bird, sill)) this.options.birdseed.consume(SEED_PER_PECK);
@@ -563,12 +593,36 @@ export class BirdSystem {
         break;
       }
       case 'chirp':
-        bird.pose = Math.floor(bird.poseTimer / 0.14) % 2 === 0 ? 'chirp' : 'idle';
+        bird.pose = (['chirp', 'chirp-2', 'chirp', 'idle'] as const)[Math.floor(bird.poseTimer / 0.12) % 4];
         break;
       case 'take-off':
-        bird.pose = 'fly-up';
+        // A crouch, then the spring into the first wingbeat.
+        bird.pose = bird.poseTimer < 0.12 ? 'takeoff-1' : 'takeoff-2';
         break;
     }
+  }
+
+  /** Now and then, while it stands about, a bird does something small: blinks, cocks its head, preens, scratches, fluffs up, flicks its tail. */
+  private microAction(bird: Bird, dt: number): void {
+    if (bird.micro) {
+      const m = bird.micro;
+      m.t += dt;
+      const each = MICRO_FRAME;
+      if (m.t >= each) {
+        m.t -= each;
+        m.step++;
+      }
+      if (m.step >= m.frames.length) bird.micro = null;
+      else bird.pose = m.frames[m.step];
+      return;
+    }
+    bird.microIn -= dt;
+    if (bird.microIn > 0) return;
+    bird.microIn = 1.2 + this.rng() * 4;
+    const roll = this.rng();
+    const frames = roll < 0.34 ? MICRO.blink : roll < 0.5 ? MICRO.tilt : roll < 0.62 ? MICRO.tail : roll < 0.74 ? MICRO.preen : roll < 0.86 ? MICRO.scratch : MICRO.fluff;
+    bird.micro = { frames, step: 0, t: 0 };
+    bird.pose = frames[0];
   }
 
   private atBowl(bird: Bird, sill: SillState): boolean {
@@ -666,10 +720,11 @@ export class BirdSystem {
       bird.pose = 'glide';
     } else {
       bird.flap += dt * temperament.flapRate * (landing ? 0.6 : 1);
-      bird.pose = FLAP_CYCLE[Math.floor(bird.flap * 4) % 4];
+      bird.pose = FLAP_CYCLE_6[Math.floor(bird.flap * 6) % 6];
       if (!landing && this.rng() < temperament.glide * dt * 0.6) bird.glide = 0.4 + this.rng() * 0.8;
     }
-    if (landing && f.t > 0.95) bird.pose = 'fly-down';
+    // Flaring to land: wings thrown forward, tail fanned, feet out.
+    if (landing && f.t > 0.9) bird.pose = f.t > 0.96 ? 'flare-2' : 'flare-1';
     return f.t >= 1;
   }
 
@@ -712,7 +767,7 @@ export class BirdSystem {
 
     if (bird.onSill) {
       const fs = sill.surface.frameScale;
-      const size = spriteSizeAt(0, sp.size);
+      const size = nearSize(0, sp.size);
       this.reparent(bird, sillLayer);
       sprite.texture = this.sprites.get(bird.species, bird.pose, size);
       sprite.anchor.set(0.5, 1);
@@ -738,7 +793,7 @@ export class BirdSystem {
     const sway = !flying && bird.perch?.ledge.sway ? bird.perch.ledge.sway() : NO_SWAY;
     if (bird.z < NEAR_Z) {
       const fs = viewport.layout.frameScale;
-      const size = spriteSizeAt(bird.z, sp.size);
+      const size = nearSize(bird.z, sp.size);
       this.reparent(bird, nearLayer);
       const p = viewport.worldToScreen(bird.x + sway.x, bird.y + sway.y);
       sprite.texture = this.sprites.get(bird.species, bird.pose, size);

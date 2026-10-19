@@ -1,5 +1,6 @@
 import { Texture } from 'pixi.js';
 import { CanvasSource } from 'pixi.js';
+import { CLOSE_SIZE, CLOSE_SPECIES, drawBirdClose } from './birdClose';
 import { PixelGrid, pixelHash } from './raster';
 
 export type SpeciesId =
@@ -30,9 +31,63 @@ export type BirdPose =
   | 'fly-mid'
   | 'fly-down'
   | 'glide'
-  | 'sleep';
+  | 'sleep'
+  // Close-up only (the far renderer shows the nearest of the poses above):
+  | 'blink'
+  | 'tilt'
+  | 'fluff'
+  | 'preen-1'
+  | 'preen-2'
+  | 'scratch-1'
+  | 'scratch-2'
+  | 'tail-flick'
+  | 'hop-crouch'
+  | 'hop-air'
+  | 'hop-land'
+  | 'peck-swallow'
+  | 'chirp-2'
+  | 'takeoff-1'
+  | 'takeoff-2'
+  | 'fly-1'
+  | 'fly-2'
+  | 'fly-3'
+  | 'fly-4'
+  | 'fly-5'
+  | 'fly-6'
+  | 'flare-1'
+  | 'flare-2';
+
+/** The far renderer's stand-in for each close-up pose. */
+const BASE_POSE: Partial<Record<BirdPose, BirdPose>> = {
+  blink: 'idle',
+  tilt: 'look-up',
+  fluff: 'idle-breathe',
+  'preen-1': 'look-back',
+  'preen-2': 'look-back',
+  'scratch-1': 'idle',
+  'scratch-2': 'idle',
+  'tail-flick': 'idle',
+  'hop-crouch': 'idle',
+  'hop-air': 'hop',
+  'hop-land': 'idle',
+  'peck-swallow': 'idle',
+  'chirp-2': 'chirp',
+  'takeoff-1': 'idle',
+  'takeoff-2': 'fly-up',
+  'fly-1': 'fly-up',
+  'fly-2': 'fly-up',
+  'fly-3': 'fly-mid',
+  'fly-4': 'fly-down',
+  'fly-5': 'fly-down',
+  'fly-6': 'fly-mid',
+  'flare-1': 'fly-down',
+  'flare-2': 'fly-down',
+};
 
 export const FLAP_CYCLE: readonly BirdPose[] = ['fly-up', 'fly-mid', 'fly-down', 'fly-mid'];
+
+/** The palette slots of a species' colours (for the close-up renderer). */
+export const SLOT = { outline: 1, dark: 2, body: 3, bodyLight: 4, belly: 5, head: 6, sheen: 7, wing: 8, wingDark: 9, beak: 10, eye: 11, leg: 12, accent: 13, sheen2: 14, cap: 15, breast: 16 } as const;
 
 /** Palette slots shared by every species. */
 const enum C {
@@ -294,7 +349,8 @@ function spanWing(shape: Array<[number, number]>, span: number): Array<[number, 
  * a simple two-tone figure when tiny (dark wings and tail, the body in its
  * own colour with a pale underside, beak and legs).
  */
-export function drawBird(speciesId: SpeciesId, pose: BirdPose, size: number): PixelGrid {
+export function drawBird(speciesId: SpeciesId, requested: BirdPose, size: number): PixelGrid {
+  const pose = BASE_POSE[requested] ?? requested;
   const sp = SPECIES[speciesId];
   const f = sp.features;
   const grid = new PixelGrid(size, size);
@@ -654,7 +710,11 @@ export class BirdSpriteCache {
     const key = `${species}:${pose}:${size}`;
     let texture = this.cache.get(key);
     if (!texture) {
-      texture = gridToTexture(drawBird(species, pose, size), SPECIES[species].palette);
+      if (size >= CLOSE_SIZE && CLOSE_SPECIES.has(species)) {
+        // Near the window: drawn in full.
+        const { grid, palette } = drawBirdClose(species, pose, size);
+        texture = gridToTexture(grid, palette.colors);
+      } else texture = gridToTexture(drawBird(species, pose, size), SPECIES[species].palette);
       this.cache.set(key, texture);
     }
     return texture;

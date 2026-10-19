@@ -4,12 +4,12 @@ import type { Environment } from '../scene/Environment';
 import { interiorTint } from '../scene/lighting';
 import type { BirdseedState } from '../state/BirdseedState';
 import { sillVisitInterval, squirrelActivity } from '../sim/wildlife';
-import { SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../sprites/forestSprites';
+import { SQUIRREL_RUN, SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../sprites/forestSprites';
 import { sillWidth, type LifeSoundSink, type SillState } from './types';
 
 type State = 'enter' | 'sit' | 'run' | 'nibble' | 'exit';
 
-const SIZE = 22;
+const SIZE = 30;
 const SPEED = 55;
 /** Seed eaten per second of nibbling. */
 const NIBBLE_RATE = 0.003;
@@ -158,12 +158,12 @@ export class SillSquirrel {
 
   private bowlSpot(sill: SillState): number {
     const side = this.x < sill.bowlX ? -1 : 1;
-    return sill.bowlX + side * (sill.bowlHalfWidth + 9);
+    return sill.bowlX + side * (sill.bowlHalfWidth + 12);
   }
 
   private atBowl(): boolean {
     const sill = this.sill;
-    return !!sill && Math.abs(Math.abs(this.x - sill.bowlX) - (sill.bowlHalfWidth + 9)) < 3;
+    return !!sill && Math.abs(Math.abs(this.x - sill.bowlX) - (sill.bowlHalfWidth + 12)) < 3;
   }
 
   private chatter(): void {
@@ -177,16 +177,19 @@ export class SillSquirrel {
   private draw(env: Environment, sill: SillState): void {
     const fs = sill.surface.frameScale;
     let pose: SquirrelPose;
-    if (this.state === 'nibble') pose = Math.floor(this.timer / 0.25) % 3 === 0 ? 'sit' : 'nibble';
-    else if (this.state === 'sit') pose = 'sit';
-    else pose = Math.floor(this.stride / 6) % 2 === 0 ? 'run-1' : 'run-2';
+    if (this.state === 'nibble') pose = Math.floor(this.timer / 0.18) % 3 === 0 ? 'sit' : 'nibble';
+    else if (this.state === 'sit') {
+      // Sitting up, looking about: a glance the other way now and then.
+      pose = 'sit';
+    } else pose = SQUIRREL_RUN[Math.floor(this.stride / 4) % 4];
     this.sprite.texture = this.sprites.get(this.coat, pose, SIZE);
-    this.sprite.scale.set(fs * this.dir, fs);
+    const glance = this.state === 'sit' && Math.floor(this.timer / 1.3) % 3 === 2 ? -1 : 1;
+    this.sprite.scale.set(fs * this.dir * glance, fs);
     const x = Math.round((sill.surface.left + this.x * fs) / fs) * fs;
     this.sprite.position.set(x, sill.surface.y + 2 * fs);
     this.sprite.tint = interiorTint(env.lighting);
     this.shadow.clear();
-    this.shadow.ellipse(0, 0, 7, 1.4).fill({ color: 0x000000, alpha: 0.22 });
+    this.shadow.ellipse(0, 0, 9, 1.6).fill({ color: 0x000000, alpha: 0.22 });
     this.shadow.scale.set(fs);
     this.shadow.position.set(x, sill.surface.y + fs);
   }

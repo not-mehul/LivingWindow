@@ -1,7 +1,8 @@
 import type { Drawn } from '../sprites/kit';
 import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonPose } from '../sprites/people';
 import type { PixelGrid } from '../sprites/raster';
-import { drawBird, SPECIES, type SpeciesId } from '../sprites/birdSprites';
+import { drawBird, SPECIES, type BirdPose, type SpeciesId } from '../sprites/birdSprites';
+import { CLOSE_SPECIES, drawBirdClose } from '../sprites/birdClose';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
 import { drawEgret, drawFishingBoat, drawFrigatebird, drawGull, drawJumpFish, drawNightjar, drawSailboat, drawSandpiper, NIGHTJAR_FRAMES, JUMP_FRAMES, SANDPIPER_FLY, SANDPIPER_RUN, type EgretPose, type GullPose, type SandpiperPose } from '../sprites/shoreSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
@@ -182,6 +183,14 @@ function sections(): Section[] {
     birds.push(row);
   }
   out.push({ title: 'Small birds', rows: birds });
+
+  // Birds near the window, drawn in full.
+  const closePoses: BirdPose[] = ['idle', 'idle-breathe', 'blink', 'tilt', 'look-up', 'look-back', 'fluff', 'preen-1', 'preen-2', 'scratch-1', 'tail-flick', 'hop-crouch', 'hop-air', 'hop-land', 'peck-reach', 'peck-down', 'peck-swallow', 'chirp', 'chirp-2', 'takeoff-1', 'fly-1', 'fly-2', 'fly-3', 'fly-4', 'fly-5', 'fly-6', 'glide', 'flare-1', 'flare-2'];
+  const closeSizes = Number(new URLSearchParams(location.hash.split('?')[1] ?? '').get('closeSize') ?? 0);
+  out.push({
+    title: 'Close birds',
+    rows: [...CLOSE_SPECIES].map((species) => closePoses.map((pose) => ({ label: `${species.slice(0, 4)} ${pose}`, draw: () => drawBirdClose(species, pose, closeSizes || Math.round(48 * SPECIES[species].size)) }))),
+  });
 
   const woodBirds: Item[][] = [];
   for (const species of ['owl', 'chickadee', 'woodpecker', 'finch', 'eagle'] as SpeciesId[]) {
