@@ -3,6 +3,7 @@ import { WORLD_HEIGHT, WORLD_WIDTH } from '../config';
 import {
   centeredPan,
   clampPan,
+  chromeScale,
   computeFrameScale,
   computeViewportLayout,
   panAfterResize,
@@ -101,5 +102,31 @@ describe('panning', () => {
     const cropped = computeViewportLayout(1920, 1080);
     const ultrawide = computeViewportLayout(3440, 1440);
     expect(panAfterResize(150, cropped, ultrawide)).toBe(0);
+  });
+});
+
+describe('chrome scale', () => {
+  it('leaves monitors as they were', () => {
+    expect(computeViewportLayout(1280, 720, 1).frameScale).toBe(2);
+    expect(computeViewportLayout(1680, 720, 1).frameScale).toBe(2);
+    expect(computeViewportLayout(2560, 1440, 1).frameScale).toBe(4);
+    expect(computeViewportLayout(1920, 1080, 1).frameScale).toBe(3);
+  });
+
+  it('keeps the frame in proportion on phones', () => {
+    for (const [w, h] of [
+      [390, 844],
+      [844, 390],
+      [375, 667],
+    ]) {
+      for (const dpr of [2, 3]) {
+        const layout = computeViewportLayout(w, h, dpr);
+        // A jamb (19 art px) takes no more than about 8% of the width.
+        expect((19 * layout.frameScale) / w).toBeLessThan(0.08);
+        expect(layout.frameScale).toBeLessThanOrEqual(layout.scale + 1e-9);
+      }
+    }
+    expect(chromeScale(2.34, 390, 844)).toBeLessThan(1.3);
+    expect(chromeScale(0.5, 200, 200)).toBe(1);
   });
 });

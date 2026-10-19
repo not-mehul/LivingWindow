@@ -7,7 +7,7 @@
 
 /** View width (frame art px) at which the props reach full size. */
 const FULL_SIZE_WIDTH = 560;
-const MIN_NEARNESS = 0.65;
+const MIN_NEARNESS = 0.6;
 
 /**
  * Nearness factor for a view this many frame art px wide, quantised to 0.05

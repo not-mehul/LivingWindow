@@ -14,10 +14,12 @@ export const FRAME_SIDE = 19;
 export const FRAME_TOP = 21;
 /** Kept for callers that only need "the frame's thickness". */
 export const FRAME_BORDER = FRAME_SIDE;
-/** Total height of the windowsill, in frame art pixels. */
-export const SILL_HEIGHT = 30;
-/** Rows from the top of the sill art to where objects stand (mid-way across its top). */
-export const SILL_SURFACE_OFFSET = 8;
+/** Total height of the windowsill, in frame art pixels: a deep top you look down on, its nosing, and the apron below. */
+export const SILL_HEIGHT = 46;
+/** Rows from the top of the sill art to where objects stand (about two-thirds of the way back across its top). */
+export const SILL_SURFACE_OFFSET = 14;
+/** The sill's top board ends (its front edge) at this row; the nosing and apron are below. */
+const SILL_TOP_END = 22;
 
 
 /** The visible wall-depth faces inside the jambs and under the head. */
@@ -35,6 +37,8 @@ export interface SillSurface {
   y: number;
   /** Top edge of the sill art (CSS px): where the closed sashes meet it. */
   top: number;
+  /** Art rows of sill top in front of the standing line, out to the front edge (for things that rest nearer the room). */
+  depth: number;
   frameScale: number;
 }
 
@@ -174,39 +178,84 @@ function drawFrame(theme: FrameTheme, width: number, height: number, sillRow: nu
   return p.toTexture();
 }
 
-/** The deep sill: a worn top you can see across, a rounded lip and a plank face. */
-function drawSill(theme: FrameTheme, width: number, caps: boolean): Texture {
+/**
+ * The deep sill, jutting out into the room: a broad top board you look down
+ * across (in shadow at the back under the window, the jambs' shadows falling
+ * forward from their feet, a pool of window light between them, and worn
+ * pale where things get set down), a heavy rounded nosing along the front
+ * with a shadow under it, and the apron board below.
+ * `jambs` are the art columns the jambs stand on.
+ */
+function drawSill(theme: FrameTheme, width: number, caps: boolean, jambs: ReadonlyArray<[number, number]>): Texture {
   const W = theme.wood;
+  const ramp = [W.outline, W.shadow, W.dark, W.base, W.light, W.highlight, W.shine];
   const p = new PixelBuffer(width, SILL_HEIGHT);
+  const index = new Map(ramp.map((c, i) => [Number.parseInt(c.slice(1), 16), i]));
+  /** Step a pixel lighter (+) or darker (−) along the wood's ramp. */
+  const shift = (x: number, y: number, by: number) => {
+    const i = index.get(p.get(x, y));
+    if (i !== undefined) p.set(x, y, ramp[Math.max(1, Math.min(ramp.length - 1, i + by))]);
+  };
   p.hline(0, 0, width, W.outline);
   // Shadow cast where the sill meets the window.
   p.hline(0, 1, width, W.shadow);
   p.hline(0, 2, width, W.dark);
-  // The top surface, darker at the back and paler towards the room.
-  paintPlank(p, 0, 3, width, 2, { vertical: false, wood: W, seed: 61, knots: 0, tone: -1 });
-  paintPlank(p, 0, 5, width, 4, { vertical: false, wood: W, seed: 67, knots: 0.25 });
-  paintPlank(p, 0, 9, width, 3, { vertical: false, wood: W, seed: 71, knots: 0, tone: 1 });
-  // Pale wear where things get set down most.
-  for (let x = 0; x < width; x++) {
-    const centre = 1 - Math.abs(x / width - 0.5) * 2;
-    for (let y = 6; y <= 10; y++) if (pixelHash(x, y, 73) < centre * 0.12) p.set(x, y, W.shine);
+  // The top: one broad board, its grain running along it.
+  paintPlank(p, 0, 3, width, SILL_TOP_END - 3, { vertical: false, wood: W, seed: 67, knots: 0.2 });
+  const inWindow = (x: number) => jambs.length === 2 && x > jambs[0][1] && x < jambs[1][0];
+  for (let y = 3; y < SILL_TOP_END; y++) {
+    const back = (9 - y) / 6;
+    const front = (y - (SILL_TOP_END - 5)) / 5;
+    for (let x = 0; x < width; x++) {
+      // Shade in streaks along the grain, not pixel by pixel.
+      const h = pixelHash(Math.floor((x + y * 3) / 7), y, 74);
+      // Darker at the back, under the window; lighter towards the room.
+      if (back > 0 && h < back) shift(x, y, -1);
+      else if (front > 0 && h < front * 0.7) shift(x, y, 1);
+      // Daylight through the glass lies in a soft pool on the back of the board.
+      else if (inWindow(x) && y >= 5 && y < 11 && h > 0.7) shift(x, y, 1);
+      // A little pale wear where things get set down most.
+      const centre = 1 - Math.abs(x / width - 0.5) * 2;
+      if (y > 10 && y < SILL_TOP_END - 2 && pixelHash(x, y, 73) < centre * 0.015) p.set(x, y, W.highlight);
+    }
   }
-  // Rounded front lip.
-  p.hline(0, 12, width, W.shine);
-  p.hline(0, 13, width, W.highlight);
-  // Front face: two boards.
-  paintPlank(p, 0, 14, width, 6, { vertical: false, wood: W, seed: 79, knots: 0.3 });
-  paintPlank(p, 0, 21, width, SILL_HEIGHT - 23, { vertical: false, wood: W, seed: 83, knots: 0.3, tone: -1 });
-  p.hline(0, 14, width, W.light);
-  p.hline(0, 20, width, W.outline);
+  // The jambs' shadows falling forward from where they stand.
+  for (const [x0, x1] of jambs) {
+    for (let y = 3; y < 12; y++) {
+      const fade = 1 - (y - 3) / 9;
+      for (let x = Math.max(0, x0 - 1); x <= Math.min(width - 1, x1 + 1); x++) if (pixelHash(Math.floor(x / 3), y, 76) < fade) shift(x, y, -1);
+      if (x1 + 1 < width) p.set(x1 + 1, y, y < 6 ? W.shadow : W.dark);
+    }
+  }
+  // The rounded nosing along the front edge: the lit top of the bullnose, its curve, and the shadow under it.
+  const nose = SILL_TOP_END;
+  p.hline(0, nose, width, W.shine);
+  p.hline(0, nose + 1, width, W.highlight);
+  paintPlank(p, 0, nose + 2, width, 2, { vertical: false, wood: W, seed: 79, knots: 0, tone: 1 });
+  paintPlank(p, 0, nose + 4, width, 2, { vertical: false, wood: W, seed: 81, knots: 0 });
+  p.hline(0, nose + 6, width, W.dark);
+  p.hline(0, nose + 7, width, W.outline);
+  // The apron board under the nosing, set back in its shadow.
+  const apron = nose + 8;
+  paintPlank(p, 0, apron, width, SILL_HEIGHT - apron - 3, { vertical: false, wood: W, seed: 83, knots: 0.3, tone: -1 });
+  for (let x = 0; x < width; x++) {
+    p.set(x, apron, W.shadow);
+    if (pixelHash(x, apron + 1, 85) < 0.7) p.set(x, apron + 1, W.shadow);
+    if (pixelHash(x, apron + 2, 86) < 0.3) shift(x, apron + 2, -1);
+  }
+  // A bead run along the apron.
+  const bead = apron + 7;
+  p.hline(0, bead, width, W.light);
+  p.hline(0, bead + 1, width, W.dark);
+  p.hline(0, SILL_HEIGHT - 3, width, W.highlight);
   p.hline(0, SILL_HEIGHT - 2, width, W.shadow);
   p.hline(0, SILL_HEIGHT - 1, width, W.outline);
   if (caps) {
-    // End grain where the sill's horns stick out onto the wall.
-    for (const x of [0, width - 4]) {
-      p.rect(x, 3, 4, SILL_HEIGHT - 4, W.dark);
-      p.rect(x + 1, 4, 2, SILL_HEIGHT - 7, W.base);
-      for (let y = 6; y < SILL_HEIGHT - 4; y += 4) p.hline(x + 1, y, 2, W.light);
+    // End grain where the sill's horns stick out past the frame onto the wall.
+    for (const x of [0, width - 5]) {
+      p.rect(x, 3, 5, nose + 5, W.dark);
+      p.rect(x + 1, 4, 3, nose + 2, W.base);
+      for (let y = 6; y < nose + 4; y += 4) p.hline(x + 1, y, 3, W.light);
       p.vline(x === 0 ? 0 : width - 1, 0, SILL_HEIGHT, W.outline);
     }
   }
@@ -230,7 +279,7 @@ export class WindowFrame {
   private readonly sill = new Sprite({ label: 'sill' });
   private theme: FrameTheme;
   private lastLayout: ViewportLayout | null = null;
-  private _surface: SillSurface = { left: 0, right: 0, y: 0, top: 0, frameScale: 1 };
+  private _surface: SillSurface = { left: 0, right: 0, y: 0, top: 0, depth: SILL_TOP_END - SILL_SURFACE_OFFSET, frameScale: 1 };
   private _clear: ClearOpening = { x: 0, y: 0, width: 0, height: 0, frameScale: 1 };
   private _nearness = 1;
 
@@ -310,7 +359,13 @@ export class WindowFrame {
     const overhang = pillarboxed ? SILL_OVERHANG : 1;
     const sillX = snap(opening.x - overhang * fs);
     const sillWidth = Math.ceil(opening.width / fs) + overhang * 2;
-    this.replace(this.sill, drawSill(this.theme, sillWidth, pillarboxed));
+    // Where the jambs stand on it, in the sill's art columns.
+    const jambCol = (screenX: number) => Math.round((screenX - sillX) / fs);
+    const jambs: Array<[number, number]> = [
+      [jambCol(frameX), jambCol(frameX) + FRAME_SIDE - 1],
+      [jambCol(frameX) + frameWidth - FRAME_SIDE, jambCol(frameX) + frameWidth - 1],
+    ];
+    this.replace(this.sill, drawSill(this.theme, sillWidth, pillarboxed, jambs));
     this.sill.scale.set(fs);
     this.sill.position.set(sillX, sillTop);
 
@@ -329,6 +384,7 @@ export class WindowFrame {
       right: visibleRight - (curtainWidth((visibleRight - visibleLeft) / fs) - 6 + tabletSize(this._nearness).reserve) * fs,
       y: sillTop + SILL_SURFACE_OFFSET * fs,
       top: sillTop,
+      depth: SILL_TOP_END - SILL_SURFACE_OFFSET,
       frameScale: fs,
     };
   }

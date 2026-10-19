@@ -10,8 +10,8 @@ describe('sill props', () => {
   });
 
   it('shrink on phones, but no further than the floor', () => {
-    expect(nearness(234)).toBe(0.65);
-    expect(nearness(100)).toBe(0.65);
+    expect(nearness(234)).toBe(0.6);
+    expect(nearness(100)).toBe(0.6);
     expect(dishSize(0.65).width).toBeLessThan(dishSize(1).width);
     expect(dishSize(0.65).width % 2).toBe(0);
   });

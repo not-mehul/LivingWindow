@@ -101,7 +101,7 @@ export function computeViewportLayout(
     screenHeight: sh,
     devicePixelRatio: dpr,
     scale,
-    frameScale: computeFrameScale(scale, dpr),
+    frameScale: computeFrameScale(chromeScale(scale, sw, sh), dpr),
     opening,
     visibleWorldWidth,
     visibleWorldHeight,
@@ -109,6 +109,20 @@ export function computeViewportLayout(
     maxPanX,
     mode,
   };
+}
+
+/** The screen size the window's chrome was designed at: its art px are 2 CSS px there. */
+const CHROME_REFERENCE = { width: 1280, height: 720, scale: 2 };
+
+/**
+ * How big the window's chrome (frame, sill, plant, tablet, the creatures on
+ * the sill) is drawn: by the screen's overall size rather than its height,
+ * so a phone shows the same proportions of frame to view as a monitor does.
+ * Never larger than the world's own scale (big screens are unchanged).
+ */
+export function chromeScale(worldScale: number, screenWidth: number, screenHeight: number): number {
+  const area = (screenWidth * screenHeight) / (CHROME_REFERENCE.width * CHROME_REFERENCE.height);
+  return Math.max(1, Math.min(worldScale, CHROME_REFERENCE.scale * Math.sqrt(area)));
 }
 
 /**
