@@ -91,3 +91,22 @@ export function hourWindow(hours: number, from: number, to: number, ramp = 0.5):
   if (t > span) return 0;
   return Math.min(1, t / ramp, (span - t) / ramp);
 }
+
+// --- Weather lore ------------------------------------------------------------------
+
+/** How likely a cow is to lie down when it next decides what to do: the old saying that cows lie down before rain. */
+export function lieBeforeRain(cloudCover: number, precipitation: number): number {
+  if (precipitation > 0.05) return 0.15;
+  return Math.max(0, Math.min(0.6, (cloudCover - 0.6) * 2.4));
+}
+
+/** A warm, still, dry afternoon: the flies are out and tails are swishing. */
+export function fliesOut(hours: number, wind: number, cloudCover: number, precipitation: number): number {
+  if (precipitation > 0.05 || Math.abs(wind) > 0.35) return 0;
+  return hourWindow(hours, 11.5, 18, 1) * (1 - Math.min(1, cloudCover * 1.2)) * (1 - Math.abs(wind) * 2);
+}
+
+/** The golden hours, morning and evening, when rabbits play. */
+export function goldenHour(hours: number): number {
+  return Math.max(hourWindow(hours, 6, 8, 0.5), hourWindow(hours, 18, 20.2, 0.5));
+}

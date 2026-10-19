@@ -3,6 +3,7 @@ import type { LandscapeDeps, SceneLife, SillBase } from '../../landscapes/types'
 import type { Environment } from '../../scene/Environment';
 import type { MeadowScene } from '../../scene/meadow/MeadowScene';
 import { meadowPlane } from '../../sim/meadowGeometry';
+import { chance, Cooldown, FLIGHT_DISTANCE, goldenHour, groundDistance } from '../../sim/interplay';
 import { chickensOut, owlActivity } from '../../sim/wildlife';
 import { WindowDog } from '../WindowDog';
 import { BirdSystem, defaultActivity, type BirdEcology } from '../BirdSystem';
@@ -65,6 +66,11 @@ export class MeadowLife implements SceneLife {
   readonly breeze: Breeze;
   private readonly deps: LandscapeDeps;
   private time = 0;
+  readonly stages = ['fox', 'eagle', 'sheepdog', 'cows-file', 'rabbits-play', 'trout', 'thunder', 'farmer'] as const;
+  private readonly chaseCooldown = new Cooldown(60, 180);
+  private readonly playCooldown = new Cooldown(120, 300);
+  private readonly riseCooldown = new Cooldown(15, 45);
+  private filedToday = false;
 
   constructor(scene: MeadowScene, deps: LandscapeDeps) {
     this.deps = deps;
@@ -150,8 +156,106 @@ export class MeadowLife implements SceneLife {
     this.birds.startleNear(sillX, radius);
   }
 
+  thunder(distance: number): void {
+    // A crack overhead: the flock bunches, the horse bolts round its paddock, heads come up.
+    if (distance < 0.55) {
+      this.sheep.startle();
+      this.horse.spook();
+      this.chickens.takeCover();
+    }
+    if (distance < 0.85) this.cows.lookUp();
+  }
+
+  stage(name: string): boolean {
+    switch (name) {
+      case 'fox': {
+        // Straight for the hen yard.
+        const door = this.chickens.doorSpot;
+        this.fox.summon({ gx: door.gx - 40, depth: door.depth - 0.2 });
+        return true;
+      }
+      case 'eagle':
+        if (!this.eagle.hunt()) this.eagle.summon(true);
+        return true;
+      case 'sheepdog':
+        this.sheep.dog.summon();
+        return true;
+      case 'cows-file':
+        return this.cows.fileHome();
+      case 'rabbits-play':
+        return this.rabbits.play();
+      case 'trout': {
+        const fly = this.dragonflies.hovering();
+        if (!fly) return false;
+        this.fish.rise(fly.along, fly.across);
+        this.dragonflies.startle(fly.index);
+        return true;
+      }
+      case 'thunder':
+        this.thunder(0.2);
+        return true;
+      case 'farmer':
+        this.farm.callFarmer();
+        return true;
+    }
+    return false;
+  }
+
+  /** Who's noticed whom: the fox among the hens, the eagle over the warren, the dog at the window watching the dog at work. */
+  private interplay(dt: number, env: Environment, sill: SillBase): void {
+    const hours = env.lighting.hours;
+    for (const c of [this.chaseCooldown, this.playCooldown, this.riseCooldown]) c.tick(dt);
+
+    // The fox: hens flap for the door, the hedgehog rolls up, rabbits freeze or run; the sheepdog sees it off.
+    const fox = this.fox.position;
+    if (fox) {
+      const fp = meadowPlane.project(fox.gx, fox.depth);
+      this.chickens.scatter(fox.gx, fox.depth, FLIGHT_DISTANCE.hen * 2);
+      const hog = this.hedgehog.position;
+      if (hog && Math.abs(hog.x - fp.x) < 45 && Math.abs(hog.y - fp.y) < 30) this.hedgehog.curl(8 + Math.random() * 6);
+      this.rabbits.alarm(fp.x, fp.y, 80);
+      const dog = this.sheep.dog;
+      const nearFlock = groundDistance(fox, this.sheep.middle) < 380;
+      if (!dog.chasing && nearFlock && hours > 6 && hours < 21 && this.chaseCooldown.use()) dog.chase(() => this.fox.position);
+      const dp = dog.position;
+      if (dog.chasing && dp && groundDistance(dp, fox) < 70) this.fox.startle();
+    }
+
+    // The eagle low overhead: rabbits freeze, then bolt; hens make for the coop.
+    const eagle = this.eagle.low;
+    if (eagle) {
+      this.rabbits.alarm(eagle.x, Number.NaN, 170, true);
+      const door = this.chickens.doorSpot;
+      if (Math.abs(meadowPlane.project(door.gx, door.depth).x - eagle.x) < 240) this.chickens.takeCover();
+    } else if ((this.rabbits.spots.length > 0 || this.chickens.outside > 0) && chance(0.4, dt)) this.eagle.hunt();
+
+    // At dusk, a few cows amble off nose to tail.
+    if (hours > 19.1 && hours < 20.3 && !this.filedToday && chance(1.2, dt)) this.filedToday = this.cows.fileHome() || this.filedToday;
+    if (hours < 12) this.filedToday = false;
+
+    // Golden hour: the rabbits play.
+    const golden = goldenHour(hours);
+    if (golden > 0.4 && this.rabbits.spots.length > 0 && chance(golden * 0.8, dt) && this.playCooldown.use()) this.rabbits.play();
+
+    // A trout rises under a dragonfly, more towards evening.
+    const fly = this.dragonflies.hovering();
+    if (fly && chance(hours > 16 && hours < 20.5 ? 2 : 0.8, dt) && this.riseCooldown.use()) {
+      this.fish.rise(fly.along, fly.across);
+      this.dragonflies.startle(fly.index);
+    }
+
+    // The window dog can't take its eyes off the sheepdog at work.
+    const sd = this.sheep.dog.position;
+    if (sd && (this.sheep.dog.herding || this.sheep.dog.chasing)) {
+      const p = meadowPlane.project(sd.gx, sd.depth);
+      const screen = this.deps.viewport.worldToScreen(p.x, p.y);
+      this.dog.watch((screen.x - sill.surface.left) / sill.surface.frameScale);
+    } else this.dog.watch(null);
+  }
+
   update(dt: number, env: Environment, sill: SillBase): void {
     this.time += dt;
+    this.interplay(dt, env, sill);
     const state = { ...sill, catX: null, catStalking: false };
     this.dog.update(dt, env, state, this.birds.sillBirds());
     this.birds.update(dt, env, state);

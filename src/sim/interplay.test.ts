@@ -51,3 +51,22 @@ describe('interplay helpers', () => {
     expect(hourWindow(3, 22, 2)).toBe(0);
   });
 });
+
+describe('weather lore', () => {
+  it('has cows lie down as the cloud gathers, more the heavier it is', async () => {
+    const { lieBeforeRain } = await import('./interplay');
+    expect(lieBeforeRain(0.3, 0)).toBe(0);
+    expect(lieBeforeRain(0.75, 0)).toBeGreaterThan(0.2);
+    expect(lieBeforeRain(0.95, 0)).toBeGreaterThan(lieBeforeRain(0.75, 0));
+  });
+
+  it('brings the flies out on warm, still, dry afternoons only', async () => {
+    const { fliesOut, goldenHour } = await import('./interplay');
+    expect(fliesOut(14, 0.05, 0.1, 0)).toBeGreaterThan(0.6);
+    expect(fliesOut(14, 0.6, 0.1, 0)).toBe(0);
+    expect(fliesOut(14, 0.05, 0.1, 0.4)).toBe(0);
+    expect(fliesOut(8, 0.05, 0.1, 0)).toBe(0);
+    expect(goldenHour(19)).toBe(1);
+    expect(goldenHour(13)).toBe(0);
+  });
+});

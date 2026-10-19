@@ -69,6 +69,8 @@ export class WindowDog {
   private lastBirds = 0;
   private boofCooldown = 0;
   private sill: SillState | null = null;
+  /** Something out there it's keen on (sill art px along the window), e.g. the sheepdog at work. */
+  private interest: number | null = null;
 
   constructor(
     private readonly emitSound: LifeSoundSink,
@@ -100,6 +102,16 @@ export class WindowDog {
   /** Bring the dog to the window now. */
   summon(): void {
     this.nextVisit = 0;
+  }
+
+  /**
+   * Something going on outside that a dog can't ignore (sill art px along
+   * the window, or null when it's over): it's likelier to come and look,
+   * and keeps turning its head to watch it, with the odd boof.
+   */
+  watch(sillX: number | null): void {
+    if (sillX !== null && this.interest === null && this.phase === 'gone' && this.nextVisit > 8 && this.rng() < 0.6) this.nextVisit = 2 + this.rng() * 5;
+    this.interest = sillX;
   }
 
   /** `birds`: sill x of each bird on the sill. */
@@ -180,11 +192,20 @@ export class WindowDog {
     }
     this.gazeTime += dt;
     if (this.gazeTime >= this.gazeFor) {
-      this.gaze = chooseGaze(this.gaze, birds.length > 0, this.rng);
+      const keen = this.interest;
+      this.gaze = keen !== null && this.rng() < 0.7 ? 'side' : chooseGaze(this.gaze, birds.length > 0, this.rng);
       this.gazeTime = 0;
       this.gazeFor = this.gaze === 'face' ? 1.5 + this.rng() * 2.5 : 2 + this.rng() * 4;
-      if (this.gaze === 'side') this.facing = birds.length > 0 ? (this.nearest(birds) >= this.x ? 1 : -1) : this.rng() < 0.5 ? 1 : -1;
+      if (this.gaze === 'side') {
+        if (keen !== null) this.facing = keen >= this.x ? 1 : -1;
+        else this.facing = birds.length > 0 ? (this.nearest(birds) >= this.x ? 1 : -1) : this.rng() < 0.5 ? 1 : -1;
+      }
       this.flourish = null;
+    }
+    if (this.interest !== null) {
+      // Following it with its head as it goes.
+      if (this.gaze === 'side') this.facing = this.interest >= this.x ? 1 : -1;
+      if (this.boofCooldown <= 0 && this.rng() < dt / 25) this.boof();
     }
     this.pantTimer -= dt;
     if (this.pantTimer <= 0) {

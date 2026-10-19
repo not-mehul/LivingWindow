@@ -5,6 +5,7 @@ import type { Environment } from '../../scene/Environment';
 import type { GroundPlane } from '../../sim/groundPlane';
 import { FOCAL } from '../../sim/groundPlane';
 import { GroundWalker, type Obstacle, type WalkArea } from '../../sim/groundWalker';
+import { lieBeforeRain } from '../../sim/interplay';
 import { chickensOut, cowsResting } from '../../sim/wildlife';
 import { ChickenSpriteCache, COW_WALK, CowSpriteCache, type ChickenCoat, type ChickenPose, type CowCoat, type CowPose } from '../../sprites/meadowSprites';
 import type { LifeSoundSink } from '../types';
@@ -21,6 +22,8 @@ interface Cow {
   duration: number;
   stride: number;
   sprite: Sprite;
+  /** Walking home in single file at dusk: the cow it follows (none for the leader). */
+  follows?: Cow | null;
 }
 
 /** A cow's height (world px) at depth 1, just in front of the window. */
@@ -34,13 +37,16 @@ const WALK_SPEED = 9;
  * The herd, out on the pasture. Cows graze for long spells, amble a few steps
  * towards or away from the window (growing and shrinking with distance,
  * walking round the oaks, the hen house and the creek), lift their heads and
- * moo. After dark most lie down; one or two wander off, and by morning the
- * herd is back.
+ * moo. As the cloud thickens before rain they lie down, one by one; in the
+ * rain the ones on their feet turn their tails to the wind. At dusk two or
+ * three amble off in single file before settling. After dark most lie down;
+ * one or two wander off, and by morning the herd is back.
  */
 export class CowHerd {
   private readonly cows: Cow[] = [];
   private readonly sprites = new CowSpriteCache();
   private returnTimer = 0;
+  private weather = { cloud: 0, precipitation: 0, wind: 0, raining: false };
 
   constructor(
     private readonly container: Container,
@@ -65,8 +71,43 @@ export class CowHerd {
     return this.cows.map((c) => ({ gx: c.walker.gx, depth: c.walker.depth, state: c.state }));
   }
 
+  /** Heads up from the grass, all of them, at a sudden noise. */
+  lookUp(): void {
+    for (const cow of this.cows) if (cow.state === 'graze' || cow.state === 'stand') this.begin(cow, 'stand', r(3, 7));
+  }
+
+  /** Two or three cows amble off in single file towards the far side of the field, nose to tail, and lie down there. */
+  fileHome(): boolean {
+    const free = this.cows.filter((c) => c.state === 'graze' || c.state === 'stand');
+    if (free.length < 2) return false;
+    // The leader sets off across the field; the cows nearest it fall in behind.
+    const near = (a: Cow, b: Cow) => Math.hypot(a.walker.gx - b.walker.gx, (a.walker.depth - b.walker.depth) * FOCAL);
+    const leaders = free.filter((c) => free.some((o) => o !== c && near(c, o) < 450));
+    if (leaders.length === 0) return false;
+    const leader = leaders[Math.floor(Math.random() * leaders.length)];
+    const lw = leader.walker;
+    const away = lw.gx > 0 ? -1 : 1;
+    const depth = Math.max(this.area.minDepth + 0.3, Math.min(this.area.maxDepth - 0.3, lw.depth + r(-0.3, 0.3)));
+    const half = this.plane.halfWidthAt(depth) * 0.8;
+    let gate = { gx: 0, depth };
+    for (let tries = 0; tries < 10; tries++) {
+      gate = { gx: Math.max(-half, Math.min(half, lw.gx + away * r(240, 400))), depth: depth + r(-0.15, 0.15) };
+      if (!GroundWalker.blocked(this.obstacles, gate.gx, gate.depth, 20)) break;
+    }
+    const followers = free.filter((c) => c !== leader && near(c, leader) < 450).sort((a, b) => near(a, leader) - near(b, leader)).slice(0, 2);
+    const file = [leader, ...followers];
+    file.forEach((cow, i) => {
+      this.begin(cow, 'walk', 0);
+      cow.follows = i === 0 ? null : file[i - 1];
+    });
+    lw.steering = { kind: 'seek', ...gate };
+    return true;
+  }
+
   update(dt: number, env: Environment): void {
     const resting = cowsResting(env.lighting.hours);
+    const { cloudCover, precipitation, wind, kind } = env.weather;
+    this.weather = { cloud: cloudCover, precipitation, wind, raining: kind === 'rain' && precipitation > 0.1 };
     // Wanderers come back by day, in from a side of the field.
     if (!resting && this.cows.length < 5) {
       this.returnTimer -= dt;
@@ -99,6 +140,20 @@ export class CowHerd {
           cow.sprite.destroy();
           this.cows.splice(i, 1);
           continue;
+        }
+      } else if (cow.state === 'walk' && cow.follows !== undefined) {
+        // In the file: the leader heads for the far side; each of the others keeps a length behind the one ahead.
+        const ahead = cow.follows;
+        if (ahead) {
+          const aw = ahead.walker;
+          w.steering = { kind: 'seek', gx: aw.gx - Math.cos(aw.heading) * 34, depth: aw.depth - (Math.sin(aw.heading) * 34) / FOCAL };
+        }
+        const s = w.steering;
+        // The leader stops at the far side; each behind it once it's caught up.
+        const done = ahead ? ahead.state !== 'walk' && s.kind === 'seek' && w.distanceTo(s.gx, s.depth) < 14 : (s.kind === 'seek' && w.distanceTo(s.gx, s.depth) < 10) || cow.timer > 60;
+        if (done || cow.timer > 90) {
+          cow.follows = undefined;
+          this.begin(cow, 'lie', r(60, 160));
         }
       } else if (cow.state === 'walk') {
         const s = w.steering;
@@ -153,6 +208,11 @@ export class CowHerd {
       this.begin(cow, 'lie', r(60, 200));
       return;
     }
+    // Cloud gathering: down they go, before the rain.
+    if (Math.random() < lieBeforeRain(this.weather.cloud, this.weather.precipitation)) {
+      this.begin(cow, 'lie', r(60, 180));
+      return;
+    }
     const roll = Math.random();
     if (roll < 0.3) {
       this.begin(cow, 'walk', 0);
@@ -189,7 +249,9 @@ export class CowHerd {
         pose = 'stand';
     }
     cow.sprite.texture = this.sprites.get(cow.coat, pose, height);
-    cow.sprite.scale.x = cow.walker.facing;
+    // Standing about in the rain with the wind up, they turn their tails to it.
+    const tailToWind = this.weather.raining && Math.abs(this.weather.wind) > 0.25 && cow.state !== 'walk' && cow.state !== 'leave';
+    cow.sprite.scale.x = tailToWind ? (this.weather.wind > 0 ? 1 : -1) : cow.walker.facing;
     cow.sprite.position.set(Math.round(p.x), Math.round(p.y));
     cow.sprite.zIndex = p.y;
     cow.sprite.tint = tint;
@@ -208,9 +270,19 @@ interface Chicken {
   pose: ChickenPose;
   timer: number;
   sprite: Sprite;
+  /** Running for the door in a fluster (s left), after a short freeze (`freeze` s). */
+  fright: number;
+  freeze: number;
+  /** Hiding indoors after a scare (s left). */
+  inside: number;
 }
 
-/** Hens pecking about the yard round the hen house by day, filing in through its door at dusk. */
+/**
+ * Hens pecking about the yard round the hen house by day, filing in through
+ * its door at dusk. A fox prowling near, or an eagle low overhead, sends
+ * them squawking and flapping for the door (after a frozen moment, for the
+ * eagle), and they stay in a while before venturing out again.
+ */
 export class Chickens {
   private readonly hens: Chicken[] = [];
   private readonly sprites = new ChickenSpriteCache();
@@ -232,8 +304,49 @@ export class Chickens {
       const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
       container.addChild(sprite);
       const spot = this.yardSpot();
-      this.hens.push({ coat, ...spot, target: spot, dir: 1, pose: 'stand', timer: r(0, 2), sprite });
+      this.hens.push({ coat, ...spot, target: spot, dir: 1, pose: 'stand', timer: r(0, 2), sprite, fright: 0, freeze: 0, inside: 0 });
     }
+  }
+
+  /** The hen house door, on the ground. */
+  get doorSpot(): { gx: number; depth: number } {
+    return { ...this.door };
+  }
+
+  /** Where the hens out in the yard are. */
+  get spots(): Array<{ gx: number; depth: number }> {
+    return this.hens.filter((h) => h.sprite.visible && h.fright <= 0).map((h) => ({ gx: h.gx, depth: h.depth }));
+  }
+
+  /** Hens within `radius` (ground px) of a prowler run for the door. Returns how many did. */
+  scatter(gx: number, depth: number, radius: number): number {
+    let n = 0;
+    for (const hen of this.hens) {
+      if (!hen.sprite.visible || hen.fright > 0) continue;
+      if (Math.hypot(hen.gx - gx, (hen.depth - depth) * FOCAL) > radius) continue;
+      hen.fright = 8;
+      hen.freeze = r(0, 0.25);
+      n++;
+    }
+    if (n > 0) this.cluck(gx, depth, 0.8);
+    return n;
+  }
+
+  /** A shadow overhead: every hen out freezes a moment, then makes for the door. */
+  takeCover(): number {
+    let n = 0;
+    for (const hen of this.hens) {
+      if (!hen.sprite.visible || hen.fright > 0) continue;
+      hen.fright = 8;
+      hen.freeze = r(0.5, 1.3);
+      n++;
+    }
+    if (n > 0) this.cluck(this.door.gx, this.door.depth, 0.7);
+    return n;
+  }
+
+  private cluck(gx: number, depth: number, gain: number): void {
+    this.sound('chicken-cluck', this.viewport.worldXToStereo(this.plane.project(gx, depth).x), gain);
   }
 
   /** How many hens are out in the yard. */
@@ -253,7 +366,31 @@ export class Chickens {
     for (const hen of this.hens) {
       hen.timer -= dt;
       let speed = 0;
-      if (!out) {
+      if (hen.inside > 0) {
+        // Keeping indoors after a fright; then back out of the door.
+        hen.inside -= dt;
+        hen.sprite.visible = false;
+        if (hen.inside > 0 || !out) continue;
+      }
+      if (hen.fright > 0) {
+        hen.fright -= dt;
+        if (hen.freeze > 0) {
+          // Frozen, head up.
+          hen.freeze -= dt;
+          hen.pose = 'stand';
+        } else {
+          // Squawking and flapping for the door.
+          hen.target = this.door;
+          speed = 36;
+          hen.pose = Math.floor(performance.now() / 110) % 3 === 0 ? 'flap' : 'walk';
+          if (this.distance(hen, this.door) < 3) {
+            hen.sprite.visible = false;
+            hen.fright = 0;
+            hen.inside = r(40, 100);
+            continue;
+          }
+        }
+      } else if (!out) {
         // Head for the coop door, then disappear inside.
         hen.target = this.door;
         speed = 16;

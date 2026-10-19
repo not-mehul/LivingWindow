@@ -1,4 +1,4 @@
-import { Container, Sprite } from 'pixi.js';
+import { Container, Graphics, Sprite } from 'pixi.js';
 import { WORLD_WIDTH } from '../../config';
 import type { Viewport } from '../../core/Viewport';
 import type { Environment } from '../../scene/Environment';
@@ -25,6 +25,13 @@ interface Rabbit {
   /** Washing its face while it sits. */
   groom: boolean;
   sprite: Sprite;
+  /** Frozen with a threat about: it bolts for cover once the freeze is over. */
+  bolt: boolean;
+  /** Chasing about at play (s left); the one it's chasing, if it's the follower. */
+  play: number;
+  chasing: Rabbit | null;
+  /** A leap straight up, mid-play (s left). */
+  binky: number;
 }
 
 /** A sitting rabbit's height at depth 1. */
@@ -42,7 +49,7 @@ export class Rabbits {
       const sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
       container.addChild(sprite);
       const bush = i % bushes.length;
-      this.rabbits.push({ bush, x: bushes[bush].x, target: bushes[bush].x, state: 'hidden', timer: r(3, 20), dir: 1, groom: false, sprite });
+      this.rabbits.push({ bush, x: bushes[bush].x, target: bushes[bush].x, state: 'hidden', timer: r(3, 20), dir: 1, groom: false, sprite, bolt: false, play: 0, chasing: null, binky: 0 });
     }
   }
 
@@ -51,12 +58,81 @@ export class Rabbits {
     for (const rb of this.rabbits) if (rb.state !== 'hidden') this.dash(rb);
   }
 
+  /** Rabbits out in the open (world px, feet). */
+  get spots(): Array<{ x: number; y: number }> {
+    return this.rabbits.filter((rb) => rb.state !== 'hidden').map((rb) => ({ x: rb.x, y: this.bushes[rb.bush].y }));
+  }
+
+  /**
+   * Something dangerous at a world point (y NaN for overhead): a rabbit within `radius` freezes
+   * (ears up) and, if it's close or `bolt` is set, dashes for cover once
+   * its nerve breaks.
+   */
+  alarm(x: number, y: number, radius: number, bolt = false): number {
+    let n = 0;
+    for (const rb of this.rabbits) {
+      if (rb.state === 'hidden' || rb.bolt) continue;
+      // From overhead (y NaN), only how far along the field it is counts.
+      const d = Math.hypot(rb.x - x, Number.isNaN(y) ? 0 : (this.bushes[rb.bush].y - y) * 2);
+      if (d > radius) continue;
+      n++;
+      rb.play = 0;
+      rb.chasing = null;
+      if (d < radius * 0.35 && !bolt) {
+        this.dash(rb);
+        continue;
+      }
+      rb.state = 'freeze';
+      rb.groom = false;
+      rb.timer = r(0.8, 2.2);
+      rb.bolt = bolt || d < radius * 0.7;
+    }
+    return n;
+  }
+
+  /** Golden-hour play: the two rabbits out together, one chasing the other round in quick loops, leaping straight up for joy. */
+  play(): boolean {
+    const out = this.rabbits.find((rb) => rb.state === 'sit' || rb.state === 'hop' || rb.state === 'peek');
+    const other = this.rabbits.find((rb) => rb !== out);
+    if (!out || !other || out.bolt) return false;
+    if (other.state === 'hidden') {
+      // Out from the same bush.
+      other.bush = out.bush;
+      other.x = out.x - out.dir * 6;
+    }
+    for (const rb of [out, other]) {
+      rb.state = 'hop';
+      rb.play = r(5, 9);
+      rb.groom = false;
+    }
+    out.chasing = null;
+    other.chasing = out;
+    out.target = out.x;
+    return true;
+  }
+
   update(dt: number, env: Environment): void {
     const activity = rabbitActivity(env.lighting.hours) * (env.weather.kind === 'rain' ? 0.3 : 1);
     for (const rb of this.rabbits) {
       rb.timer -= dt;
       const home = this.bushes[rb.bush];
-      switch (rb.state) {
+      if (rb.binky > 0) rb.binky -= dt;
+      if (rb.play > 0) {
+        rb.play -= dt;
+        // At play: quick hops in loops round the bush, the other hard on its tail.
+        if (rb.chasing) rb.target = rb.chasing.x - rb.chasing.dir * 7;
+        else if (Math.abs(rb.target - rb.x) < 1) rb.target = home.x + r(-1, 1) * (home.width / 2 + 26);
+        rb.target = Math.max(4, Math.min(WORLD_WIDTH - 4, rb.target));
+        const dx = rb.target - rb.x;
+        if (Math.abs(dx) > 0.5) rb.dir = dx > 0 ? 1 : -1;
+        rb.x += Math.sign(dx) * Math.min(Math.abs(dx), (rb.chasing ? 50 : 44) * dt);
+        if (rb.binky <= 0 && Math.random() < dt * 0.7) rb.binky = 0.4;
+        if (rb.play <= 0) {
+          rb.chasing = null;
+          rb.state = 'sit';
+          rb.timer = r(2, 5);
+        }
+      } else switch (rb.state) {
         case 'hidden':
           if (rb.timer <= 0) {
             if (Math.random() < activity) {
@@ -75,7 +151,10 @@ export class Rabbits {
           break;
         case 'sit':
         case 'freeze':
-          if (rb.timer <= 0) {
+          if (rb.timer <= 0 && rb.bolt) {
+            rb.bolt = false;
+            this.dash(rb);
+          } else if (rb.timer <= 0) {
             const roll = Math.random();
             if (roll < 0.3) this.dash(rb);
             else if (roll < 0.6) {
@@ -114,7 +193,9 @@ export class Rabbits {
       // Sized for how far off its bush stands.
       rb.sprite.texture = this.sprites.get(pose, Math.max(6, Math.min(16, RABBIT_HEIGHT * meadowPlane.scaleAtY(home.y))));
       rb.sprite.scale.x = rb.dir;
-      rb.sprite.position.set(Math.round(rb.x), home.y);
+      // A binky: straight up and down.
+      const leap = rb.binky > 0 ? Math.round(Math.sin((1 - rb.binky / 0.4) * Math.PI) * 6 * meadowPlane.scaleAtY(home.y) * 2) : 0;
+      rb.sprite.position.set(Math.round(rb.x), home.y - leap);
       // Sorted among the bushes and cows; just in front of its own bush while peeking out.
       rb.sprite.zIndex = home.y + 0.5;
       rb.sprite.tint = env.lighting.ambient;
@@ -123,6 +204,9 @@ export class Rabbits {
 
   /** Dash for a bush (the timer marks the hop as a sprint). */
   private dash(rb: Rabbit): void {
+    rb.play = 0;
+    rb.chasing = null;
+    rb.bolt = false;
     const nearest = this.bushes.reduce((best, b, i) => (Math.abs(b.x - rb.x) < Math.abs(this.bushes[best].x - rb.x) ? i : best), 0);
     rb.state = 'hop';
     rb.target = this.bushes[nearest].x;
@@ -158,8 +242,12 @@ const MAX_ALONG = 3.6 * FOCAL;
 export class StreamFishes {
   private readonly fish: CreekFish[] = [];
   private readonly sprites = new TopFishSprites();
+  /** Rings spreading where a trout rose. */
+  private readonly rings: Array<{ x: number; y: number; scale: number; age: number }> = [];
+  private readonly ringGfx = new Graphics();
 
   constructor(container: Container) {
+    container.addChild(this.ringGfx);
     for (let i = 0; i < 8; i++) {
       const kind: FishKind = i < 3 ? 'trout' : 'minnow';
       const sprite = new Sprite({ anchor: 0.5 });
@@ -184,7 +272,36 @@ export class StreamFishes {
     return hit;
   }
 
+  /** A trout rises to take something off the surface here (ground px along and across the creek): a quick dart up, and a ring spreading. */
+  rise(along: number, across: number): void {
+    const trout = this.fish.filter((f) => f.kind === 'trout');
+    const f = trout.reduce((best, t) => (Math.abs(t.along - along) < Math.abs(best.along - along) ? t : best), trout[0]);
+    if (f) {
+      f.dart = 0.35;
+      f.speed = Math.sign(along - f.along || 1) * Math.min(220, Math.abs(along - f.along) * 3 + 40);
+      f.across = across;
+    }
+    const p = meadowCreek.point(along / FOCAL, across);
+    this.rings.push({ x: p.x, y: p.y, scale: p.scale, age: 0 });
+    // A second, fainter ring a beat later.
+    this.rings.push({ x: p.x, y: p.y, scale: p.scale * 0.8, age: -0.35 });
+  }
+
   update(dt: number, env: Environment, time: number): void {
+    const g = this.ringGfx;
+    g.clear();
+    for (let i = this.rings.length - 1; i >= 0; i--) {
+      const ring = this.rings[i];
+      ring.age += dt;
+      if (ring.age > 2) {
+        this.rings.splice(i, 1);
+        continue;
+      }
+      if (ring.age < 0) continue;
+      const rx = (1.5 + ring.age * 7) * Math.max(0.5, ring.scale);
+      const alpha = 0.55 * (1 - ring.age / 2) * (1 - env.lighting.darkness * 0.6);
+      g.ellipse(Math.round(ring.x), Math.round(ring.y), rx, Math.max(0.6, rx * 0.35)).stroke({ color: 0xeaf4f8, width: 1, alpha });
+    }
     const half = meadowCreek.halfWidth * 0.7;
     for (const f of this.fish) {
       if (f.dart > 0) {
@@ -224,6 +341,11 @@ export class StreamFishes {
 
 // --- An eagle soaring on thermals -------------------------------------------
 
+/**
+ * An eagle soaring on thermals, circling high over the field and drifting
+ * with the wind; now and then it drops low over the field in a long, slow
+ * pass, hunting, with a cry, before climbing back up.
+ */
 export class SoaringEagle {
   private readonly sprites = new BirdSpriteCache();
   private sprite: Sprite | null = null;
@@ -232,6 +354,11 @@ export class SoaringEagle {
   private radius = 50;
   private life = 0;
   private timer = r(20, 60);
+  /** The low hunting pass: time into it (s), or negative when not stooping. */
+  private stoop = -1;
+  private readonly stoopLength = 11;
+  private at = { x: 0, y: 0 };
+  private huntOnArrival = false;
 
   constructor(
     private readonly container: Container,
@@ -239,8 +366,23 @@ export class SoaringEagle {
     private readonly sound: LifeSoundSink,
   ) {}
 
-  summon(): void {
+  summon(hunt = false): void {
     this.timer = 0;
+    this.huntOnArrival = hunt;
+  }
+
+  /** Drop low over the field now (if it's up). */
+  hunt(): boolean {
+    if (!this.sprite || this.stoop >= 0 || this.life < 0) return false;
+    this.stoop = 0;
+    return true;
+  }
+
+  /** Where it is, while it's low enough over the field to cast fear (world px). */
+  get low(): { x: number; y: number } | null {
+    if (!this.sprite || this.stoop < 0) return null;
+    const k = this.stoop / this.stoopLength;
+    return k > 0.2 && k < 0.85 ? { ...this.at } : null;
   }
 
   update(dt: number, env: Environment): void {
@@ -253,6 +395,8 @@ export class SoaringEagle {
         this.radius = r(35, 65);
         this.life = r(40, 80);
         this.angle = Math.random() * Math.PI * 2;
+        this.stoop = this.huntOnArrival ? 0 : -1;
+        this.huntOnArrival = false;
       } else if (this.timer <= 0) this.timer = 30;
       return;
     }
@@ -260,9 +404,23 @@ export class SoaringEagle {
     this.angle += dt * 0.35;
     // Slowly drift with the wind while circling; drift away at the end.
     this.centre.x += env.weather.wind * 3 * dt + (this.life < 0 ? 25 * dt : 0);
+    // Now and then, a low hunting pass over the field.
+    if (this.stoop < 0 && this.life > 8 && Math.random() < dt / 90) this.stoop = 0;
+    let drop = 0;
+    let size = 10;
+    if (this.stoop >= 0) {
+      this.stoop += dt;
+      const k = Math.min(1, this.stoop / this.stoopLength);
+      const dip = Math.sin(k * Math.PI);
+      drop = dip * 75;
+      size = 10 + Math.round(dip * 4) * 2;
+      if (this.stoop - dt < 1.2 && this.stoop >= 1.2) this.sound('eagle-cry', this.viewport.worldXToStereo(this.at.x), 1);
+      if (k >= 1) this.stoop = -1;
+    }
     const x = this.centre.x + Math.cos(this.angle) * this.radius;
-    const y = this.centre.y + Math.sin(this.angle) * this.radius * 0.25;
-    this.sprite.texture = this.sprites.get('eagle', 'glide', 10);
+    const y = this.centre.y + Math.sin(this.angle) * this.radius * 0.25 + drop;
+    this.at = { x, y };
+    this.sprite.texture = this.sprites.get('eagle', 'glide', size);
     this.sprite.scale.x = Math.sin(this.angle) > 0 ? -1 : 1;
     this.sprite.position.set(Math.round(x), Math.round(y));
     this.sprite.tint = env.lighting.ambient;

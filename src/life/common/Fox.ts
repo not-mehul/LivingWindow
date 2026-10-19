@@ -48,6 +48,11 @@ export class Fox {
   private spawnTimer = r(20, 60);
   private barkTimer = r(20, 60);
   private visited = false;
+  /** Where to head first, when called up (dev staging). */
+  private toward: { gx: number; depth: number } | null = null;
+  private forced = false;
+  /** How long it keeps on towards a spot before giving up and doing something else. */
+  private legLimit = 30;
 
   constructor(private readonly options: FoxOptions) {
     this.sprite.visible = false;
@@ -67,8 +72,10 @@ export class Fox {
     return this.walker ? this.state : null;
   }
 
-  summon(): void {
+  summon(toward?: { gx: number; depth: number }): void {
     this.spawnTimer = 0;
+    this.toward = toward ?? null;
+    this.forced = true;
   }
 
   /** Startle it into bolting. */
@@ -95,7 +102,8 @@ export class Fox {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0) {
         this.spawnTimer = r(60, 180) / Math.max(0.05, activity);
-        if (activity > 0.05) this.spawn();
+        if (activity > 0.05 || this.forced) this.spawn();
+        this.forced = false;
       }
       return;
     }
@@ -109,12 +117,15 @@ export class Fox {
 
   private spawn(): void {
     const { plane, area, obstacles } = this.options;
-    const side = Math.random() < 0.5 ? -1 : 1;
-    const depth = r(area.minDepth + (area.maxDepth - area.minDepth) * 0.3, area.maxDepth);
+    // Called up towards somewhere: in from the nearer side, at about its depth.
+    const side = this.toward ? -1 : Math.random() < 0.5 ? -1 : 1;
+    const depth = this.toward ? Math.min(area.maxDepth, Math.max(area.minDepth, this.toward.depth)) : r(area.minDepth + (area.maxDepth - area.minDepth) * 0.3, area.maxDepth);
     const w = new GroundWalker(plane, { ...area, halfWidth: (d) => plane.halfWidthAt(d) + 60 * d }, side * (plane.halfWidthAt(depth) + 30 * depth), depth, side > 0 ? Math.PI : 0);
     w.obstacles = obstacles;
     w.speed = TROT;
-    w.steering = this.wanderTarget();
+    w.steering = this.toward ? { kind: 'seek', ...this.toward } : this.wanderTarget();
+    this.legLimit = this.toward ? 80 : 30;
+    this.toward = null;
     this.walker = w;
     this.state = 'trot';
     this.timer = 0;
@@ -158,7 +169,10 @@ export class Fox {
     switch (this.state) {
       case 'trot':
       case 'visit':
-        if (arrived || this.timer > 30) this.decide();
+        if (arrived || this.timer > this.legLimit) {
+          this.legLimit = 30;
+          this.decide();
+        }
         break;
       case 'crouch':
         // Tensed, then the spring.

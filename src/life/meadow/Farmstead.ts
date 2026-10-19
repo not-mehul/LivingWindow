@@ -53,7 +53,9 @@ type FarmerState = 'away' | 'walk' | 'work';
  * breakfast and teatime, a scarecrow in the vegetable patch whose sleeves
  * flap in the gusts, crows that drop in to peck the rows and flap off when it
  * shakes, and now and then the farmer walking down the track to work the
- * patch and back.
+ * patch and back, hoeing his way along a row, stooping to weed, with the
+ * crows following a little way behind him to pick over the turned soil (and
+ * hopping off when he turns their way).
  */
 export class Farmstead {
   readonly container = new Container({ label: 'farmstead' });
@@ -77,6 +79,9 @@ export class Farmstead {
   private stride = 0;
   private facing: PersonFacing = 'side';
   private dir: 1 | -1 = 1;
+  /** Working along the row: a step or two now and then, and stooping to pull a weed. */
+  private hoeTimer = 0;
+  private stooping = 0;
 
   constructor(
     midground: Container,
@@ -114,6 +119,13 @@ export class Farmstead {
     this.farmerLook = { ...randomLook(), hairStyle: 'cap', hat: 0x5a5040, topStyle: 'jacket', top: 0x4a5a3a, bottom: 0x3a4458, shorts: false, shoes: 0x2a2018, bag: 'none', broad: true };
     this.farmer.visible = false;
     midground.addChild(this.farmer);
+  }
+
+  /** Where the farmer is (world px, feet) while he's out, and whether he's working the patch. */
+  get farmerAt(): { x: number; y: number; working: boolean } | null {
+    if (this.farmerState === 'away') return null;
+    const p = meadowPlane.project(this.pos.gx, this.pos.depth);
+    return { x: p.x, y: p.y, working: this.farmerState === 'work' };
   }
 
   /** How many crows are down in the patch. */
@@ -195,15 +207,18 @@ export class Farmstead {
       c.timer -= dt;
       if (c.state === 'away') {
         c.sprite.visible = false;
+        const behind = this.behindFarmer();
+        // While he works the patch they come in sooner: there's turned earth to pick over.
+        if (behind && c.timer > 25) c.timer = r(4, 25);
         if (c.timer <= 0) {
           c.timer = r(40, 160);
-          if (!day || this.farmerState === 'work') continue;
-          // In from the trees, gliding down onto the rows.
+          if (!day) continue;
+          // In from the trees, gliding down onto the rows (behind the farmer, if he's turning them over).
           const side = Math.random() < 0.5 ? -1 : 1;
           c.x = (patch.x0 + patch.x1) / 2 + side * r(60, 120);
           c.y = r(150, 175);
-          c.tx = r(patch.x0 + 3, patch.x1 - 3);
-          c.ty = r(patch.y0 + 1, patch.y1);
+          c.tx = behind ? Math.max(patch.x0 + 2, Math.min(patch.x1 - 2, behind.x + r(-4, 4))) : r(patch.x0 + 3, patch.x1 - 3);
+          c.ty = behind ? Math.max(patch.y0 + 1, Math.min(patch.y1, behind.y + r(-1, 1))) : r(patch.y0 + 1, patch.y1);
           c.state = 'in';
         }
         continue;
@@ -228,8 +243,10 @@ export class Farmstead {
           pose = d < 8 ? 'glide' : FLAP_CYCLE[Math.floor(env.time * 10 + c.phase) % 4];
         }
       } else if (c.state === 'peck') {
-        // Hop and peck along the row; a shaking scarecrow, the farmer or the dark sends them off.
-        if (this.shake > 0.8 || this.farmerState === 'work' || !day || c.timer <= 0) {
+        // Hop and peck along the row; a shaking scarecrow, the dark, or the farmer coming their way sends them off.
+        const farmer = this.farmerAt;
+        const near = farmer !== null && Math.abs(farmer.x - c.x) < (farmer.working ? 3 : 10) && Math.abs(farmer.y - c.y) < 4;
+        if (this.shake > 0.8 || near || !day || c.timer <= 0) {
           c.state = 'off';
           c.vx = (Math.random() < 0.5 ? -1 : 1) * r(18, 26);
           c.vy = -r(10, 16);
@@ -237,7 +254,12 @@ export class Farmstead {
         }
         const t = Math.floor(env.time * 2 + c.phase * 3) % 6;
         pose = t < 2 ? 'peck-down' : t < 3 ? 'peck-reach' : t < 5 ? 'idle' : 'look-back';
-        if (t === 5 && Math.random() < dt * 2) {
+        const behind = this.behindFarmer();
+        if (behind && Math.abs(behind.x - c.x) > 4 && Math.random() < dt * 1.5) {
+          // Hopping after him along the row.
+          c.facing = behind.x > c.x ? 1 : -1;
+          c.x = Math.max(patch.x0, Math.min(patch.x1, c.x + c.facing * 2));
+        } else if (t === 5 && Math.random() < dt * 2) {
           c.x = Math.max(patch.x0, Math.min(patch.x1, c.x + c.facing * 1));
           if (Math.random() < 0.3) c.facing = c.facing === 1 ? -1 : 1;
         }
@@ -257,6 +279,13 @@ export class Farmstead {
       c.sprite.zIndex = c.state === 'peck' ? c.y : 400;
       c.sprite.tint = tint;
     }
+  }
+
+  /** The turned soil a little behind the farmer as he works along the row (world px), or null. */
+  private behindFarmer(): { x: number; y: number } | null {
+    if (this.farmerState !== 'work') return null;
+    const p = meadowPlane.project(this.pos.gx - this.dir * 22, this.pos.depth);
+    return { x: p.x, y: p.y };
   }
 
   private updateFarmer(dt: number, env: Environment): void {
@@ -308,12 +337,21 @@ export class Farmstead {
       }
     } else if (this.farmerState === 'work') {
       this.farmerTimer -= dt;
+      this.hoeTimer -= dt;
+      if (this.stooping > 0) this.stooping -= dt;
+      if (this.hoeTimer <= 0) {
+        this.hoeTimer = r(2.5, 6);
+        // A pace or two along the row, or a stoop to pull a weed.
+        if (Math.random() < 0.35) this.stooping = r(1.5, 3);
+        else this.pos.gx = Math.max(this.route[0].gx - 80, Math.min(this.route[0].gx + 80, this.pos.gx + this.dir * r(8, 16)));
+        if (Math.random() < 0.15) this.dir = this.dir === 1 ? -1 : 1;
+      }
       this.facing = 'front';
       if (this.farmerTimer <= 0 || !workday) this.farmerState = 'walk';
     }
     const p = meadowPlane.project(this.pos.gx, this.pos.depth);
     const height = Math.max(4, Math.round(70 * p.scale));
-    const pose = this.farmerState === 'work' ? 'browse' : 'walk';
+    const pose = this.farmerState === 'work' ? (this.stooping > 0 ? 'crouch' : 'browse') : 'walk';
     const frame = this.farmerState === 'work' ? Math.floor(env.time * 0.8) % 2 : Math.floor(this.stride / 2) % 4;
     const key = `${this.facing}:${pose}:${frame}:${height}`;
     let tex = this.farmerCache.get(key);

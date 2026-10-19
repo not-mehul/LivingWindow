@@ -5,6 +5,7 @@ import type { Environment } from '../../scene/Environment';
 import { BUNCHED, flockSpot, groundDistance, LOOSE, screenGap, type FlockSpread, type GroundSpot } from '../../sim/flock';
 import { FOCAL, type GroundPlane } from '../../sim/groundPlane';
 import { GroundWalker, type Obstacle, type WalkArea } from '../../sim/groundWalker';
+import { chance, fliesOut } from '../../sim/interplay';
 import { cowsResting, sheepdogTime } from '../../sim/wildlife';
 import { drawDogSized, drawHorseSized, drawSheepSized, HORSE_WALK, SHEEP_WALK, type DogPose, type HorsePose, type SheepPose } from '../../sprites/meadowSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
@@ -57,6 +58,8 @@ export class SheepFlock {
   private centreTarget = { gx: -250, depth: 2.3 };
   private retarget = r(20, 40);
   private baaTimer = r(8, 20);
+  /** Bunched up by a fright (thunder overhead) with no dog to do it. */
+  private alarmed = 0;
   readonly dog: Sheepdog;
 
   constructor(
@@ -81,7 +84,26 @@ export class SheepFlock {
       const tight = { gx: r(-BUNCHED.gx, BUNCHED.gx), depth: r(-BUNCHED.depth, BUNCHED.depth) };
       this.sheep.push({ walker: w, state: 'graze', timer: r(1, 12), spot, tight, stride: Math.random() * 4, sprite, mother, size: mother ? r(0.58, 0.66) : r(0.94, 1.06) });
     }
-    this.dog = new Sheepdog(container, plane, area, obstacles, () => this.centre);
+    this.dog = new Sheepdog(container, plane, area, obstacles, () => this.centre, viewport, sound, () => {
+      // A sheep answers the dog's boof.
+      this.baaTimer = Math.min(this.baaTimer, r(0.4, 1.2));
+    });
+  }
+
+  /** Bunch up tight where they stand, as if the dog were on them (a clap of thunder overhead). */
+  startle(): void {
+    this.alarmed = r(18, 32);
+    this.baaTimer = Math.min(this.baaTimer, r(0.3, 1));
+  }
+
+  /** Bunched up, by the dog or a fright. */
+  get bunched(): boolean {
+    return this.dog.herding || this.alarmed > 0;
+  }
+
+  /** The middle of the flock. */
+  get middle(): GroundSpot {
+    return { ...this.centre };
   }
 
   get count(): number {
@@ -122,12 +144,13 @@ export class SheepFlock {
     this.centre.gx += (this.centreTarget.gx - this.centre.gx) * k;
     this.centre.depth += (this.centreTarget.depth - this.centre.depth) * k;
 
+    if (this.alarmed > 0) this.alarmed -= dt;
     for (const s of this.sheep) this.step(s, dt, resting);
     this.dog.update(dt, env);
 
     this.baaTimer -= dt;
     if (this.baaTimer <= 0) {
-      this.baaTimer = this.dog.herding ? r(1.5, 4) : r(12, 35);
+      this.baaTimer = this.bunched ? r(1.5, 4) : r(12, 35);
       const s = this.sheep[Math.floor(Math.random() * this.sheep.length)];
       if (!resting || Math.random() < 0.2) this.sound('sheep-baa', this.viewport.worldXToStereo(s.walker.point.x), (0.4 + 0.4 * (1 - s.walker.point.scale)) * (s.mother ? 0.7 : 1));
     }
@@ -145,7 +168,7 @@ export class SheepFlock {
   private step(s: Sheep, dt: number, resting: boolean): void {
     const w = s.walker;
     s.timer -= dt;
-    const herding = this.dog.herding;
+    const herding = this.bunched;
     if (herding) {
       // Bunch up and move off ahead of the dog.
       if (s.state !== 'flee') s.state = 'flee';
@@ -217,12 +240,16 @@ export class SheepFlock {
   }
 }
 
-type DogState = 'away' | 'outrun' | 'crouch' | 'leave';
+type DogState = 'away' | 'outrun' | 'crouch' | 'sit' | 'lie' | 'chase' | 'leave';
 
 /** The dog's outrun round the flock's middle: across (ground px) and in depth. */
 const OUTRUN = { gx: 170, depth: 0.5 };
 
-/** The sheepdog: out in a wide, fast arc round the flock, a crouching stalk, then away. */
+/**
+ * The sheepdog: out in a wide, fast arc round the flock with a boof or two,
+ * a crouching stalk, then it sits to watch its work and lies down, head on
+ * its paws, before trotting off. A fox near the flock gets chased off.
+ */
 export class Sheepdog {
   private walker: GroundWalker | null = null;
   private readonly sprite = new Sprite({ anchor: { x: 0.5, y: 1 } });
@@ -232,6 +259,7 @@ export class Sheepdog {
   private angle = 0;
   private stride = 0;
   private spin: 1 | -1 = 1;
+  private quarry: (() => GroundSpot | null) | null = null;
 
   constructor(
     container: Container,
@@ -239,6 +267,9 @@ export class Sheepdog {
     private readonly area: WalkArea,
     private readonly obstacles: readonly Obstacle[],
     private readonly flockCentre: () => { gx: number; depth: number },
+    private readonly viewport: Viewport,
+    private readonly sound: LifeSoundSink,
+    private readonly onBoof: () => void = () => {},
   ) {
     this.sprite.visible = false;
     container.addChild(this.sprite);
@@ -252,8 +283,29 @@ export class Sheepdog {
     return this.walker ? { gx: this.walker.gx, depth: this.walker.depth } : null;
   }
 
+  get chasing(): boolean {
+    return this.state === 'chase';
+  }
+
   summon(): void {
     this.timer = 0;
+  }
+
+  /** See off something prowling near the flock: out from the farm if it's away, then flat out at it. */
+  chase(target: () => GroundSpot | null): void {
+    if (this.state === 'chase' || this.state === 'leave') return;
+    if (this.state === 'away') this.start(target()?.gx);
+    this.quarry = target;
+    this.state = 'chase';
+    this.timer = 0;
+    this.boof(0.9);
+  }
+
+  private boof(gain: number): void {
+    const w = this.walker;
+    if (!w) return;
+    this.sound('dog-boof', this.viewport.worldXToStereo(w.point.x), gain * (0.45 + 0.4 * Math.min(1, w.point.scale)));
+    this.onBoof();
   }
 
   update(dt: number, env: Environment): void {
@@ -274,6 +326,8 @@ export class Sheepdog {
       // An ellipse on the ground that reads as a wide loop on screen, outside the bunched flock.
       w.steering = { kind: 'seek', gx: c.gx + Math.cos(this.angle) * OUTRUN.gx, depth: c.depth + Math.sin(this.angle) * OUTRUN.depth };
       w.speed = 85;
+      // A boof to move them on.
+      if (chance(2.5, dt)) this.boof(0.7);
       if (this.timer > 14) {
         this.state = 'crouch';
         this.timer = 0;
@@ -281,9 +335,30 @@ export class Sheepdog {
     } else if (this.state === 'crouch') {
       w.speed = 0;
       if (this.timer > 6) {
-        this.state = 'leave';
-        this.timer = 0;
-        w.steering = { kind: 'exit', side: w.gx < 0 ? -1 : 1 };
+        // Job done: it sits up to watch them settle.
+        this.state = 'sit';
+        this.timer = -r(6, 14);
+      }
+    } else if (this.state === 'sit' || this.state === 'lie') {
+      w.speed = 0;
+      if (this.timer > 0) {
+        if (this.state === 'sit' && Math.random() < 0.7) {
+          // Then lies down, head on its paws.
+          this.state = 'lie';
+          this.timer = -r(8, 22);
+        } else this.leave();
+      }
+    } else if (this.state === 'chase') {
+      const q = this.quarry?.() ?? null;
+      if (!q || this.timer > 14 || groundDistance(q, { gx: w.gx, depth: w.depth }) < 40) {
+        // Seen off (or lost): it stands its ground a moment, watching where it went.
+        this.quarry = null;
+        this.state = 'sit';
+        this.timer = -r(4, 8);
+      } else {
+        w.steering = { kind: 'seek', gx: q.gx, depth: q.depth };
+        w.speed = 95;
+        if (chance(6, dt)) this.boof(0.9);
       }
     } else {
       w.speed = 45;
@@ -300,17 +375,34 @@ export class Sheepdog {
     this.stride += w.speed * w.point.scale * dt;
     const p = w.point;
     const h = Math.max(6, Math.round((DOG_HEIGHT * p.scale) / 2) * 2);
-    const pose: DogPose = this.state === 'crouch' ? 'crouch' : this.state === 'leave' ? (Math.floor(this.stride / 4) % 2 === 0 ? 'trot-1' : 'trot-2') : Math.floor(this.stride / 5) % 2 === 0 ? 'run-1' : 'run-2';
+    const settled = this.state === 'crouch' || this.state === 'sit' || this.state === 'lie';
+    const pose: DogPose = this.state === 'crouch' || this.state === 'sit' || this.state === 'lie'
+      ? this.state
+      : this.state === 'leave'
+        ? Math.floor(this.stride / 4) % 2 === 0
+          ? 'trot-1'
+          : 'trot-2'
+        : Math.floor(this.stride / 5) % 2 === 0
+          ? 'run-1'
+          : 'run-2';
     this.sprite.texture = this.sprites.get(`${pose}:${h}`, () => drawDogSized(pose, h));
-    // Crouched, it faces the flock.
-    this.sprite.scale.x = this.state === 'crouch' ? (c.gx > w.gx ? 1 : -1) : w.facing;
+    // Crouched, sitting or lying, it faces the flock.
+    this.sprite.scale.x = settled ? (c.gx > w.gx ? 1 : -1) : w.facing;
     this.sprite.position.set(Math.round(p.x), Math.round(p.y));
     this.sprite.zIndex = p.y;
     this.sprite.tint = env.lighting.ambient;
   }
 
-  private start(): void {
-    const side = Math.random() < 0.5 ? -1 : 1;
+  private leave(): void {
+    const w = this.walker!;
+    this.state = 'leave';
+    this.timer = 0;
+    w.steering = { kind: 'exit', side: w.gx < 0 ? -1 : 1 };
+  }
+
+  /** Out onto the field from one side (the side nearest `nearGx`, if given). */
+  private start(nearGx?: number): void {
+    const side = nearGx !== undefined ? (nearGx < 0 ? -1 : 1) : Math.random() < 0.5 ? -1 : 1;
     const depth = r(1.8, 2.8);
     const w = new GroundWalker(this.plane, { ...this.area, halfWidth: (d) => this.plane.halfWidthAt(d) + 60 * d }, side * (this.plane.halfWidthAt(depth) + 30 * depth), depth, side > 0 ? Math.PI : 0);
     w.obstacles = this.obstacles;
@@ -329,12 +421,13 @@ export class Sheepdog {
 /** The paddock: ground rectangle beyond the pasture on the left. */
 export const PADDOCK = { gx0: -820, gx1: -520, depth0: 3.8, depth1: 5.0 };
 
-type HorseState = 'graze' | 'walk' | 'stand';
+type HorseState = 'graze' | 'walk' | 'stand' | 'canter';
 
 /**
  * A bay horse in a railed paddock across the field: grazing, ambling to a
- * fresh patch, standing to swish its tail at the flies, and whinnying now
- * and then.
+ * fresh patch, standing to swish its tail at the flies (all the more on a
+ * warm, still afternoon), whinnying now and then, and cantering a lap of
+ * its paddock when thunder cracks overhead.
  */
 export class HorsePaddock {
   readonly back = new Graphics();
@@ -349,6 +442,8 @@ export class HorsePaddock {
   private stride = 0;
   private dir: 1 | -1 = 1;
   private whinnyTimer = r(40, 120);
+  /** Corners of the paddock it canters round when spooked. */
+  private lap: Array<{ gx: number; depth: number }> = [];
 
   constructor(
     container: Container,
@@ -399,10 +494,46 @@ export class HorsePaddock {
     this.front.zIndex = this.plane.project(0, depth0).y + 0.5;
   }
 
+  /** Spooked (a crack of thunder): off round the paddock at a canter, with a whinny. */
+  spook(): void {
+    const { gx0, gx1, depth0, depth1 } = PADDOCK;
+    const corners = [
+      { gx: gx0 + 30, depth: depth0 + 0.15 },
+      { gx: gx1 - 30, depth: depth0 + 0.15 },
+      { gx: gx1 - 30, depth: depth1 - 0.15 },
+      { gx: gx0 + 30, depth: depth1 - 0.15 },
+    ];
+    // Round from the nearest corner, one way or the other, a lap and a bit.
+    const start = corners.reduce((best, c, i) => (Math.abs(c.gx - this.gx) + Math.abs(c.depth - this.depth) * FOCAL < Math.abs(corners[best].gx - this.gx) + Math.abs(corners[best].depth - this.depth) * FOCAL ? i : best), 0);
+    const way = Math.random() < 0.5 ? 1 : 3;
+    this.lap = Array.from({ length: 5 + Math.floor(Math.random() * 2) }, (_, k) => corners[(start + way * (k + 1)) % 4]);
+    this.state = 'canter';
+    this.whinnyTimer = r(0.2, 0.8);
+  }
+
   update(dt: number, env: Environment): void {
     const night = cowsResting(env.lighting.hours);
+    const flies = fliesOut(env.lighting.hours, env.weather.wind, env.weather.cloudCover, env.weather.precipitation);
     this.timer -= dt;
-    if (this.state === 'walk') {
+    if (this.state === 'canter') {
+      const target = this.lap[0];
+      const dx = target.gx - this.gx;
+      const dz = (target.depth - this.depth) * FOCAL;
+      const d = Math.hypot(dx, dz);
+      const s = Math.min(d, 42 * dt);
+      this.gx += (dx / (d || 1)) * s;
+      this.depth += ((dz / (d || 1)) * s) / FOCAL;
+      this.stride += s * this.plane.project(this.gx, this.depth).scale;
+      if (Math.abs(dx) > 1) this.dir = dx > 0 ? 1 : -1;
+      if (d < 3) {
+        this.lap.shift();
+        if (this.lap.length === 0) {
+          // Blowing, it stands a while before it settles.
+          this.state = 'stand';
+          this.timer = r(6, 12);
+        }
+      }
+    } else if (this.state === 'walk') {
       const dx = this.target.gx - this.gx;
       const dz = (this.target.depth - this.depth) * FOCAL;
       const d = Math.hypot(dx, dz);
@@ -429,13 +560,16 @@ export class HorsePaddock {
     const p = this.plane.project(this.gx, this.depth);
     if (this.whinnyTimer <= 0) {
       this.whinnyTimer = r(60, 180);
-      if (!night) this.sound('horse-whinny', this.viewport.worldXToStereo(p.x), 0.75);
+      if (!night || this.state === 'canter') this.sound('horse-whinny', this.viewport.worldXToStereo(p.x), 0.75);
     }
     const h = Math.max(6, Math.round((HORSE_HEIGHT * p.scale) / 2) * 2);
     let pose: HorsePose;
-    if (this.state === 'walk') pose = HORSE_WALK[Math.floor(this.stride / 2.5) % 4];
-    else if (this.state === 'graze') pose = Math.floor(env.time * 0.8) % 2 === 0 ? 'graze-1' : 'graze-2';
-    else pose = !night && Math.floor(env.time * 1.3) % 5 === 0 ? 'swish' : 'stand';
+    // Flies about: the tail goes more often, even with its head down grazing.
+    const swishEvery = flies > 0.3 ? 2 : 5;
+    if (this.state === 'canter') pose = HORSE_WALK[Math.floor(this.stride / 1.6) % 4];
+    else if (this.state === 'walk') pose = HORSE_WALK[Math.floor(this.stride / 2.5) % 4];
+    else if (this.state === 'graze') pose = flies > 0.3 && Math.floor(env.time * 1.1) % 4 === 0 ? 'swish' : Math.floor(env.time * 0.8) % 2 === 0 ? 'graze-1' : 'graze-2';
+    else pose = !night && Math.floor(env.time * 1.3) % swishEvery === 0 ? 'swish' : 'stand';
     this.sprite.texture = this.sprites.get(`${pose}:${h}`, () => drawHorseSized(pose, h));
     this.sprite.scale.x = this.dir;
     this.sprite.position.set(Math.round(p.x), Math.round(p.y));

@@ -43,6 +43,16 @@ export class Hedgehog {
     return this.present;
   }
 
+  /** Where it is (world px, feet), while it's out. */
+  get position(): { x: number; y: number } | null {
+    return this.present ? { x: this.x, y: this.y } : null;
+  }
+
+  /** Roll up tight (a fox snuffling past), for a while after the danger's gone. */
+  curl(seconds: number): void {
+    if (this.present) this.curled = Math.max(this.curled, seconds);
+  }
+
   summon(): void {
     this.forced = true;
     this.timer = 0;
@@ -267,6 +277,21 @@ export class Dragonflies {
 
   get count(): number {
     return this.flies.length;
+  }
+
+  /** One hovering low over the water (ground px along and across the creek), if any. */
+  hovering(): { along: number; across: number; index: number } | null {
+    const i = this.flies.findIndex((f) => f.hover > 0.3);
+    return i < 0 ? null : { along: this.flies[i].along, across: this.flies[i].across, index: i };
+  }
+
+  /** Something snapped at it: off in a blink, well away. */
+  startle(index: number): void {
+    const f = this.flies[index];
+    if (!f) return;
+    f.hover = 0;
+    f.tAlong = Math.max(1.1 * FOCAL, Math.min(2.8 * FOCAL, f.along + (Math.random() < 0.5 ? -1 : 1) * r(140, 220)));
+    f.tAcross = r(-1, 1) * meadowCreek.halfWidth * 1.4;
   }
 
   update(dt: number, env: Environment): void {
