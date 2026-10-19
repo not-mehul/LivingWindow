@@ -13,8 +13,8 @@ import type { LifeSoundSink } from '../types';
 import { DrawnCache } from '../../sprites/wildSprites';
 import { drawGull, drawSandpiper, SANDPIPER_FLY, SANDPIPER_RUN, type GullPose, type SandpiperPose } from '../../sprites/shoreSprites';
 import type { Tracks } from './Tracks';
+import { rand as r } from '../../core/random';
 
-const r = (min: number, max: number) => min + Math.random() * (max - min);
 /** A gull's wingbeat. */
 const GULL_FLAP: readonly GullPose[] = ['flap-up', 'glide', 'flap-down', 'glide'];
 

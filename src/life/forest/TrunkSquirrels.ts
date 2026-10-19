@@ -5,6 +5,7 @@ import type { Trunk } from '../../scene/forest/forestGenerator';
 import { squirrelActivity } from '../../sim/wildlife';
 import { SQUIRREL_CLIMB, SQUIRREL_RUN, SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
+import { rand as r } from '../../core/random';
 
 type State = 'run' | 'climb' | 'cling' | 'nibble' | 'leave';
 
@@ -30,8 +31,6 @@ export interface TrunkLayers {
   mid: Container;
   near: Container;
 }
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
 
 /** Squirrels scampering between trunks and spiralling up and down them. */
 export class TrunkSquirrels {

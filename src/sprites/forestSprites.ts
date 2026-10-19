@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js';
-import { gridToTexture } from './birdSprites';
+import { DrawnCache } from './cache';
 import { limb, Palette, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
 
@@ -208,17 +208,11 @@ export function drawDeerSized(kind: DeerKind, pose: DeerPose, height: number): D
 }
 
 export class DeerSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(kind: DeerKind, pose: DeerPose, height: number): Texture {
     const key = `${kind}:${pose}:${height}`;
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = drawDeerSized(kind, pose, height);
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
+    return this.cache.get(key, () => drawDeerSized(kind, pose, height));
   }
 }
 
@@ -319,16 +313,10 @@ export function drawSquirrelSized(coat: SquirrelCoat, pose: SquirrelPose, size: 
 }
 
 export class SquirrelSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(coat: SquirrelCoat, pose: SquirrelPose, size: number): Texture {
     const key = `${coat}:${pose}:${size}`;
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = drawSquirrelSized(coat, pose, size);
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
+    return this.cache.get(key, () => drawSquirrelSized(coat, pose, size));
   }
 }

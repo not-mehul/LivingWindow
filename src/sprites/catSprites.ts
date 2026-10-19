@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js';
-import { gridToTexture } from './birdSprites';
+import { DrawnCache } from './cache';
 import { limb, Palette, selOut, shadeStep, valueNoise, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
 
@@ -534,16 +534,10 @@ function drawHead(g: PixelGrid, h: Rig['head'], S: number, ink: HeadInk, def: Co
 }
 
 export class CatSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(coat: CatCoat, pose: CatPose): Texture {
     const key = `${coat}:${pose}`;
-    let texture = this.cache.get(key);
-    if (!texture) {
-      const { grid, palette } = drawCat(coat, pose);
-      texture = gridToTexture(grid, palette.colors);
-      this.cache.set(key, texture);
-    }
-    return texture;
+    return this.cache.get(key, () => drawCat(coat, pose));
   }
 }

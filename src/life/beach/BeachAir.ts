@@ -10,8 +10,7 @@ import { bayer, valueNoise } from '../../scene/common/paint';
 import { BEACH_HORIZON, beachPlane, BREAK_S, shoreCoords, shorePoint, shoreXAtY } from '../../sim/shore';
 import { pixelHash } from '../../sprites/raster';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** How hard the sand is blowing (0..1): only in a real wind, and not once rain has wet it. */
 export function sandDrift(wind: number, precipitation: number): number {

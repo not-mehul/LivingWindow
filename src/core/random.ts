@@ -21,3 +21,8 @@ export function randomRange(rng: () => number, min: number, max: number): number
 export function randomInt(rng: () => number, min: number, maxInclusive: number): number {
   return Math.floor(randomRange(rng, min, maxInclusive + 1));
 }
+
+/** A random number between `min` and `max` (live simulation, unseeded). */
+export function rand(min: number, max: number): number {
+  return min + Math.random() * (max - min);
+}

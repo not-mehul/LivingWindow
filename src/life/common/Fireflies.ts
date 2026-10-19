@@ -1,8 +1,7 @@
 import type { Graphics } from 'pixi.js';
 import type { Environment } from '../../scene/Environment';
 import { fireflyLevel } from '../../sim/wildlife';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 interface Firefly {
   x: number;

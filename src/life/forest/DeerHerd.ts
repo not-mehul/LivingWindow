@@ -8,6 +8,7 @@ import { alarmAt, groundDistance } from '../../sim/interplay';
 import { deerActivity } from '../../sim/wildlife';
 import { DEER_WALK, DeerSpriteCache, type DeerKind, type DeerPose } from '../../sprites/forestSprites';
 import type { LifeSoundSink } from '../types';
+import { rand as r } from '../../core/random';
 
 type DeerState = 'walk' | 'graze' | 'alert' | 'bound' | 'leave';
 
@@ -36,8 +37,6 @@ const DOE_HEIGHT = 44;
 const WALK_SPEED = 13;
 const BOUND_SPEED = 70;
 const SINK_SECONDS = 0.9;
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
 
 /**
  * Deer in the wood in front of the cabin. They come up from the valley or in

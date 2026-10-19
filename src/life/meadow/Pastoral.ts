@@ -10,8 +10,7 @@ import { cowsResting, sheepdogTime } from '../../sim/wildlife';
 import { drawDogSized, drawHorseSized, drawSheepSized, HORSE_WALK, SHEEP_WALK, type DogPose, type HorsePose, type SheepPose } from '../../sprites/meadowSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** Heights (world px) at depth 1. */
 const SHEEP_HEIGHT = 30;

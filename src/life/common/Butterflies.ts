@@ -2,8 +2,7 @@ import { Sprite, type Container } from 'pixi.js';
 import type { Environment } from '../../scene/Environment';
 import { butterflyActivity } from '../../sim/wildlife';
 import { drawButterfly, DrawnCache, type ButterflyKind } from '../../sprites/wildSprites';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 interface Butterfly {
   kind: ButterflyKind;

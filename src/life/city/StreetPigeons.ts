@@ -4,8 +4,7 @@ import { FOCAL } from '../../sim/groundPlane';
 import { chance } from '../../sim/interplay';
 import { BirdSpriteCache, FLAP_CYCLE, type BirdPose } from '../../sprites/birdSprites';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 type Species = 'pigeon' | 'crow';
 

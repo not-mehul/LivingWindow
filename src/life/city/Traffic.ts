@@ -1,5 +1,5 @@
 import { Container, Sprite, type Texture } from 'pixi.js';
-import { gridToTexture } from '../../sprites/birdSprites';
+import { gridToTexture } from '../../sprites/cache';
 import { drawPerson, randomLook, type PersonLook } from '../../sprites/people';
 import {
   drawPushcart,

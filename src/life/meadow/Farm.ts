@@ -9,8 +9,7 @@ import { lieBeforeRain } from '../../sim/interplay';
 import { chickensOut, cowsResting } from '../../sim/wildlife';
 import { ChickenSpriteCache, COW_WALK, CowSpriteCache, type ChickenCoat, type ChickenPose, type CowCoat, type CowPose } from '../../sprites/meadowSprites';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 type CowState = 'graze' | 'walk' | 'stand' | 'lie' | 'leave';
 

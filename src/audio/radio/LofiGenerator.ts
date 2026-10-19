@@ -1,4 +1,4 @@
-import { createRng } from '../../core/random';
+import { createRng, rand } from '../../core/random';
 import type { NoiseBank } from '../noise';
 import { bassNote, createTrack, midiToFrequency, stepDuration, voiceChord, type Track } from './music';
 
@@ -8,8 +8,6 @@ const LOOKAHEAD = 0.15;
 const HIDDEN_LOOKAHEAD = 1.6;
 const TICK_MS = 25;
 const INTRO_BARS = 2;
-
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 /**
  * "Living Window FM": an endless, generative lofi hip-hop station. Each track

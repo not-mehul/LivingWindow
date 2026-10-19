@@ -8,8 +8,7 @@ import { rabbitActivity } from '../../sim/wildlife';
 import { BirdSpriteCache } from '../../sprites/birdSprites';
 import { RABBIT_HOP, RabbitSprites, TOP_FISH_HEADINGS, TopFishSprites, type FishKind, type RabbitPose } from '../../sprites/meadowSprites';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 // --- Rabbits darting between bushes --------------------------------------
 

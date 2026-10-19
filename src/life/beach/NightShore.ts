@@ -5,8 +5,7 @@ import type { Environment } from '../../scene/Environment';
 import { drawNightjar, NIGHTJAR_FRAMES } from '../../sprites/shoreSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** How much the nightjars are about (0..1): from the last of the dusk well into the night, and again before dawn. */
 export function nightjarActivity(hours: number): number {

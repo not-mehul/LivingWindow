@@ -4,8 +4,7 @@ import type { SoundId } from '../sounds/SoundBank';
 import { Crickets } from './nature';
 import { birdActivity } from './schedules';
 import { Soundscape } from './Soundscape';
-
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand } from '../../core/random';
 
 /**
  * The deep forest: wind through the canopy, leaves rustling with every

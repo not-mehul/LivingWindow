@@ -1,13 +1,12 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { gridToTexture } from '../../sprites/cache';
 import { lerpColor } from '../../core/color';
-import { gridToTexture } from '../../sprites/birdSprites';
 import { drawPerson, randomLook, type PersonFacing, type PersonLook, type PersonPose } from '../../sprites/people';
 import type { Environment } from '../../scene/Environment';
 import { projectPoint } from '../../sim/cityGeometry';
 import { gardenerOut, pigeonFeederOut, windowCleanersOut } from '../../sim/wildlife';
 import { PERSON_HEIGHT_AT_1 } from '../StreetLife';
-
-const r = (a: number, b: number) => a + Math.random() * (b - a);
+import { rand as r } from '../../core/random';
 
 /** A person somewhere on the roofs, drawn at their depth. */
 class Figure {

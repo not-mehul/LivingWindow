@@ -4,8 +4,7 @@ import type { Environment } from '../../scene/Environment';
 import { shorePoint } from '../../sim/shore';
 import { APPROACH, BACKWASH, RUN_UP, type Wave } from '../../sim/waves';
 import { pixelHash } from '../../sprites/raster';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** What the froth needs from the beach. */
 export interface FrothShore {

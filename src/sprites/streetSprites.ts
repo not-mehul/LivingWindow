@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js';
-import { gridToTexture } from './birdSprites';
+import { DrawnCache, gridToTexture } from './cache';
 import { Palette, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
 import { drawPerson, personKey, type PersonFacing, type PersonLook, type PersonPose } from './people';
 
@@ -10,26 +10,15 @@ export { randomLook, type PersonFacing, type PersonLook, type PersonPose } from 
 
 /** Each pedestrian's sprites, drawn at the height they're seen and dropped when they leave. */
 export class PersonSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(look: PersonLook, id: number, facing: PersonFacing, pose: PersonPose, frame: number, umbrella: boolean, height: number): Texture {
     const key = personKey(id, facing, pose, frame, umbrella, height);
-    let texture = this.cache.get(key);
-    if (!texture) {
-      const { grid, palette } = drawPerson(look, facing, pose, frame, umbrella, height);
-      texture = gridToTexture(grid, palette.colors);
-      this.cache.set(key, texture);
-    }
-    return texture;
+    return this.cache.get(key, () => drawPerson(look, facing, pose, frame, umbrella, height));
   }
 
   forget(id: number): void {
-    for (const key of [...this.cache.keys()]) {
-      if (key.startsWith(`${id}:`)) {
-        this.cache.get(key)?.destroy(true);
-        this.cache.delete(key);
-      }
-    }
+    this.cache.forget(`${id}:`);
   }
 }
 
@@ -445,27 +434,21 @@ function glowBlob(g: PixelGrid, x: number, y: number, radius: number, color: num
 export const STALL_LIGHT_PALETTE = [0, 0xffe6a0, 0xff7a3c, 0xffc870, 0xffd8a8, 0x4ae8ff, 0xff4aa8, 0x9aff4a];
 
 export class StallSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
+  private readonly lightTextures = new Map<string, Texture | null>();
 
   /** A stall at a set-up stage, drawn `height` px tall (it's seen at many distances), facing either way. */
   get(kind: StallKind, stage: number, height: number, mirrored = false): Texture {
     const key = `${kind}:${stage}:${height}:${mirrored}`;
-    let texture = this.cache.get(key);
-    if (!texture) {
-      const { grid, palette } = drawStallSized(kind, stage, height, mirrored);
-      texture = gridToTexture(grid, palette.colors);
-      this.cache.set(key, texture);
-    }
-    return texture;
+    return this.cache.get(key, () => drawStallSized(kind, stage, height, mirrored));
   }
 
   lights(kind: StallKind, height: number, mirrored = false): Texture | null {
-    const key = `${kind}:lights:${height}:${mirrored}`;
-    if (this.cache.has(key)) return this.cache.get(key) ?? null;
+    const key = `${kind}:${height}:${mirrored}`;
+    if (this.lightTextures.has(key)) return this.lightTextures.get(key) ?? null;
     const grid = drawStallLightsSized(kind, height, mirrored);
-    if (!grid) return null;
-    const texture = gridToTexture(grid, STALL_LIGHT_PALETTE);
-    this.cache.set(key, texture);
+    const texture = grid ? gridToTexture(grid, STALL_LIGHT_PALETTE) : null;
+    this.lightTextures.set(key, texture);
     return texture;
   }
 }

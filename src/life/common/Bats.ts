@@ -3,8 +3,7 @@ import { lerpColor } from '../../core/color';
 import type { Environment } from '../../scene/Environment';
 import { batActivity } from '../../sim/wildlife';
 import { drawBat, DrawnCache } from '../../sprites/wildSprites';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 interface Bat {
   x: number;

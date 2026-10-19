@@ -1,5 +1,5 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { gridToTexture } from '../../sprites/birdSprites';
+import { gridToTexture } from '../../sprites/cache';
 import { drawBusker, drawPerson, randomLook, type PersonFacing, type PersonLook, type PersonPose } from '../../sprites/people';
 import type { StallKind } from '../../sprites/streetSprites';
 import type { Environment } from '../../scene/Environment';
@@ -8,8 +8,7 @@ import { FOCAL } from '../../sim/groundPlane';
 import { buskerOut } from '../../sim/wildlife';
 import type { LifeSoundSink } from '../types';
 import { PERSON_HEIGHT_AT_1 } from '../StreetLife';
-
-const r = (a: number, b: number) => a + Math.random() * (b - a);
+import { rand as r } from '../../core/random';
 
 interface Bystander {
   look: PersonLook;

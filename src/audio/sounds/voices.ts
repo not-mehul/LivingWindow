@@ -1,4 +1,5 @@
 import type { NoiseBank } from '../noise';
+import { rand } from '../../core/random';
 
 /**
  * Synthesized stand-ins for every one-shot sound. Each voice renders into
@@ -14,8 +15,6 @@ export type SynthVoice = (
   rate: number,
   noise: NoiseBank,
 ) => number;
-
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
 
 /** Attack–decay envelope on a gain param. */
 function envelope(param: AudioParam, when: number, attack: number, peak: number, decay: number): void {

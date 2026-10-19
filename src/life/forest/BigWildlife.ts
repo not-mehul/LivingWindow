@@ -9,8 +9,7 @@ import { bearActivity, elkOut } from '../../sim/wildlife';
 import { DEER_WALK, drawDeerSized } from '../../sprites/forestSprites';
 import { BEAR_WALK, drawBear, DrawnCache, type BearPose } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** A bear's height (world px) at depth 1. */
 const BEAR_HEIGHT = 40;

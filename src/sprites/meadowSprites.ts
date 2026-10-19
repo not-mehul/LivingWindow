@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js';
-import { gridToTexture } from './birdSprites';
+import { DrawnCache } from './cache';
 import { evenSize, limb, Palette, selOut, shadedEllipse, valueNoise, type Drawn, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
 
@@ -207,18 +207,12 @@ function drawCowHead(
 }
 
 export class CowSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(coat: CowCoat, pose: CowPose, height: number): Texture {
     const h = evenSize(height, 6);
     const key = `${coat}:${pose}:${h}`;
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = drawCowSized(coat, pose, h);
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
+    return this.cache.get(key, () => drawCowSized(coat, pose, h));
   }
 }
 
@@ -303,18 +297,12 @@ export function drawChickenSized(coat: ChickenCoat, pose: ChickenPose, height: n
 }
 
 export class ChickenSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(coat: ChickenCoat, pose: ChickenPose, height: number): Texture {
     const h = evenSize(height, 6);
     const key = `${coat}:${pose}:${h}`;
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = drawChickenSized(coat, pose, h);
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
+    return this.cache.get(key, () => drawChickenSized(coat, pose, h));
   }
 }
 
@@ -422,18 +410,12 @@ function drawRabbitHead(
 }
 
 export class RabbitSprites {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(pose: RabbitPose, height: number, species: 'rabbit' | 'hare' = 'rabbit'): Texture {
     const h = evenSize(height, 6);
     const key = `${species}:${pose}:${h}`;
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = drawRabbitSized(pose, h, species);
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
+    return this.cache.get(key, () => drawRabbitSized(pose, h, species));
   }
 }
 
@@ -505,18 +487,12 @@ export function drawTopFishSized(kind: FishKind, heading: number, frame: 0 | 1, 
 }
 
 export class TopFishSprites {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(kind: FishKind, heading: number, frame: 0 | 1, shadow = false): Texture {
     const h = ((Math.round(heading) % TOP_FISH_HEADINGS) + TOP_FISH_HEADINGS) % TOP_FISH_HEADINGS;
     const key = `${kind}:${h}:${frame}:${shadow}`;
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = drawTopFishSized(kind, h, frame, shadow);
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
+    return this.cache.get(key, () => drawTopFishSized(kind, h, frame, shadow));
   }
 }
 

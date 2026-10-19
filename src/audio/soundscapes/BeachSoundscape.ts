@@ -3,8 +3,7 @@ import type { Environment } from '../../scene/Environment';
 import type { AudioEngine } from '../AudioEngine';
 import { Crickets } from './nature';
 import { Soundscape } from './Soundscape';
-
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand } from '../../core/random';
 
 /**
  * The shore: a low roar of distant swells, every breaking wave as a crash

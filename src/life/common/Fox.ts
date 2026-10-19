@@ -7,10 +7,9 @@ import { GroundWalker, type Obstacle, type WalkArea } from '../../sim/groundWalk
 import { foxActivity } from '../../sim/wildlife';
 import { drawFox, DrawnCache, FOX_TROT, type FoxPose } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
+import { rand as r } from '../../core/random';
 
 type FoxState = 'trot' | 'sniff' | 'sit' | 'crouch' | 'pounce' | 'visit' | 'bolt' | 'leave';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
 
 /** A fox's height (world px) at depth 1. */
 const FOX_HEIGHT = 22;

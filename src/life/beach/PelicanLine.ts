@@ -7,8 +7,7 @@ import { hourWindow } from '../../sim/interplay';
 import { BEACH_HORIZON } from '../../sim/shore';
 import { drawPelican, type PelicanPose } from '../../sprites/beachSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 const FLAP: readonly PelicanPose[] = ['flap-up', 'flap-mid', 'flap-down', 'flap-mid'];
 

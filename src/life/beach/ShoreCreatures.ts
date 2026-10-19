@@ -13,8 +13,7 @@ import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import type { FishAndGulls } from './Shoreline';
 import type { Tracks } from './Tracks';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** Depths along the beach that are comfortably in view. */
 const NEAR = 1.3;

@@ -7,8 +7,7 @@ import { FOCAL } from '../../sim/groundPlane';
 import { butterflyActivity, hedgehogActivity, roeDeerOut } from '../../sim/wildlife';
 import { drawDeerSized } from '../../sprites/forestSprites';
 import { drawHedgehog, DrawnCache } from '../../sprites/wildSprites';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 // --- A hedgehog in the flower bank --------------------------------------------------------
 

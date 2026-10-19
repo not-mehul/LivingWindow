@@ -1,5 +1,5 @@
 import { Texture } from 'pixi.js';
-import { CanvasSource } from 'pixi.js';
+import { gridToTexture } from './cache';
 import { CLOSE_SIZE, CLOSE_SPECIES, drawBirdClose } from './birdClose';
 import { PixelGrid, pixelHash } from './raster';
 
@@ -725,13 +725,3 @@ export class BirdSpriteCache {
   }
 }
 
-/** Upload an indexed grid as a crisp, nearest-sampled texture. */
-export function gridToTexture(grid: PixelGrid, colors: readonly number[]): Texture {
-  const canvas = document.createElement('canvas');
-  canvas.width = grid.width;
-  canvas.height = grid.height;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('2D canvas unavailable');
-  ctx.putImageData(new ImageData(grid.toRGBA(colors) as Uint8ClampedArray<ArrayBuffer>, grid.width, grid.height), 0, 0);
-  return new Texture({ source: new CanvasSource({ resource: canvas, scaleMode: 'nearest', resolution: 1 }) });
-}

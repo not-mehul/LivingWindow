@@ -7,8 +7,7 @@ import type { Environment } from '../../scene/Environment';
 import { BEACH_HORIZON, shoreXAtY } from '../../sim/shore';
 import { drawFishingBoat, drawSailboat } from '../../sprites/shoreSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** How many sailboats are out (0..1 of the most): fair-weather daytime sailors, a breeze but not a blow. */
 export function sailingWeather(hours: number, wind: number, precipitation: number, lightning: number): number {

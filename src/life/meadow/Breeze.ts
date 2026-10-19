@@ -7,8 +7,8 @@ import type { Environment } from '../../scene/Environment';
 import { bayer } from '../../scene/common/paint';
 import { FOCAL } from '../../sim/groundPlane';
 import { meadowPlane } from '../../sim/meadowGeometry';
+import { rand as r } from '../../core/random';
 
-const r = (min: number, max: number) => min + Math.random() * (max - min);
 const LEAVES = [0xc8762a, 0xd8a040, 0x9a5a2a, 0xb84a2a];
 
 /** The pasture rows the gusts run over (world y), from the far field to the flower bank. */

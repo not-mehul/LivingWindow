@@ -3,8 +3,7 @@ import type { AudioEngine } from '../AudioEngine';
 import type { SoundId } from '../sounds/SoundBank';
 import { birdActivity, cityBusyness } from './schedules';
 import { Soundscape } from './Soundscape';
-
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand } from '../../core/random';
 
 /**
  * Landscape ambience for the downtown rooftop: a low city hum, cars passing

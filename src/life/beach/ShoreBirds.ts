@@ -8,8 +8,8 @@ import { drawEgret, drawFrigatebird, drawGull, drawJumpFish, JUMP_FRAMES, type E
 import { DrawnCache } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
 import type { Tracks } from './Tracks';
+import { rand as r } from '../../core/random';
 
-const r = (min: number, max: number) => min + Math.random() * (max - min);
 const daylight = (env: Environment) => env.lighting.darkness < 0.45 && env.weather.lightning < 0.3 && env.weather.precipitation < 0.5;
 const GULL_FLAP: readonly GullPose[] = ['flap-up', 'glide', 'flap-down', 'glide'];
 /** A standing gull's height right in front of the window, and an egret's. */

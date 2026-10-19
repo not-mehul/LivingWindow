@@ -1,5 +1,3 @@
-import type { Texture } from 'pixi.js';
-import { gridToTexture } from './birdSprites';
 import { eye, limb, Palette, rimShade, selOut, shadedEllipse, type Drawn, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
 
@@ -11,20 +9,7 @@ import { PixelGrid, pixelHash } from './raster';
 
 type Pt = readonly [number, number];
 
-/** A tiny cache of drawn textures by key. */
-export class DrawnCache {
-  private readonly cache = new Map<string, Texture>();
-
-  get(key: string, draw: () => Drawn): Texture {
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = draw();
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
-  }
-}
+export { DrawnCache } from './cache';
 
 // --- Fox ------------------------------------------------------------------
 

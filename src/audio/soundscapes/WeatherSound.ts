@@ -1,8 +1,7 @@
 import type { Environment } from '../../scene/Environment';
 import type { AudioEngine } from '../AudioEngine';
 import { thunderParams } from '../spatial';
-
-const rand = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand } from '../../core/random';
 
 /** Optional recorded loops / one-shots that replace the synthesized weather. */
 export interface WeatherRecordings {

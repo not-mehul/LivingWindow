@@ -11,8 +11,8 @@ import { BirdSpriteCache, FLAP_CYCLE } from '../../sprites/birdSprites';
 import { drawDeerSized, type DeerPose } from '../../sprites/forestSprites';
 import { DrawnCache, drawWolf, WOLF_WALK, type WolfPose } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
+import { rand as r } from '../../core/random';
 
-const r = (min: number, max: number) => min + Math.random() * (max - min);
 const WOLF_HEIGHT = 30;
 const STAG_HEIGHT = 58;
 

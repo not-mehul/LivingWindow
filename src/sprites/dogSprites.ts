@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js';
-import { gridToTexture } from './birdSprites';
+import { DrawnCache } from './cache';
 import { limb, Palette, selOut, shadeStep, valueNoise, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
 
@@ -554,16 +554,10 @@ export function drawWindowDog(look: DogLook, pose: DogPose): { grid: PixelGrid; 
 }
 
 export class DogSpriteCache {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   get(look: DogLook, pose: DogPose): Texture {
     const key = `${dogLookKey(look)}:${pose}`;
-    let texture = this.cache.get(key);
-    if (!texture) {
-      const { grid, palette } = drawWindowDog(look, pose);
-      texture = gridToTexture(grid, palette.colors);
-      this.cache.set(key, texture);
-    }
-    return texture;
+    return this.cache.get(key, () => drawWindowDog(look, pose));
   }
 }

@@ -1,5 +1,5 @@
 import type { Texture } from 'pixi.js';
-import { gridToTexture } from './birdSprites';
+import { DrawnCache } from './cache';
 import { evenSize, limb, Palette, selOut, shadedEllipse, type Drawn } from './kit';
 import { PixelGrid } from './raster';
 
@@ -86,20 +86,14 @@ export function drawTurtleSized(frame: 0 | 1 | 2, width: number): Drawn {
 }
 
 export class TurtleSprites {
-  private readonly cache = new Map<string, Texture>();
+  private readonly cache = new DrawnCache();
 
   /** A crawl frame at a width (rounded to even sizes so the cache stays small). */
   frame(i: number, width = 20): Texture {
     const f = (((i % 3) + 3) % 3) as 0 | 1 | 2;
     const w = evenSize(width, 6);
     const key = `${f}:${w}`;
-    let t = this.cache.get(key);
-    if (!t) {
-      const { grid, palette } = drawTurtleSized(f, w);
-      t = gridToTexture(grid, palette.colors);
-      this.cache.set(key, t);
-    }
-    return t;
+    return this.cache.get(key, () => drawTurtleSized(f, w));
   }
 }
 

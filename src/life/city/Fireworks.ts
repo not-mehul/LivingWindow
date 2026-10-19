@@ -5,8 +5,7 @@ import { glowTexture } from '../../scene/common/glow';
 import { NightKey } from '../../sim/nights';
 import { fireworksNight, fireworksTime } from '../../sim/wildlife';
 import type { LifeSoundSink } from '../types';
-
-const r = (a: number, b: number) => a + Math.random() * (b - a);
+import { rand as r } from '../../core/random';
 
 type BurstKind = 'peony' | 'willow' | 'ring' | 'crackle';
 

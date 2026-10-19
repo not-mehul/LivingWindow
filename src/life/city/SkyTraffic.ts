@@ -1,17 +1,16 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { gridToTexture } from '../../sprites/cache';
 import { WORLD_WIDTH } from '../../config';
 import { lerpColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
 import { bayer } from '../../scene/common/paint';
 import { glowTexture } from '../../scene/common/glow';
-import { gridToTexture } from '../../sprites/birdSprites';
 import { Palette, shadedEllipse } from '../../sprites/kit';
 import { PixelGrid } from '../../sprites/raster';
 import { adDronesOut, blimpOut } from '../../sim/wildlife';
 import { drawText, textWidth } from '../../scene/city/pixelFont';
-
-const r = (a: number, b: number) => a + Math.random() * (b - a);
+import { rand as r } from '../../core/random';
 
 type CraftKind = 'plane' | 'helicopter' | 'drone' | 'blimp' | 'addrone';
 

@@ -9,8 +9,7 @@ import { mushroomLevel, nightEyesLevel, rabbitActivity, woodpeckerActivity } fro
 import { RABBIT_HOP, RabbitSprites, type RabbitPose } from '../../sprites/meadowSprites';
 import { drawMushroom, drawWoodpeckerCling, DrawnCache, type MushroomKind } from '../../sprites/wildSprites';
 import type { LifeSoundSink } from '../types';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 // --- The hare -------------------------------------------------------------------
 

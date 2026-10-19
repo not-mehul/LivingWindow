@@ -1,14 +1,14 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { gridToTexture } from '../../sprites/cache';
 import { lerpColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
 import { glowTexture } from '../../scene/common/glow';
 import type { FarmLayout } from '../../scene/meadow/farmstead';
 import { meadowPlane } from '../../sim/meadowGeometry';
-import { BirdSpriteCache, FLAP_CYCLE, gridToTexture, type BirdPose } from '../../sprites/birdSprites';
+import { BirdSpriteCache, FLAP_CYCLE, type BirdPose } from '../../sprites/birdSprites';
 import { drawPerson, randomLook, type PersonFacing, type PersonLook } from '../../sprites/people';
-
-const r = (min: number, max: number) => min + Math.random() * (max - min);
+import { rand as r } from '../../core/random';
 
 /** When someone's home and the lights are on: the evening, and before dawn on dark mornings. */
 export function farmhouseLit(hours: number, dark: boolean): boolean {
