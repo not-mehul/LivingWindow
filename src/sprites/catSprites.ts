@@ -1,7 +1,9 @@
 import type { Texture } from 'pixi.js';
 import { DrawnCache } from './cache';
-import { limb, Palette, selOut, shadeStep, valueNoise, type Ramp } from './kit';
+import { luminance } from '../core/color';
+import { Palette, selOut, valueNoise, type Ramp } from './kit';
 import { PixelGrid, pixelHash } from './raster';
+import { furGrain, Sculpt } from './sculpt';
 
 export type CatPose =
   | 'walk-1' | 'walk-2' | 'walk-3' | 'walk-4' | 'walk-5' | 'walk-6' | 'walk-7' | 'walk-8'
@@ -264,38 +266,84 @@ function rigFor(pose: CatPose): Rig {
   return walkRig(0);
 }
 
+// Part ids in the cat's sculpt.
+const TAIL = 1;
+const FAR_LEG = 2;
+const BODY = 3;
+const HAUNCH = 5;
+const NEAR_LEG = 6;
+const PAW = 7;
+const NECK = 8;
+const FAR_EAR = 9;
+const SKULL = 10;
+const MUZZLE = 11;
+const NEAR_EAR = 12;
+const EAR_IN = 13;
+const FAR_PAW = 14;
+
 /**
- * The cat, facing right, feet on the bottom row of an 88×57 box: a soft,
- * rounded body shaded with the light from the window, its coat (tabby
- * stripes, spots, calico patches, a tuxedo's white front and socks), a
- * striped or plain tail, a head with pricked ears pink inside, almond eyes
- * with slit pupils, a pink nose, a muzzle with whiskers, and (when it's
- * yawning, chattering or washing) an open mouth and tongue. Walking in
- * eight frames, sitting and breathing with its tail swishing, glancing
- * round at you, flicking an ear, washing a paw and its face, yawning,
- * loafing, stretching, curled up asleep, stalking low, wiggling to pounce,
- * the pounce itself, and chattering at birds.
+ * The outline of a cat's torso along its length: a back that runs nearly
+ * level, a rump rounding off behind, the belly tucked up at the waist and
+ * the chest dropping deep in front; centred on (x, y), `rx` long either way
+ * and `ry` deep either way, turned by `a`.
+ */
+function torso(x: number, y: number, rx: number, ry: number, a: number): Pt[] {
+  const N = 16;
+  const top: Pt[] = [];
+  const bottom: Pt[] = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    // Blunt, rounded ends.
+    const e = Math.pow(Math.max(0, 1 - Math.pow(Math.abs(2 * t - 1), 2.4)), 1 / 2.4);
+    const lx = -rx + 2 * rx * t;
+    // The back: a slight rise over the hips and the shoulders, a gentle dip between.
+    const back = -ry * e * (0.92 + 0.07 * Math.cos((t - 0.15) * Math.PI * 2.2));
+    // The belly: full at the haunch, tucked in at the waist, deep at the chest.
+    const depth = 0.9 - 0.16 * Math.exp(-(((t - 0.4) / 0.16) ** 2)) + 0.22 * Math.exp(-(((t - 0.78) / 0.14) ** 2));
+    top.push([lx, back]);
+    bottom.push([lx, ry * e * depth]);
+  }
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return [...top, ...bottom.reverse()].map(([px, py]) => [x + px * c - py * s, y + px * s + py * c] as Pt);
+}
+
+/**
+ * The cat, facing right, feet on the bottom row of an 88×57 box: a real
+ * cat's build — a level back, the rump and the haunch behind, a tucked-up
+ * waist and a deep chest; hind legs thick at the thigh tapering to the
+ * hock, slim front legs, round paws; a neck into a profile head with a
+ * rounded cranium, a short muzzle and whisker pad, a firm chin; tall ears
+ * with curved edges, pink and furred inside; almond eyes rimmed dark, with
+ * a slit pupil and a glint; a pink nose; whiskers; and a long tail tapering
+ * to its tip. Its coat (tabby stripes, spots, calico patches, a tuxedo's
+ * white front and socks), lit from the window, with the grain of the fur.
+ * Walking in eight frames, sitting and breathing with its tail swishing,
+ * glancing round at you, flicking an ear, washing a paw and its face,
+ * yawning, loafing, stretching, curled up asleep, stalking low, wiggling to
+ * pounce, the pounce itself, and chattering at birds.
  */
 export function drawCat(coat: CatCoat, pose: CatPose): { grid: PixelGrid; palette: Palette } {
   const g = new PixelGrid(CAT_WIDTH, CAT_HEIGHT);
   const def = COATS[coat];
   const palette = new Palette();
-  const base = palette.ramp(def.base, 0.75);
-  const light = palette.ramp(def.light, 0.35);
+  const warm = luminance(def.base) > 0.45;
+  const base = palette.ramp(def.base, 0.7, warm ? 0.45 : 1);
+  const light = palette.ramp(def.light, 0.35, 0.4);
   const mark = palette.ramp(def.mark, 0.7);
   const mark2 = def.mark2 !== undefined ? palette.ramp(def.mark2, 0.7) : mark;
   const white = palette.ramp(0xf2f0ec, 0.45);
-  const pink = palette.add(0xe8a0a0);
+  const pink = palette.ramp(0xe8a0a0, 0.45);
   const nose = palette.add(0xd47878);
   const mouthDark = palette.add(0x3a1a1e);
   const tongue = palette.add(0xe87888);
-  const eyeC = palette.add(def.eye);
+  const eye = palette.ramp(def.eye, 0.6);
   const pupil = palette.add(0x0c0a0a);
   const glint = palette.add(0xffffff);
   const whisker = palette.add(0xf4f2ee);
   const rig = rigFor(pose);
   const P = (x: number, y: number): Pt => [x * S, y * S];
-  const dither = true;
+  const sc = new Sculpt(CAT_WIDTH, CAT_HEIGHT);
 
   /** The coat at a point: its pattern, and white where a tuxedo or calico is white. */
   const coatAt = (x: number, y: number, under: boolean, part: 'body' | 'head' | 'leg' | 'tail'): Ramp => {
@@ -303,14 +351,13 @@ export function drawCat(coat: CatCoat, pose: CatPose): { grid: PixelGrid; palett
     switch (def.pattern) {
       case 'tabby':
       case 'faint-tabby': {
-        const k = part === 'leg' ? Math.sin(y * 1.1) : part === 'tail' ? Math.sin((x + y) * 0.9) : Math.sin(x * 0.62 + Math.sin(y * 0.35) * 1.4);
+        const k = part === 'leg' ? Math.sin(y * 1.1) : part === 'tail' ? Math.sin((x + y) * 0.9) : Math.sin(x * 0.62 + Math.sin(y * 0.35) * 1.4 + (valueNoise(x / 4, y / 4, 47) - 0.5) * 1.2);
         if (k > (def.pattern === 'faint-tabby' ? 0.75 : 0.45) && !under) return mark;
         return under ? light : base;
       }
       case 'spots': {
         // Round spots, set in loose rows like a little leopard's.
         if (!under && part !== 'head' && part !== 'leg') {
-          // The nearest of a jittered scatter of spot centres.
           const cx = Math.floor(x / 6);
           const cy = Math.floor(y / 5);
           for (let j = -1; j <= 1; j++) {
@@ -327,7 +374,7 @@ export function drawCat(coat: CatCoat, pose: CatPose): { grid: PixelGrid; palett
       case 'patches': {
         // Calico: soft-edged patches of ginger and black over white.
         if (under || part === 'leg') return white;
-        const n = valueNoise(x / 9, y / 9, 43) + (pixelHash(x, y, 44) - 0.5) * 0.06;
+        const n = valueNoise(x / 9, y / 9, 43) + (valueNoise(x / 2, y / 2, 44) - 0.5) * 0.08;
         return n < 0.36 ? mark : n > 0.64 ? mark2 : base;
       }
       default:
@@ -335,202 +382,243 @@ export function drawCat(coat: CatCoat, pose: CatPose): { grid: PixelGrid; palett
     }
   };
 
-  /** A rounded, shaded part of the cat. */
-  const form = (cx: number, cy: number, rx: number, ry: number, a: number, part: 'body' | 'head', underFrom = 0.45) => {
-    const cos = Math.cos(a);
-    const sin = Math.sin(a);
-    const X = cx * S;
-    const Y = cy * S;
-    const R = Math.max(rx, ry) * S + 1;
-    for (let y = Math.floor(Y - R); y <= Math.ceil(Y + R); y++) {
-      for (let x = Math.floor(X - R); x <= Math.ceil(X + R); x++) {
-        const dx = x + 0.5 - X;
-        const dy = y + 0.5 - Y;
-        const u = (dx * cos + dy * sin) / (rx * S);
-        const v = (-dx * sin + dy * cos) / (ry * S);
-        if (u * u + v * v > 1) continue;
-        const nz = Math.sqrt(Math.max(0, 1 - u * u - v * v));
-        const ramp = coatAt(x, y, v > underFrom, part);
-        // The pale underside reads as pale, even turned from the light.
-        const lift = ramp === light || ramp === white ? 1.1 : 0.2;
-        g.set(x, y, ramp[shadeStep(u * cos - v * sin, u * sin + v * cos, nz, x, y, dither, lift)]);
-      }
-    }
-  };
-
-  const drawLeg = (leg: Leg) => {
+  // --- Build the cat, back to front. ---
+  const legFur = { amount: 0.15, seed: 4 };
+  const legOf = (leg: Leg, id: number) => {
     const pts = leg.pts.map(([x, y]) => P(x, y));
-    const w0 = (leg.front ? 3.4 : 3.8) * S;
-    const w1 = 2.6 * S;
-    // Fur in the coat's colours, banded for a tabby; darker for the far legs.
-    const top = coatAt(Math.round(pts[0][0]), Math.round(pts[0][1]), false, 'leg');
-    limb(g, pts, w0, w1, top, { bias: leg.near ? 0 : -0.9, dither: false });
-    if (def.pattern === 'tabby' && pts.length > 2) limb(g, [pts[1], [pts[1][0] + (pts[2][0] - pts[1][0]) * 0.3, pts[1][1] + (pts[2][1] - pts[1][1]) * 0.3]], w1, w1, mark, { bias: leg.near ? 0 : -0.9 });
-    // The paw: round, white for a tuxedo or calico.
+    // Hind legs: a thick thigh tapering to the hock; front legs slim, a little thicker at the elbow.
+    const widths = leg.front ? [4.2, 3, 2.7] : pts.length > 2 ? [6.2, 3, 2.6] : [5.4, 3];
+    sc.sweep(id, pts, widths.slice(0, pts.length).map((w) => w * S), { fur: legFur });
     const [px, py] = pts[pts.length - 1];
-    const pawRamp = def.white ? white : coatAt(Math.round(px), Math.round(py), true, 'leg');
-    for (let j = -2; j <= 0; j++) for (let i = -2; i <= 2; i++) if (i * i + j * j * 2 <= 5) g.set(Math.round(px + i + (leg.front ? 1 : 0.5)), Math.round(py + j), pawRamp[leg.near ? 3 : 1]);
+    // The paw: round, resting on the ground ahead of the leg.
+    sc.ellipse(id === FAR_LEG ? FAR_PAW : PAW, px + (leg.front ? 0.9 : 0.5) * S, Math.min(py, CAT_HEIGHT - 1.4 * S) + 0.1 * S, 2 * S, 1.3 * S, 0, { round: 2 });
   };
+  if (!rig.tailFront) sc.sweep(TAIL, rig.tail.map(([x, y]) => P(x, y)), tailWidths(rig.tail.length), { fur: { amount: 0.3, seed: 8 } });
+  for (const leg of rig.legs.filter((l) => !l.near)) legOf(leg, FAR_LEG);
+  const b = rig.body;
+  if (rig.chest) {
+    // Sitting: one form from the shoulders down the curve of the back to the rump on the ground, along to the
+    // front paws and up the chest; the thigh laid over it, round, and the hind foot along the ground before it.
+    const c = rig.chest;
+    const lift = 22 - c.y;
+    sc.outline(BODY, [P(29, 12.5 - lift), P(25, 16 - lift * 0.6), P(21.5, 21.5), P(18, 26.5), P(17, 31.5), P(19, 34.6), P(31, 34.6), P(32.5, 30.5), P(35.5, 26.8), P(37.6, 22), P(36.4, 16.5 - lift * 0.6), P(34, 13 - lift)], {
+      frame: { cx: 27 * S, cy: 23.5 * S, rx: 10.5 * S, ry: 11.5 * S },
+      fur: { amount: 0.2, dir: [0.3, 1], seed: 2 },
+    });
+    sc.outline(HAUNCH, [P(17.5, 31), P(18, 26), P(21.5, 22.5), P(26, 23), P(28.5, 27.5), P(28, 32.5), P(24, 34.4), P(19.5, 34.2)], { frame: { cx: 23 * S, cy: 28.5 * S, rx: 6 * S, ry: 6 * S }, fur: { amount: 0.15, seed: 7 } });
+  } else {
+    sc.outline(BODY, torso(b.x * S, b.y * S, b.rx * S * 1.05, b.ry * S, b.a), { frame: { cx: b.x * S, cy: b.y * S, rx: b.rx * S, ry: b.ry * S }, fur: { amount: 0.18, dir: [0, 1], seed: 2 } });
+  }
+  if (rig.tucked) {
+    // Loafing: the front paws tucked under the chest, just peeping out.
+    for (const dx of [0, 3.6]) sc.ellipse(dx ? PAW : FAR_PAW, (36.5 + dx) * S, 33.7 * S, 2.3 * S, 1.2 * S, 0, { round: 2 });
+  }
+  for (const leg of rig.legs.filter((l) => l.near)) legOf(leg, NEAR_LEG);
+  if (rig.tailFront) sc.sweep(TAIL, rig.tail.map(([x, y]) => P(x, y)), tailWidths(rig.tail.length), { fur: { amount: 0.3, seed: 8 } });
+  const h = rig.head;
+  const front = h.face === 'front';
+  const r = h.r * S * 1.15;
+  const hx = h.x * S;
+  const hy = h.y * S;
+  // The neck, from the shoulders up into the back of the head.
+  const shoulder: Pt = rig.chest ? [(rig.chest.x - 0.5) * S, (rig.chest.y - rig.chest.ry * 0.55) * S] : [(b.x + b.rx * 0.62) * S, (b.y - b.ry * 0.25 + Math.sin(b.a) * b.rx * 0.6) * S];
+  sc.sweep(NECK, [shoulder, [(shoulder[0] + hx) / 2 - r * 0.15, (shoulder[1] + hy) / 2 + r * 0.25], [hx - r * 0.25, hy + r * 0.35]], [r * 1.25, r * 1.15, r * 1.1], { fur: { amount: 0.15, seed: 12 } });
+  const whiskers = head(sc, h, r, hx, hy, front);
+  if (rig.paw) {
+    // The paw raised to the face (washing): over the chest, its pad turned up.
+    sc.sweep(NEAR_LEG, rig.paw.map(([x, y]) => P(x, y)), [3.6 * S, 3 * S, 2.8 * S], { fur: legFur });
+    const [px, py] = P(...rig.paw[rig.paw.length - 1]);
+    sc.ellipse(PAW, px, py, 1.9 * S, 1.6 * S, 0, { round: 2 });
+  }
 
-  const drawTail = () => {
-    const pts = rig.tail.map(([x, y]) => P(x, y));
-    limb(g, pts, 3.2 * S, 2.4 * S, base, { dither: false });
-    if (def.pattern === 'tabby' || def.pattern === 'faint-tabby' || def.pattern === 'patches') {
-      // Rings along the tail, and its tip.
-      for (let i = 1; i < pts.length; i++) {
-        const [x0, y0] = pts[i - 1];
-        const [x1, y1] = pts[i];
-        for (const t of [0.35, 0.8]) {
-          const cx = x0 + (x1 - x0) * t;
-          const cy = y0 + (y1 - y0) * t;
-          for (let j = -2; j <= 2; j++) for (let k = -1; k <= 1; k++) if (g.get(Math.round(cx + k), Math.round(cy + j)) !== 0) g.set(Math.round(cx + k), Math.round(cy + j), mark[2]);
+  // --- Paint it. ---
+  sc.paint(
+    g,
+    (q) => {
+      switch (q.part) {
+        case EAR_IN:
+          return pink;
+        case TAIL: {
+          // Rings along a tabby's tail; a white tip on a white-marked cat.
+          if (def.white && q.u > 0.86) return white;
+          if ((def.pattern === 'tabby' || def.pattern === 'faint-tabby' || def.pattern === 'patches') && Math.sin(q.u * 26) > (def.pattern === 'faint-tabby' ? 0.7 : 0.35)) return def.pattern === 'patches' ? mark2 : mark;
+          return def.pattern === 'patches' ? coatAt(q.x, q.y, false, 'body') : base;
+        }
+        case PAW:
+        case FAR_PAW:
+          return def.white ? white : coatAt(q.x, q.y, true, 'leg');
+        case FAR_LEG:
+        case NEAR_LEG:
+          return def.white && q.u > 0.62 ? white : coatAt(q.x, q.y, false, 'leg');
+        case BODY:
+          // Sitting, its chest is the pale part, down the front; standing, the belly.
+          // The pale fur is on the surfaces facing forward (the chest) or down (the belly), so its edge follows the form.
+          return coatAt(q.x, q.y, rig.chest ? q.nx > (def.white ? 0.15 : 0.35) && q.v > -0.8 && q.v < 0.35 && q.u > 0.2 : q.ny > (def.white ? 0.25 : 0.45) && q.v > 0.05, 'body');
+        case HAUNCH:
+          return coatAt(q.x, q.y, def.white && q.v > 0.6, 'body');
+        case NECK:
+          // Only a white-marked cat has a white throat.
+          return coatAt(q.x, q.y, def.white && q.v > 0.1, 'body');
+        case FAR_EAR:
+        case NEAR_EAR:
+          return coatAt(q.x, q.y, false, 'head');
+        case MUZZLE:
+          return coatAt(q.x, q.y, true, 'head');
+        default: {
+          // The head: paler under the chin; a tuxedo's white blaze; the tabby 'M' and cheek lines.
+          const under = front ? q.v > 0.45 || (def.white && Math.abs(q.u) < 0.18 && q.v > -0.5) : q.v > 0.62 || (def.white && q.u > 0.35 && q.v > -0.2);
+          let ramp = coatAt(q.x, q.y, under, 'head');
+          if ((def.pattern === 'tabby' || def.pattern === 'faint-tabby') && !under && q.v < -0.3 && Math.abs(Math.sin(q.u * 7)) > 0.86) ramp = mark;
+          if ((def.pattern === 'tabby' || def.pattern === 'faint-tabby') && !under && !front && q.v > 0.05 && q.v < 0.4 && q.u < 0.2 && Math.abs(Math.sin((q.u - q.v) * 9)) > 0.9) ramp = mark;
+          return ramp;
         }
       }
-    }
-    if (def.white) {
-      const [tx, ty] = pts[pts.length - 1];
-      for (let j = -1; j <= 1; j++) for (let k = -1; k <= 1; k++) if (g.get(Math.round(tx + k), Math.round(ty + j)) !== 0) g.set(Math.round(tx + k), Math.round(ty + j), white[3]);
-    }
-  };
-
-  // Behind the body: the tail (unless it wraps the feet), the far legs.
-  if (!rig.tailFront) drawTail();
-  for (const leg of rig.legs.filter((l) => !l.near)) drawLeg(leg);
-  form(rig.body.x, rig.body.y, rig.body.rx, rig.body.ry, rig.body.a, 'body', 0.4);
-  if (rig.chest) form(rig.chest.x, rig.chest.y, rig.chest.rx, rig.chest.ry, rig.chest.a, 'body', def.white ? -0.2 : 0.2);
-  if (rig.tucked) {
-    for (const dx of [0, 3.5]) {
-      const ramp = def.white ? white : light;
-      for (let j = -1; j <= 1; j++) for (let i = -3; i <= 3; i++) if (i * i + j * j * 4 <= 10) g.set(Math.round((36 + dx) * S + i), Math.round(33.6 * S + j), ramp[2 + (dx ? 1 : 0)]);
-    }
+    },
+    {
+      bias: (q) => {
+        // The far legs and ear sit in shadow; window light catches the top edges.
+        const far = q.part === FAR_LEG || q.part === FAR_PAW || q.part === FAR_EAR ? -0.9 : 0;
+        const rim = q.depth < 1.4 && q.ny < -0.3 ? 0.6 : 0;
+        const angle = q.part === TAIL || q.part === FAR_LEG || q.part === NEAR_LEG ? Math.PI / 2 : Math.PI * 0.1;
+        return far + rim + furGrain(q.x, q.y, angle, 19) * 0.7;
+      },
+    },
+  );
+  // Pale fur reads as pale even turned from the light: lift it a step where the shading took it to the bottom.
+  for (let i = 0; i < g.data.length; i++) {
+    const c = g.data[i];
+    if (c === white[0] || c === light[0]) g.data[i] = c === white[0] ? white[1] : light[1];
   }
-  for (const leg of rig.legs.filter((l) => l.near)) drawLeg(leg);
-  if (rig.tailFront) drawTail();
-  const ink = { base, light, mark, white, pink, nose, mouthDark, tongue, eyeC, pupil, glint };
-  const whiskers = drawHead(g, rig.head, S, ink, def, coatAt);
-  if (rig.paw) {
-    const pts = rig.paw.map(([x, y]) => P(x, y));
-    limb(g, pts, 3.4 * S, 2.8 * S, def.white ? white : base, { bias: 0.2 });
-    const [px, py] = pts[pts.length - 1];
-    for (let j = -2; j <= 1; j++) for (let i = -2; i <= 2; i++) if (i * i + j * j <= 5) g.set(Math.round(px + i), Math.round(py + j), (def.white ? white : light)[3]);
-  }
+  features(g, h, r, hx, hy, front, { pink, nose, mouthDark, tongue, eye, pupil, glint, white, dark: base[0], def });
   selOut(g, palette, { bottomHeavy: true });
   // Whiskers go on last, fine, with no outline.
-  for (const [x, y] of whiskers) g.set(x, y, whisker);
+  for (const [x, y] of whiskers) if (x >= 0 && y >= 0 && x < CAT_WIDTH && y < CAT_HEIGHT) g.set(x, y, whisker);
   return { grid: g, palette };
 }
 
-interface HeadInk {
-  base: Ramp;
-  light: Ramp;
-  mark: Ramp;
-  white: Ramp;
-  pink: number;
+/** A cat's tail: thick at the root, tapering to a rounded tip. */
+function tailWidths(n: number): number[] {
+  return Array.from({ length: n }, (_, i) => (3.4 - (i / Math.max(1, n - 1)) * 1.3) * S);
+}
+
+/** The cat's head in profile (facing right) or turned to look at you. Returns where its whiskers go. */
+function head(sc: Sculpt, h: Rig['head'], r: number, hx: number, hy: number, front: boolean): Pt[] {
+  const tilt = h.tilt ?? 0;
+  const down = (h.down ?? 0) * r;
+  const c = Math.cos(tilt);
+  const s = Math.sin(tilt);
+  /** A point on the head, `(u, v)` in head radii, turned with it. */
+  const H = (u: number, v: number): Pt => [hx + (u * c - v * s) * r, hy + down + (u * s + v * c) * r];
+  const frame = { cx: hx, cy: hy + down, rx: r, ry: r };
+  const flick = h.ear ? 0.35 : 0;
+  if (front) {
+    // Turned to look at you: both ears up, the face broad at the cheeks, a neat muzzle.
+    for (const side of [-1, 1]) {
+      const f = side > 0 ? flick : 0;
+      sc.outline(side < 0 ? FAR_EAR : NEAR_EAR, [H(side * 0.25, -0.62), H(side * (0.62 + f), -1.55 + f), H(side * 0.92, -0.42)], { sharp: true, round: 2 });
+      sc.outline(EAR_IN, [H(side * 0.42, -0.62), H(side * (0.63 + f * 0.9), -1.3 + f), H(side * 0.78, -0.5)], { sharp: true, round: 1 });
+    }
+    sc.outline(SKULL, [H(0, -0.92), H(0.62, -0.78), H(0.95, -0.25), H(1.02, 0.25), H(0.75, 0.68), H(0.3, 0.88), H(0, 0.9), H(-0.3, 0.88), H(-0.75, 0.68), H(-1.02, 0.25), H(-0.95, -0.25), H(-0.62, -0.78)], { frame, fur: { amount: 0.2, seed: 15 } });
+    sc.outline(MUZZLE, [H(-0.42, 0.25), H(-0.38, 0.62), H(0, 0.78), H(0.38, 0.62), H(0.42, 0.25), H(0, 0.12)], { frame, round: 3 });
+    const wy = 0.5;
+    const out: Pt[] = [];
+    for (const side of [-1, 1]) {
+      for (let k = 0; k < 5; k++) {
+        out.push([Math.round(H(side * 0.62, wy)[0] + side * k), Math.round(H(side * 0.62, wy)[1] - k * 0.15)]);
+        if (k > 0) out.push([Math.round(H(side * 0.62, wy + 0.2)[0] + side * k), Math.round(H(side * 0.62, wy + 0.2)[1] + k * 0.45)]);
+      }
+    }
+    return out;
+  }
+  // In profile: the far ear a little forward of the near one, each tall, with a curved outer edge.
+  sc.outline(FAR_EAR, [H(0.02, -0.82), H(0.32 - flick * 0.5, -1.58 + flick * 0.4), H(0.62, -0.62)], { sharp: true, round: 2 });
+  sc.outline(EAR_IN, [H(0.14, -0.8), H(0.33 - flick * 0.5, -1.38 + flick * 0.4), H(0.52, -0.66)], { sharp: true, round: 1 });
+  sc.outline(SKULL, [H(-1, 0.05), H(-0.85, -0.55), H(-0.4, -0.92), H(0.25, -0.9), H(0.68, -0.55), H(0.86, -0.22), H(0.84, 0.4), H(0.55, 0.78), H(0, 0.86), H(-0.55, 0.78), H(-0.92, 0.45)], { frame, fur: { amount: 0.2, dir: [-1, 0.5], seed: 15 } });
+  // The muzzle: a short, rounded snout and whisker pad, the chin below.
+  sc.outline(MUZZLE, [H(0.55, -0.3), H(0.95, -0.2), H(1.12, 0.05), H(1.08, 0.32), H(0.92, 0.55), H(0.62, 0.66), H(0.48, 0.25)], { frame: { cx: H(0.85, 0.2)[0], cy: H(0.85, 0.2)[1], rx: r * 0.4, ry: r * 0.45 }, round: 3 });
+  sc.outline(NEAR_EAR, [H(-0.62, -0.62), H(-0.36 - flick, -1.62 + flick * 0.5), H(0.02, -0.86)], { sharp: true, round: 2 });
+  const out: Pt[] = [];
+  const [wx, wy] = H(0.92, 0.36);
+  for (let k = 0; k < 6; k++) {
+    out.push([Math.round(wx - 1 + k), Math.round(wy - k * 0.3)]);
+    if (k > 1) out.push([Math.round(wx - 1 + k), Math.round(wy + 1.2 + k * 0.4)]);
+  }
+  return out;
+}
+
+interface FaceInk {
+  pink: Ramp;
   nose: number;
   mouthDark: number;
   tongue: number;
-  eyeC: number;
+  eye: Ramp;
   pupil: number;
   glint: number;
+  white: Ramp;
+  dark: number;
+  def: CoatDef;
 }
 
-/** The cat's head: in profile (facing right) or turned to look at you. Returns where its whiskers go. */
-function drawHead(g: PixelGrid, h: Rig['head'], S: number, ink: HeadInk, def: CoatDef, coatAt: (x: number, y: number, under: boolean, part: 'head') => Ramp): Pt[] {
-  const whiskers: Pt[] = [];
-  const cx = h.x * S;
-  const cy = h.y * S;
-  const r = h.r * S * 1.12;
-  const front = h.face === 'front';
+/** Eyes, nose and mouth over the painted head. */
+function features(g: PixelGrid, h: Rig['head'], r: number, hx: number, hy: number, front: boolean, ink: FaceInk): void {
   const tilt = h.tilt ?? 0;
-  // Ears: triangles, pink inside; one flicked back.
-  const ear = (side: -1 | 1) => {
-    const flick = h.ear && side === 1 ? 0.35 : 0;
-    const baseX = front ? cx + side * r * 0.55 : cx + (side < 0 ? -r * 0.55 : r * 0.35);
-    const tipX = baseX + (front ? side * r * 0.2 : side * r * 0.12) - flick * r;
-    const tipY = cy - r * (1.45 - flick * 0.5) + tilt * r * side;
-    const left = baseX - r * 0.42;
-    const right = baseX + r * 0.42;
-    g.polygon([[left, cy - r * 0.45], [tipX, tipY], [right, cy - r * 0.55]], ink.base[1]);
-    g.polygon([[left + r * 0.2, cy - r * 0.55], [tipX, tipY + r * 0.35], [right - r * 0.2, cy - r * 0.6]], ink.pink);
-  };
-  ear(-1);
-  ear(1);
-  // The head itself, shaded.
-  for (let y = Math.floor(cy - r - 1); y <= Math.ceil(cy + r + 1); y++) {
-    for (let x = Math.floor(cx - r - 1); x <= Math.ceil(cx + r + 1); x++) {
-      const u = (x + 0.5 - cx) / r;
-      const v = (y + 0.5 - cy) / (r * 0.9);
-      if (u * u + v * v > 1) continue;
-      const nz = Math.sqrt(Math.max(0, 1 - u * u - v * v));
-      // Lighter at the muzzle and under the chin; a tuxedo's white blaze.
-      const muzzle = front ? v > 0.15 && Math.abs(u) < 0.45 : u > 0.5 && v > 0.05 && v < 0.6;
-      const under = muzzle || v > 0.7 || (def.white && (front ? Math.abs(u) < 0.22 && v > -0.3 : u > 0.15 && v > -0.1));
-      let ramp = coatAt(x, y, under, 'head');
-      // The tabby's 'M' on the forehead and stripes on the cheek.
-      if ((def.pattern === 'tabby' || def.pattern === 'faint-tabby') && !under && v < -0.25 && Math.abs(Math.sin(u * 7)) > 0.85) ramp = ink.mark;
-      g.set(x, y, ramp[shadeStep(u, v, nz, x, y, true, 0.25)]);
-    }
-  }
-  // Eyes: almond, with a slit pupil and a glint; closed, a soft curve.
-  const eyeAt = (ex: number, ey: number) => {
+  const down = (h.down ?? 0) * r;
+  const c = Math.cos(tilt);
+  const s = Math.sin(tilt);
+  const H = (u: number, v: number): Pt => [hx + (u * c - v * s) * r, hy + down + (u * s + v * c) * r];
+  /** An almond eye: the iris with a slit pupil and a glint, rimmed dark; closed, a soft downward curve. */
+  const eyeAt = ([ex, ey]: Pt, facing: 1 | -1 | 0) => {
     const X = Math.round(ex);
     const Y = Math.round(ey);
     if (h.eyes === 'closed') {
-      g.set(X - 1, Y, ink.base[0]);
-      g.set(X, Y + 1, ink.base[0]);
-      g.set(X + 1, Y, ink.base[0]);
+      for (let i = -2; i <= 1; i++) g.set(X + i, Y + (i === -2 || i === 1 ? 0 : 1), ink.dark);
       return;
     }
-    const tall = h.eyes === 'wide' ? 2 : h.eyes === 'half' ? 0 : 1;
-    for (let dy = 0; dy <= tall; dy++) for (let dx = -1; dx <= 1; dx++) g.set(X + dx, Y + dy, ink.eyeC);
-    g.set(X, Y + (tall > 0 ? 1 : 0), ink.pupil);
-    if (tall > 1) g.set(X, Y + 2, ink.pupil);
-    if (tall > 0) g.set(X - 1, Y, ink.glint);
-    g.set(X - 1, Y - 1, ink.base[0]);
-    g.set(X, Y - 1, ink.base[0]);
-    g.set(X + 1, Y - 1, ink.base[0]);
+    const tall = h.eyes === 'wide' ? 3 : h.eyes === 'half' ? 1 : 2;
+    for (let dy = 0; dy < tall; dy++) for (let dx = -1; dx <= 1; dx++) g.set(X + dx, Y + dy, ink.eye[dy === 0 ? 3 : 2]);
+    // The slit pupil, a glint up towards the light.
+    for (let dy = 0; dy < tall; dy++) g.set(X, Y + dy, ink.pupil);
+    if (tall > 1) g.set(X - 1, Y, ink.glint);
+    // The dark rim, heavier above, with a flick out at the outer corner.
+    for (let dx = -2; dx <= 2; dx++) g.set(X + dx, Y - 1, ink.dark);
+    g.set(X + (facing >= 0 ? 2 : -2), Y, ink.dark);
+    g.set(X + (facing >= 0 ? -2 : 2), Y + tall - 1, ink.dark);
+    for (let dx = -1; dx <= 1; dx++) g.set(X + dx, Y + tall, ink.dark);
   };
-  const down = (h.down ?? 0) * r;
   if (front) {
-    eyeAt(cx - r * 0.42, cy - r * 0.15 + down);
-    eyeAt(cx + r * 0.42, cy - r * 0.15 + down);
-    g.set(Math.round(cx), Math.round(cy + r * 0.3 + down), ink.nose);
-    g.set(Math.round(cx) - 1, Math.round(cy + r * 0.3 + down), ink.nose);
-    g.set(Math.round(cx) - 1, Math.round(cy + r * 0.5 + down), ink.base[0]);
-    g.set(Math.round(cx) + 1, Math.round(cy + r * 0.5 + down), ink.base[0]);
-    for (const side of [-1, 1]) {
-      for (let k = 0; k < 4; k++) {
-        whiskers.push([Math.round(cx + side * (r * 0.75 + k)), Math.round(cy + r * 0.35 + down)]);
-        if (k > 0) whiskers.push([Math.round(cx + side * (r * 0.75 + k)), Math.round(cy + r * 0.5 + down + k * 0.5)]);
-      }
-    }
-    return whiskers;
+    eyeAt(H(-0.42, -0.2), -1);
+    eyeAt(H(0.42, -0.2), 1);
+    const [nx, ny] = H(0, 0.3);
+    g.set(Math.round(nx) - 1, Math.round(ny), ink.nose);
+    g.set(Math.round(nx), Math.round(ny), ink.nose);
+    g.set(Math.round(nx), Math.round(ny) + 1, ink.pink[1]);
+    g.set(Math.round(nx) - 1, Math.round(ny) + 1, ink.pink[1]);
+    // The mouth: a little 'w' under the nose.
+    g.set(Math.round(nx) - 2, Math.round(ny) + 2, ink.dark);
+    g.set(Math.round(nx) + 1, Math.round(ny) + 2, ink.dark);
+    return;
   }
-  eyeAt(cx + r * 0.38, cy - r * 0.12 + down + tilt * r * 0.4);
-  // Nose at the tip of the muzzle, the mouth line, whiskers fanning forward.
-  const nx = cx + r * 0.98;
-  const ny = cy + r * 0.12 + down + tilt * r;
+  eyeAt(H(0.42, -0.2), 1);
+  // Nose at the tip of the muzzle, the mouth line under the whisker pad.
+  const [nx, ny] = H(1.08, 0.05);
   g.set(Math.round(nx), Math.round(ny), ink.nose);
+  g.set(Math.round(nx) - 1, Math.round(ny), ink.nose);
   const mouth = h.mouth ?? 'shut';
-  if (mouth === 'shut') g.set(Math.round(nx - 1), Math.round(ny + 2), ink.base[0]);
-  else {
+  if (mouth === 'shut') {
+    const [mx, my] = H(0.82, 0.55);
+    g.set(Math.round(mx), Math.round(my), ink.dark);
+    g.set(Math.round(mx) + 1, Math.round(my), ink.dark);
+  } else {
     // An open mouth: dark inside, the tongue showing; a big yawn shows the teeth.
     const depth = mouth === 'open' || mouth === 'lick' ? 2 : mouth === 'wide' ? 3 : 5;
     const reach = mouth === 'open' || mouth === 'lick' ? 2 : 4;
     for (let j = 1; j <= depth; j++) for (let i = -reach; i <= 0; i++) g.set(Math.round(nx + i - j * 0.3), Math.round(ny + 1 + j), j === depth ? ink.tongue : ink.mouthDark);
-    // A big yawn shows its fangs, top and bottom.
     if (mouth === 'yawn' || mouth === 'wide') {
       g.set(Math.round(nx - 1), Math.round(ny + 2), ink.white[4]);
       g.set(Math.round(nx - 1 - depth * 0.3), Math.round(ny + depth), ink.white[4]);
     }
     if (mouth === 'lick') g.set(Math.round(nx + 1), Math.round(ny + 2), ink.tongue);
   }
-  // Two whiskers fanning forward from the muzzle, one rising, one drooping.
-  for (let k = 0; k < 5; k++) {
-    whiskers.push([Math.round(nx - 1 + k), Math.round(ny + 1 - k * 0.35)]);
-    if (k > 1) whiskers.push([Math.round(nx - 1 + k), Math.round(ny + 2 + k * 0.4)]);
-  }
-  return whiskers;
 }
 
 export class CatSpriteCache {
