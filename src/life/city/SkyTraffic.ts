@@ -1,4 +1,5 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
+import { mood } from '../../state/mood';
 import { gridToTexture } from '../../sprites/cache';
 import { WORLD_WIDTH } from '../../config';
 import { lerpColor } from '../../core/color';
@@ -229,7 +230,7 @@ export class SkyTraffic {
         if (night > 0.1 && blink) this.lights.rect(x, y - 1, 1, 1).fill({ color: 0xff3a2a, alpha: night });
         if (c.searchlight) {
           // After dark it sweeps a searchlight over the streets.
-          c.searchlight.visible = night > 0.3;
+          c.searchlight.visible = night > 0.3 && !mood.calm;
           c.searchlight.position.set(x, y + 3);
           c.searchlight.rotation = Math.sin(c.t * 0.6) * 0.45 - c.dir * 0.15;
           c.searchlight.alpha = Math.min(0.9, night);

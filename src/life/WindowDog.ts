@@ -4,6 +4,7 @@ import type { Environment } from '../scene/Environment';
 import { interiorTint } from '../scene/lighting';
 import { DOG_HEIGHT, DOG_PANT_FACE, DOG_PANT_SIDE, DOG_SURFACE_ROW, DogSpriteCache, randomDogLook, type DogLook, type DogPose } from '../sprites/dogSprites';
 import { sillContacts } from '../window/sillContacts';
+import { visitGapScale } from '../state/mood';
 import { sillWidth, type LifeSoundSink, type SillState, sillPan, sillScreenX, sillSnapX } from './types';
 
 /** Seconds between visits (min, max). */
@@ -84,7 +85,7 @@ export class WindowDog {
     private readonly rng: () => number = Math.random,
   ) {
     this.look = randomDogLook(rng);
-    this.nextVisit = lerp(DOG_FIRST_VISIT[0], DOG_FIRST_VISIT[1], rng());
+    this.nextVisit = lerp(DOG_FIRST_VISIT[0], DOG_FIRST_VISIT[1], rng()) * visitGapScale();
     this.container.addChild(this.sprite);
     this.container.visible = false;
     this.sprite.eventMode = 'static';
@@ -179,7 +180,7 @@ export class WindowDog {
         if (this.timer >= DROP_TIME) {
           this.phase = 'gone';
           this.container.visible = false;
-          this.nextVisit = Math.max(this.nextVisit, lerp(DOG_VISIT_INTERVAL[0], DOG_VISIT_INTERVAL[1], this.rng()));
+          this.nextVisit = Math.max(this.nextVisit, lerp(DOG_VISIT_INTERVAL[0], DOG_VISIT_INTERVAL[1], this.rng()) * visitGapScale());
           return;
         }
         break;

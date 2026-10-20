@@ -1,4 +1,5 @@
 import { Container, Sprite } from 'pixi.js';
+import { mood } from '../../state/mood';
 import { lerpColor } from '../../core/color';
 import { createRng } from '../../core/random';
 import { CITY_HORIZON, LANE_HALF, projectPoint } from '../../sim/cityGeometry';
@@ -213,7 +214,7 @@ export class CityScene implements WorldScene {
     this.signsLevel += (target - this.signsLevel) * Math.min(1, dt * 2);
     for (const sign of this.signs) {
       if (sign.dip > 0) sign.dip -= dt;
-      else if (Math.random() < dt * (sign.broken ? 0.9 : 0.02)) sign.dip = sign.broken ? 0.05 + Math.random() * 0.5 : 0.06 + Math.random() * 0.12;
+      else if (!mood.calm && Math.random() < dt * (sign.broken ? 0.9 : 0.02)) sign.dip = sign.broken ? 0.05 + Math.random() * 0.5 : 0.06 + Math.random() * 0.12;
       const flick = sign.dip > 0 ? (sign.broken ? (Math.random() < 0.5 ? 0.1 : 0.6) : 0.55) : 1;
       sign.sprite.visible = this.signsLevel > 0.01;
       sign.sprite.alpha = this.signsLevel * flick;

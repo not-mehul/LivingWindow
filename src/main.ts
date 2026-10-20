@@ -20,6 +20,8 @@ import { PrecipitationLayer } from './scene/weather/Precipitation';
 import type { WorldScene } from './scene/WorldScene';
 import { BirdseedState } from './state/BirdseedState';
 import { Clock } from './state/Clock';
+import { mood } from './state/mood';
+import { Preferences } from './state/Preferences';
 import { Weather } from './state/Weather';
 import { WindowState } from './state/WindowState';
 import { Overlay } from './ui/Overlay';
@@ -123,6 +125,16 @@ async function boot(): Promise<void> {
   const birdseed = new BirdseedState();
   const clock = new Clock(localHours());
   const weather = new Weather({ initial: 'clear' });
+  const preferences = new Preferences();
+  /** Hand the viewer's mood choices to everything that reads them. */
+  const applyMood = () => {
+    mood.calm = preferences.get('calm');
+    weather.setClimate({ winter: 0.5, calm: mood.calm });
+  };
+  applyMood();
+  preferences.on('change', ({ key }) => {
+    if (key === 'calm') applyMood();
+  });
 
   // --- World (native 840×360 pixels, rendered off-screen) ----------------
   const viewport = new Viewport(host.clientWidth, host.clientHeight, dpr);
@@ -264,7 +276,7 @@ async function boot(): Promise<void> {
   birdseed.on('filled', () => current.landscape.life.startleNear(bowlSillX(), 26));
   weather.on('lightning', ({ intensity, distance }) => {
     const x = current.lightning.strike(intensity, distance);
-    audio?.weather.thunder(intensity, distance, viewport.worldXToStereo(x));
+    audio?.weather.thunder(intensity * (mood.calm ? 0.75 : 1), distance, viewport.worldXToStereo(x));
     // A close crack sends birds flying.
     current.landscape.life.startleAll(distance < 0.4 ? 0.6 : 0.25);
     current.landscape.life.thunder?.(distance, intensity);
@@ -320,6 +332,7 @@ async function boot(): Promise<void> {
     setLandscape,
   });
   overlay = new Overlay(document.body, {
+    preferences,
     onActivity: () => tablet.nudge(),
     tabletRect: () => tablet.screenBounds(),
     onOpenChange: (open) => tablet.setLifted(open),
@@ -388,7 +401,7 @@ async function boot(): Promise<void> {
     // The room is lit by daylight through the window, and by a lamp at night.
     const roomTint = interiorTint(env.lighting);
     for (const layer of interior) layer.tint = roomTint;
-    roomFlash.alpha = lightning.flash * 0.12;
+    roomFlash.alpha = lightning.flash * (mood.calm ? 0.07 : 0.12);
 
     if (transition) {
       transition.t += dt / FADE_SECONDS;
@@ -441,6 +454,7 @@ async function boot(): Promise<void> {
         sashes,
         clock,
         weather,
+        preferences,
         glass,
         quality,
         wakeLock,

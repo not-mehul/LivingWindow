@@ -155,9 +155,10 @@ const applause: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   const length = rand(2.2, 3.4);
   const claps = Math.round(length * rand(14, 20));
   for (let i = 0; i < claps; i++) {
-    const t = (i / claps) * length + rand(-0.03, 0.03);
+    // Clapping starts at the start: no clap scheduled before it (or past the end).
+    const t = Math.min(length, Math.max(0, (i / claps) * length + rand(-0.03, 0.03)));
     const swell = Math.sin((t / length) * Math.PI) ** 0.6;
-    noiseBurst(ctx, noise, out, when + Math.max(0, t), 0.025, { type: 'bandpass', frequency: rand(1400, 2600) * rate, Q: 1.4 }, rand(0.08, 0.18) * swell * gain, 0.001);
+    noiseBurst(ctx, noise, out, when + t, 0.025, { type: 'bandpass', frequency: rand(1400, 2600) * rate, Q: 1.4 }, rand(0.08, 0.18) * swell * gain, 0.001);
   }
   return length;
 };

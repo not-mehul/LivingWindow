@@ -46,10 +46,10 @@ export const BIRDSEED_MAX_ATTRACTION = 6;
  */
 export const TIME_SCALE = 6;
 
-/** Real seconds for the weather to blend into a newly chosen state. */
-export const WEATHER_BLEND_SECONDS = 45;
-/** Faster blend used when the user picks the weather by hand. */
-export const WEATHER_MANUAL_BLEND_SECONDS = 6;
+/** Real seconds for the weather to blend into a newly chosen state: minutes, as clouds really gather. */
+export const WEATHER_BLEND_SECONDS = 240;
+/** Faster blend used when the user picks the weather by hand (still unhurried). */
+export const WEATHER_MANUAL_BLEND_SECONDS = 20;
 
 /** Low-pass cutoff (Hz) for the exterior audio while the window is open: effectively bypassed. */
 export const WINDOW_OPEN_CUTOFF_HZ = 20000;

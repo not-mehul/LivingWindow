@@ -1,4 +1,5 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
+import { mood } from '../../state/mood';
 import { lerpColor } from '../../core/color';
 import type { Environment } from '../../scene/Environment';
 import { glowTexture } from '../../scene/common/glow';
@@ -93,7 +94,8 @@ export class Fireworks {
     this.tonight = fireworksNight(this.night.update(h));
     if (this.forced > 0) this.forced -= dt;
     const clearEnough = env.weather.precipitation < 0.3 && env.weather.lightning < 0.2;
-    const showing = this.forced > 0 || (this.tonight && fireworksTime(h) && clearEnough && env.lighting.darkness > 0.5);
+    // Calm mode keeps the night quiet (a staged show still plays).
+    const showing = this.forced > 0 || (!mood.calm && this.tonight && fireworksTime(h) && clearEnough && env.lighting.darkness > 0.5);
     if (showing) {
       this.launchTimer -= dt;
       if (this.launchTimer <= 0) {

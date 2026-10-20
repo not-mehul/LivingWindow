@@ -82,7 +82,7 @@ describe('manual override', () => {
     const early = weather.snapshot.cloudCover;
     expect(early).toBeGreaterThan(WEATHER_PROFILES.clear.cloudCover);
     expect(early).toBeLessThan(0.9);
-    run(weather, 10);
+    run(weather, 35);
     expect(weather.snapshot.cloudCover).toBeGreaterThan(0.9);
     expect(weather.snapshot.kind).toBe('rain');
     expect(weather.snapshot.precipitation).toBeGreaterThan(0.6);
@@ -95,7 +95,7 @@ describe('precipitation', () => {
     weather.setWeather('snow');
     let sawGap = false;
     let rainBeforeSnow = true;
-    for (let t = 0; t < 30; t += 0.05) {
+    for (let t = 0; t < 100; t += 0.05) {
       weather.update(0.05, 0);
       const { kind, precipitation } = weather.snapshot;
       if (kind === 'rain' && precipitation < 0.03) sawGap = true;
@@ -109,7 +109,7 @@ describe('precipitation', () => {
   it('dries up when clearing', () => {
     const weather = new Weather({ initial: 'light-rain', rng: createRng(11) });
     weather.setWeather('clear');
-    run(weather, 30);
+    run(weather, 100);
     expect(weather.snapshot.kind).toBe('none');
     expect(weather.snapshot.precipitation).toBe(0);
   });
@@ -148,5 +148,35 @@ describe('lightning', () => {
       expect(distance).toBeLessThan(1);
     }
     expect(none).not.toHaveBeenCalled();
+  });
+});
+
+describe('climate', () => {
+  it('only snows in winter', async () => {
+    const { climateTransitions } = await import('./Weather');
+    expect(climateTransitions('overcast', { winter: 0, calm: false }).snow ?? 0).toBe(0);
+    expect(climateTransitions('overcast', { winter: 1, calm: false }).snow).toBeGreaterThan(0);
+    const summer = climateTransitions('overcast', { winter: 0, calm: false });
+    expect(Object.values(summer).reduce((a, b) => a + (b ?? 0), 0)).toBeCloseTo(1);
+  });
+
+  it('keeps storms for when they are chosen, in calm mode', async () => {
+    const { climateTransitions, sampleTransition } = await import('./Weather');
+    expect(climateTransitions('light-rain', { winter: 0.5, calm: true }).thunderstorm ?? 0).toBe(0);
+    const rng = createRng(4);
+    for (let i = 0; i < 2000; i++) {
+      for (const from of ['clear', 'overcast', 'light-rain'] as const) expect(sampleTransition(from, rng, { winter: 0.5, calm: true })).not.toBe('thunderstorm');
+    }
+  });
+
+  it('lets snow in summer clear off soon', async () => {
+    const { Weather } = await import('./Weather');
+    const weather = new Weather({ initial: 'snow', rng: createRng(3) });
+    weather.setClimate({ winter: 0, calm: false });
+    let changed = false;
+    weather.on('change', () => (changed = true));
+    for (let t = 0; t < 2000 && !changed; t++) weather.update(1, 1 / 3600 * 6);
+    expect(changed).toBe(true);
+    expect(weather.type).not.toBe('snow');
   });
 });

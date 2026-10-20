@@ -1,4 +1,5 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
+import { visitGapScale } from '../state/mood';
 import { clamp, lerp } from '../core/math';
 import type { Environment } from '../scene/Environment';
 import { interiorTint } from '../scene/lighting';
@@ -57,7 +58,7 @@ export class RooftopCat {
     private readonly canTap: () => boolean,
     private readonly rng: () => number = Math.random,
   ) {
-    this.nextVisit = lerp(CAT_FIRST_VISIT[0], CAT_FIRST_VISIT[1], rng());
+    this.nextVisit = lerp(CAT_FIRST_VISIT[0], CAT_FIRST_VISIT[1], rng()) * visitGapScale();
     this.container.addChild(this.shadow, this.sprite);
     this.container.visible = false;
     this.sprite.eventMode = 'static';
@@ -204,7 +205,7 @@ export class RooftopCat {
   private depart(): void {
     this.present = false;
     this.container.visible = false;
-    this.nextVisit = lerp(CAT_VISIT_INTERVAL[0], CAT_VISIT_INTERVAL[1], this.rng());
+    this.nextVisit = lerp(CAT_VISIT_INTERVAL[0], CAT_VISIT_INTERVAL[1], this.rng()) * visitGapScale();
   }
 
   private decide(birds: number, wet: boolean): void {

@@ -1,4 +1,5 @@
 import { Container, Sprite, type Texture } from 'pixi.js';
+import { mood } from '../../state/mood';
 import { lerpColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Lighting } from '../lighting';
@@ -6,6 +7,9 @@ import { glowTexture } from '../common/glow';
 import { ADS, drawAd } from './ads';
 import type { Billboard } from './cityGenerator';
 import { clamp01 } from '../../core/math';
+
+/** How much slower ads cycle in calm mode. */
+const CALM_AD_PACE = 2.5;
 
 interface Screen {
   board: Billboard;
@@ -53,17 +57,19 @@ export class Billboards {
       s.timer -= dt;
       if (s.timer <= 0) {
         s.frame = (s.frame + 1) % spec.frames;
-        s.timer += spec.frameSeconds(s.frame);
-        if (s.timer < 0) s.timer = spec.frameSeconds(s.frame);
+        // Calm mode: the ads play slower, so nothing flashes.
+        const pace = mood.calm ? CALM_AD_PACE : 1;
+        s.timer += spec.frameSeconds(s.frame) * pace;
+        if (s.timer < 0) s.timer = spec.frameSeconds(s.frame) * pace;
         s.sprite.texture = this.texture(s, s.frame);
       }
       if (s.dip > 0) s.dip -= dt;
-      else if (Math.random() < dt * 0.015) s.dip = 0.05 + Math.random() * 0.15;
+      else if (!mood.calm && Math.random() < dt * 0.015) s.dip = 0.05 + Math.random() * 0.15;
       const flick = s.dip > 0 ? 0.6 : 1;
       const day = lerpColor(tints[s.board.band], 0xffffff, 0.35);
       s.sprite.tint = lerpColor(day, 0xffffff, lit * flick);
       s.glow.visible = lit > 0.02;
-      s.glow.alpha = lit * 0.55 * flick;
+      s.glow.alpha = lit * (mood.calm ? 0.38 : 0.55) * flick;
     }
   }
 

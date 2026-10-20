@@ -50,8 +50,40 @@ export const WEATHER_TRANSITIONS: Record<WeatherType, Partial<Record<WeatherType
   snow: { overcast: 0.6, snow: 0.4 },
 };
 
-export function sampleTransition(from: WeatherType, rng: () => number): WeatherType {
-  const row = WEATHER_TRANSITIONS[from];
+/** The season and mood the automatic weather plays to. */
+export interface Climate {
+  /** 0 = high summer, 1 = deep winter (see `winterness`). */
+  winter: number;
+  /** Calm mode: storms only when chosen by hand. */
+  calm: boolean;
+}
+
+export const MILD_CLIMATE: Readonly<Climate> = { winter: 0.5, calm: false };
+
+/** Below this much winter it's too warm to snow. */
+const SNOW_LINE = 0.3;
+
+/**
+ * The Markov row for `from`, adjusted to the climate: snow only once it's
+ * wintry enough (and more of it the deeper the winter), its share going to
+ * rain otherwise; in calm mode the storm share goes to gentle rain too.
+ */
+export function climateTransitions(from: WeatherType, climate: Readonly<Climate>): Partial<Record<WeatherType, number>> {
+  const row = { ...WEATHER_TRANSITIONS[from] };
+  const snowiness = climate.winter < SNOW_LINE ? 0 : Math.min(1, (climate.winter - SNOW_LINE) / 0.4);
+  const move = (what: WeatherType, keep: number, to: WeatherType) => {
+    const p = row[what] ?? 0;
+    if (p <= 0) return;
+    row[what] = p * keep;
+    row[to] = (row[to] ?? 0) + p * (1 - keep);
+  };
+  move('snow', snowiness, from === 'snow' ? 'overcast' : 'light-rain');
+  if (climate.calm) move('thunderstorm', 0, 'light-rain');
+  return row;
+}
+
+export function sampleTransition(from: WeatherType, rng: () => number, climate: Readonly<Climate> = MILD_CLIMATE): WeatherType {
+  const row = climateTransitions(from, climate);
   let roll = rng();
   let last: WeatherType = from;
   for (const [to, p] of Object.entries(row) as Array<[WeatherType, number]>) {
@@ -109,6 +141,7 @@ export class Weather extends Emitter<WeatherEvents> {
   private remainingHours: number;
   private blendSeconds = WEATHER_BLEND_SECONDS;
   private elapsed = 0;
+  private climate: Climate = { ...MILD_CLIMATE };
 
   private cloud: number;
   private precipBase: number;
@@ -155,6 +188,19 @@ export class Weather extends Emitter<WeatherEvents> {
     return this._snapshot;
   }
 
+  /** Pick up where a previous visit left off, without a blend. */
+  restore(type: WeatherType, locked: boolean): void {
+    this.setLocked(locked);
+    this.transitionTo(type, false);
+    const profile = WEATHER_PROFILES[type];
+    this.cloud = profile.cloudCover;
+    this.precipBase = profile.precipitation;
+    this.storm = profile.lightning;
+    this.windBase = profile.wind;
+    this.kind = profile.kind;
+    this.refreshSnapshot();
+  }
+
   /** Switch weather by hand. By default the choice is locked until `unlock()`. */
   setWeather(type: WeatherType, lock = true): void {
     this.setLocked(lock);
@@ -168,6 +214,18 @@ export class Weather extends Emitter<WeatherEvents> {
   }
 
   /**
+   * Tell the automatic weather the season and mood. Weather that no longer
+   * fits (snow in summer, a storm in calm mode) moves on soon, gently.
+   */
+  setClimate(climate: Readonly<Climate>): void {
+    this.climate = { ...climate };
+    if (this._locked) return;
+    const outOfSeason = this._type === 'snow' && climate.winter < SNOW_LINE;
+    const tooRough = this._type === 'thunderstorm' && climate.calm;
+    if (outOfSeason || tooRough) this.remainingHours = Math.min(this.remainingHours, 0.25);
+  }
+
+  /**
    * @param realDeltaSeconds real time step (drives blending, noise, lightning)
    * @param simHours simulated time that passed (drives the Markov chain)
    */
@@ -178,7 +236,7 @@ export class Weather extends Emitter<WeatherEvents> {
       this.remainingHours -= simHours;
       if (this.remainingHours <= 0) {
         this.blendSeconds = WEATHER_BLEND_SECONDS;
-        this.transitionTo(sampleTransition(this._type, this.rng), false);
+        this.transitionTo(sampleTransition(this._type, this.rng, this.climate), false);
       }
     }
 

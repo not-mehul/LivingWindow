@@ -48,6 +48,7 @@ const ROOSTERS: readonly SpeciesId[] = ['pigeon', 'sparrow', 'finch', 'chickadee
 import { sillWidth, type Ledge, type LifeSoundSink, type SillState, sillScreenX } from './types';
 import { sillContacts } from '../window/sillContacts';
 import { SongBudget } from './songBudget';
+import { mood, sillBirdScale } from '../state/mood';
 import { roostTime, wakeTime } from '../sim/interplay';
 
 /** Below this depth birds are drawn in screen space, at the window's pixel scale. */
@@ -384,8 +385,10 @@ export class BirdSystem {
     if (!species) return;
     const sillBirds = this.birds.filter((b) => b.onSill || b.flight?.arrive.kind === 'sill').length;
     const shy = this.ecology.shySpecies ?? [];
-    const sillOk = sill.windowOpen && sill.catX === null && sillBirds < MAX_SILL_BIRDS && !shy.includes(species);
-    const chanceSill = clamp(0.1 * this.options.birdseed.attraction, 0, 0.75);
+    // Calm mode: fewer, and fewer at once.
+    const maxSill = mood.calm ? MAX_SILL_BIRDS - 1 : MAX_SILL_BIRDS;
+    const sillOk = sill.windowOpen && sill.catX === null && sillBirds < maxSill && !shy.includes(species);
+    const chanceSill = clamp(0.1 * this.options.birdseed.attraction * sillBirdScale(), 0, 0.75);
     if (sillOk && this.rng() < chanceSill) {
       const spot = this.chooseSillSpot(sill);
       if (spot !== null) {

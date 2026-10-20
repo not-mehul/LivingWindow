@@ -1,4 +1,5 @@
 import { Container, Sprite, type Texture } from 'pixi.js';
+import { mood } from '../../state/mood';
 import { lerpColor, scaleColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import { hologramLevel } from '../../sim/wildlife';
@@ -40,7 +41,8 @@ export class Holograms {
     this.glitchTimer -= dt;
     if (this.glitchTimer <= 0) {
       this.glitchTimer = 6 + Math.random() * 10;
-      this.glitch = 0.12 + Math.random() * 0.25;
+      // In calm mode the projections hold steady.
+      this.glitch = mood.calm ? 0 : 0.12 + Math.random() * 0.25;
     }
     const glitching = this.glitch > 0;
     if (glitching) this.glitch -= dt;

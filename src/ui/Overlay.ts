@@ -8,6 +8,7 @@ import { formatClock, PHASE_LABELS, PHASE_PRESETS, type DayPhase } from '../stat
 import { WEATHER_LABELS, type Weather, type WeatherType } from '../state/Weather';
 import type { WindowState } from '../state/WindowState';
 import type { ScreenWakeLock } from '../core/wakeLock';
+import type { Preferences } from '../state/Preferences';
 import { paintSlider } from './slider';
 import { createSoundPanel } from './SoundPanel';
 
@@ -21,6 +22,7 @@ export interface LandscapeControl {
 
 export interface OverlayOptions {
   landscape: LandscapeControl;
+  preferences: Preferences;
   windowState: WindowState;
   birdseed: BirdseedState;
   viewport: Viewport;
@@ -167,6 +169,12 @@ export class Overlay {
           ).join('')}
         </div>
       </details>
+      <details class="group" data-section="viewing" open>
+        <summary class="group__label">Viewing</summary>
+        <div class="list" data-viewing>
+          <button type="button" class="list__row" role="switch" data-pref="calm"><span>Calm <small>no storms unless chosen, fewer visitors, softer city</small></span><span class="switch" aria-hidden="true"></span></button>
+        </div>
+      </details>
       <details class="group" data-section="window" open>
         <summary class="group__label">Window</summary>
         <div class="list">
@@ -246,6 +254,8 @@ export class Overlay {
     } else {
       wakeButton.hidden = true;
     }
+
+    this.bindPreferences();
 
     this.pauseButton.addEventListener('click', () => clock.togglePaused());
     this.timeSlider.addEventListener('pointerdown', () => (this.scrubbing = true));
@@ -364,6 +374,21 @@ export class Overlay {
     document.body.classList.remove('is-idle');
     this.options.onActivity?.();
     this.scheduleHide();
+  }
+
+  /** Switch rows for on/off preferences (`data-pref="key"`). */
+  private bindPreferences(): void {
+    const prefs = this.options.preferences;
+    const switches = [...this.element.querySelectorAll<HTMLButtonElement>('button[data-pref]')];
+    const refresh = () => {
+      for (const button of switches) button.setAttribute('aria-checked', String(Boolean(prefs.get(button.dataset.pref as 'calm'))));
+    };
+    for (const button of switches) {
+      const key = button.dataset.pref as 'calm';
+      button.addEventListener('click', () => prefs.set(key, !prefs.get(key)));
+    }
+    prefs.on('change', refresh);
+    refresh();
   }
 
   /** Add the mixer and radio controls once the audio system is ready. */

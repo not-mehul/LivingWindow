@@ -1,4 +1,5 @@
 import { Graphics, Sprite, Texture } from 'pixi.js';
+import { mood } from '../../state/mood';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { prefersReducedMotion } from '../../core/quality';
 
@@ -46,13 +47,14 @@ export class Lightning {
   strike(intensity: number, distance: number): number {
     const rng = this.rng;
     this.elapsed = 0;
-    // Gentler, single flashes for viewers who prefer reduced motion.
+    // Gentler, single flashes for viewers who prefer reduced motion; softer,
+    // less flickery ones in calm mode.
     const gentle = prefersReducedMotion();
-    this.strength = intensity * (1 - 0.6 * distance) * (gentle ? 0.3 : 1);
+    this.strength = intensity * (1 - 0.6 * distance) * (gentle ? 0.3 : mood.calm ? 0.45 : 1);
     this.pulses = [{ at: 0, amplitude: 1 }];
     // Real strikes usually flicker: a return stroke or two after the first.
-    if (!gentle && rng() < 0.75) this.pulses.push({ at: 0.06 + rng() * 0.06, amplitude: 0.35 + rng() * 0.35 });
-    if (!gentle && rng() < 0.4) this.pulses.push({ at: 0.18 + rng() * 0.1, amplitude: 0.5 + rng() * 0.4 });
+    if (!gentle && rng() < (mood.calm ? 0.35 : 0.75)) this.pulses.push({ at: 0.06 + rng() * 0.06, amplitude: 0.35 + rng() * 0.35 });
+    if (!gentle && !mood.calm && rng() < 0.4) this.pulses.push({ at: 0.18 + rng() * 0.1, amplitude: 0.5 + rng() * 0.4 });
     this.bolt.clear();
     const x = 40 + Math.floor(rng() * (WORLD_WIDTH - 80));
     if (distance < BOLT_DISTANCE) this.drawBolt(x, distance);

@@ -4,6 +4,7 @@ import type { Environment } from '../scene/Environment';
 import { interiorTint } from '../scene/lighting';
 import type { BirdseedState } from '../state/BirdseedState';
 import { sillVisitInterval, squirrelActivity } from '../sim/wildlife';
+import { visitGapScale } from '../state/mood';
 import { SQUIRREL_RUN, SquirrelSpriteCache, type SquirrelCoat, type SquirrelPose } from '../sprites/forestSprites';
 import { sillWidth, type LifeSoundSink, type SillState, sillPan, sillSnapX } from './types';
 
@@ -94,7 +95,7 @@ export class SillSquirrel {
           if (this.state === 'exit') {
             this.present = false;
             this.container.visible = false;
-            this.nextVisit = sillVisitInterval(this.birdseed.isStocked);
+            this.nextVisit = sillVisitInterval(this.birdseed.isStocked) * visitGapScale();
             return;
           }
           this.atBowl() && this.birdseed.isStocked ? this.begin('nibble', 6 + Math.random() * 14) : this.begin('sit', 2 + Math.random() * 3);
