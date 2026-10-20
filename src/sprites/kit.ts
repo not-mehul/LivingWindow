@@ -61,12 +61,13 @@ function shiftHue(h: number, target: number, amount: number): number {
  * Five shades of one colour, as a painter would mix them: the shadows go
  * darker and cooler (towards blue-violet), the lights go paler and warmer
  * (towards yellow), so forms read as lit rather than just darkened.
- * `contrast` widens or narrows the steps.
+ * `contrast` widens or narrows the steps; `hueShift` scales how far the hues turn (less for a coat whose shadows
+ * shouldn't swing towards red).
  */
-export function rampColors(base: number, contrast = 1): [number, number, number, number, number] {
+export function rampColors(base: number, contrast = 1, hueShift = 1): [number, number, number, number, number] {
   const [h, s, l] = toHsl(base);
   // Greys get a faint cool cast in shadow too.
-  const hs = s < 0.06 ? 0 : 1;
+  const hs = s < 0.06 ? 0 : hueShift;
   const step = (k: number): number => {
     const dl = k * 0.13 * contrast;
     const nl = k < 0 ? l * (1 + dl * 1.6) : l + (1 - l) * dl * 1.2;
@@ -91,8 +92,8 @@ export class Palette {
   }
 
   /** Five shades of a colour (see `rampColors`); every shade outlines with a darker, inkier tone of the material. */
-  ramp(base: number, contrast = 1): Ramp {
-    const c = rampColors(base, contrast);
+  ramp(base: number, contrast = 1, hueShift = 1): Ramp {
+    const c = rampColors(base, contrast, hueShift);
     const ink = this.add(lerpColor(scaleColor(c[0], 0.55), 0x1a1420, 0.35));
     return [this.add(c[0], ink), this.add(c[1], ink), this.add(c[2], ink), this.add(c[3], ink), this.add(c[4], ink)];
   }
