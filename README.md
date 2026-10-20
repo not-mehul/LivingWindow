@@ -432,6 +432,24 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | `npm test`          | Run the unit tests (Vitest)                 |
 | `npm run typecheck` | Type-check only                             |
 
+### Previewing the sounds
+
+With the dev server running, open <http://localhost:8080/sounds.html>. It
+lists every sound in the app, grouped:
+
+- the one-shot calls and noises;
+- the insect, water and crowd loops;
+- each landscape's whole ambience;
+- each kind of weather, rain on the glass and thunder;
+- the lofi radio.
+
+The page runs the app's own audio engine, so what you hear is what the window
+plays. Its controls set the time of day, activity, distance, pan and whether
+the window is open. Mark each sound **Good** or **Needs work** and add a note;
+the marks are kept in the browser. **Copy report** puts them on the clipboard
+as a Markdown list, needs-work first. The page is for development only and
+isn't part of the built site.
+
 ### Controls
 
 | Input                          | Action                |
