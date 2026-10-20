@@ -72,3 +72,64 @@ describe('time of day', () => {
     expect(formatClock(24)).toBe('00:00');
   });
 });
+
+describe('real-time clock', () => {
+  it('follows the wall clock, however long between steps', () => {
+    let wall = 8;
+    const clock = new Clock(0);
+    clock.setRealTime(() => wall);
+    expect(clock.hours).toBe(8);
+    wall = 8.5;
+    expect(clock.update(0.016)).toBeCloseTo(0.5);
+    expect(clock.hours).toBe(8.5);
+    // Hours in a background tab: caught up at once.
+    wall = 13;
+    clock.update(0.016);
+    expect(clock.hours).toBe(13);
+  });
+
+  it('keeps a scrubbed time moving with the wall clock, until reset', () => {
+    let wall = 10;
+    const clock = new Clock(0);
+    clock.setRealTime(() => wall);
+    clock.setTime(22);
+    expect(clock.isOffset).toBe(true);
+    wall = 11;
+    clock.update(1);
+    expect(clock.hours).toBeCloseTo(23);
+    clock.resetToNow();
+    expect(clock.hours).toBe(11);
+    expect(clock.isOffset).toBe(false);
+  });
+
+  it('crosses midnight into a new day', () => {
+    let wall = 23.9;
+    const clock = new Clock(0);
+    clock.setRealTime(() => wall);
+    wall = 0.1;
+    clock.update(1);
+    expect(clock.day).toBe(1);
+  });
+
+  it('freezes while paused and carries on from there', () => {
+    let wall = 9;
+    const clock = new Clock(0);
+    clock.setRealTime(() => wall);
+    clock.setPaused(true);
+    wall = 10;
+    expect(clock.update(1)).toBe(0);
+    expect(clock.hours).toBe(9);
+    clock.setPaused(false);
+    wall = 10.25;
+    clock.update(1);
+    expect(clock.hours).toBeCloseTo(9.25);
+  });
+
+  it('runs fast again from where it is', () => {
+    const clock = new Clock(0);
+    clock.setRealTime(() => 7);
+    clock.setRealTime(null);
+    clock.update(600);
+    expect(clock.hours).toBeCloseTo(8);
+  });
+});

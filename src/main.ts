@@ -12,7 +12,8 @@ import { Viewport } from './core/Viewport';
 import { createLandscape, loadLandscapeChoice, preloadLandscape, saveLandscapeChoice } from './landscapes/registry';
 import type { Landscape, LandscapeId, LandscapeLayers } from './landscapes/types';
 import type { Environment } from './scene/Environment';
-import { computeLighting, interiorTint } from './scene/lighting';
+import { computeLighting, interiorTint, type Daylight } from './scene/lighting';
+import { guessLocation, moonAge, sunTimes, winterness, type GeoLocation } from './sim/sun';
 import { createWeatherAtlas } from './scene/weather/atlas';
 import { GlassWeather } from './scene/weather/GlassWeather';
 import { Lightning } from './scene/weather/Lightning';
@@ -36,6 +37,8 @@ import { curtainWidth } from './window/sillProps';
 const MAX_DEVICE_PIXEL_RATIO = 3;
 /** Longest frame step the simulation will take (e.g. after a background tab). */
 const MAX_FRAME_SECONDS = 0.1;
+/** How often the sky's place-and-date facts (sun times, moon, season) are refreshed (ms). */
+const DAYLIGHT_REFRESH_MS = 5 * 60 * 1000;
 
 function currentDevicePixelRatio(): number {
   return Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
@@ -129,11 +132,26 @@ async function boot(): Promise<void> {
   /** Hand the viewer's mood choices to everything that reads them. */
   const applyMood = () => {
     mood.calm = preferences.get('calm');
-    weather.setClimate({ winter: 0.5, calm: mood.calm });
+    weather.setClimate({ winter: winterness(new Date(), location().latitude), calm: mood.calm });
   };
+  /** Where the window is: the viewer's chosen place, or a guess from their time zone. */
+  const location = (): GeoLocation =>
+    preferences.get('location') ?? guessLocation(Intl.DateTimeFormat().resolvedOptions().timeZone, -new Date().getTimezoneOffset() / 60);
+  /** Today's sun and moon for the window's place. */
+  let daylight: Daylight = { sun: sunTimes(new Date(), location()), moonAge: moonAge(new Date()) };
+  let today = new Date().toDateString();
+  const refreshDaylight = () => {
+    const now = new Date();
+    daylight = { sun: sunTimes(now, location()), moonAge: moonAge(now) };
+    applyMood();
+  };
+  const applyClockMode = () => clock.setRealTime(preferences.get('clockMode') === 'real' ? localHours : null);
   applyMood();
+  applyClockMode();
   preferences.on('change', ({ key }) => {
     if (key === 'calm') applyMood();
+    if (key === 'location') refreshDaylight();
+    if (key === 'clockMode') applyClockMode();
   });
 
   // --- World (native 840×360 pixels, rendered off-screen) ----------------
@@ -210,6 +228,8 @@ async function boot(): Promise<void> {
     return pending;
   };
   const all: Mounted[] = [];
+  /** The latest build of each landscape (a new day replaces it with a fresh one). */
+  const latest = new Map<LandscapeId, Mounted>();
   const build = async (id: LandscapeId): Promise<Mounted> => {
     const layers: LandscapeLayers = {
       near: new Container({ label: `${id}-near` }),
@@ -235,6 +255,7 @@ async function boot(): Promise<void> {
     landscape.scene.sky.boltLayer.addChild(lightning.bolt);
     const entry: Mounted = { landscape, precipitation, lightning, layers };
     all.push(entry);
+    latest.set(id, entry);
     return entry;
   };
 
@@ -249,15 +270,18 @@ async function boot(): Promise<void> {
     frame.setTheme(next.landscape.theme);
     sashes.setTheme(next.landscape.theme);
     audio?.setSoundscape(next.landscape.createSoundscape, next.landscape.id);
+    const previous = current;
     current = next;
+    // A landscape replaced by a fresh build of itself (a new day) is let go at once.
+    if (previous !== next && previous.landscape.id === next.landscape.id) unmount(previous);
   };
   show(current);
 
   /** Pending switch: fade out (while the new landscape loads), swap, fade back in. */
   let transition: { to: LandscapeId; t: number; swapped: boolean; ready: Mounted | null; failed: boolean } | null = null;
   const landscapeListeners = new Set<(id: LandscapeId) => void>();
-  const setLandscape = (id: LandscapeId) => {
-    if (id === current.landscape.id && !transition) return;
+  const setLandscape = (id: LandscapeId, rebuild = false) => {
+    if (id === current.landscape.id && !transition && !rebuild) return;
     const pending = { to: id, t: 0, swapped: false, ready: null as Mounted | null, failed: false };
     transition = pending;
     void mount(id).then(
@@ -266,6 +290,26 @@ async function boot(): Promise<void> {
     );
     saveLandscapeChoice(id);
     for (const listener of landscapeListeners) listener(id);
+  };
+
+  /** Let a landscape go: its display tree is torn down and it will be rebuilt if chosen again. */
+  const unmount = (m: Mounted) => {
+    if (m === current || !all.includes(m)) return;
+    if (latest.get(m.landscape.id) === m) {
+      latest.delete(m.landscape.id);
+      mounted.delete(m.landscape.id);
+    }
+    all.splice(all.indexOf(m), 1);
+    for (const layer of Object.values(m.layers)) layer.destroy({ children: true });
+    m.lightning.overlay.destroy();
+    m.landscape.scene.container.destroy({ children: true });
+  };
+  /** Rebuild every landscape for a new date: the others are dropped now, the current one swapped for a fresh one. */
+  const refreshForNewDay = () => {
+    for (const m of [...all]) unmount(m);
+    const id = current.landscape.id;
+    mounted.delete(id);
+    setLandscape(id, true);
   };
 
   const bowlSillX = () => (bowl.container.x - frame.sillSurface.left) / frame.sillSurface.frameScale;
@@ -333,6 +377,7 @@ async function boot(): Promise<void> {
   });
   overlay = new Overlay(document.body, {
     preferences,
+    daylight: () => ({ ...daylight.sun, guessed: preferences.get('location') === null }),
     onActivity: () => tablet.nudge(),
     tabletRect: () => tablet.screenBounds(),
     onOpenChange: (open) => tablet.setLifted(open),
@@ -372,18 +417,22 @@ async function boot(): Promise<void> {
   // --- Main loop ----------------------------------------------------------
   const env: Environment = {
     time: 0,
-    lighting: computeLighting(clock.hours, weather.snapshot),
+    lighting: computeLighting(clock.hours, weather.snapshot, daylight),
     weather: weather.snapshot,
   };
 
-  /** Advance every simulation system by one step (no drawing). */
-  const simulate = (dt: number) => {
-    const simHours = clock.update(dt);
+  /**
+   * Advance every simulation system by one step (no drawing). The clock gets
+   * the full wall time since the last step (`clockDt`), so time keeps up even
+   * when frames were throttled; everything else steps at most a tenth of a second.
+   */
+  const simulate = (dt: number, clockDt = dt) => {
+    const simHours = clock.update(clockDt);
     weather.update(dt, simHours);
     windowState.update(dt);
 
     env.time += dt;
-    env.lighting = computeLighting(clock.hours, weather.snapshot);
+    env.lighting = computeLighting(clock.hours, weather.snapshot, daylight);
     const { landscape, precipitation, lightning } = current;
     landscape.scene.update(dt, env);
     for (const layer of precipitation) layer.update(dt, env);
@@ -434,9 +483,24 @@ async function boot(): Promise<void> {
     tablet.update(dt, { hours: clock.hours, weather: weather.type, nightness: env.lighting.nightness }, interiorTint(env.lighting));
   };
 
+  // A new day: the sun's times and the moon move on, and each landscape is
+  // rebuilt for its new date (crops grow, tides turn) at the next quiet moment.
+  window.setInterval(() => {
+    refreshDaylight();
+    const date = new Date().toDateString();
+    if (date !== today) {
+      today = date;
+      refreshForNewDay();
+    }
+  }, DAYLIGHT_REFRESH_MS);
+
+  let lastFrame = performance.now();
   app.ticker.add((ticker) => {
     quality.sample(ticker.deltaMS);
-    simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS));
+    const now = performance.now();
+    const wallDt = Math.max(0, (now - lastFrame) / 1000);
+    lastFrame = now;
+    simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS), wallDt);
     viewport.render(app.renderer);
     sashes.render(app.renderer);
     overlay?.tick();

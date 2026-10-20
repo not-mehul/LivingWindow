@@ -39,7 +39,7 @@ export class Fireflies {
   update(dt: number, env: Environment): void {
     const g = this.graphics;
     g.clear();
-    const level = fireflyLevel(env.lighting.hours, env.lighting.darkness, env.weather.kind === 'rain' && env.weather.precipitation > 0.05);
+    const level = fireflyLevel(env.lighting.solarHours, env.lighting.darkness, env.weather.kind === 'rain' && env.weather.precipitation > 0.05);
     if (level <= 0) return;
     const { x0, x1, y0, y1 } = this.area;
     const width = x1 - x0;

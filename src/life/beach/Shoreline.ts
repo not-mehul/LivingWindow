@@ -97,7 +97,7 @@ export class Sandpipers {
   }
 
   update(dt: number, env: Environment): void {
-    const active = birdActivity(env.lighting.hours) > 0.2 && env.weather.lightning < 0.3 && !(env.weather.kind === 'rain' && env.weather.precipitation > 0.5);
+    const active = birdActivity(env.lighting.solarHours) > 0.2 && env.weather.lightning < 0.3 && !(env.weather.kind === 'rain' && env.weather.precipitation > 0.5);
     this.presenceTimer -= dt;
     if (this.presenceTimer <= 0) {
       this.presenceTimer = r(30, 90);

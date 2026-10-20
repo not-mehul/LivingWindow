@@ -111,7 +111,7 @@ export const CITY_ECOLOGY: BirdEcology = {
 /** Daytime activity: the dawn chorus, quiet nights, fewer birds in bad weather. */
 export function defaultActivity(env: Environment): number {
   const { weather } = env;
-  let a = birdActivity(env.lighting.hours);
+  let a = birdActivity(env.lighting.solarHours);
   if (weather.kind === 'rain') a *= 1 - Math.min(1, weather.precipitation * 1.6);
   if (weather.kind === 'snow') a *= 1 - 0.5 * weather.precipitation;
   return a * (1 - weather.lightning);
@@ -250,7 +250,7 @@ export class BirdSystem {
 
   update(dt: number, env: Environment, sill: SillState): void {
     this.env = env;
-    this.songs.tick(dt, birdActivity(env.lighting.hours));
+    this.songs.tick(dt, birdActivity(env.lighting.solarHours));
     this.sill = sill;
     const activity = this.activity(env);
 
@@ -363,7 +363,7 @@ export class BirdSystem {
 
   /** Roll a species from the ecology's mix, respecting per-species caps. */
   private pickSpecies(env: Environment): SpeciesId | null {
-    const mix = this.ecology.mix(env.lighting.hours, env);
+    const mix = this.ecology.mix(env.lighting.solarHours, env);
     const caps = this.ecology.maxPerSpecies ?? {};
     const options = (Object.entries(mix) as Array<[SpeciesId, number]>).filter(([species, w]) => {
       const cap = caps[species];
@@ -533,7 +533,7 @@ export class BirdSystem {
       return false;
     }
     // Dusk: some small birds settle down where they are for the night, and stay till morning.
-    const hours = this.env?.lighting.hours ?? 12;
+    const hours = this.env?.lighting.solarHours ?? 12;
     if (bird.roosting) {
       if (wakeTime(hours)) {
         // Morning: awake, a stretch and a preen, and then about its day.

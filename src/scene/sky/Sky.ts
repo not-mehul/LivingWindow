@@ -1,4 +1,4 @@
-import { Container, Sprite, TilingSprite, type Texture } from 'pixi.js';
+import { Container, Sprite, Texture, TilingSprite } from 'pixi.js';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { channels, lerpColor } from '../../core/color';
 import { lerp } from '../../core/math';
@@ -17,8 +17,6 @@ export interface SkyOptions {
   /** World y of the horizon (where the horizon colour is reached). */
   horizonY: number;
   seed?: number;
-  /** The moon's phase in this landscape's sky. */
-  moonPhase?: 'full' | 'crescent';
   /** Faint lines joining the stars of a few constellations. */
   constellations?: boolean;
   /** A dusting of the Milky Way across the sky. */
@@ -140,31 +138,56 @@ function createStarTextures(horizonY: number, rng: () => number, options: SkyOpt
   return { fixed: fixed.toTexture(), twinkle: twinkle.map((c) => c.toTexture()) };
 }
 
-function createDiscTexture(radius: number, craters: boolean, crescent = false): Texture {
+function createDiscTexture(radius: number): Texture {
   const size = radius * 2 + 1;
   const c = new PixelCanvas(size, size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const d = Math.hypot(x - radius, y - radius);
       if (d > radius + 0.2) continue;
-      // A crescent: the disc with an offset disc taken out of it.
-      if (crescent && Math.hypot(x - radius - radius * 0.55, y - radius + radius * 0.25) < radius * 0.95) continue;
       // Authored in greys so the lighting tint supplies the hue.
       const rim = d > radius - 1.2;
       c.px(x, y, rim ? '#e6e6e6' : '#ffffff');
     }
   }
-  if (craters && !crescent) {
-    for (const [x, y, r] of [
-      [radius - 3, radius - 2, 1.6],
-      [radius + 3, radius + 1, 1.2],
-      [radius - 1, radius + 4, 1],
-      [radius + 2, radius - 4, 0.8],
-    ]) {
-      for (let dy = -2; dy <= 2; dy++) {
-        for (let dx = -2; dx <= 2; dx++) {
-          if (Math.hypot(dx, dy) <= r) c.px(x + dx, y + dy, '#c8c8cc');
-        }
+  return c.toTexture();
+}
+
+/**
+ * The moon at `age` through its cycle (0 new, 0.5 full): the lit part of
+ * the disc bounded by the terminator, an ellipse that sweeps across it as
+ * the month goes by; waxing moons are lit on the right, waning on the left.
+ * The dark part is left clear so the sky shows through.
+ */
+export function createMoonTexture(radius: number, age: number): Texture {
+  const size = radius * 2 + 1;
+  const c = new PixelCanvas(size, size);
+  const k = Math.cos(2 * Math.PI * age);
+  const waxing = age < 0.5;
+  const lit = (x: number, y: number) => {
+    if (Math.hypot(x - radius, y - radius) > radius + 0.2) return false;
+    const nx = (x - radius) / (radius + 0.5);
+    const ny = (y - radius) / (radius + 0.5);
+    const edge = k * Math.sqrt(Math.max(0, 1 - ny * ny));
+    return waxing ? nx > edge : nx < -edge;
+  };
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      if (!lit(x, y)) continue;
+      const rim = Math.hypot(x - radius, y - radius) > radius - 1.2;
+      c.px(x, y, rim ? '#e6e6e6' : '#ffffff');
+    }
+  }
+  for (const [x, y, r] of [
+    [radius - 3, radius - 2, 1.6],
+    [radius + 3, radius + 1, 1.2],
+    [radius - 1, radius + 4, 1],
+    [radius + 2, radius - 4, 0.8],
+  ]) {
+    for (let dy = -2; dy <= 2; dy++) {
+      for (let dx = -2; dx <= 2; dx++) {
+        // Craters only show on the lit part.
+        if (Math.hypot(dx, dy) <= r && lit(x + dx, y + dy)) c.px(x + dx, y + dy, '#c8c8cc');
       }
     }
   }
@@ -234,7 +257,8 @@ export class Sky {
   private readonly moonGlow: Sprite;
   private readonly clouds: Cloud[] = [];
   private readonly horizonY: number;
-  private readonly moonHaloStrength: number;
+  /** The moon age its texture was last drawn for (redrawn as the month goes by). */
+  private moonAgeShown = -1;
   private readonly nightColors?: readonly [number, number];
   private cloudsSettled = false;
 
@@ -251,12 +275,10 @@ export class Sky {
     // The sun's own wider glow, for when it sits low in a dusk sky.
     this.sunGlow = new Sprite({ texture: createGlowTexture(96), anchor: 0.5, blendMode: 'add' });
     this.nightColors = options.nightColors;
-    const crescent = options.moonPhase === 'crescent';
     // The moon's halo: wide and bright at full moon, as in the night drawings.
-    this.moonGlow = new Sprite({ texture: glow, anchor: 0.5, blendMode: 'add', scale: crescent ? 0.6 : 1 });
-    this.sun = new Sprite({ texture: createDiscTexture(9, false), anchor: 0.5 });
-    this.moon = new Sprite({ texture: createDiscTexture(crescent ? 8 : 10, true, crescent), anchor: 0.5 });
-    this.moonHaloStrength = crescent ? 0.35 : 0.6;
+    this.moonGlow = new Sprite({ texture: glow, anchor: 0.5, blendMode: 'add' });
+    this.sun = new Sprite({ texture: createDiscTexture(9), anchor: 0.5 });
+    this.moon = new Sprite({ anchor: 0.5 });
 
     const cloudLayer = new Container({ label: 'clouds' });
     for (let i = 0; i < CLOUD_COUNT; i++) {
@@ -304,11 +326,25 @@ export class Sky {
     this.sun.scale.set(low > 0.8 ? 2 : 1);
     this.sun.alpha = lighting.sun.visible ? 1 - weather.cloudCover * 0.85 : 0;
     this.sunGlow.alpha = lighting.sun.glow * (0.45 + 0.55 * low * low);
+    this.drawMoon(lighting.moonAge);
     this.placeBody(this.moon, this.moonGlow, lighting.moon, 170);
     this.moon.alpha = lighting.moon.visible ? lighting.moon.glow : 0;
-    this.moonGlow.alpha = lighting.moon.glow * this.moonHaloStrength;
+    // The halo grows and brightens towards full moon.
+    const full = 1 - Math.abs(lighting.moonAge - 0.5) * 2;
+    this.moonGlow.scale.set(0.55 + 0.45 * full);
+    this.moonGlow.alpha = lighting.moon.glow * (0.3 + 0.3 * full);
 
     this.updateClouds(dt, env);
+  }
+
+  /** Redraw the moon's phase when it has moved on (about twice a day). */
+  private drawMoon(age: number): void {
+    const moved = Math.abs(age - this.moonAgeShown);
+    if (this.moonAgeShown >= 0 && Math.min(moved, 1 - moved) < 1 / 60) return;
+    this.moonAgeShown = age;
+    const old = this.moon.texture;
+    this.moon.texture = createMoonTexture(10, age);
+    if (old && old !== Texture.EMPTY) old.destroy(true);
   }
 
   private placeBody(body: Sprite, glow: Sprite, state: CelestialBody, arcHeight: number, inset = 70): void {

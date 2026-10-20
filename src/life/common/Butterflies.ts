@@ -56,7 +56,7 @@ export class Butterflies {
 
   update(dt: number, env: Environment): void {
     const raining = env.weather.kind === 'rain' && env.weather.precipitation > 0.05;
-    const target = Math.round(butterflyActivity(env.lighting.hours, env.weather.cloudCover, raining) * this.max);
+    const target = Math.round(butterflyActivity(env.lighting.solarHours, env.weather.cloudCover, raining) * this.max);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = r(3, 9);

@@ -76,7 +76,7 @@ export class CitySoundscape extends Soundscape {
       this.engine.playSpatialSound('siren-far', rand(-1, 1), 1, 'ambience');
     }
 
-    const birds = birdActivity(hours) * (1 - Math.min(1, rain * 1.5)) * (1 - snow * 0.7);
+    const birds = birdActivity(env.lighting.solarHours) * (1 - Math.min(1, rain * 1.5)) * (1 - snow * 0.7);
     this.birdTimer -= dt;
     if (this.birdTimer <= 0) {
       this.birdTimer = rand(10, 28) / Math.max(0.05, birds);

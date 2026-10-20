@@ -68,7 +68,7 @@ export class Bats {
 
   update(dt: number, env: Environment): void {
     const raining = env.weather.kind === 'rain' && env.weather.precipitation > 0.1;
-    const target = Math.round(batActivity(env.lighting.hours, raining) * this.max);
+    const target = Math.round(batActivity(env.lighting.solarHours, raining) * this.max);
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnTimer = r(1.5, 5);

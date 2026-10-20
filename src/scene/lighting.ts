@@ -10,6 +10,7 @@ export function interiorTint(lighting: Pick<Lighting, 'ambient' | 'darkness'>): 
 import { clamp } from '../core/math';
 import { wrapHours } from '../state/timeOfDay';
 import type { WeatherSnapshot } from '../state/Weather';
+import { AUTHORED_SUNRISE, AUTHORED_SUNSET, moonIllumination, moonTimes, solarHours, type SunTimes } from '../sim/sun';
 
 /**
  * Scene-agnostic lighting for a moment in time. Colours are 0xRRGGBB tints:
@@ -21,7 +22,15 @@ export function hazeTint(lighting: Pick<Lighting, 'ambient' | 'haze'>, amount: n
 }
 
 export interface Lighting {
+  /** Clock time, [0, 24): what people and traffic follow. */
   hours: number;
+  /**
+   * The same moment on the sun's timeline (sunrise 06:00, sunset 19:00
+   * whatever the season and place): what birds, insects and light follow.
+   */
+  solarHours: number;
+  /** How far through its cycle the moon is: 0 new, 0.5 full. */
+  moonAge: number;
   skyTop: number;
   skyHorizon: number;
   /** Multiply tint for foreground and midground layers. */
@@ -109,10 +118,14 @@ const WINDOWS_LIT: ReadonlyArray<[hour: number, fraction: number]> = [
 /** The cool blue the night lifts towards under the moon. */
 const MOONLIGHT = 0x6878a8;
 
-const SUNRISE = 6;
-const SUNSET = 19;
-const MOONRISE = 19.5;
-const MOONSET = 6.5;
+/** Without a date and place: a full-ish moon rising after dusk. */
+const DEFAULT_MOON_AGE = 0.55;
+
+/** Today's sky for the window's place and date (see `sim/sun.ts`). */
+export interface Daylight {
+  sun: SunTimes;
+  moonAge: number;
+}
 
 function smoothstep(t: number): number {
   return t * t * (3 - 2 * t);
@@ -178,8 +191,12 @@ const CLEAR_WEATHER: Pick<WeatherSnapshot, 'cloudCover' | 'lightning' | 'precipi
 export function computeLighting(
   hours: number,
   weather: Pick<WeatherSnapshot, 'cloudCover' | 'lightning' | 'precipitation'> = CLEAR_WEATHER,
+  daylight: Daylight | null = null,
 ): Lighting {
-  const key = sampleKeyframes(hours);
+  // The palette follows the sun: real sunrise and sunset land on the authored ones.
+  const solar = daylight ? solarHours(hours, daylight.sun) : wrapHours(hours);
+  const moonAge = daylight?.moonAge ?? DEFAULT_MOON_AGE;
+  const key = sampleKeyframes(solar);
   const cloud = clamp(weather.cloudCover, 0, 1);
   const storm = clamp(weather.lightning, 0, 1);
 
@@ -199,12 +216,17 @@ export function computeLighting(
   const haze = lerpColor(ambient, skyHorizon, 0.38);
   const cloudTint = scaleColor(desaturate(key.cloud, cloud * 0.5), 1 - cloud * 0.3 - storm * 0.3);
 
-  const sunArc = arc(hours, SUNRISE, SUNSET);
-  const moonArc = arc(hours, MOONRISE, MOONSET);
+  const sunArc = arc(solar, AUTHORED_SUNRISE, AUTHORED_SUNSET);
+  const moonRise = moonTimes(moonAge);
+  const moonArc = arc(solar, moonRise.rise, moonRise.set);
+  // A thin moon is a faint one; a new moon isn't seen at all.
+  const moonBright = Math.min(1, moonIllumination(moonAge) * 1.4);
   const lowSun = 1 - sunArc.elevation;
 
   return {
-    hours: key.h,
+    hours: wrapHours(hours),
+    solarHours: key.h,
+    moonAge,
     skyTop,
     skyHorizon,
     ambient,
@@ -223,7 +245,7 @@ export function computeLighting(
     moon: {
       ...moonArc,
       color: lerpColor(0xf4f2e8, 0xffd9a0, (1 - moonArc.elevation) ** 2),
-      glow: moonArc.visible ? (0.35 + 0.65 * darknessOf(key.ambient)) * (1 - cloud * 0.85) : 0,
+      glow: moonArc.visible ? (0.35 + 0.65 * darknessOf(key.ambient)) * (1 - cloud * 0.85) * moonBright : 0,
     },
     windowsLit: clamp(windowsLitAt(hours) + 0.12 * storm * (1 - darkness), 0, 1),
     emissive: 0.25 + 0.75 * darkness,

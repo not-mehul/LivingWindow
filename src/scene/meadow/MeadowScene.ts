@@ -66,7 +66,7 @@ interface Swaying {
  */
 export class MeadowScene implements WorldScene {
   readonly container = new Container({ label: 'meadow-scene' });
-  readonly sky = new Sky({ horizonY: MEADOW_HORIZON, seed: 4321, moonPhase: 'crescent', constellations: true });
+  readonly sky = new Sky({ horizonY: MEADOW_HORIZON, seed: 4321, constellations: true });
   readonly horizonY = MEADOW_HORIZON;
   readonly groundY = [MEADOW_HORIZON + 8, 340] as const;
   readonly weatherBack = new Container({ label: 'weather-back' });

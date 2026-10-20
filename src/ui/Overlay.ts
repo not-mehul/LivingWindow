@@ -37,7 +37,13 @@ export interface OverlayOptions {
   tabletRect?: () => { x: number; y: number; width: number; height: number } | null;
   /** The panel has been picked up (true) or put back down (false). */
   onOpenChange?: (open: boolean) => void;
+  /** Today's sunrise and sunset at the window's place (clock hours), and whether the place is a guess. */
+  daylight?: () => { sunrise: number; sunset: number; guessed: boolean };
 }
+
+/** Choice rows: a preference and the values its buttons stand for. */
+type ChoiceKey = 'clockMode' | 'rotateMinutes' | 'frameRate';
+const NUMERIC_CHOICES: ReadonlySet<ChoiceKey> = new Set(['rotateMinutes', 'frameRate']);
 
 const SECTIONS_KEY = 'livingWindow.ui.sections';
 // The weather header keeps showing the current condition while folded.
@@ -159,6 +165,7 @@ export class Overlay {
             (p) =>
               `<button type="button" class="pill" data-hours="${p.hours}" title="${PHASE_LABELS[p.phase]}">${PRESET_SHORT[p.phase]}</button>`,
           ).join('')}
+          <button type="button" class="pill" data-action="now" title="Back to the time it is now">Now</button>
         </div>
       </details>
       <details class="group" data-section="weather" open>
@@ -173,6 +180,16 @@ export class Overlay {
         <summary class="group__label">Viewing</summary>
         <div class="list" data-viewing>
           <button type="button" class="list__row" role="switch" data-pref="calm"><span>Calm <small>no storms unless chosen, fewer visitors, softer city</small></span><span class="switch" aria-hidden="true"></span></button>
+          <div class="list__row">
+            <span>Clock <small>real time, or a day in four hours</small></span>
+            <span class="segmented segmented--inline" role="radiogroup" aria-label="Clock speed" data-choice="clockMode">
+              <button type="button" role="radio" data-value="real">Real</button><button type="button" role="radio" data-value="fast">6×</button>
+            </span>
+          </div>
+          <div class="list__row">
+            <span>Sun <small data-sun-note></small></span>
+            <button type="button" class="text-btn" data-action="locate">Use my location</button>
+          </div>
         </div>
       </details>
       <details class="group" data-section="window" open>
@@ -376,19 +393,59 @@ export class Overlay {
     this.scheduleHide();
   }
 
-  /** Switch rows for on/off preferences (`data-pref="key"`). */
+  /** Switch rows for on/off preferences (`data-pref="key"`) and choice rows (`data-choice="key"`). */
   private bindPreferences(): void {
     const prefs = this.options.preferences;
     const switches = [...this.element.querySelectorAll<HTMLButtonElement>('button[data-pref]')];
+    const choices = [...this.element.querySelectorAll<HTMLElement>('[data-choice]')];
+    type SwitchKey = 'calm' | 'drift' | 'hideTablet';
     const refresh = () => {
-      for (const button of switches) button.setAttribute('aria-checked', String(Boolean(prefs.get(button.dataset.pref as 'calm'))));
+      for (const button of switches) button.setAttribute('aria-checked', String(Boolean(prefs.get(button.dataset.pref as SwitchKey))));
+      for (const group of choices) {
+        const value = String(prefs.get(group.dataset.choice as ChoiceKey));
+        for (const button of group.querySelectorAll<HTMLButtonElement>('[data-value]')) button.setAttribute('aria-checked', String(button.dataset.value === value));
+      }
+      this.refreshSun();
+      this.refreshClock(true);
     };
     for (const button of switches) {
-      const key = button.dataset.pref as 'calm';
+      const key = button.dataset.pref as SwitchKey;
       button.addEventListener('click', () => prefs.set(key, !prefs.get(key)));
     }
+    for (const group of choices) {
+      const key = group.dataset.choice as ChoiceKey;
+      for (const button of group.querySelectorAll<HTMLButtonElement>('[data-value]')) {
+        button.addEventListener('click', () => {
+          const raw = button.dataset.value ?? '';
+          prefs.set(key, (NUMERIC_CHOICES.has(key) ? Number(raw) : raw) as never);
+        });
+      }
+    }
+    this.query('[data-action="now"]').addEventListener('click', () => this.options.clock.resetToNow());
+    const locate = this.query<HTMLButtonElement>('[data-action="locate"]');
+    if (!('geolocation' in navigator)) locate.hidden = true;
+    locate.addEventListener('click', () => {
+      locate.disabled = true;
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          locate.disabled = false;
+          // A tenth of a degree is plenty for the sun, and keeps the place vague.
+          const round = (v: number) => Math.round(v * 10) / 10;
+          prefs.set('location', { latitude: round(position.coords.latitude), longitude: round(position.coords.longitude) });
+        },
+        () => (locate.disabled = false),
+        { maximumAge: 24 * 3600 * 1000, timeout: 15000 },
+      );
+    });
     prefs.on('change', refresh);
     refresh();
+  }
+
+  private refreshSun(): void {
+    const note = this.element.querySelector<HTMLElement>('[data-sun-note]');
+    const sky = this.options.daylight?.();
+    if (!note || !sky) return;
+    note.textContent = `up ${formatClock(sky.sunrise)}, down ${formatClock(sky.sunset)}${sky.guessed ? ' · place guessed from time zone' : ''}`;
   }
 
   /** Add the mixer and radio controls once the audio system is ready. */
@@ -477,6 +534,9 @@ export class Overlay {
     paintSlider(this.timeSlider);
     this.timeSlider.setAttribute('aria-valuetext', `${formatClock(clock.hours)}, ${PHASE_LABELS[clock.phase]}`);
     this.pauseButton.innerHTML = clock.paused ? ICONS.play : ICONS.pause;
+    this.query('[data-action="now"]').hidden = !clock.isRealTime || (!clock.isOffset && !clock.paused);
+    // Sunrise and sunset move a little each day.
+    if (minute % 30 === 0) this.refreshSun();
     this.pauseButton.setAttribute('aria-label', clock.paused ? 'Play' : 'Pause');
     this.pauseButton.setAttribute('aria-pressed', String(clock.paused));
     for (const button of this.presetButtons) {

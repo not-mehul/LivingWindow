@@ -50,7 +50,7 @@ const WINDOW_BRIGHTNESS: Record<CityLayerName, number> = { far: 0.45, mid: 0.8, 
  */
 export class CityScene implements WorldScene {
   readonly container = new Container({ label: 'city-scene' });
-  readonly sky = new Sky({ horizonY: CITY_HORIZON, moonPhase: 'crescent', nightColors: [0x0c1834, 0x1e4a64] });
+  readonly sky = new Sky({ horizonY: CITY_HORIZON, nightColors: [0x0c1834, 0x1e4a64] });
   readonly horizonY = CITY_HORIZON;
   readonly groundY = [CITY_HORIZON + 30, 340] as const;
   readonly weatherBack = new Container({ label: 'weather-back' });

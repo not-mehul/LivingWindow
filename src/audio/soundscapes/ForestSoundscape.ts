@@ -42,7 +42,8 @@ export class ForestSoundscape extends Soundscape {
   update(dt: number, env: Environment): void {
     if (!this.engine.running || this.isDisposed) return;
     const now = this.engine.context.currentTime;
-    const hours = env.lighting.hours;
+    // Nature keeps the sun's time.
+    const hours = env.lighting.solarHours;
     const wind = Math.abs(env.weather.wind);
     const rain = env.weather.kind === 'rain' ? env.weather.precipitation : 0;
     const snow = env.weather.kind === 'snow' ? env.weather.precipitation : 0;
