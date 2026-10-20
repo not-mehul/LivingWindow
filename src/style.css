@@ -1,15 +1,18 @@
 :root {
-  /* The settings panel: a minimal dark tablet screen. */
-  --ui-bezel: #050506;
-  --ui-edge: #3a3d44;
-  --ui-bg: #0e0f12;
-  --ui-card: #17191e;
-  --ui-raised: #23262d;
-  --ui-line: #24272e;
-  --ui-text: #eceef2;
-  --ui-muted: #8b909a;
-  --ui-accent: #8ab4ff;
-  --ui-radius: 14px;
+  /* The settings panel: the sill tablet's screen, in its pixel palette. */
+  --ui-font: 'Living Window Pixel', ui-monospace, monospace;
+  --ui-bezel: #0b0c0f;
+  --ui-bg: #0f1530;
+  --ui-card: #1a2348;
+  --ui-raised: #2b3768;
+  --ui-sunk: #0a0f24;
+  --ui-line: #0f1530;
+  --ui-hi: rgba(255, 255, 255, 0.14);
+  --ui-lo: rgba(0, 0, 0, 0.35);
+  --ui-text: #e8eef4;
+  --ui-muted: #8f9ac4;
+  --ui-accent: #a8c8ff;
+  --ui-on: #34c759;
   color-scheme: dark;
 }
 
@@ -60,8 +63,9 @@ body.is-idle canvas {
 }
 
 /* ------------------------------------------------------------------------
- * The settings panel: the iPad from the sill, picked up. A thin black bezel
- * round a dark sheet of quiet, clear controls.
+ * The settings panel: the iPad from the sill, picked up, and drawn the same
+ * way — on a pixel grid of `--px`, in the pixel typeface, with stepped
+ * corners, hard bevels and the tablet's aluminium bezel and wallpaper.
  * --------------------------------------------------------------------- */
 
 .overlay-backdrop {
@@ -78,39 +82,51 @@ body.is-idle canvas {
 }
 
 .overlay {
+  /* One art pixel; the typeface's pixel is a tenth of its size, so 20px text sits on this grid. */
+  --px: 2px;
+  /* A corner with one pixel stepped off. */
+  --step: polygon(
+    0 var(--px), var(--px) var(--px), var(--px) 0,
+    calc(100% - var(--px)) 0, calc(100% - var(--px)) var(--px), 100% var(--px),
+    100% calc(100% - var(--px)), calc(100% - var(--px)) calc(100% - var(--px)), calc(100% - var(--px)) 100%,
+    var(--px) 100%, var(--px) calc(100% - var(--px)), 0 calc(100% - var(--px))
+  );
+  --bevel: inset var(--px) var(--px) 0 var(--ui-hi), inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--ui-lo);
+  --bevel-in: inset var(--px) var(--px) 0 var(--ui-lo), inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 var(--ui-hi);
   position: fixed;
   top: 50%;
   left: 50%;
   z-index: 2;
   transform: translate(-50%, -50%);
-  width: min(440px, calc(100vw - 24px));
-  max-height: min(780px, calc(100dvh - 24px));
+  width: min(480px, calc(100vw - 16px));
+  max-height: min(800px, calc(100dvh - 16px));
   display: flex;
-  padding: 10px;
-  border-radius: 34px;
-  background: var(--ui-bezel);
-  box-shadow:
-    0 0 0 1px var(--ui-edge),
-    0 0 0 2px #0a0b0d,
-    0 30px 80px rgba(0, 0, 0, 0.55),
-    0 8px 24px rgba(0, 0, 0, 0.4);
+  /* The bezel: a 9-slice of the tablet's case (set from script), drawn pixel for pixel. */
+  border: calc(6 * var(--px)) solid var(--ui-bezel);
+  border-image-slice: 6;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  /* A hard pixel shadow, like the sprite's on the sill. */
+  filter: drop-shadow(0 calc(4 * var(--px)) 0 rgba(0, 0, 0, 0.35));
   color: var(--ui-text);
-  font-size: 15px;
-  line-height: 1.35;
+  font-family: var(--ui-font);
+  font-size: 20px;
+  font-weight: normal;
+  font-synthesis: none;
+  line-height: 1.2;
   transform-origin: 50% 50%;
 }
 
-/* The camera, in the bezel. */
+/* The camera, in the top of the bezel. */
 .overlay::before {
   content: '';
   position: absolute;
-  top: 3.5px;
+  top: calc(-4 * var(--px));
   left: 50%;
-  width: 4px;
-  height: 4px;
-  margin-left: -2px;
-  border-radius: 50%;
-  background: #1c2230;
+  width: calc(2 * var(--px));
+  height: calc(2 * var(--px));
+  margin-left: calc(-1 * var(--px));
+  background: #2a3242;
 }
 
 .overlay.is-hidden {
@@ -120,41 +136,49 @@ body.is-idle canvas {
 }
 
 .sheet {
+  --gutter: 14px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 18px 16px 14px;
-  border-radius: 24px;
+  padding: 0 var(--gutter) 12px;
   background: var(--ui-bg);
   scrollbar-width: thin;
   scrollbar-color: var(--ui-raised) transparent;
 }
 
+/* The header: the tablet's wallpaper for the hour (drawn from script), with the clock on it. */
 .sheet__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin: 0 calc(-1 * var(--gutter)) 14px;
+  padding: 14px var(--gutter) 12px;
+  background-color: var(--ui-card);
+  background-repeat: no-repeat;
+  text-shadow: 0.1em 0.1em 0 rgba(8, 10, 30, 0.45);
 }
 
 .sheet__time {
-  font-size: 34px;
-  font-weight: 300;
-  letter-spacing: -0.01em;
-  line-height: 1.05;
-  font-variant-numeric: tabular-nums;
+  font-size: 40px;
+  line-height: 1;
 }
 
 .sheet__sub {
-  margin-top: 4px;
-  color: var(--ui-muted);
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.sheet__weather .px-icon {
+  display: block;
+  filter: drop-shadow(var(--px) var(--px) 0 rgba(8, 10, 30, 0.45));
 }
 
 .sheet__sub .dot {
-  margin: 0 6px;
+  opacity: 0.7;
 }
 
 .sheet__foot {
@@ -163,7 +187,7 @@ body.is-idle canvas {
   gap: 4px;
   margin-top: 6px;
   color: var(--ui-muted);
-  font-size: 12px;
+  font-size: 15px;
 }
 
 @media (pointer: coarse) {
@@ -179,13 +203,10 @@ body.is-idle canvas {
 
 .group__label {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   margin-bottom: 8px;
   color: var(--ui-muted);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
   text-transform: uppercase;
   list-style: none;
   cursor: default;
@@ -200,32 +221,25 @@ summary.group__label::-webkit-details-marker {
 }
 
 summary.group__label::after {
-  content: '';
-  width: 6px;
-  height: 6px;
+  content: '▾';
   margin-left: auto;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(45deg) translate(-2px, -2px);
-  transition: transform 160ms ease;
 }
 
 details:not([open]) > summary.group__label::after {
-  transform: rotate(-45deg);
+  content: '▸';
 }
 
 .group__status {
-  font-weight: 400;
-  letter-spacing: 0;
+  font-size: 15px;
   text-transform: none;
-  opacity: 0.8;
 }
 
-/* Buttons. */
-.overlay button {
+/* Buttons (a low-specificity reset, so each kind below can style itself). */
+:where(.overlay) button {
   font: inherit;
   color: inherit;
   border: 0;
+  border-radius: 0;
   background: none;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -237,28 +251,42 @@ details:not([open]) > summary.group__label::after {
 }
 
 .overlay :focus-visible {
-  outline: 2px solid var(--ui-accent);
-  outline-offset: 2px;
+  outline: var(--px) solid var(--ui-accent);
+  outline-offset: calc(-1 * var(--px));
+}
+
+.px-icon {
+  flex: none;
 }
 
 .icon-btn {
   display: inline-grid;
   place-items: center;
   flex: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: var(--ui-card) !important;
-  color: var(--ui-muted) !important;
+  width: 40px;
+  height: 40px;
+  clip-path: var(--step);
+  background: var(--ui-card);
+  box-shadow: var(--bevel);
+  color: var(--ui-muted);
 }
 
 .icon-btn:hover {
-  color: var(--ui-text) !important;
+  color: var(--ui-text);
+}
+
+.sheet__head .icon-btn {
+  background: rgba(8, 10, 30, 0.35);
+  color: var(--ui-text);
 }
 
 .icon-btn--filled {
-  background: var(--ui-text) !important;
-  color: var(--ui-bg) !important;
+  background: var(--ui-text);
+  color: var(--ui-bg);
+}
+
+.icon-btn--filled:hover {
+  color: var(--ui-sunk);
 }
 
 .btn {
@@ -266,80 +294,82 @@ details:not([open]) > summary.group__label::after {
   width: 100%;
   margin-bottom: 8px;
   padding: 10px 14px;
-  border-radius: var(--ui-radius);
-  background: var(--ui-card) !important;
-  font-weight: 500;
+  clip-path: var(--step);
+  background: var(--ui-card);
+  box-shadow: var(--bevel);
 }
 
 .btn--accent {
-  background: var(--ui-accent) !important;
-  color: #0b1220 !important;
+  background: var(--ui-accent);
+  color: var(--ui-sunk);
 }
 
 .text-btn {
-  padding: 4px 8px;
-  border-radius: 8px;
-  color: var(--ui-accent) !important;
-  font-weight: 500;
+  flex: none;
+  padding: 4px 10px 6px;
+  clip-path: var(--step);
+  background: var(--ui-raised);
+  box-shadow: var(--bevel);
+  color: var(--ui-accent);
 }
 
 .text-btn:hover:not(:disabled) {
-  background: rgba(138, 180, 255, 0.1) !important;
+  background: #34427a;
 }
 
-/* A segmented control. */
+.text-btn:active:not(:disabled),
+.btn:active,
+.icon-btn:active {
+  box-shadow: var(--bevel-in);
+}
+
+/* A segmented control: a sunken strip with the chosen block raised in it. */
 .segmented {
   display: flex;
-  gap: 2px;
-  padding: 3px;
-  border-radius: 12px;
-  background: var(--ui-card);
+  gap: var(--px);
+  padding: calc(2 * var(--px));
+  clip-path: var(--step);
+  background: var(--ui-sunk);
 }
 
 .segmented > button {
   flex: 1 1 0;
   min-width: 0;
-  padding: 7px 4px;
-  border-radius: 9px;
-  color: var(--ui-muted) !important;
-  font-size: 14px;
+  padding: 6px 4px 8px;
+  clip-path: var(--step);
+  color: var(--ui-muted);
   white-space: nowrap;
-  transition: background 140ms ease, color 140ms ease;
 }
 
 .segmented > button:hover {
-  color: var(--ui-text) !important;
+  color: var(--ui-text);
 }
 
 .segmented > button[aria-checked='true'],
 .segmented > button[aria-pressed='true'] {
-  background: var(--ui-raised) !important;
-  color: var(--ui-text) !important;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  background: var(--ui-raised);
+  box-shadow: var(--bevel);
+  color: var(--ui-text);
 }
 
 /* A small segmented choice at the end of a row. */
 .segmented--inline {
   flex: none;
-  padding: 2px;
-  border-radius: 9px;
-  background: rgba(0, 0, 0, 0.28);
+  padding: var(--px);
 }
 
 .segmented--inline > button {
   flex: none;
-  padding: 4px 10px;
-  border-radius: 7px;
-  font-size: 13px;
+  padding: 2px 8px 4px;
 }
 
 .segmented--icons > button {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   padding: 8px 2px 6px;
-  font-size: 11px;
+  font-size: 15px;
 }
 
 /* Rows. */
@@ -364,21 +394,25 @@ details:not([open]) > summary.group__label::after {
 
 .pill {
   flex: none;
-  padding: 5px 11px;
-  border-radius: 999px;
-  background: var(--ui-card) !important;
-  color: var(--ui-muted) !important;
-  font-size: 13px;
+  padding: 4px 10px 6px;
+  clip-path: var(--step);
+  background: var(--ui-card);
+  box-shadow: var(--bevel);
+  color: var(--ui-muted);
+}
+
+.pill:hover {
+  color: var(--ui-text);
 }
 
 .pill[aria-pressed='true'] {
-  background: rgba(138, 180, 255, 0.16) !important;
-  color: var(--ui-accent) !important;
+  background: #2a3f7a;
+  color: var(--ui-accent);
 }
 
 /* A list of settings, one per row, in a card. */
 .list {
-  border-radius: var(--ui-radius);
+  clip-path: var(--step);
   background: var(--ui-card);
   overflow: hidden;
 }
@@ -389,19 +423,20 @@ details:not([open]) > summary.group__label::after {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  min-height: 46px;
+  min-height: 48px;
   padding: 10px 14px;
   text-align: left;
 }
 
 .list__row + .list__row {
-  box-shadow: inset 0 1px 0 var(--ui-line);
+  box-shadow: inset 0 var(--px) 0 var(--ui-line);
 }
 
 .list__row small {
   display: block;
+  margin-top: 2px;
   color: var(--ui-muted);
-  font-size: 12px;
+  font-size: 15px;
 }
 
 .list__row small:empty {
@@ -415,43 +450,43 @@ details:not([open]) > summary.group__label::after {
 }
 
 button.list__row:hover {
-  background: rgba(255, 255, 255, 0.02) !important;
+  background: rgba(255, 255, 255, 0.03);
 }
 
-/* A switch. */
+/* A switch: a sunken square track, its knob jumping across in pixel steps. */
 .switch {
   position: relative;
   flex: none;
-  width: 42px;
-  height: 26px;
-  border-radius: 999px;
-  background: var(--ui-raised);
-  transition: background 160ms ease;
+  width: calc(18 * var(--px));
+  height: calc(10 * var(--px));
+  clip-path: var(--step);
+  background: var(--ui-sunk);
+  box-shadow: var(--bevel-in);
 }
 
 .switch::after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #d9dce2;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  transition: transform 160ms ease;
+  top: var(--px);
+  left: var(--px);
+  width: calc(8 * var(--px));
+  height: calc(8 * var(--px));
+  clip-path: var(--step);
+  background: #aab2cc;
+  box-shadow: inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 rgba(0, 0, 0, 0.25);
+  transition: transform 160ms steps(4, end);
 }
 
 [aria-checked='true'] > .switch {
-  background: var(--ui-accent);
+  background: var(--ui-on);
 }
 
 [aria-checked='true'] > .switch::after {
-  transform: translateX(16px);
+  transform: translateX(calc(8 * var(--px)));
   background: #fff;
 }
 
-/* A thin slider with a round thumb. */
+/* A slider: a chunky sunken track that fills with the accent, and a square thumb. */
 .slider {
   flex: 1;
   min-width: 0;
@@ -464,58 +499,57 @@ button.list__row:hover {
 }
 
 .slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(to right, var(--ui-accent) var(--fill, 0%), var(--ui-raised) var(--fill, 0%));
+  height: calc(4 * var(--px));
+  background: linear-gradient(to right, var(--ui-accent) var(--fill, 0%), var(--ui-sunk) var(--fill, 0%));
+  box-shadow: inset 0 var(--px) 0 var(--ui-lo);
 }
 
 .slider::-moz-range-track {
-  height: 4px;
-  border-radius: 2px;
-  background: var(--ui-raised);
+  height: calc(4 * var(--px));
+  background: var(--ui-sunk);
 }
 
 .slider::-moz-range-progress {
-  height: 4px;
-  border-radius: 2px;
+  height: calc(4 * var(--px));
   background: var(--ui-accent);
 }
 
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  margin-top: -7px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  width: calc(8 * var(--px));
+  height: calc(11 * var(--px));
+  margin-top: calc(-3.5 * var(--px));
+  background: var(--ui-text);
+  box-shadow: inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 #8f9ac4, 0 var(--px) 0 var(--ui-lo);
 }
 
 .slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
+  width: calc(8 * var(--px));
+  height: calc(11 * var(--px));
   border: 0;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  border-radius: 0;
+  background: var(--ui-text);
+  box-shadow: inset calc(-1 * var(--px)) calc(-1 * var(--px)) 0 #8f9ac4, 0 var(--px) 0 var(--ui-lo);
 }
 
-/* The birdseed meter. */
+/* The birdseed meter: a sunken bar of seed-coloured blocks. */
 .meter {
   position: relative;
-  width: 64px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--ui-raised);
-  overflow: hidden;
+  width: calc(33 * var(--px));
+  height: calc(6 * var(--px));
+  padding: var(--px);
+  background: var(--ui-sunk);
+  box-shadow: var(--bevel-in);
 }
 
 .seed-meter__fill {
   position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: 2px;
-  background: #e8c27a;
-  transition: width 300ms ease;
+  inset: var(--px) auto var(--px) var(--px);
+  max-width: calc(100% - 2 * var(--px));
+  background: linear-gradient(#efdcae 0 var(--px), #d8b06a var(--px) calc(3 * var(--px)), #a77a3e calc(3 * var(--px)));
+  -webkit-mask-image: repeating-linear-gradient(90deg, #000 0 calc(3 * var(--px)), transparent calc(3 * var(--px)) calc(4 * var(--px)));
+  mask-image: repeating-linear-gradient(90deg, #000 0 calc(3 * var(--px)), transparent calc(3 * var(--px)) calc(4 * var(--px)));
+  transition: width 300ms steps(6, end);
 }
 
 /* The mixer. */
@@ -525,17 +559,15 @@ button.list__row:hover {
 
 .mixer__label {
   flex: none;
-  width: 104px;
-  font-size: 14px;
+  width: 156px;
 }
 
 .mixer__value {
   flex: none;
-  width: 28px;
+  width: 32px;
   color: var(--ui-muted);
-  font-size: 12px;
+  font-size: 15px;
   text-align: right;
-  font-variant-numeric: tabular-nums;
 }
 
 /* The radio's stream URL. */
@@ -549,13 +581,15 @@ button.list__row:hover {
 .field {
   flex: 1;
   min-width: 0;
-  padding: 7px 10px;
-  border: 1px solid var(--ui-line);
-  border-radius: 9px;
-  background: var(--ui-bg);
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 0;
+  clip-path: var(--step);
+  background: var(--ui-sunk);
+  box-shadow: var(--bevel-in);
   color: var(--ui-text);
   font: inherit;
-  font-size: 13px;
+  font-size: 15px;
   user-select: text;
   -webkit-user-select: text;
 }
@@ -564,38 +598,49 @@ button.list__row:hover {
   color: var(--ui-muted);
 }
 
-/* Short screens (landscape phones): a wider sheet in two columns. */
+/* Short screens (landscape phones): a wider sheet in two columns, under one wide header. */
 @media (max-height: 560px) and (min-width: 600px) {
   .overlay {
-    width: min(760px, calc(100vw - 24px));
+    width: min(800px, calc(100vw - 16px));
   }
 
-  .sheet {
+  /* The columns go on the body, which isn't height-limited, so they balance instead of overflowing sideways. */
+  .sheet__body {
     columns: 2;
     column-gap: 18px;
   }
 
-  .sheet__head,
+  .sheet__head {
+    padding-top: 10px;
+    padding-bottom: 8px;
+  }
+
+  .sheet__time {
+    font-size: 30px;
+  }
+
   .group,
   .sheet__foot {
     break-inside: avoid;
   }
 }
 
-/* Narrow phones: almost the full width, a little less padding. */
+/* Narrow phones: almost the full width, a slimmer bezel and gutter. */
 @media (max-width: 420px) {
   .overlay {
-    padding: 7px;
-    border-radius: 28px;
+    width: calc(100vw - 12px);
   }
 
   .sheet {
-    padding: 16px 12px 12px;
-    border-radius: 21px;
+    --gutter: 10px;
+  }
+
+  .list__row {
+    padding: 10px;
   }
 
   .mixer__label {
-    width: 84px;
+    width: 96px;
   }
 }
 

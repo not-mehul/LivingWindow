@@ -24,7 +24,7 @@ for the full vision and roadmap.
   `W`, or use the overlay.
 - **Birdseed bowl** on the sill: click it (or press `B`) to fill it. Its state
   exposes `consume()` and an `attraction` multiplier for the birds in Step 4.
-- Auto-hiding pixel-art overlay UI (fades after 3 s of inactivity, along with the cursor).
+- A settings panel on the sill tablet; the cursor hides after 3 s of stillness.
 - A procedural placeholder city skyline stands in for the real scene art (Step 4).
 
 **Step 2 — Chronos clock & weather engine** ✅
@@ -216,16 +216,19 @@ look at:
   changing saved choices; Link to this view copies the current one.
   `ui=hidden` keeps the tablet off the sill (`S` still opens the panel).
 
-**Interface — neon HUD**
+**Interface — the pixel-art tablet**
 
-The control panel is a cyberpunk heads-up display: dark scanlined glass with
-chamfered corners and corner brackets, a cyan/magenta neon glow, numbered
-sections, notched chips, and command-style buttons with a lit rail. A
-`FEED://<landscape> ● LIVE` readout sits under the title, which glitches now and
-then, and the panel flickers on when it reappears. All of this motion is off
-under `prefers-reduced-motion`. The palette lives in the `--hud-*` custom
-properties at the top of `src/style.css`. The pixel-art window and scenes are
-unchanged.
+The settings panel is the iPad from the sill, picked up, and drawn the same
+way as the rest of the window. Its aluminium bezel is a 9-slice of the
+sprite's case (`src/ui/pixelChrome.ts`), its header shows the tablet's
+wallpaper for the hour behind the clock, and its controls sit on a 2 px
+pixel grid with stepped corners, hard bevels, square switches and chunky
+sliders. Its text is real, selectable text, set in a bitmap typeface with
+lowercase (`src/ui/pixelType.ts`). That typeface is turned into a TrueType
+font in the browser (`src/ui/fontBuilder.ts`), so nothing is downloaded and
+the content security policy needs no change. The icons are 12×12 pixel art
+in the sprite's colours (`src/ui/pixelIcons.ts`), and the palette lives in
+the `--ui-*` custom properties at the top of `src/style.css`.
 
 **Redesign, part 1 — the rustic casement window** ✅
 

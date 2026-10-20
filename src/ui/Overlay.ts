@@ -9,6 +9,10 @@ import { WEATHER_LABELS, type Weather, type WeatherType } from '../state/Weather
 import type { WindowState } from '../state/WindowState';
 import type { ScreenWakeLock } from '../core/wakeLock';
 import type { Preferences } from '../state/Preferences';
+import { wallpaper } from '../window/SillTablet';
+import { loadUiFont } from './fontBuilder';
+import { bezelImage, wallpaperImage } from './pixelChrome';
+import { pixelIcon } from './pixelIcons';
 import { paintSlider } from './slider';
 import { createSoundPanel } from './SoundPanel';
 
@@ -72,20 +76,9 @@ const WEATHER_CHIPS: ReadonlyArray<{ value: WeatherType | 'auto'; label: string 
   { value: 'snow', label: 'Snow' },
 ];
 
-/** Line icons for the panel (they take the text colour). */
-const svg = (body: string) => `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
-const CLOUD = '<path d="M7 17h10a4 4 0 0 0 .5-7.97A5.5 5.5 0 0 0 7 9.5 3.75 3.75 0 0 0 7 17z"/>';
-const ICONS: Record<string, string> = {
-  close: svg('<path d="M6 6l12 12M18 6L6 18"/>'),
-  play: svg('<path d="M8 5.5v13l10.5-6.5z" fill="currentColor" stroke="none"/>'),
-  pause: svg('<path d="M8 5.5v13M16 5.5v13" stroke-width="3"/>'),
-  auto: svg('<path d="M12 3v3M12 18v3M3 12h3M18 12h3"/><circle cx="12" cy="12" r="3.2"/><path d="M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6"/>'),
-  clear: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>'),
-  overcast: svg(CLOUD),
-  'light-rain': svg('<path d="M7 14h10a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 7 7.5 3.25 3.25 0 0 0 7 14z"/><path d="M9 17l-1 2.5M13 17l-1 2.5M17 17l-1 2.5"/>'),
-  thunderstorm: svg('<path d="M7 14h10a3.5 3.5 0 0 0 .4-6.98A5 5 0 0 0 7 7.5 3.25 3.25 0 0 0 7 14z"/><path d="M12.5 15l-2 3.5h3l-2 3.5"/>'),
-  snow: svg('<path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9"/><path d="M10 4.5l2 1.5 2-1.5M10 19.5l2-1.5 2 1.5"/>'),
-};
+const ICONS: Record<string, string> = Object.fromEntries(
+  ['close', 'play', 'pause', 'auto', 'clear', 'night', 'overcast', 'light-rain', 'thunderstorm', 'snow'].map((name) => [name, pixelIcon(name)]),
+);
 
 /**
  * The control panel, as the screen of a tablet. It rests on the window sill
@@ -118,6 +111,9 @@ export class Overlay {
   private hovered = false;
   private scrubbing = false;
   private lastMinute = -1;
+  private readonly head: HTMLElement;
+  private readonly weatherIcon: HTMLElement;
+  private wallpaperKey = '';
 
   constructor(
     parent: HTMLElement,
@@ -137,16 +133,17 @@ export class Overlay {
     this.element.className = 'overlay is-hidden';
     this.element.setAttribute('role', 'dialog');
     this.element.setAttribute('aria-label', 'Living Window settings');
-    // An iPad: a thin black bezel round a dark, scrolling sheet of settings.
+    // The iPad from the sill: an aluminium pixel bezel round a scrolling sheet of settings.
     this.element.innerHTML = `
       <div class="sheet">
       <header class="sheet__head">
         <div>
           <div class="sheet__time" data-clock aria-live="off">00:00</div>
-          <div class="sheet__sub"><span data-phase></span><span class="dot">·</span><span data-weather-now></span></div>
+          <div class="sheet__sub"><span class="sheet__weather" data-weather-icon></span><span data-phase></span><span class="dot">·</span><span data-weather-now></span></div>
         </div>
         <button type="button" class="icon-btn" data-action="close" aria-label="Close settings">${ICONS.close}</button>
       </header>
+      <div class="sheet__body">
       <section class="group">
         <div class="group__label">Place</div>
         <div class="segmented" role="radiogroup" aria-label="Landscape">
@@ -233,8 +230,14 @@ export class Overlay {
         <span class="sheet__keys">S or Esc close · 1–4 place · Space pause · [ ] time · W window · B seed · R radio · M mute · F full screen</span>
       </footer>
       </div>
+      </div>
     `;
     parent.appendChild(this.element);
+    void loadUiFont();
+    this.element.style.borderImageSource = `url(${bezelImage()})`;
+    this.head = this.query('.sheet__head');
+    this.weatherIcon = this.query('[data-weather-icon]');
+    if (typeof ResizeObserver === 'function') new ResizeObserver(() => this.refreshWallpaper()).observe(this.head);
 
     this.windowButton = this.query('[data-action="window"]');
     this.seedButton = this.query('[data-action="seed"]');
@@ -400,7 +403,7 @@ export class Overlay {
     const dy = from.y + from.height / 2 - (box.y + box.height / 2);
     const sx = Math.max(0.02, from.width / box.width);
     const sy = Math.max(0.02, from.height / box.height);
-    const down = { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${sx}, ${sy})`, opacity: 0.5, borderRadius: '4px' };
+    const down = { transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${sx}, ${sy})`, opacity: 0.5 };
     const up = { transform: 'translate(-50%, -50%) scale(1, 1)', opacity: 1 };
     this.animation = this.element.animate(opening ? [down, up] : [up, down], { duration: opening ? 360 : 280, easing: opening ? 'cubic-bezier(.2,.8,.2,1)' : 'cubic-bezier(.5,0,.75,.2)' });
     return this.animation;
@@ -560,6 +563,8 @@ export class Overlay {
     this.lastMinute = minute;
     this.clockText.textContent = formatClock(clock.hours);
     this.phaseText.textContent = PHASE_LABELS[clock.phase];
+    this.refreshWallpaper();
+    if (force) this.refreshWeather();
     if (!this.scrubbing) this.timeSlider.value = String(minute);
     paintSlider(this.timeSlider);
     this.timeSlider.setAttribute('aria-valuetext', `${formatClock(clock.hours)}, ${PHASE_LABELS[clock.phase]}`);
@@ -579,11 +584,28 @@ export class Overlay {
     const { weather } = this.options;
     this.weatherStatus.textContent = weather.locked ? 'Fixed' : 'Automatic';
     this.weatherNow.textContent = WEATHER_LABELS[weather.type];
+    // A clear night shows the moon.
+    const night = this.options.clock.phase === 'night' || this.options.clock.phase === 'late-night';
+    this.weatherIcon.innerHTML = ICONS[weather.type === 'clear' && night ? 'night' : weather.type] ?? '';
     for (const button of this.weatherButtons) {
       const value = button.dataset.weatherValue;
       const active = value === 'auto' ? !weather.locked : weather.locked && value === weather.type;
       button.setAttribute('aria-pressed', String(active));
     }
+  }
+
+  /** The header shows the tablet's wallpaper for the hour, drawn to fit it pixel for pixel. */
+  private refreshWallpaper(): void {
+    const px = parseFloat(getComputedStyle(this.element).getPropertyValue('--px')) || 2;
+    const cols = Math.ceil(this.head.offsetWidth / px);
+    const rows = Math.ceil(this.head.offsetHeight / px);
+    if (cols <= 0 || rows <= 0) return;
+    const hours = this.options.clock.hours;
+    const key = `${cols}x${rows}:${wallpaper(hours).join()}`;
+    if (key === this.wallpaperKey) return;
+    this.wallpaperKey = key;
+    this.head.style.backgroundImage = `url(${wallpaperImage(cols, rows, hours)})`;
+    this.head.style.backgroundSize = `${cols * px}px ${rows * px}px`;
   }
 
   private query<T extends HTMLElement = HTMLElement>(selector: string): T {

@@ -150,8 +150,10 @@ export class SillTablet {
   }
 }
 
-const ALU = { light: 0xd4d8de, base: 0xaeb3ba, dark: 0x80858d, edge: 0x5e636a };
-const BEZEL = 0x0b0c0f;
+/** The tablet's colours, shared with the settings panel so the two look like one device. */
+export const ALU = { light: 0xd4d8de, base: 0xaeb3ba, dark: 0x80858d, edge: 0x5e636a };
+export const BEZEL = 0x0b0c0f;
+export const CAMERA = 0x2a3242;
 
 /**
  * The iPad leaning back against the glass, in landscape: a thin aluminium
@@ -184,7 +186,7 @@ function drawBody(W: number, H: number): PixelBuffer {
     }
   }
   // The camera, in the middle of the top bezel.
-  p.set(ox + Math.round(W / 2), 2, 0x2a3242);
+  p.set(ox + Math.round(W / 2), 2, CAMERA);
   // The bottom edge, where it rests on the sill.
   for (let x = 3; x < W - 3; x++) p.set(ox + x, H, ALU.dark);
   // Its shadow, soft at the ends.
@@ -196,10 +198,10 @@ function drawBody(W: number, H: number): PixelBuffer {
   return p;
 }
 
-const APPS = [0x34c759, 0x0a84ff, 0xff9f0a, 0xff375f, 0xbf5af2, 0x64d2ff, 0xffd60a, 0x30d158, 0x5e5ce6];
+export const APPS = [0x34c759, 0x0a84ff, 0xff9f0a, 0xff375f, 0xbf5af2, 0x64d2ff, 0xffd60a, 0x30d158, 0x5e5ce6];
 
 /** The wallpaper's colours, top to bottom, for the hour: dawn, day, dusk, night. */
-function wallpaper(hours: number): [number, number, number] {
+export function wallpaper(hours: number): [number, number, number] {
   const h = wrapHours(hours);
   if (h < 5 || h >= 21) return [0x0e1434, 0x2a2058, 0x4a2a6a];
   if (h < 8) return [0x3a4a8a, 0xb07aa8, 0xf0a88a];
@@ -213,17 +215,22 @@ function wallpaper(hours: number): [number, number, number] {
  * and the frosted dock with four more. A faint diagonal reflection lies
  * across the glass.
  */
-function drawHomeScreen(w: number, h: number, status: TabletStatus): PixelBuffer {
-  const p = new PixelBuffer(w, h);
-  const [top, mid, low] = wallpaper(status.hours);
+/** The wallpaper alone: two sweeping bands of the hour's colours (the panel's header uses it too). */
+export function drawWallpaper(w: number, h: number, hours: number, into = new PixelBuffer(w, h)): PixelBuffer {
+  const [top, mid, low] = wallpaper(hours);
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
-      // Two sweeping bands across the wallpaper.
-      const wave = y / h + Math.sin(x * 0.22) * 0.06 - x * 0.004;
-      const c = wave < 0.45 ? lerpColor(top, mid, wave / 0.45) : lerpColor(mid, low, Math.min(1, (wave - 0.45) / 0.45));
-      p.set(x, y, c);
+      // The bands fall a little to the right, the same across any width.
+      const wave = y / h + Math.sin(x * 0.22) * 0.06 - (x / w) * 0.16;
+      const c = wave < 0.45 ? lerpColor(top, mid, Math.max(0, wave / 0.45)) : lerpColor(mid, low, Math.min(1, (wave - 0.45) / 0.45));
+      into.set(x, y, c);
     }
   }
+  return into;
+}
+
+function drawHomeScreen(w: number, h: number, status: TabletStatus): PixelBuffer {
+  const p = drawWallpaper(w, h, status.hours);
   const frost = (x0: number, y0: number, ww: number, hh: number, toward: number, k: number) => {
     for (let y = y0; y < y0 + hh; y++) {
       for (let x = x0; x < x0 + ww; x++) {
@@ -285,7 +292,7 @@ function drawHomeScreen(w: number, h: number, status: TabletStatus): PixelBuffer
   return p;
 }
 
-const GLYPH_COLORS: Record<string, number> = { s: 0xffd040, c: 0xe8eef4, r: 0x6ab8ff, m: 0xf0e8c0, l: 0xfff07a };
+export const GLYPH_COLORS: Record<string, number> = { s: 0xffd040, c: 0xe8eef4, r: 0x6ab8ff, m: 0xf0e8c0, l: 0xfff07a };
 const WEATHER_GLYPHS: Record<string, string[]> = {
   clear: ['s.s.s', '.sss.', 'sssss', '.sss.', 's.s.s'],
   night: ['.mm..', 'mm...', 'mm...', 'mm...', '.mm..'],
