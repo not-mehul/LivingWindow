@@ -2,6 +2,9 @@ import { createRng } from '../core/random';
 
 export type NoiseColor = 'white' | 'pink' | 'brown';
 
+/** Seeds per colour, so no two noise beds share their randomness. */
+const SEEDS: Record<NoiseColor, number> = { white: 7919, pink: 104729, brown: 1299709 };
+
 /**
  * Looping noise buffers shared by every synthesized sound. Each is several
  * seconds long and generated from a different seed per channel, so loops
@@ -12,7 +15,7 @@ export class NoiseBank {
 
   constructor(
     private readonly context: BaseAudioContext,
-    private readonly seconds = 7,
+    private readonly seconds = 11,
   ) {}
 
   get(color: NoiseColor): AudioBuffer {
@@ -38,18 +41,27 @@ export class NoiseBank {
     const length = Math.floor(rate * this.seconds);
     const buffer = this.context.createBuffer(2, length, rate);
     for (let ch = 0; ch < 2; ch++) {
-      const data = buffer.getChannelData(ch);
-      const rng = createRng(1009 * (ch + 1) + color.length * 31);
-      fillNoise(data, color, rng);
-      // Short crossfade so the loop point is seamless.
-      const fade = Math.floor(rate * 0.05);
-      for (let i = 0; i < fade; i++) {
-        const t = i / fade;
-        data[i] = data[i] * t + data[length - fade + i] * (1 - t);
-      }
+      buffer.getChannelData(ch).set(loopedNoise(length, color, createRng(SEEDS[color] * (ch + 1)), Math.floor(rate * 0.08)));
     }
     return buffer;
   }
+}
+
+/**
+ * `length` samples of noise that loop seamlessly: a little extra is
+ * generated past the end and cross-faded (equal power, as the two halves
+ * are uncorrelated) into the start, so the last sample flows straight into
+ * the first with no click and no dip in level.
+ */
+export function loopedNoise(length: number, color: NoiseColor, rng: () => number, fade: number): Float32Array {
+  const raw = new Float32Array(length + fade);
+  fillNoise(raw, color, rng);
+  const out = raw.subarray(0, length);
+  for (let i = 0; i < fade; i++) {
+    const t = ((i + 0.5) / fade) * (Math.PI / 2);
+    out[i] = raw[i] * Math.sin(t) + raw[length + i] * Math.cos(t);
+  }
+  return out;
 }
 
 export function fillNoise(data: Float32Array, color: NoiseColor, rng: () => number): void {

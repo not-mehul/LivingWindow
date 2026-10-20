@@ -53,7 +53,10 @@ export const WEATHER_MANUAL_BLEND_SECONDS = 6;
 
 /** Low-pass cutoff (Hz) for the exterior audio while the window is open: effectively bypassed. */
 export const WINDOW_OPEN_CUTOFF_HZ = 20000;
-/** Low-pass cutoff (Hz) for the exterior audio once the window is shut. */
-export const WINDOW_CLOSED_CUTOFF_HZ = 450;
+/**
+ * Low-pass cutoff (Hz) for the exterior audio once the window is shut: glass
+ * blocks the highs but lets the low rumble of the world through.
+ */
+export const WINDOW_CLOSED_CUTOFF_HZ = 700;
 /** Extra attenuation of exterior audio with the window shut, in dB. */
-export const WINDOW_CLOSED_GAIN_DB = -8;
+export const WINDOW_CLOSED_GAIN_DB = -13;

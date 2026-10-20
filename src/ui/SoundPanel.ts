@@ -56,7 +56,7 @@ export function createSoundPanel(audio: AudioSystem): DocumentFragment {
   );
 
   const refreshState = () => {
-    enableButton.hidden = engine.running;
+    enableButton.hidden = engine.ready;
   };
   const refreshVolumes = () => {
     for (const slider of sliders) {

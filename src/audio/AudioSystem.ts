@@ -1,4 +1,5 @@
 import type { Environment } from '../scene/Environment';
+import { ACOUSTICS, type AcousticsId } from './acoustics';
 import { AudioEngine } from './AudioEngine';
 import { decodeAll, loadManifest, shuffle } from './manifest';
 import { loadAudioSettings, saveAudioSettings, type AudioSettings } from './mixer';
@@ -39,7 +40,7 @@ export class AudioSystem {
     // Any tap or key press (re)starts audio when the browser has suspended it:
     // at first load, and after iOS interrupts it (a call, switching apps).
     const unlock = () => {
-      if (engine.running) return;
+      if (engine.ready) return;
       void engine.unlock().then(() => {
         if (engine.running && this.settings.radioOn && !radio.isOn) radio.setOn(true);
       });
@@ -47,7 +48,7 @@ export class AudioSystem {
     for (const event of UNLOCK_EVENTS) window.addEventListener(event, unlock, { passive: true });
     // Coming back to the tab: try to resume straight away (works where allowed).
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && !engine.running) void engine.unlock();
+      if (document.visibilityState === 'visible' && !engine.ready) void engine.unlock();
     });
   }
 
@@ -84,6 +85,7 @@ export class AudioSystem {
   /** Swap the landscape ambience (the old one fades out). */
   setSoundscape(create: (engine: AudioEngine, bed?: AudioBuffer) => Soundscape, bedKey: string): void {
     this.ambience?.dispose();
+    if (isAcousticsId(bedKey)) this.engine.setAcoustics(bedKey);
     this.ambience = create(this.engine, this.beds[bedKey]);
   }
 
@@ -91,4 +93,8 @@ export class AudioSystem {
     this.weather.update(dt, env, glassExposure);
     this.ambience?.update(dt, env, level);
   }
+}
+
+function isAcousticsId(key: string): key is AcousticsId {
+  return key in ACOUSTICS;
 }

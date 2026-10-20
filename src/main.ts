@@ -213,7 +213,9 @@ async function boot(): Promise<void> {
       viewport,
       layers,
       birdseed,
-      sound: (soundId, pan, depth) => audio?.engine.playSpatialSound(soundId, pan, depth, 'wildlife'),
+      // The window dog is in the room with you, not out in the landscape.
+      sound: (soundId, pan, depth) =>
+        audio?.engine.playSpatialSound(soundId, pan, depth, depth === 0 && soundId.startsWith('dog-') ? 'indoor' : 'wildlife'),
       canTap: () => !viewport.didDrag,
     });
     const precipitation = createPrecipitation(landscape.scene, atlas);

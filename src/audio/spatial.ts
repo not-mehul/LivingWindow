@@ -34,6 +34,15 @@ export function spatialParams(screenX: number, depthZ: number, rng: () => number
   };
 }
 
+/**
+ * Reverb send for a source at depth `z`: things on the sill are nearly dry,
+ * things at the horizon are mostly echo (`max` is the space's send).
+ */
+export function reverbSend(depthZ: number, max: number): number {
+  const z = clamp(depthZ, 0, 1);
+  return max * (0.12 + 0.88 * z ** 1.2);
+}
+
 export interface ThunderParams {
   /** Seconds between the flash and the first rumble (sound is slower than light). */
   delay: number;

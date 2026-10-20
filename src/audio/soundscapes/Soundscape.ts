@@ -7,9 +7,13 @@ import type { NoiseColor } from '../noise';
  * `bed` into the ambience bus, so a whole soundscape can be faded out and
  * torn down when the view changes to another landscape.
  */
+/** How much of the continuous ambience bed reaches the reverb. */
+const BED_SEND = 0.15;
+
 export abstract class Soundscape {
   protected readonly bed: GainNode;
   private readonly sources: AudioScheduledSourceNode[] = [];
+  private readonly stops: Array<() => void> = [];
   private disposed = false;
 
   constructor(protected readonly engine: AudioEngine) {
@@ -19,6 +23,10 @@ export abstract class Soundscape {
     this.bed.gain.setValueAtTime(0, ctx.currentTime);
     this.bed.gain.setTargetAtTime(1, ctx.currentTime, 0.6);
     this.bed.connect(engine.inputs.ambience);
+    // A little of the bed in the landscape's reverb, so it sits in the same space as the calls.
+    const send = ctx.createGain();
+    send.gain.value = BED_SEND;
+    this.bed.connect(send).connect(engine.sends.ambience);
   }
 
   /**
@@ -37,6 +45,7 @@ export abstract class Soundscape {
     this.bed.gain.cancelScheduledValues(ctx.currentTime);
     this.bed.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
     window.setTimeout(() => {
+      for (const stop of this.stops) stop();
       for (const source of this.sources) {
         try {
           source.stop();
@@ -65,6 +74,18 @@ export abstract class Soundscape {
     source.start(0, Math.random() * buffer.duration);
     this.sources.push(source);
     return source;
+  }
+
+  /** Let `param` wander by ±`depth` about its value, ~`rate` times a second, on the audio clock. */
+  protected wander(param: AudioParam, depth: number, rate: number): void {
+    this.stops.push(this.engine.modulators.wander(param, depth, rate));
+  }
+
+  /** A gain stage that breathes around 1 (±`depth`), on the audio clock. */
+  protected flutter(depth: number, rate: number): GainNode {
+    const g = this.gain(1);
+    this.wander(g.gain, depth, rate);
+    return g;
   }
 
   protected gain(value = 0): GainNode {
