@@ -5,10 +5,9 @@ import type { ViewportLayout } from '../core/viewportLayout';
 import { SwayMesh } from '../scene/common/SwayMesh';
 import type { BirdseedState } from '../state/BirdseedState';
 import { rustleTextures } from '../scene/common/rustle';
-import { Curtain } from './Curtain';
 import { sillContacts } from './sillContacts';
 import { PLANT, SEED } from './palette';
-import { curtainWidth, plantSize, type PlantSize } from './sillProps';
+import { plantSize, type PlantSize } from './sillProps';
 import type { SillSurface } from './WindowFrame';
 import { PixelBuffer } from './woodArt';
 import { hexToNumber } from '../core/color';
@@ -168,15 +167,14 @@ const seedColor = (rng: () => number) =>
 
 /**
  * Things on and around the sill that belong to the room: a potted plant at
- * the left, the curtain at the right (both drawn in front of visiting
- * creatures, so they can appear from behind them), and seed spilled across
- * the sill. The plant and curtain stir in the breeze only while the window
- * is open.
+ * the left (drawn in front of visiting creatures, so they can appear from
+ * behind it), and seed spilled across the sill. The plant stirs in the
+ * breeze while the window is open.
  */
 export class SillDecor {
   /** Spilled seed: on the sill, beneath the bowl and visitors. */
   readonly back = new Container({ label: 'sill-decor-back' });
-  /** Plant and curtain: in front of everything on the sill. */
+  /** The plant: in front of everything on the sill. */
   readonly front = new Container({ label: 'sill-decor-front' });
 
   private readonly pot = new Sprite({ anchor: { x: 0.5, y: 1 } });
@@ -187,8 +185,6 @@ export class SillDecor {
   private lastTime = Number.NaN;
   private plantSize: PlantSize | null = null;
   private readonly plant = new Container({ label: 'plant' });
-  private curtain: Curtain | null = null;
-  private curtainSize = '';
   private readonly seeds = new Graphics();
   private readonly specks: Speck[] = [];
   private readonly rng = createRng(77);
@@ -234,7 +230,7 @@ export class SillDecor {
   }
 
   layout(layout: ViewportLayout, surface: SillSurface, bowlX: number, nearness = 1): void {
-    const { opening, frameScale: fs, screenWidth, screenHeight, devicePixelRatio } = layout;
+    const { opening, frameScale: fs, screenWidth, devicePixelRatio } = layout;
     const snap = (v: number) => snapToDevicePixel(v, devicePixelRatio);
     this.frameScale = fs;
     this.visibleLeft = Math.max(0, opening.x);
@@ -250,21 +246,6 @@ export class SillDecor {
       snap(this.visibleLeft + Math.round(size.potWidth / 2 + 3) * fs),
       snap(surface.y + FOOT_ROWS * fs),
     );
-
-    // The curtain hangs from above the view down past the sill.
-    const height = Math.ceil((screenHeight - opening.y) / fs) + 2;
-    const width = curtainWidth(this.visibleWidth / fs);
-    if (`${width}x${height}` !== this.curtainSize) {
-      if (this.curtain) {
-        this.front.removeChild(this.curtain.mesh);
-        this.curtain.destroy();
-      }
-      this.curtain = new Curtain(width, height);
-      this.curtainSize = `${width}x${height}`;
-      this.front.addChild(this.curtain.mesh);
-    }
-    this.curtain?.mesh.scale.set(fs);
-    this.curtain?.mesh.position.set(snap(visibleRight - width * fs + fs), snap(opening.y - 2 * fs));
 
     this.seeds.scale.set(fs);
     this.seeds.position.set(snap(this.visibleLeft), snap(surface.y));
@@ -366,7 +347,7 @@ export class SillDecor {
     this.kick = Math.min(1.5, this.kick + strength * (1 - d / reach) * 1.2);
   }
 
-  /** Breeze through the open window stirs the leaves and curtain; the room's own air keeps them just moving when it's shut. */
+  /** Breeze through the open window stirs the leaves; the room's own air keeps them just moving when it's shut. */
   update(time: number, wind: number, openness: number): void {
     const dt = Number.isNaN(this.lastTime) ? 0 : Math.max(0, Math.min(0.25, time - this.lastTime));
     this.lastTime = time;
@@ -376,7 +357,6 @@ export class SillDecor {
     this.kickTime += dt;
     const shiver = this.kick * Math.sin(this.kickTime * 9);
     for (const [i, leaves] of this.leaves.entries()) leaves.update(time, wind * 0.6 + shiver * (1 + i * 0.3) / calm, calm);
-    this.curtain?.update(time, wind, openness);
   }
 
   private addSpeck(spread: number): void {

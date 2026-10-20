@@ -55,19 +55,14 @@ export function plantSize(k: number): PlantSize {
   };
 }
 
-/** The curtain's width (art px) for a view this wide: slimmer on phones. */
-export function curtainWidth(visibleArtWidth: number): number {
-  return Math.round(Math.min(42, Math.max(26, visibleArtWidth * 0.12)));
-}
-
 export interface TabletSize {
   width: number;
   height: number;
-  /** Sill art (from the right, beside the curtain) kept clear of creatures. */
+  /** Sill art (from the right of the view) kept clear of creatures. */
   reserve: number;
 }
 
-/** The settings iPad stood on the sill's right-hand corner, in landscape. */
+/** The settings iPad lying in the sill's right-hand corner, in landscape, balancing the plant at the left. */
 export function tabletSize(k: number): TabletSize {
   const width = evenSize(46 * k);
   return { width, height: Math.round(width * 0.72), reserve: width + Math.round(8 * k) };

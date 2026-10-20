@@ -94,7 +94,7 @@ export class SillTablet {
     return { x: this.container.x + x * k, y: this.container.y + y * k, width: w * k, height: h * k };
   }
 
-  layout(surface: SillSurface, nearness: number, visibleRight: number, curtainArt: number): void {
+  layout(surface: SillSurface, nearness: number, visibleRight: number): void {
     const fs = surface.frameScale;
     const size = tabletSize(nearness);
     const rebuild = size.width !== this.size.width || !this.body.texture || this.body.texture === Texture.EMPTY;
@@ -106,9 +106,8 @@ export class SillTablet {
       this.body.texture = drawBody(W, H).toTexture();
       this.lastKey = '';
     }
-    // On the sill between the bowl's side and the curtain's foot, resting near the front.
-    const right = visibleRight - (curtainArt - 6) * fs;
-    const x = Math.round(right - (size.reserve / 2 + 2) * fs);
+    // In the sill's right-hand corner, near the front: the plant's counterpart at the left.
+    const x = Math.round(visibleRight - (W / 2 + 5) * fs);
     this.container.scale.set(fs);
     this.container.position.set(x, Math.round(surface.y + Math.min(4, surface.depth) * fs));
     // The body sprite is W+4 wide and H+3 tall (the device, its bottom edge, its shadow).

@@ -244,9 +244,10 @@ Rebuilt after a hand-drawn reference (the landscapes follow one at a time):
 - **The dish is taken in while the window is shut**: it lifts away as the
   sashes start to close and comes back once they're open. Feeding is paused
   until then (the panel reads "Open window to feed").
-- A **potted plant** on the left of the sill and a **linen curtain** on the
-  right stir in the breeze while the window is open. Visitors such as the cat
-  and squirrel come and go from behind them.
+- A **potted plant** in the sill's left-hand corner stirs in the breeze while
+  the window is open, balanced by the settings tablet in the right-hand
+  corner, with the seed bowl between them towards the right. Visitors such as
+  the cat and squirrel come and go from behind the plant.
 - Open sashes stay slim on ultrawide and portrait screens.
 
 **Redesign, part 2 — the forest valley** ✅
@@ -510,7 +511,7 @@ src/
     WindowFrame.ts          Wall, timber frame and windowsill
     casement.ts             Swinging-sash perspective maths (unit tested)
     CasementSashes.ts       The two hinged sashes, with rain mapped onto their glass
-    SillDecor.ts            Potted plant, curtain and spilled seed
+    SillDecor.ts            Potted plant and spilled seed
     woodArt.ts              Procedural plank / grain / knot painter
     BirdseedBowl.ts         The seed dish (taken in while the window is shut)
   sim/                      Pure behaviour logic (unit tested): bird and cat

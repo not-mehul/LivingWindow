@@ -33,7 +33,6 @@ import { WindowFrame } from './window/WindowFrame';
 import { CasementSashes } from './window/CasementSashes';
 import { SillDecor } from './window/SillDecor';
 import { SillTablet } from './window/SillTablet';
-import { curtainWidth } from './window/sillProps';
 
 /** Cap the backing-store density: beyond 3× the extra pixels are invisible. */
 const MAX_DEVICE_PIXEL_RATIO = 3;
@@ -390,9 +389,7 @@ async function boot(): Promise<void> {
     glass.layout(sashes.glassRect);
     bowl.layout(frame.sillSurface, l.devicePixelRatio, frame.nearness);
     decor.layout(l, frame.sillSurface, bowl.container.x, frame.nearness);
-    const visibleLeft = Math.max(0, l.opening.x);
-    const visibleRight = Math.min(l.screenWidth, l.opening.x + l.opening.width);
-    tablet.layout(frame.sillSurface, frame.nearness, visibleRight, curtainWidth((visibleRight - visibleLeft) / l.frameScale));
+    tablet.layout(frame.sillSurface, frame.nearness, Math.min(l.screenWidth, l.opening.x + l.opening.width));
     roomFlash.width = l.screenWidth;
     roomFlash.height = l.screenHeight;
   };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { curtainWidth, dishSize, nearness, plantSize, tabletSize } from './sillProps';
+import { dishSize, nearness, plantSize, tabletSize } from './sillProps';
 
 describe('sill props', () => {
   it('are full size on desktop and ultrawide views', () => {
@@ -25,7 +25,7 @@ describe('sill props', () => {
     const view = 234;
     const k = nearness(view);
     // The tablet in the right-hand corner takes its strip of sill too.
-    const usable = view - plantSize(k).reserve - (curtainWidth(view) - 6) - tabletSize(k).reserve;
+    const usable = view - plantSize(k).reserve - tabletSize(k).reserve;
     expect(usable).toBeGreaterThanOrEqual(100);
     // And the dish fits in it with room beside it for a bird.
     expect(dishSize(k).width + 2 * 24).toBeLessThan(usable);

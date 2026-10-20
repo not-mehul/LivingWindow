@@ -1,4 +1,4 @@
-/** Shared colours for the interior (sash glass, bowl, plant, curtain, seed). */
+/** Shared colours for the interior (sash glass, bowl, plant, seed). */
 export const GLASS = {
   tint: 0xbfe3ff,
   tintAlpha: 0.14,
@@ -35,16 +35,6 @@ export const PLANT = {
   leaf: '#5a7a36',
   leafLight: '#7e9a4a',
   leafVein: '#a4b866',
-} as const;
-
-/** The linen curtain. */
-export const LINEN = {
-  outline: '#5a4a3c',
-  shadow: '#9a8a76',
-  dark: '#b8a890',
-  base: '#d4c6ae',
-  light: '#e6dac4',
-  highlight: '#f2ead8',
 } as const;
 
 export const SEED = {

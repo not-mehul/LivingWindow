@@ -5,7 +5,7 @@ import type { ViewportLayout } from '../core/viewportLayout';
 import { pixelHash } from '../sprites/raster';
 import { HINGE_FRACTIONS, SASH_TUCK } from './casement';
 import { IRON, RUSTIC_THEME, type FrameTheme } from './palette';
-import { curtainWidth, nearness, plantSize, tabletSize } from './sillProps';
+import { nearness, plantSize, tabletSize } from './sillProps';
 import { paintPlank, PixelBuffer } from './woodArt';
 import { hexToNumber } from '../core/color';
 
@@ -29,7 +29,7 @@ const SILL_OVERHANG = 6;
 
 /** Screen-space strip along the sill where objects (bowl, perched birds) rest. */
 export interface SillSurface {
-  /** Left/right bounds creatures may use (CSS px), clear of the plant and curtain. */
+  /** Left/right bounds creatures may use (CSS px), clear of the plant and the tablet. */
   left: number;
   right: number;
   /** Y of the standing surface (CSS px). Objects anchor their feet here. */
@@ -345,8 +345,8 @@ export class WindowFrame {
     this._surface = {
       // Clear of the potted plant at the left end.
       left: visibleLeft + plantSize(this._nearness).reserve * fs,
-      // Clear of the curtain's foot (which tucks in a little at the bottom) and the tablet beside it.
-      right: visibleRight - (curtainWidth((visibleRight - visibleLeft) / fs) - 6 + tabletSize(this._nearness).reserve) * fs,
+      // Clear of the tablet in the right-hand corner.
+      right: visibleRight - tabletSize(this._nearness).reserve * fs,
       y: sillTop + SILL_SURFACE_OFFSET * fs,
       top: sillTop,
       depth: SILL_TOP_END - SILL_SURFACE_OFFSET,
