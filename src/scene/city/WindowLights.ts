@@ -1,4 +1,5 @@
 import { Sprite, type Texture } from 'pixi.js';
+import { mood } from '../../state/mood';
 import { WORLD_HEIGHT, WORLD_WIDTH } from '../../config';
 import { createNearestTexture, PixelCanvas } from '../../core/pixelTexture';
 import type { WindowRecord } from './cityGenerator';
@@ -9,6 +10,8 @@ const WARM = [0xfff0c8, 0xfff0c8, 0xffe8b8, 0xffdc9a, 0xfff6dc];
 const COOL = [0xd6e8ff, 0xe8f0ff];
 /** Rooms lit by a screen, or by a neon strip someone's put up. */
 const TV = [0x7ab8ff, 0x8ac8ff];
+/** Calm mode's warm cast over the lit windows (cool and neon rooms lean towards lamplight). */
+const CALM_WARMTH = 0xffe2bc;
 const NEON_ROOM = [0xff8ad8, 0xa88aff, 0x6ae0ff, 0xffb070];
 /** Seconds between re-evaluating which windows are lit. */
 const TICK_SECONDS = 0.5;
@@ -66,6 +69,8 @@ export class WindowLights {
   /** @param litFraction share of windows that should be lit, 0..1 */
   update(dt: number, litFraction: number, emissive: number): void {
     this.sprite.alpha = this.baseAlpha * emissive;
+    // The cosy city of calm mode: every lit room a little warmer.
+    this.sprite.tint = mood.calm ? CALM_WARMTH : 0xffffff;
     this.accumulator += dt;
     if (this.accumulator < TICK_SECONDS) return;
     this.accumulator = 0;

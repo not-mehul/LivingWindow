@@ -176,11 +176,13 @@ export class CityScene implements WorldScene {
     this.billboards.update(dt, lighting, tints);
     this.roofAmbience.update(dt, env);
     this.holograms.update(dt, env);
-    const smogTint = lerpColor(lerpColor(0xffffff, 0xffa090, lighting.twilight), 0xa04a9a, lighting.nightness);
+    // Calm mode's cosier city: a softer, dusky-rose night haze instead of neon magenta smog.
+    const calm = mood.calm;
+    const smogTint = lerpColor(lerpColor(0xffffff, 0xffa090, lighting.twilight), calm ? 0x9a7086 : 0xa04a9a, lighting.nightness);
     this.smog.tint = smogTint;
-    this.smog.alpha = 0.7 + 0.2 * lighting.twilight - 0.2 * lighting.nightness;
+    this.smog.alpha = 0.7 + 0.2 * lighting.twilight - (calm ? 0.28 : 0.2) * lighting.nightness;
     this.smogVeil.tint = smogTint;
-    this.smogVeil.alpha = 0.5 + 0.06 * lighting.twilight - 0.26 * lighting.nightness;
+    this.smogVeil.alpha = 0.5 + 0.06 * lighting.twilight - (calm ? 0.32 : 0.26) * lighting.nightness;
     for (const lights of this.lights) lights.update(dt, lighting.windowsLit, lighting.emissive);
     this.lamps.update(dt, lighting.darkness, lighting.emissive);
     for (const life of this.life) life.update(dt, lighting.emissive, lighting.darkness);
@@ -217,7 +219,8 @@ export class CityScene implements WorldScene {
       else if (!mood.calm && Math.random() < dt * (sign.broken ? 0.9 : 0.02)) sign.dip = sign.broken ? 0.05 + Math.random() * 0.5 : 0.06 + Math.random() * 0.12;
       const flick = sign.dip > 0 ? (sign.broken ? (Math.random() < 0.5 ? 0.1 : 0.6) : 0.55) : 1;
       sign.sprite.visible = this.signsLevel > 0.01;
-      sign.sprite.alpha = this.signsLevel * flick;
+      // Less neon in calm mode.
+      sign.sprite.alpha = this.signsLevel * flick * (mood.calm ? 0.6 : 1);
     }
   }
 }

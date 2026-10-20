@@ -34,7 +34,8 @@ export class Holograms {
   }
 
   update(dt: number, env: Environment): void {
-    const level = hologramLevel(env.lighting.hours) * Math.min(1, env.lighting.emissive * 1.4);
+    // Fainter projections in calm mode.
+    const level = hologramLevel(env.lighting.hours) * Math.min(1, env.lighting.emissive * 1.4) * (mood.calm ? 0.55 : 1);
     this.container.visible = level > 0.02;
     if (!this.container.visible) return;
     this.t += dt;

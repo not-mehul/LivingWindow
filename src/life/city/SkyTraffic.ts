@@ -124,6 +124,8 @@ export class SkyTraffic {
       this.timers[kind] -= dt;
       if (this.timers[kind] <= 0) {
         this.timers[kind] = kind === 'plane' ? r(60, 180) : kind === 'helicopter' ? r(180, 480) : r(90, 240);
+        // Calm mode: the darting quadcopters and the helicopter come by far less often.
+        if (mood.calm && kind !== 'plane') this.timers[kind] *= 3;
         const ok = kind !== 'drone' || (h >= 8 && h < 22);
         if (ok && !this.crafts.some((c) => c.kind === kind)) this.launch(kind);
       }
@@ -131,7 +133,7 @@ export class SkyTraffic {
     // Ad drones work the evening, a couple at a time, each with a little screen slung under it.
     this.timers.addrone -= dt;
     if (this.timers.addrone <= 0) {
-      this.timers.addrone = r(40, 110);
+      this.timers.addrone = r(40, 110) * (mood.calm ? 2 : 1);
       if (adDronesOut(h) && this.crafts.filter((c) => c.kind === 'addrone').length < 2) this.launch('addrone');
     }
     // The blimp goes up once on a fair day.

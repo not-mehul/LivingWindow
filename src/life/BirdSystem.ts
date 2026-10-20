@@ -778,7 +778,9 @@ export class BirdSystem {
     const from = { x: bird.x, y: bird.y, z: bird.z };
     const avgScale = perspectiveScale((from.z + end.z) / 2);
     const distance = Math.hypot(end.x - from.x, end.y - from.y);
-    const duration = clamp(distance / (TEMPERAMENTS[bird.species].speed * avgScale) + Math.abs(end.z - from.z) * 2.5, 1.2, 9);
+    // In calm mode, birds coming to or leaving the sill pass the glass at a gentler pace.
+    const nearGlass = mood.calm && Math.min(from.z, end.z) < NEAR_Z;
+    const duration = clamp(distance / (TEMPERAMENTS[bird.species].speed * avgScale) + Math.abs(end.z - from.z) * 2.5, 1.2, 9) * (nearGlass ? 1.35 : 1);
     return { from, to, arc: 15 + this.rng() * 40, t: 0, duration, arrive };
   }
 

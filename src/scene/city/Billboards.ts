@@ -67,7 +67,8 @@ export class Billboards {
       else if (!mood.calm && Math.random() < dt * 0.015) s.dip = 0.05 + Math.random() * 0.15;
       const flick = s.dip > 0 ? 0.6 : 1;
       const day = lerpColor(tints[s.board.band], 0xffffff, 0.35);
-      s.sprite.tint = lerpColor(day, 0xffffff, lit * flick);
+      // In calm mode the screens glow rather than blaze.
+      s.sprite.tint = lerpColor(day, 0xffffff, lit * flick * (mood.calm ? 0.72 : 1));
       s.glow.visible = lit > 0.02;
       s.glow.alpha = lit * (mood.calm ? 0.38 : 0.55) * flick;
     }
