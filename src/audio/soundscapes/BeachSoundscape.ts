@@ -1,32 +1,41 @@
 import type { BeachScene } from '../../scene/beach/BeachScene';
 import type { Environment } from '../../scene/Environment';
 import type { AudioEngine } from '../AudioEngine';
-import { Crickets } from './nature';
+import type { TextureLayer } from '../textures';
+import { crickets, foam, shingle } from './nature';
+import { nightInsects } from './schedules';
 import { Soundscape } from './Soundscape';
 import { rand } from '../../core/random';
 
 /**
- * The shore: a low roar of distant swells, every breaking wave as a crash
- * followed by the hiss of the backwash, a coastal breeze and far-off gulls;
- * after dark, crickets in the dunes and the surf a little hushed.
+ * The shore: the low, breathing roar of the open sea, and every breaking
+ * wave in layers: the curl crashing over with a deep thump, foam fizzing as
+ * it spreads up the sand, then the backwash dragging back down through the
+ * shingle. A coastal breeze and far-off gulls by day; after dark, crickets
+ * in the dunes and the surf a little hushed.
  */
 export class BeachSoundscape extends Soundscape {
-  private readonly swell: GainNode;
-  private readonly breeze: GainNode;
+  private readonly surf: GainNode;
+  private readonly surfHiss: GainNode;
+  private readonly foam: TextureLayer;
+  private readonly shingle: TextureLayer;
   private readonly unsubscribe: () => void;
-  private readonly crickets: Crickets;
+  private readonly crickets: TextureLayer;
   /** How dark it is (the night surf sounds softer). */
   private darkness = 0;
-  private time = 0;
   private gullTimer = rand(8, 20);
 
   constructor(engine: AudioEngine, scene: BeachScene, bed?: AudioBuffer) {
     super(engine);
-    this.swell = this.gain();
-    (bed ? this.loop(bed) : this.noise('brown')).connect(this.filter('lowpass', bed ? 20000 : 300)).connect(this.swell).connect(this.bed);
-    this.breeze = this.gain();
-    this.noise('pink').connect(this.filter('bandpass', 1000, 0.5)).connect(this.breeze).connect(this.bed);
-    this.crickets = new Crickets(engine, this.bed, 4);
+    this.surf = this.gain();
+    if (bed) this.loop(bed).connect(this.surf).connect(this.bed);
+    else this.noise('brown').connect(this.filter('lowpass', 360, 0.5)).connect(this.flutter(0.3, 0.1)).connect(this.surf).connect(this.bed);
+    // The far line of breakers: a soft hiss along the whole horizon.
+    this.surfHiss = this.gain();
+    this.noise('pink').connect(this.filter('bandpass', 1100, 0.4)).connect(this.flutter(0.35, 0.12)).connect(this.surfHiss).connect(this.bed);
+    this.foam = this.texture(foam());
+    this.shingle = this.texture(shingle());
+    this.crickets = this.texture(crickets(4));
     this.unsubscribe = scene.on('break', ({ amplitude, pan }) => this.wave(amplitude, pan));
   }
 
@@ -35,60 +44,88 @@ export class BeachSoundscape extends Soundscape {
     super.dispose();
   }
 
-  update(dt: number, env: Environment): void {
+  update(_dt: number, env: Environment): void {
     if (!this.engine.running || this.isDisposed) return;
-    this.time += dt;
     const now = this.engine.context.currentTime;
     const wind = Math.abs(env.weather.wind);
-    // The distant sea breathes on a slow cycle.
-    this.swell.gain.setTargetAtTime(0.5 + 0.18 * Math.sin(this.time * 0.55) + 0.3 * wind, now, 0.8);
-    this.breeze.gain.setTargetAtTime(0.04 + 0.22 * wind, now, 1);
+    this.surf.gain.setTargetAtTime((0.2 + 0.15 * wind) * (1 - this.darkness * 0.15), now, 2);
+    this.surfHiss.gain.setTargetAtTime(0.07 + 0.05 * wind, now, 2);
     this.darkness = env.lighting.darkness;
     const rain = env.weather.kind === 'rain' ? Math.min(1, env.weather.precipitation * 2) : 0;
-    this.crickets.update(dt, env.lighting.darkness > 0.6 ? (1 - rain) * (1 - wind) * 0.55 : 0);
+    this.crickets.set(0.16 * nightInsects(env.lighting.darkness) * (1 - rain) * (1 - wind), 4);
 
-    this.gullTimer -= dt;
+    this.gullTimer -= _dt;
     if (this.gullTimer <= 0) {
-      this.gullTimer = rand(10, 30);
+      this.gullTimer = rand(12, 40);
       if (env.lighting.darkness < 0.5) this.engine.playSpatialSound('gull-cry', rand(-1, 1), rand(0.8, 1), 'ambience');
     }
   }
 
-  /** A breaking wave: a filtered crash, then the backwash fizzing back down the sand. */
+  /** A breaking wave, in layers: crash and thump, the foam's fizz, then the backwash. */
   private wave(amplitude: number, pan: number): void {
     if (!this.engine.running || this.isDisposed) return;
     const ctx = this.engine.context;
     const when = ctx.currentTime + 0.02;
-    const level = Math.min(1, amplitude / 26) * (1 - this.darkness * 0.25);
+    const size = Math.min(1, amplitude / 26);
+    const level = size * (1 - this.darkness * 0.25);
     const panner = ctx.createStereoPanner();
     panner.pan.value = pan;
     panner.connect(this.bed);
 
+    // The curl falling over: a roar that opens, then darkens as it spends itself.
     const crash = ctx.createBufferSource();
     crash.buffer = this.engine.noise.get('pink');
     const crashFilter = ctx.createBiquadFilter();
     crashFilter.type = 'lowpass';
-    crashFilter.frequency.setValueAtTime(2800, when);
-    crashFilter.frequency.exponentialRampToValueAtTime(500, when + 1.8);
+    crashFilter.Q.value = 0.5;
+    crashFilter.frequency.setValueAtTime(900, when);
+    crashFilter.frequency.linearRampToValueAtTime(1800 + 2200 * size, when + 0.35);
+    crashFilter.frequency.exponentialRampToValueAtTime(420, when + 2.6);
     const crashAmp = ctx.createGain();
     crashAmp.gain.setValueAtTime(0, when);
-    crashAmp.gain.linearRampToValueAtTime(0.7 * level, when + 0.15);
-    crashAmp.gain.exponentialRampToValueAtTime(0.0001, when + 2.2);
+    crashAmp.gain.linearRampToValueAtTime(0.75 * level, when + 0.3);
+    crashAmp.gain.setTargetAtTime(0, when + 0.5, 0.7);
     crash.connect(crashFilter).connect(crashAmp).connect(panner);
-    crash.start(when, Math.random() * 5, 2.4);
+    crash.start(when, Math.random() * 8, 3.4);
 
+    // The weight of water landing: a low thump under the crash.
+    const thump = ctx.createBufferSource();
+    thump.buffer = this.engine.noise.get('brown');
+    const thumpFilter = ctx.createBiquadFilter();
+    thumpFilter.type = 'lowpass';
+    thumpFilter.frequency.value = 160;
+    const thumpAmp = ctx.createGain();
+    thumpAmp.gain.setValueAtTime(0, when + 0.15);
+    thumpAmp.gain.linearRampToValueAtTime(0.45 * level * size, when + 0.3);
+    thumpAmp.gain.setTargetAtTime(0, when + 0.4, 0.35);
+    thump.connect(thumpFilter).connect(thumpAmp).connect(panner);
+    thump.start(when, Math.random() * 8, 2);
+
+    // Foam spreading up the sand, then the backwash rattling back down.
+    swell(this.foam.gain.gain, when + 0.5, 0.7 * level, 0.9, 1.4);
+    swell(this.shingle.gain.gain, when + 2.4, 0.45 * level, 1.2, 1.1);
     const hiss = ctx.createBufferSource();
     hiss.buffer = this.engine.noise.get('white');
     const hissFilter = ctx.createBiquadFilter();
-    hissFilter.type = 'highpass';
-    hissFilter.frequency.value = 1800;
+    hissFilter.type = 'bandpass';
+    hissFilter.Q.value = 0.6;
+    const start = when + 2.2;
+    hissFilter.frequency.setValueAtTime(3200, start);
+    hissFilter.frequency.exponentialRampToValueAtTime(1200, start + 3);
     const hissAmp = ctx.createGain();
-    const start = when + 1.4;
     hissAmp.gain.setValueAtTime(0, start);
-    hissAmp.gain.linearRampToValueAtTime(0.14 * level, start + 0.6);
-    hissAmp.gain.linearRampToValueAtTime(0, start + 3.4);
+    hissAmp.gain.linearRampToValueAtTime(0.12 * level, start + 0.8);
+    hissAmp.gain.linearRampToValueAtTime(0, start + 3.2);
     hiss.connect(hissFilter).connect(hissAmp).connect(panner);
-    hiss.start(start, Math.random() * 5, 3.6);
-    window.setTimeout(() => panner.disconnect(), 6000);
+    hiss.start(start, Math.random() * 8, 3.4);
+    window.setTimeout(() => panner.disconnect(), 7000);
   }
+}
+
+/** Raise a texture's level to `peak` over `rise` s from `when`, then let it ease away. */
+function swell(param: AudioParam, when: number, peak: number, rise: number, fall: number): void {
+  // A newer wave takes over from wherever the last one's swell has got to.
+  param.cancelScheduledValues(when);
+  param.setTargetAtTime(peak, when, rise / 3);
+  param.setTargetAtTime(0, when + rise, fall);
 }

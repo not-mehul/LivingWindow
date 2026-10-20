@@ -24,11 +24,3 @@ describe('pre-rendered takes', () => {
     expect(trimmedLength(fakeBuffer(data), 10)).toBe(3000);
   });
 });
-
-describe('seamless texture loops', () => {
-  it('folds the ringing tail back onto the start', async () => {
-    const { foldTail } = await import('./render');
-    const data = new Float32Array([1, 2, 3, 4, 5, 6, 7]);
-    expect([...foldTail(data, 5)]).toEqual([1 + 6, 2 + 7, 3, 4, 5]);
-  });
-});

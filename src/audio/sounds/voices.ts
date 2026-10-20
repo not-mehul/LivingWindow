@@ -875,7 +875,113 @@ const nightjarChurr: SynthVoice = (ctx, out, when, gain, rate, noise) => {
   return length;
 };
 
+/**
+ * A trunk or bough groaning in the wind. Wood creaks by stick-slip: the
+ * fibres catch and let go dozens of times a second, each slip a tiny tick
+ * that rings the timber's resonances; the rate of slipping drifts up and
+ * down, which is what gives a creak its pitch and its moan.
+ */
+const woodCreak: SynthVoice = (ctx, out, when, gain, rate) => {
+  const length = rand(0.9, 2.2);
+  const click = ctx.createBuffer(1, 64, ctx.sampleRate);
+  const data = click.getChannelData(0);
+  for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length) ** 3;
+  const body = ctx.createGain();
+  body.gain.value = 1;
+  for (const [f, q, level] of [
+    [rand(260, 340), 14, 1],
+    [rand(560, 700), 12, 0.6],
+    [rand(1050, 1300), 10, 0.3],
+  ]) {
+    const res = ctx.createBiquadFilter();
+    res.type = 'bandpass';
+    res.frequency.value = f * rate;
+    res.Q.value = q;
+    const g = ctx.createGain();
+    g.gain.value = level;
+    body.connect(res).connect(g).connect(out);
+  }
+  // The slip rate rises, wavers and sags again.
+  const from = rand(18, 30);
+  const peak = rand(45, 80);
+  let t = 0;
+  while (t < length) {
+    const x = t / length;
+    const slipRate = from + (peak - from) * Math.sin(Math.PI * x) ** 0.7 * (1 + 0.15 * Math.sin(x * 23));
+    const loud = Math.sin(Math.PI * x) ** 0.5;
+    const src = ctx.createBufferSource();
+    src.buffer = click;
+    const amp = ctx.createGain();
+    amp.gain.value = gain * 0.9 * loud * rand(0.6, 1);
+    src.connect(amp).connect(body);
+    src.start(when + t);
+    t += (1 / slipRate) * rand(0.85, 1.15);
+  }
+  return length + 0.2;
+};
+
+/** A bumblebee drifting past: a low, wavering hum that swells and fades away. */
+const beeBuzz: SynthVoice = (ctx, out, when, gain, rate) => {
+  const length = rand(2.2, 3.8);
+  const f = rand(140, 190) * rate;
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(f * 1.03, when);
+  osc.frequency.linearRampToValueAtTime(f * 0.97, when + length);
+  // Wingbeats never hold perfectly steady.
+  const wobble = ctx.createOscillator();
+  wobble.frequency.value = rand(5, 9);
+  const wobbleDepth = ctx.createGain();
+  wobbleDepth.gain.value = f * 0.025;
+  wobble.connect(wobbleDepth).connect(osc.frequency);
+  const body = ctx.createBiquadFilter();
+  body.type = 'lowpass';
+  body.frequency.value = 1500;
+  body.Q.value = 0.7;
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.06 * gain, when + length * 0.4);
+  amp.gain.linearRampToValueAtTime(0.045 * gain, when + length * 0.6);
+  amp.gain.linearRampToValueAtTime(0, when + length);
+  osc.connect(body).connect(amp).connect(out);
+  osc.start(when);
+  wobble.start(when);
+  osc.stop(when + length + 0.05);
+  wobble.stop(when + length + 0.05);
+  return length;
+};
+
+/** A siren many streets away: a slow wail, softened by distance and walls. */
+const sirenFar: SynthVoice = (ctx, out, when, gain, rate) => {
+  const length = rand(5, 6.5);
+  const osc = ctx.createOscillator();
+  osc.type = 'triangle';
+  const low = 620 * rate;
+  const high = 1150 * rate;
+  const cycle = rand(1.6, 2.2);
+  osc.frequency.setValueAtTime(low, when);
+  for (let t = 0; t < length; t += cycle) {
+    osc.frequency.linearRampToValueAtTime(high, when + t + cycle * 0.45);
+    osc.frequency.linearRampToValueAtTime(low, when + t + cycle);
+  }
+  const lowpass = ctx.createBiquadFilter();
+  lowpass.type = 'lowpass';
+  lowpass.frequency.value = 1600;
+  const amp = ctx.createGain();
+  amp.gain.setValueAtTime(0, when);
+  amp.gain.linearRampToValueAtTime(0.06 * gain, when + 1.5);
+  amp.gain.setValueAtTime(0.06 * gain, when + length - 2);
+  amp.gain.linearRampToValueAtTime(0, when + length);
+  osc.connect(lowpass).connect(amp).connect(out);
+  osc.start(when);
+  osc.stop(when + length + 0.05);
+  return length;
+};
+
 export const SYNTH_VOICES = {
+  'wood-creak': woodCreak,
+  'bee-buzz': beeBuzz,
+  'siren-far': sirenFar,
   'nightjar-churr': nightjarChurr,
   'dolphin-blow': dolphinBlow,
   'coconut-thud': coconutThud,

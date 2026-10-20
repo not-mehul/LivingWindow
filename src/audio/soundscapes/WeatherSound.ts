@@ -1,7 +1,7 @@
 import type { Environment } from '../../scene/Environment';
 import type { AcousticsId } from '../acoustics';
 import type { AudioEngine } from '../AudioEngine';
-import { glassDrop, grassDrop, leafDrop, runoff, shoreDrop, streetDrop, TextureLayer, type Grain } from '../textures';
+import { glassDrop, grassDrop, leafDrop, runoff, scattered, shoreDrop, streetDrop, TextureLayer, type Grain } from '../textures';
 import { thunderParams } from '../spatial';
 import { rand } from '../../core/random';
 
@@ -100,8 +100,8 @@ export class WeatherSound {
     engine.noise.source('white').connect(this.whistleFilter).connect(mod.flutter(0.6, 0.3)).connect(this.whistle).connect(this.windPan);
 
     // On the pane itself: drops, and water running down.
-    this.glass = new TextureLayer(ctx, engine.prerender, engine.noise, engine.inputs.glass, { density: 60, grain: glassDrop, width: 0.85 }, 31);
-    this.trickle = new TextureLayer(ctx, engine.prerender, engine.noise, engine.inputs.glass, { density: 7, grain: runoff, width: 0.7 }, 47);
+    this.glass = new TextureLayer(ctx, engine.inputs.glass, scattered(60, glassDrop, 0.85), 31);
+    this.trickle = new TextureLayer(ctx, engine.inputs.glass, scattered(7, runoff, 0.7), 47);
   }
 
   /** Change what the rain falls on (when the landscape changes). */
@@ -116,8 +116,8 @@ export class WeatherSound {
     }
     const grain = SURFACES[id];
     const out = this.engine.inputs.weather;
-    this.patter = new TextureLayer(ctx, this.engine.prerender, this.engine.noise, out, { density: PATTER_DENSITY, grain }, 11 + id.length);
-    this.downpour = new TextureLayer(ctx, this.engine.prerender, this.engine.noise, out, { density: DOWNPOUR_DENSITY, grain }, 23 + id.length);
+    this.patter = new TextureLayer(ctx, out, scattered(PATTER_DENSITY, grain), 11 + id.length);
+    this.downpour = new TextureLayer(ctx, out, scattered(DOWNPOUR_DENSITY, grain), 23 + id.length);
     this.applyRain(this.rain, 0.5);
   }
 

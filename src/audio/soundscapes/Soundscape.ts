@@ -1,6 +1,7 @@
 import type { Environment } from '../../scene/Environment';
 import type { AudioEngine } from '../AudioEngine';
 import type { NoiseColor } from '../noise';
+import { TextureLayer, type TextureSpec } from '../textures';
 
 /**
  * Base class for a landscape's ambience. Everything it plays goes through
@@ -14,6 +15,7 @@ export abstract class Soundscape {
   protected readonly bed: GainNode;
   private readonly sources: AudioScheduledSourceNode[] = [];
   private readonly stops: Array<() => void> = [];
+  private seeds = 0;
   private disposed = false;
 
   constructor(protected readonly engine: AudioEngine) {
@@ -74,6 +76,13 @@ export abstract class Soundscape {
     source.start(0, Math.random() * buffer.duration);
     this.sources.push(source);
     return source;
+  }
+
+  /** A looping texture (insects, water…) into the bed, silent until its level is set. */
+  protected texture(spec: TextureSpec, out: AudioNode = this.bed): TextureLayer {
+    const layer = new TextureLayer(this.engine.context, out, spec, 101 + this.seeds++ * 37);
+    this.stops.push(() => layer.stop());
+    return layer;
   }
 
   /** Let `param` wander by ±`depth` about its value, ~`rate` times a second, on the audio clock. */

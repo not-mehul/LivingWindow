@@ -1,86 +1,79 @@
 import type { Environment } from '../../scene/Environment';
 import type { AudioEngine } from '../AudioEngine';
 import type { SoundId } from '../sounds/SoundBank';
-import { Crickets } from './nature';
-import { birdActivity } from './schedules';
+import type { TextureLayer } from '../textures';
+import { crickets, distantBirds, katydids, trill } from './nature';
+import { birdActivity, dawnChorus, nightInsects } from './schedules';
 import { Soundscape } from './Soundscape';
 import { rand } from '../../core/random';
 
 /**
- * The deep forest: wind through the canopy, leaves rustling with every
- * gust, trunks creaking, calls echoing from birds out of sight, and
- * crickets after dark.
+ * The deep forest: the canopy's low roar and the bright shimmer of leaves,
+ * both swelling with each gust; trunks creaking; calls echoing from birds
+ * out of sight and a wash of far-off song at dawn; after dark, crickets, the
+ * rasp of katydids and the soft endless trill of tree crickets.
  */
 export class ForestSoundscape extends Soundscape {
-  private readonly windGain: GainNode;
-  private readonly windBand: BiquadFilterNode;
-  private readonly rustle: GainNode;
-  private readonly crickets: Crickets;
+  private readonly roar: GainNode;
+  private readonly roarBand: BiquadFilterNode;
+  private readonly leaves: GainNode;
+  private readonly chorus: TextureLayer;
+  private readonly crickets: TextureLayer;
+  private readonly katydids: TextureLayer;
+  private readonly trill: TextureLayer;
   private creakTimer = rand(6, 20);
   private callTimer = rand(4, 10);
 
   constructor(engine: AudioEngine, bed?: AudioBuffer) {
     super(engine);
-    this.windBand = this.filter('bandpass', 450, 0.5);
-    this.windGain = this.gain();
-    (bed ? this.loop(bed) : this.noise('pink')).connect(this.windBand).connect(this.windGain).connect(this.bed);
-    this.rustle = this.gain();
-    this.noise('white').connect(this.filter('highpass', 2600)).connect(this.rustle).connect(this.bed);
-    this.crickets = new Crickets(engine, this.bed, 5);
+    if (bed) this.loop(bed).connect(this.gain(0.85)).connect(this.bed);
+    // The canopy: a low roar of the whole wood, and leaves fluttering high up.
+    this.roarBand = this.filter('bandpass', 380, 0.5);
+    this.roar = this.gain();
+    this.noise('pink').connect(this.roarBand).connect(this.flutter(0.35, 0.15)).connect(this.roar).connect(this.bed);
+    this.leaves = this.gain();
+    this.noise('white').connect(this.filter('bandpass', 4200, 0.6)).connect(this.flutter(0.6, 2)).connect(this.leaves).connect(this.bed);
+    this.chorus = this.texture(distantBirds());
+    this.crickets = this.texture(crickets(6));
+    this.katydids = this.texture(katydids(3));
+    this.trill = this.texture(trill());
   }
 
   update(dt: number, env: Environment): void {
     if (!this.engine.running || this.isDisposed) return;
     const now = this.engine.context.currentTime;
+    const hours = env.lighting.hours;
     const wind = Math.abs(env.weather.wind);
     const rain = env.weather.kind === 'rain' ? env.weather.precipitation : 0;
-    this.windGain.gain.setTargetAtTime(0.12 + 0.45 * wind, now, 0.8);
-    this.windBand.frequency.setTargetAtTime(320 + 700 * wind, now, 0.8);
-    // Leaves flutter: a level that jitters with the gusts.
-    this.rustle.gain.setTargetAtTime((0.03 + 0.16 * wind) * (0.4 + Math.random() * 0.9), now, 0.05);
+    const snow = env.weather.kind === 'snow' ? env.weather.precipitation : 0;
+    const quiet = (1 - Math.min(1, rain * 1.6)) * (1 - snow);
+
+    this.roar.gain.setTargetAtTime(0.04 + 0.3 * wind ** 1.3, now, 1);
+    this.roarBand.frequency.setTargetAtTime(300 + 500 * wind, now, 1.5);
+    this.leaves.gain.setTargetAtTime((0.004 + 0.05 * wind ** 1.5) * (1 - snow * 0.8), now, 0.8);
+
+    const night = nightInsects(env.lighting.darkness) * quiet;
+    this.chorus.set(0.2 * dawnChorus(hours) * quiet, 4);
+    this.crickets.set(0.22 * night, 4);
+    this.katydids.set(0.14 * night, 5);
+    this.trill.set(0.05 * night, 6);
 
     this.creakTimer -= dt;
     if (this.creakTimer <= 0) {
-      this.creakTimer = rand(8, 30) / (0.3 + wind);
-      this.creak(0.3 + wind);
+      this.creakTimer = rand(10, 35) / (0.3 + wind);
+      if (wind > 0.15) this.engine.playSpatialSound('wood-creak', rand(-0.9, 0.9), rand(0.2, 0.7), 'ambience');
     }
 
     this.callTimer -= dt;
     if (this.callTimer <= 0) {
-      const birds = birdActivity(env.lighting.hours) * (1 - Math.min(1, rain * 1.5));
-      this.callTimer = rand(6, 18) / Math.max(0.1, birds);
+      const birds = birdActivity(hours) * quiet;
+      this.callTimer = rand(8, 24) / Math.max(0.1, birds);
       if (birds > 0.05) {
         const calls: SoundId[] = ['chickadee-call', 'jay-call', 'woodpecker-drum', 'robin-song'];
-        this.engine.playSpatialSound(calls[Math.floor(Math.random() * calls.length)], rand(-1, 1), rand(0.8, 1), 'ambience');
+        this.engine.playSpatialSound(calls[Math.floor(Math.random() * calls.length)], rand(-1, 1), rand(0.75, 1), 'ambience');
       } else if (env.lighting.darkness > 0.7 && Math.random() < 0.3) {
         this.engine.playSpatialSound('owl-hoot', rand(-1, 1), 0.95, 'ambience');
       }
     }
-
-    this.crickets.update(dt, env.lighting.darkness > 0.6 ? (1 - rain) * 0.8 : 0);
-  }
-
-  /** A trunk groaning in the wind: a slow, resonant, falling tone. */
-  private creak(strength: number): void {
-    const ctx = this.engine.context;
-    const when = ctx.currentTime + 0.05;
-    const length = rand(1.2, 2.6);
-    const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(rand(70, 95), when);
-    osc.frequency.linearRampToValueAtTime(rand(48, 62), when + length);
-    const resonance = ctx.createBiquadFilter();
-    resonance.type = 'lowpass';
-    resonance.frequency.setValueAtTime(rand(380, 520), when);
-    resonance.Q.value = 9;
-    const amp = ctx.createGain();
-    amp.gain.setValueAtTime(0, when);
-    amp.gain.linearRampToValueAtTime(0.05 * Math.min(1.2, strength), when + length * 0.3);
-    amp.gain.linearRampToValueAtTime(0, when + length);
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = rand(-0.8, 0.8);
-    osc.connect(resonance).connect(amp).connect(pan).connect(this.bed);
-    osc.start(when);
-    osc.stop(when + length + 0.1);
   }
 }

@@ -1,45 +1,42 @@
 import { createRng } from '../core/random';
-import type { NoiseBank } from './noise';
-import type { Prerender } from './render';
+import { addBubble, addNoiseBurst, Biquad, poissonTimes, Stereo } from './synth';
 
 /** Every texture loop is levelled to this RMS, so layer gains mean the same thing for each. */
 const TEXTURE_RMS = 0.1;
 
-/** Draw one grain into `out` at `when`; `rng` gives its random character. */
-export type Grain = (ctx: BaseAudioContext, out: AudioNode, when: number, rng: () => number, noise: NoiseBank) => void;
+/** Draw a whole texture into `out` (its times wrap at the end, so it loops seamlessly). */
+export type TextureRender = (out: Stereo, rng: () => number) => void;
 
 export interface TextureSpec {
-  /** Grains per second. */
-  density: number;
-  grain: Grain;
-  /** Stereo spread of the grains, 0..1. */
-  width?: number;
+  render: TextureRender;
   seconds?: number;
 }
 
-/**
- * Scatter grains through an offline context: Poisson-timed (so no rhythm
- * emerges), each panned at random.
- */
-export function scatterGrains(ctx: OfflineAudioContext, spec: TextureSpec, seconds: number, seed: number, noise: NoiseBank): void {
-  const rng = createRng(seed);
-  const width = spec.width ?? 0.9;
-  let t = 0;
-  while (true) {
-    t += -Math.log(1 - rng()) / spec.density;
-    if (t >= seconds) break;
-    const pan = ctx.createStereoPanner();
-    pan.pan.value = (rng() * 2 - 1) * width;
-    pan.connect(ctx.destination);
-    spec.grain(ctx, pan, t, rng, noise);
-  }
+/** One small event in a texture at time `t` (s), panned to `pan`. */
+export type Grain = (out: Stereo, t: number, pan: number, rng: () => number) => void;
+
+/** A texture of `grain`s at Poisson-random times (so no rhythm emerges), spread across the stereo field. */
+export function scattered(density: number, grain: Grain, width = 0.9, seconds?: number): TextureSpec {
+  return {
+    seconds,
+    render: (out, rng) => {
+      for (const t of poissonTimes(out.seconds, density, rng)) grain(out, t, (rng() * 2 - 1) * width, rng);
+    },
+  };
+}
+
+/** Synthesize a texture into a fresh, levelled stereo buffer. */
+export function renderTexture(spec: TextureSpec, sampleRate: number, seed: number): Stereo {
+  const out = new Stereo(Math.floor((spec.seconds ?? 9) * sampleRate), sampleRate);
+  spec.render(out, createRng(seed));
+  normalize({ numberOfChannels: 2, getChannelData: (ch) => (ch ? out.right : out.left) }, TEXTURE_RMS);
+  return out;
 }
 
 /**
  * A continuous texture made of many small sounds (raindrops, bubbles,
- * ticks), rendered once offline into a seamless loop and then played as a
- * single looping buffer. Its level is a plain gain the owner sets; the
- * playback rate wanders a touch so the loop never lines up the same way.
+ * insects), synthesized once into a seamless loop and then played as a
+ * single looping buffer. Its level is a plain gain the owner sets.
  */
 export class TextureLayer {
   readonly gain: GainNode;
@@ -48,8 +45,6 @@ export class TextureLayer {
 
   constructor(
     private readonly ctx: BaseAudioContext,
-    prerender: Prerender,
-    noise: NoiseBank,
     out: AudioNode,
     spec: TextureSpec,
     seed: number,
@@ -57,18 +52,20 @@ export class TextureLayer {
     this.gain = ctx.createGain();
     this.gain.gain.value = 0;
     this.gain.connect(out);
-    const seconds = spec.seconds ?? 9;
-    void prerender.loop(seconds, (offline) => scatterGrains(offline, spec, seconds, seed, noise)).then((buffer) => {
-      if (!buffer || this.stopped) return;
-      normalize(buffer, TEXTURE_RMS);
+    // Off the current frame, so building several layers never stalls one.
+    window.setTimeout(() => {
+      if (this.stopped) return;
+      const stereo = renderTexture(spec, ctx.sampleRate, seed);
+      const buffer = ctx.createBuffer(2, stereo.length, ctx.sampleRate);
+      buffer.copyToChannel(stereo.left, 0);
+      buffer.copyToChannel(stereo.right, 1);
       const src = ctx.createBufferSource();
       src.buffer = buffer;
       src.loop = true;
-      src.playbackRate.value = 1;
       src.connect(this.gain);
-      src.start(ctx.currentTime, Math.random() * seconds);
+      src.start(ctx.currentTime, Math.random() * buffer.duration);
       this.source = src;
-    });
+    }, 0);
   }
 
   /** Ease the level towards `value` (time constant `tau` s). */
@@ -107,81 +104,52 @@ export function normalize(buffer: { numberOfChannels: number; getChannelData(ch:
   }
 }
 
-// --- Grains -----------------------------------------------------------------
+// --- Rain grains -------------------------------------------------------------
 
-function noiseGrain(
-  ctx: BaseAudioContext,
-  noise: NoiseBank,
-  out: AudioNode,
-  when: number,
+/** A short burst of noise through one filter. */
+export function burst(
+  out: Stereo,
+  t: number,
+  pan: number,
   rng: () => number,
-  type: BiquadFilterType,
+  type: 'lowpass' | 'highpass' | 'bandpass',
   frequency: number,
   q: number,
   peak: number,
   length: number,
 ): void {
-  const src = ctx.createBufferSource();
-  src.buffer = noise.get('white');
-  const bq = ctx.createBiquadFilter();
-  bq.type = type;
-  bq.frequency.value = frequency;
-  bq.Q.value = q;
-  const amp = ctx.createGain();
-  amp.gain.setValueAtTime(0, when);
-  amp.gain.linearRampToValueAtTime(peak, when + 0.0015);
-  amp.gain.exponentialRampToValueAtTime(0.0001, when + length);
-  src.connect(bq).connect(amp).connect(out);
-  src.start(when, rng() * 9, length + 0.02);
+  addNoiseBurst(out, t, length, Biquad.make(type, frequency, q, out.sampleRate), peak, pan, rng);
 }
 
-/**
- * A water bubble: a sine whose pitch rises as the bubble closes (the
- * Minnaert resonance), the "plip" of drops into puddles and streams.
- */
-export function bubble(ctx: BaseAudioContext, out: AudioNode, when: number, rng: () => number, low: number, high: number, peak: number): void {
+/** A drop into water: the "plip" of a bubble, pitched somewhere in [low, high] Hz. */
+export function plip(out: Stereo, t: number, pan: number, rng: () => number, low: number, high: number, peak: number): void {
   const f = low * (high / low) ** rng();
-  const length = 0.012 + 0.03 * rng() * (900 / f) ** 0.5;
-  const osc = ctx.createOscillator();
-  osc.frequency.setValueAtTime(f, when);
-  osc.frequency.exponentialRampToValueAtTime(f * (1.3 + rng() * 0.6), when + length);
-  const amp = ctx.createGain();
-  amp.gain.setValueAtTime(0, when);
-  amp.gain.linearRampToValueAtTime(peak * (0.3 + rng() * 0.7), when + 0.002);
-  amp.gain.exponentialRampToValueAtTime(0.0001, when + length);
-  osc.connect(amp).connect(out);
-  osc.start(when);
-  osc.stop(when + length + 0.01);
+  addBubble(out, t, f, 0.012 + 0.035 * rng() * Math.sqrt(900 / f), peak * (0.3 + rng() * 0.7), pan, 1.3 + rng() * 0.6);
 }
 
 /** Rain on leaves: soft, bright ticks, with now and then a heavier drip off the canopy. */
-export const leafDrop: Grain = (ctx, out, when, rng, noise) => {
-  if (rng() < 0.08) noiseGrain(ctx, noise, out, when, rng, 'bandpass', 700 + rng() * 900, 1.4, 0.5, 0.05);
-  else noiseGrain(ctx, noise, out, when, rng, 'bandpass', 2200 + rng() * 3200, 1.1, 0.12 + rng() * 0.25, 0.01 + rng() * 0.02);
+export const leafDrop: Grain = (out, t, pan, rng) => {
+  if (rng() < 0.08) burst(out, t, pan, rng, 'bandpass', 700 + rng() * 900, 1.4, 1.4, 0.05);
+  else burst(out, t, pan, rng, 'bandpass', 2200 + rng() * 3200, 1.1, 0.4 + rng() * 0.6, 0.01 + rng() * 0.02);
 };
 
 /** Rain on grass: a dense, hushed patter, darker than leaves. */
-export const grassDrop: Grain = (ctx, out, when, rng, noise) => {
-  noiseGrain(ctx, noise, out, when, rng, 'bandpass', 1400 + rng() * 2200, 0.8, 0.06 + rng() * 0.14, 0.012 + rng() * 0.015);
+export const grassDrop: Grain = (out, t, pan, rng) => {
+  burst(out, t, pan, rng, 'bandpass', 1400 + rng() * 2200, 0.8, 0.3 + rng() * 0.5, 0.012 + rng() * 0.015);
 };
 
 /** Rain in town: ticks on stone and roofs, pings off metal, plips in the puddles. */
-export const streetDrop: Grain = (ctx, out, when, rng, noise) => {
+export const streetDrop: Grain = (out, t, pan, rng) => {
   const roll = rng();
-  if (roll < 0.12) {
-    // An awning or gutter: a short, ringing ping.
-    noiseGrain(ctx, noise, out, when, rng, 'bandpass', 1800 + rng() * 2600, 18, 1.2, 0.06 + rng() * 0.05);
-  } else if (roll < 0.3) {
-    bubble(ctx, out, when, rng, 900, 2600, 0.12);
-  } else {
-    noiseGrain(ctx, noise, out, when, rng, 'highpass', 2500 + rng() * 2500, 0.7, 0.1 + rng() * 0.2, 0.006 + rng() * 0.01);
-  }
+  if (roll < 0.12) burst(out, t, pan, rng, 'bandpass', 1800 + rng() * 2600, 18, 2.5, 0.06 + rng() * 0.05);
+  else if (roll < 0.3) plip(out, t, pan, rng, 900, 2600, 0.5);
+  else burst(out, t, pan, rng, 'highpass', 2500 + rng() * 2500, 0.7, 0.3 + rng() * 0.5, 0.006 + rng() * 0.01);
 };
 
 /** Rain at the shore: muffled taps on wet sand and tiny plips on the water. */
-export const shoreDrop: Grain = (ctx, out, when, rng, noise) => {
-  if (rng() < 0.35) bubble(ctx, out, when, rng, 1800, 4200, 0.05);
-  else noiseGrain(ctx, noise, out, when, rng, 'lowpass', 1600 + rng() * 1200, 0.7, 0.12 + rng() * 0.15, 0.015 + rng() * 0.02);
+export const shoreDrop: Grain = (out, t, pan, rng) => {
+  if (rng() < 0.35) plip(out, t, pan, rng, 1800, 4200, 0.25);
+  else burst(out, t, pan, rng, 'lowpass', 1600 + rng() * 1200, 0.7, 0.4 + rng() * 0.4, 0.015 + rng() * 0.02);
 };
 
 /**
@@ -189,13 +157,11 @@ export const shoreDrop: Grain = (ctx, out, when, rng, noise) => {
  * that rings briefly at the glass's high resonance, over a soft thump of the
  * pane itself.
  */
-export const glassDrop: Grain = (ctx, out, when, rng, noise) => {
+export const glassDrop: Grain = (out, t, pan, rng) => {
   const big = rng() < 0.15;
-  noiseGrain(ctx, noise, out, when, rng, 'bandpass', 3000 + rng() * 4500, 9 + rng() * 10, (big ? 0.7 : 0.3) * (0.4 + rng() * 0.6), 0.015 + rng() * 0.02);
-  noiseGrain(ctx, noise, out, when, rng, 'lowpass', 380 + rng() * 260, 1.2, big ? 0.25 : 0.08, 0.03);
+  burst(out, t, pan, rng, 'bandpass', 3000 + rng() * 4500, 9 + rng() * 10, (big ? 3 : 1.3) * (0.4 + rng() * 0.6), 0.015 + rng() * 0.02);
+  burst(out, t, pan, rng, 'lowpass', 380 + rng() * 260, 1.2, big ? 0.5 : 0.15, 0.03);
 };
 
 /** Water running down the glass and dripping off the frame: slow, quiet bubbles. */
-export const runoff: Grain = (ctx, out, when, rng) => {
-  bubble(ctx, out, when, rng, 500, 1400, 0.08);
-};
+export const runoff: Grain = (out, t, pan, rng) => plip(out, t, pan, rng, 500, 1400, 0.4);
