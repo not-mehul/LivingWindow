@@ -1,5 +1,6 @@
 import { Container, Graphics, Sprite } from 'pixi.js';
 import { DrawnCache } from '../../sprites/cache';
+import { drawPadDrone } from '../../sprites/skySprites';
 import { lerpColor } from '../../core/color';
 import { drawPerson, randomLook, type PersonFacing, type PersonLook, type PersonPose } from '../../sprites/people';
 import type { Environment } from '../../scene/Environment';
@@ -380,9 +381,11 @@ export class PadDrone {
   private spin = 0;
   private rotor = 0;
   private dust: Array<{ x: number; y: number; vx: number; vy: number; t: number }> = [];
+  private readonly sprite = new Sprite();
+  private readonly sprites = new DrawnCache();
 
   constructor(private readonly pad: { gx: number; depth: number; h: number }) {
-    this.container.addChild(this.gfx);
+    this.container.addChild(this.sprite, this.gfx);
   }
 
   get state(): DroneState {
@@ -469,7 +472,7 @@ export class PadDrone {
       g.rect(Math.round(d.x), Math.round(d.y), 1, 1).fill({ color: 0xb8b0a0, alpha: 0.5 * (1 - d.t / 1.2) });
     }
     if (this.stateName === 'away') {
-      g.tint = 0xffffff;
+      this.sprite.visible = false;
       return;
     }
     const scale = 1 / this.pad.depth;
@@ -482,30 +485,13 @@ export class PadDrone {
       const sw = Math.round(22 * scale * (1 + this.alt / 60));
       g.rect(Math.round(base.x - sw / 2), Math.round(base.y), sw, 1).fill({ color: 0x000000, alpha: 0.35 * (1 - this.alt / 60) });
     }
+    // The drone itself: rotors a blur while they spin, still blades once they've stopped.
     const w = Math.max(7, Math.round(24 * scale));
-    const dark = lerpColor(0x24262c, tint, 0.25);
-    const shell = lerpColor(0x4a505a, tint, 0.3);
-    const stripe = lerpColor(0x3ad8e8, tint, 0.35);
-    const parcel = lerpColor(0xf0a020, tint, 0.3);
-    // Body with a coloured stripe, arms out to the rotors, landing legs, and the parcel slung underneath.
-    g.rect(x - Math.round(w * 0.22), y - 3, Math.round(w * 0.44), 3).fill(shell);
-    g.rect(x - Math.round(w * 0.22), y - 2, Math.round(w * 0.44), 1).fill(stripe);
-    g.rect(x - Math.round(w / 2), y - 3, w, 1).fill(dark);
-    g.rect(x - 2, y, 5, 3).fill(parcel);
-    g.rect(x - 2, y, 5, 1).fill(lerpColor(parcel, 0xffffff, 0.3));
-    g.rect(x - Math.round(w * 0.3), y, 1, 3).fill(dark);
-    g.rect(x + Math.round(w * 0.3), y, 1, 3).fill(dark);
-    g.rect(x - Math.round(w / 2), y - 2, 1, 2).fill(dark);
-    g.rect(x + Math.round(w / 2) - 1, y - 2, 1, 2).fill(dark);
-    // Rotors: a blur when spinning, two still blades when stopped.
-    for (const side of [-1, 1]) {
-      const rx = x + side * Math.round(w / 2);
-      if (this.spin > 0.3) g.rect(rx - 4, y - 4, 9, 1).fill({ color: 0xd8dce0, alpha: 0.3 + 0.35 * this.spin });
-      else {
-        const flip = Math.floor(this.rotor) % 2 === 0;
-        g.rect(rx - (flip ? 3 : 1), y - 4, flip ? 7 : 3, 1).fill(dark);
-      }
-    }
+    const frame = this.spin > 0.3 ? 0 : Math.floor(this.rotor) % 2 === 0 ? 1 : 2;
+    this.sprite.texture = this.sprites.get(`${w}:${frame}`, () => drawPadDrone(w, frame));
+    this.sprite.visible = true;
+    this.sprite.position.set(x - Math.floor((w + 8) / 2), y - 4);
+    this.sprite.tint = lerpColor(tint, 0xffffff, 0.3);
     // A status light: blinking green when it's waiting, red in flight.
     const blink = Math.floor(env.time * 2) % 2 === 0;
     if (blink) g.rect(x, y - 4, 1, 1).fill(this.stateName === 'landed' ? 0x3aff6a : 0xff3a3a);

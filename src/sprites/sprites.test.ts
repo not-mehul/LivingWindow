@@ -7,6 +7,7 @@ import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCr
 import { drawDeerSized, drawSquirrelSized } from './forestSprites';
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
 import { drawBusker, drawPerson, randomLook } from './people';
+import { drawBlimp, drawHelicopter, drawPadDrone } from './skySprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from './vehicleSprites';
 import { drawBat, drawBear, drawButterfly, drawEagleSoar, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, EAGLE_STOOP } from './wildSprites';
 import { drawStallLightsSized, drawStallSized, STALL_STAGES, type StallKind } from './streetSprites';
@@ -133,6 +134,12 @@ describe('other sprites', () => {
         }
       }
     }
+  });
+
+  it('draws the blimp, the helicopter with its rotor turning, and the pad drone', () => {
+    expect(drawBlimp().grid.isEmpty()).toBe(false);
+    expect(Array.from(drawHelicopter(0).grid.data).join()).not.toBe(Array.from(drawHelicopter(1).grid.data).join());
+    for (const span of [7, 10, 16]) for (const f of [0, 1, 2]) expect(drawPadDrone(span, f).grid.width).toBe(span + 8);
   });
 
   it('draws the busker with a guitar at every size', () => {

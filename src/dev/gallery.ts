@@ -11,6 +11,7 @@ import { drawEgret, drawFishingBoat, drawFrigatebird, drawGull, drawJumpFish, dr
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type DogPose, type HorsePose, type RabbitPose, type SheepPose } from '../sprites/meadowSprites';
 import { drawBat, drawBear, drawEagleSoar, EAGLE_STOOP, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind, drawWolf, type WolfPose } from '../sprites/wildSprites';
+import { drawBlimp, drawHelicopter, drawPadDrone } from '../sprites/skySprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from '../sprites/vehicleSprites';
 import { ADS, drawAd, type AdId } from '../scene/city/ads';
 import type { PixelBuffer } from '../core/pixelBuffer';
@@ -102,6 +103,13 @@ function sections(): Section[] {
   );
   vehicles.push([10, 16, 22, 30, 40].flatMap((h) => [0, 1].map((f) => ({ label: `busker ${h}/${f}`, draw: () => drawBusker(looks[2], f, h) }))));
   out.push({ title: 'Vehicles', rows: vehicles });
+  out.push({
+    title: 'Sky and machines',
+    rows: [
+      [{ label: 'blimp', draw: () => drawBlimp() }, ...[0, 1].map((f) => ({ label: `heli ${f}`, draw: () => drawHelicopter(f) }))],
+      [8, 12, 16].flatMap((span) => [0, 1, 2].map((f) => ({ label: `drone ${span}/${f}`, draw: () => drawPadDrone(span, f) }))),
+    ],
+  });
 
   const foxPoses: FoxPose[] = ['trot-1', 'trot-2', 'trot-3', 'trot-4', 'sniff', 'sit', 'crouch', 'pounce', 'run-1', 'run-2'];
   out.push({

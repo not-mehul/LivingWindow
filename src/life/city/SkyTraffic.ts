@@ -6,8 +6,7 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
 import { bayer } from '../../scene/common/paint';
 import { glowTexture } from '../../scene/common/glow';
-import { Palette, shadedEllipse } from '../../sprites/kit';
-import { PixelGrid } from '../../sprites/raster';
+import { BLIMP_BAND, drawBlimp, drawHelicopter } from '../../sprites/skySprites';
 import { adDronesOut, blimpOut } from '../../sim/wildlife';
 import { drawText, textWidth } from '../../scene/city/pixelFont';
 import { rand as r } from '../../core/random';
@@ -24,36 +23,10 @@ interface Craft {
   /** Day contrail points behind a plane. */
   trail: Array<{ x: number; y: number; age: number }>;
   searchlight: Sprite | null;
+  /** The helicopter's sprite. */
+  body: Sprite | null;
 }
 
-/** The blimp, drawn once: a silver envelope with fins, a gondola and a dark band for its sign. */
-function blimpTexture(): Texture {
-  const W = 56;
-  const H = 22;
-  const g = new PixelGrid(W, H);
-  const palette = new Palette();
-  const skin = palette.ramp(0xd8dce0, 0.8);
-  const fin = palette.ramp(0x3a6ab0);
-  const gondola = palette.ramp(0x4a4e56);
-  // Tail fins.
-  g.polygon([[2, 3], [12, 8], [12, 13], [2, 18]], fin[2]);
-  shadedEllipse(g, 29, 10.5, 24, 8.5, skin, { dither: false, min: 1 });
-  g.rect(25, 19, 10, 2, gondola[2]);
-  g.rect(26, 19, 1, 1, gondola[4]);
-  g.rect(30, 19, 1, 1, gondola[4]);
-  // A dark band where the sign runs, inked top and bottom.
-  const band = palette.add(0x0c0e14);
-  const ink = palette.add(0x1e2430);
-  for (let x = BAND_X0; x < BAND_X0 + BAND_W; x++) {
-    for (let y = BAND_Y0 - 1; y <= BAND_Y0 + 5; y++) if (g.get(x, y)) g.set(x, y, y === BAND_Y0 - 1 || y === BAND_Y0 + 5 ? ink : band);
-  }
-  return gridToTexture(g, palette.colors);
-}
-
-/** Where the blimp's sign runs on its texture. */
-const BAND_X0 = 15;
-const BAND_W = 32;
-const BAND_Y0 = 8;
 const BLIMP_MESSAGE = 'NEUROCOLA · TASTE THE SIGNAL · ASK KAI · ALWAYS LISTENING · DREAMDIVE 12¥/HR · ';
 
 /** The message as columns of lit pixels (bit k = row k), for scrolling. */
@@ -109,11 +82,13 @@ export class SkyTraffic {
   private readonly blimpSprite: Sprite;
   private readonly message = messageColumns(BLIMP_MESSAGE);
   private beam: Texture | null = null;
+  private rotor: Texture[] | null = null;
   private timers: Record<CraftKind, number> = { plane: r(10, 60), helicopter: r(120, 300), drone: r(60, 180), blimp: r(30, 120), addrone: r(10, 60) };
   private blimpToday = false;
 
   constructor() {
-    this.blimpSprite = new Sprite({ texture: blimpTexture(), anchor: 0.5 });
+    const blimp = drawBlimp();
+    this.blimpSprite = new Sprite({ texture: gridToTexture(blimp.grid, blimp.palette.colors), anchor: 0.5 });
     this.blimpSprite.visible = false;
     this.lights.blendMode = 'add';
     this.container.addChild(this.gfx, this.blimpSprite, this.lights);
@@ -180,6 +155,7 @@ export class SkyTraffic {
       if (c.kind === 'addrone') c.y += Math.sin(c.t * 0.9) * 3 * dt;
       if (c.x < -60 || c.x > WORLD_WIDTH + 60) {
         c.searchlight?.destroy();
+        c.body?.destroy();
         if (c.kind === 'blimp') this.blimpSprite.visible = false;
         this.crafts.splice(i, 1);
         continue;
@@ -194,13 +170,20 @@ export class SkyTraffic {
     const y = kind === 'plane' ? r(18, 60) : kind === 'helicopter' ? r(70, 115) : kind === 'drone' ? r(175, 205) : kind === 'addrone' ? r(120, 165) : r(40, 75);
     const speed = kind === 'plane' ? r(14, 22) : kind === 'helicopter' ? r(16, 24) : kind === 'drone' ? r(30, 45) : kind === 'addrone' ? r(6, 10) : r(3.5, 5);
     let searchlight: Sprite | null = null;
+    let body: Sprite | null = null;
     if (kind === 'helicopter') {
+      this.rotor ??= [0, 1].map((f) => {
+        const d = drawHelicopter(f);
+        return gridToTexture(d.grid, d.palette.colors);
+      });
+      body = new Sprite({ texture: this.rotor[0], anchor: { x: 0.6, y: 0.4 } });
+      this.container.addChild(body);
       this.beam ??= beamTexture();
       searchlight = new Sprite({ texture: this.beam, anchor: { x: 0.5, y: 0 }, blendMode: 'add' });
       searchlight.visible = false;
       this.container.addChild(searchlight);
     }
-    this.crafts.push({ kind, x, y, dir, speed, t: 0, trail: [], searchlight });
+    this.crafts.push({ kind, x, y, dir, speed, t: 0, trail: [], searchlight, body });
   }
 
   private draw(c: Craft, dt: number, env: Environment, night: number): void {
@@ -237,13 +220,12 @@ export class SkyTraffic {
         break;
       }
       case 'helicopter': {
-        // Body, tail boom, skids and the rotor's flicker.
-        g.rect(x - 2, y, 5, 3).fill(dark).rect(x - 1, y, 3, 1).fill(shade);
-        g.rect(x - c.dir * 7, y + 1, 5, 1).fill(dark);
-        g.rect(x - c.dir * 7, y - 1, 1, 2).fill(dark);
-        g.rect(x - 2, y + 4, 6, 1).fill(dark);
-        const rotor = Math.floor(env.time * 18) % 2 === 0;
-        g.rect(x - (rotor ? 5 : 3), y - 1, rotor ? 11 : 7, 1).fill({ color: dark, alpha: 0.7 });
+        // Its sprite, the rotor turning.
+        const body = c.body!;
+        body.texture = this.rotor![Math.floor(env.time * 18) % 2];
+        body.position.set(x, y + 1);
+        body.scale.x = c.dir;
+        body.tint = lerpColor(tint, 0xffffff, 0.25);
         if (night > 0.1 && blink) this.lights.rect(x, y - 1, 1, 1).fill({ color: 0xff3a2a, alpha: night });
         if (c.searchlight) {
           // After dark it sweeps a searchlight over the streets.
@@ -304,10 +286,10 @@ export class SkyTraffic {
         this.blimpSprite.tint = lerpColor(tint, 0xffffff, 0.2);
         // Its sign: a message scrolling along the band, readable whichever way it flies.
         const offset = Math.floor(env.time * 9);
-        const x0 = Math.round(x) - 28 + (c.dir > 0 ? BAND_X0 : 56 - BAND_X0 - BAND_W);
-        const y0 = Math.round(y) - 11 + BAND_Y0;
+        const x0 = Math.round(x) - 28 + (c.dir > 0 ? BLIMP_BAND.x0 : 56 - BLIMP_BAND.x0 - BLIMP_BAND.w);
+        const y0 = Math.round(y) - 11 + BLIMP_BAND.y0;
         const cols = this.message;
-        for (let k = 0; k < BAND_W; k++) {
+        for (let k = 0; k < BLIMP_BAND.w; k++) {
           const bits = cols[(k + offset) % cols.length];
           if (!bits) continue;
           const color = [0xffe060, 0xff6a8a, 0x6ad8ff][Math.floor((k + offset) / 40) % 3];
