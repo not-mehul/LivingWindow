@@ -162,7 +162,7 @@ export const CAMERA = 0x2a3242;
  * a touch narrower at the top, as it leans away; the bottom edge where it
  * rests on the sill, and its soft shadow.
  */
-function drawBody(W: number, H: number): PixelBuffer {
+export function drawBody(W: number, H: number): PixelBuffer {
   const p = new PixelBuffer(W + 4, H + 3);
   const ox = 2;
   for (let y = 0; y < H; y++) {
@@ -229,7 +229,7 @@ export function drawWallpaper(w: number, h: number, hours: number, into = new Pi
   return into;
 }
 
-function drawHomeScreen(w: number, h: number, status: TabletStatus): PixelBuffer {
+export function drawHomeScreen(w: number, h: number, status: TabletStatus): PixelBuffer {
   const p = drawWallpaper(w, h, status.hours);
   const frost = (x0: number, y0: number, ww: number, hh: number, toward: number, k: number) => {
     for (let y = y0; y < y0 + hh; y++) {

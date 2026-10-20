@@ -13,7 +13,7 @@ import { hexToNumber } from '../core/color';
 const SEED_COLORS = [SEED.dark, SEED.base, SEED.base, SEED.light, SEED.pale];
 
 /** Proportions of the dish, derived from its size (art px). */
-interface DishGeometry {
+export interface DishGeometry {
   size: DishSize;
   /** Texture size: the dish, the mound headroom and a 1-px outline margin. */
   texWidth: number;
@@ -30,7 +30,7 @@ interface DishGeometry {
   ib: number;
 }
 
-function dishGeometry(size: DishSize): DishGeometry {
+export function dishGeometry(size: DishSize): DishGeometry {
   const rimY = Math.round(size.height * 0.32);
   const a = size.width / 2 - 0.5;
   const thickness = Math.max(3, Math.round(size.width * 0.05));
@@ -53,7 +53,7 @@ function dishGeometry(size: DishSize): DishGeometry {
  * the shaded inside, a rounded belly lit from the window side and a foot.
  * `stage` adds seed: a scattering, a layer, then a heaped mound.
  */
-function drawDish(g: DishGeometry, stage: BirdseedStage): Texture {
+export function drawDish(g: DishGeometry, stage: BirdseedStage): PixelBuffer {
   const { size, cx, rimY, a, b, ia, ib, top } = g;
   const p = new PixelBuffer(g.texWidth, g.texHeight);
   const rng = createRng(1337 + stage * 17 + size.width);
@@ -143,11 +143,12 @@ function drawDish(g: DishGeometry, stage: BirdseedStage): Texture {
     }
   }
   for (const [x, y] of outline) p.set(x, y, CERAMIC.outline);
-  return p.toTexture();
+  return p;
 }
 
 function createDishTextures(g: DishGeometry): Record<BirdseedStage, Texture> {
-  return { 0: drawDish(g, 0), 1: drawDish(g, 1), 2: drawDish(g, 2), 3: drawDish(g, 3) };
+  const t = (stage: BirdseedStage) => drawDish(g, stage).toTexture();
+  return { 0: t(0), 1: t(1), 2: t(2), 3: t(3) };
 }
 
 interface FallingSeed {

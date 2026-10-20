@@ -72,7 +72,7 @@ export class Holograms {
 }
 
 /** The koi, 96×40, in light: a cyan outline, a dim translucent body, orange and pink patches, a flowing fan of a tail. */
-function koiArt(frame: number): PixelBuffer {
+export function koiArt(frame: number): PixelBuffer {
   const W = 96;
   const H = 40;
   const p = new PixelBuffer(W, H);
@@ -150,7 +150,7 @@ function koiArt(frame: number): PixelBuffer {
 }
 
 /** The AI idol, 30×62: long hair, a high collar, one arm raised to wave (frame 1 waving higher). */
-function idolArt(frame: number): PixelBuffer {
+export function idolArt(frame: number): PixelBuffer {
   const W = 30;
   const H = 62;
   const p = new PixelBuffer(W, H);

@@ -31,7 +31,7 @@ function inkOutline(p: PixelBuffer, color: string): void {
 }
 
 /** Terracotta pot: a banded, rolled rim, a tapered body lit from the window, and a saucer. */
-function drawPot(size: PlantSize): Texture {
+export function drawPot(size: PlantSize): PixelBuffer {
   const W = size.potWidth;
   const H = size.potHeight;
   // One spare pixel all round for the outline.
@@ -66,18 +66,18 @@ function drawPot(size: PlantSize): Texture {
     }
   }
   inkOutline(p, PLANT.potOutline);
-  return p.toTexture();
+  return p;
 }
 
 /** The plant's stems (degrees from upright), in the clumps that sway on their own. */
-const CLUMPS = [
+export const CLUMPS = [
   [-70, -52, -34],
   [-16, 0, 14],
   [30, 48, 66],
 ];
 
 /** A leafy herb: arching stems with pointed oval leaves, inked like the reference (just the stems of one clump). */
-function drawLeaves(size: PlantSize, clump: readonly number[]): PixelBuffer {
+export function drawLeaves(size: PlantSize, clump: readonly number[]): PixelBuffer {
   const W = size.leavesWidth;
   const H = size.leavesHeight;
   const scale = H / 50;
@@ -151,7 +151,7 @@ function drawLeaves(size: PlantSize, clump: readonly number[]): PixelBuffer {
   return p;
 }
 
-const LEAF_COLORS = [PLANT.leafLight, PLANT.leaf, PLANT.leafDark, PLANT.leafVein].map((c) => hexToNumber(c));
+export const LEAF_COLORS = [PLANT.leafLight, PLANT.leaf, PLANT.leafDark, PLANT.leafVein].map((c) => hexToNumber(c));
 
 interface Speck {
   /** Position along the sill's visible width (0..1). */
@@ -318,7 +318,7 @@ export class SillDecor {
     if (this.plantSize && this.plantSize.leavesHeight === size.leavesHeight) return;
     this.plantSize = size;
     const oldPot = this.pot.texture;
-    this.pot.texture = drawPot(size);
+    this.pot.texture = drawPot(size).toTexture();
     if (oldPot && oldPot !== Texture.EMPTY) oldPot.destroy(true);
     for (const leaves of this.leaves) {
       this.plant.removeChild(leaves.mesh);

@@ -432,23 +432,38 @@ npm run dev        # http://localhost:8080 (also reachable from your LAN)
 | `npm test`          | Run the unit tests (Vitest)                 |
 | `npm run typecheck` | Type-check only                             |
 
-### Previewing the sounds
+### Previewing sounds and sprites
 
-With the dev server running, open <http://localhost:8080/sounds.html>. It
-lists every sound in the app, grouped:
+Two dev pages help you review the app's sounds and art and note what needs
+work. Open them while the dev server is running:
 
-- the one-shot calls and noises;
-- the insect, water and crowd loops;
-- each landscape's whole ambience;
-- each kind of weather, rain on the glass and thunder;
-- the lofi radio.
+- <http://localhost:8080/sounds.html> lists every sound in the app, grouped:
+  - the one-shot calls and noises;
+  - the insect, water and crowd loops;
+  - each landscape's whole ambience;
+  - each kind of weather, rain on the glass and thunder;
+  - the lofi radio.
 
-The page runs the app's own audio engine, so what you hear is what the window
-plays. Its controls set the time of day, activity, distance, pan and whether
-the window is open. Mark each sound **Good** or **Needs work** and add a note;
-the marks are kept in the browser. **Copy report** puts them on the clipboard
-as a Markdown list, needs-work first. The page is for development only and
-isn't part of the built site.
+  The page runs the app's own audio engine, so what you hear is what the
+  window plays. Its controls set the time of day, activity, distance, pan and
+  whether the window is open.
+- <http://localhost:8080/sprites.html> plays every sprite animation, one per
+  row:
+  - birds near and far, shore birds, the window's cat and dog, forest, meadow
+    and shore creatures;
+  - people, vehicles and machines, city signs and holograms;
+  - the sill's plant, bowl and tablet, trees and scenery.
+
+  Each row runs at the rate the app does and shows every frame below. Walks
+  also travel, so foot slide shows. Click the player to pause it, or a frame
+  to hold it. Each row lets you pick its coat, breed or species and its size.
+  The page's controls set the zoom, speed, background and a moonlit tint.
+
+On both pages, mark each item **Good** or **Needs work** and add a note; the
+marks are kept in the browser. **Copy report** puts them on the clipboard as a
+Markdown list, needs-work first. Both pages are for development only and
+aren't part of the built site. The older stills sheet is still at
+`index.html#gallery`.
 
 ### Controls
 
