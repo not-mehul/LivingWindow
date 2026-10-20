@@ -134,9 +134,27 @@ export function drawRider(kind: RiderKind, look: RiderLook, facing: VehicleFacin
 
 // --- The street sweeper -------------------------------------------------
 
+/** Frames of the sweeper's brushes going round. */
+export const SWEEPER_BRUSH = 4;
+
+/** Light across a rounded panel facing us: lit on the left, shade on the right, a bright top edge. */
+function panelShade(ramp: Ramp, nx: number, top: boolean): number {
+  if (top) return ramp[4];
+  return ramp[nx < -0.62 ? 3 : nx > 0.7 ? 1 : 2];
+}
+
+/** A figure behind glass: head and shoulders in the glass's own murk. */
+function driver(g: PixelGrid, x: number, y: number, u: number, color: number, skin: number): void {
+  const r = Math.max(1, 1.7 * u);
+  for (let dy = -Math.ceil(r); dy <= Math.ceil(r); dy++) for (let dx = -Math.ceil(r); dx <= Math.ceil(r); dx++) if (dx * dx + dy * dy <= r * r) g.set(Math.floor(x + dx), Math.floor(y + dy), dy > 0 && Math.abs(dx) < r * 0.6 ? skin : color);
+  for (let yy = Math.floor(y + r); yy < Math.floor(y + r + 2.5 * u); yy++) for (let xx = Math.floor(x - 2.8 * u); xx <= Math.floor(x + 2.8 * u); xx++) g.set(xx, yy, color);
+}
+
 /**
- * A little municipal sweeper: a cab on a squat body, rotating brushes at its
- * front corners (two frames), and an amber beacon on the roof.
+ * A little municipal sweeper: a squat white body, rounded and shaded, an
+ * orange band round it; a boxy cab with the driver behind the glass and a
+ * streak of reflection; the amber beacon on the roof; and at the front
+ * corners its brushes going round, bristles fanning (four frames).
  */
 export function drawSweeper(facing: VehicleFacing, frame: number, height: number): DrawnVehicle {
   const H = Math.max(6, Math.round(height));
@@ -151,34 +169,58 @@ export function drawSweeper(facing: VehicleFacing, frame: number, height: number
   const tyre = palette.ramp(0x2a2a2e);
   const brush = palette.ramp(0xc8a040);
   const beacon = palette.ramp(0xf0a020);
+  const figure = palette.add(0x1e2630);
+  const skin = palette.add(0x5a4a44);
   const lamps: Lamp[] = [];
   const back = facing === 'back';
-  // Wheels.
-  for (const side of [-1, 1]) for (let y = Math.floor(H - 5 * u); y < H; y++) for (let x = 0; x < Math.max(1, 3 * u); x++) g.set(Math.floor(cx + side * 11 * u - 1.5 * u + x), y, tyre[1]);
-  // Body: a rounded box, an orange band round it.
-  for (let y = Math.floor(H - 17 * u); y < Math.floor(H - 3 * u); y++) {
-    for (let x = Math.floor(cx - 13 * u); x <= Math.floor(cx + 13 * u - 0.01); x++) {
+  const f = ((frame % SWEEPER_BRUSH) + SWEEPER_BRUSH) % SWEEPER_BRUSH;
+  // Wheels, their tops catching the light.
+  for (const side of [-1, 1]) {
+    for (let y = Math.floor(H - 5 * u); y < H; y++) for (let x = 0; x < Math.max(1, 3 * u); x++) g.set(Math.floor(cx + side * 11 * u - 1.5 * u + x), y, tyre[y === Math.floor(H - 5 * u) ? 3 : x === 0 ? 2 : 1]);
+  }
+  // Body: a rounded box, an orange band round it, darker under the sill.
+  const top = Math.floor(H - 17 * u);
+  for (let y = top; y < Math.floor(H - 3 * u); y++) {
+    const inset = y === top || y === Math.floor(H - 3 * u) - 1 ? 1 : 0;
+    for (let x = Math.floor(cx - 13 * u) + inset; x <= Math.floor(cx + 13 * u - 0.01) - inset; x++) {
       const band = y > H - 9 * u && y < H - 6.5 * u;
-      const r = band ? stripe : body;
-      g.set(x, y, r[x < cx - 9 * u ? 3 : x > cx + 9 * u ? 1 : 2]);
+      const nx = (x + 0.5 - cx) / (13 * u);
+      g.set(x, y, y >= H - 4.5 * u ? body[0] : panelShade(band ? stripe : body, nx, y === top && !band));
     }
   }
-  // Cab with its window.
-  for (let y = Math.floor(H - 27 * u); y < Math.floor(H - 17 * u); y++) {
+  // The cab, its window, and the driver behind it.
+  const cabTop = Math.floor(H - 27 * u);
+  for (let y = cabTop; y < top; y++) {
     for (let x = Math.floor(cx - 9 * u); x <= Math.floor(cx + 9 * u - 0.01); x++) {
       const win = y > H - 25.5 * u && y < H - 18.5 * u && x > cx - 7.5 * u && x < cx + 7.5 * u;
-      g.set(x, y, win ? glass[x < cx - 3 * u ? 3 : 2] : body[x < cx - 6 * u ? 3 : 2]);
+      const nx = (x + 0.5 - cx) / (9 * u);
+      g.set(x, y, win ? glass[y < H - 23 * u ? 1 : 2] : panelShade(body, nx, y === cabTop));
     }
+  }
+  if (H >= 14) {
+    driver(g, cx + (back ? -2 : 2) * u, H - 22.5 * u, u, figure, back ? figure : skin);
+    // A streak of reflection across the glass.
+    for (let k = 0; k < 4 * u; k++) g.set(Math.floor(cx - 6 * u + k), Math.floor(H - 19.5 * u - k), glass[4]);
   }
   // Beacon on the roof.
   shadedEllipse(g, cx, H - 28 * u, Math.max(1, 1.6 * u), Math.max(1, 1.2 * u), beacon, { dither: false });
   lamps.push({ x: cx, y: H - 28 * u, color: 'amber', size: Math.max(1, 1.4 * u) });
   if (!back) {
-    // Brushes spinning at the front corners, bristles flicking round.
+    // Brushes going round at the front corners: bristles fanning out from the hub, turning with the frame.
     for (const side of [-1, 1]) {
       const bx = cx + side * 12 * u;
-      const by = H - 2.5 * u;
-      g.ellipse(bx, by, 3.2 * u, 1.6 * u, (_u, _v, x) => ((x + frame) % 2 === 0 ? brush[3] : brush[1]));
+      const by = H - 2.2 * u;
+      const rx = 3.4 * u;
+      const ry = 1.7 * u;
+      for (let y = Math.floor(by - ry); y <= Math.ceil(by + ry); y++) {
+        for (let x = Math.floor(bx - rx); x <= Math.ceil(bx + rx); x++) {
+          const du = (x + 0.5 - bx) / rx;
+          const dv = (y + 0.5 - by) / ry;
+          if (du * du + dv * dv > 1 || y >= H) continue;
+          const spoke = Math.floor(((Math.atan2(dv, du) / (Math.PI * 2) + 1) * 8 + f * side * 0.5) % 2);
+          g.set(x, y, du * du + dv * dv < 0.15 ? tyre[2] : spoke ? brush[3] : brush[1]);
+        }
+      }
     }
     lamps.push({ x: cx - 10 * u, y: H - 12 * u, color: 'white', size: Math.max(1, u) }, { x: cx + 10 * u, y: H - 12 * u, color: 'white', size: Math.max(1, u) });
   } else {
@@ -190,7 +232,14 @@ export function drawSweeper(facing: VehicleFacing, frame: number, height: number
 
 // --- A taxi -------------------------------------------------------------
 
-/** A yellow cab, seen nose-on or from behind: windscreen, roof sign, lamps and bumpers. */
+/**
+ * A yellow cab, seen nose-on or from behind, `height` px tall and 1.35×
+ * as wide: a rounded body lit from the left with a checker band along it,
+ * dark wheel arches over the tyres, chrome bumpers and a number plate; the
+ * cabin tapering to the roof, the driver behind the windscreen (or a
+ * passenger through the back window) with a streak of reflection across
+ * the glass; wing mirrors, the roof sign, and lamps.
+ */
 export function drawTaxi(facing: VehicleFacing, height: number): DrawnVehicle {
   const H = Math.max(5, Math.round(height));
   const W = Math.max(7, Math.round(H * 1.35));
@@ -203,40 +252,65 @@ export function drawTaxi(facing: VehicleFacing, height: number): DrawnVehicle {
   const tyre = palette.ramp(0x1e1e22);
   const chrome = palette.ramp(0xa8acb2);
   const sign = palette.ramp(0xf4ecd0, 0.6);
+  const tail = palette.ramp(0xc8282a);
+  const figure = palette.add(0x161c24);
+  const skin = palette.add(0x4a3c38);
+  const checker = palette.add(0x1a1a1e);
   const lamps: Lamp[] = [];
   const back = facing === 'back';
   const half = 12.5 * u;
-  // Tyres peeping out beneath.
-  for (const side of [-1, 1]) for (let y = Math.floor(H - 3 * u); y < H; y++) for (let x = 0; x < Math.max(1, 3 * u); x++) g.set(Math.floor(cx + side * 9 * u - 1.5 * u + x), y, tyre[1]);
-  // The body below the waist, widest at the wheel arches.
-  for (let y = Math.floor(H - 10 * u); y < Math.floor(H - 2 * u); y++) {
-    for (let x = Math.floor(cx - half); x <= Math.floor(cx + half - 0.01); x++) {
-      const bumper = y >= H - 4 * u;
-      g.set(x, y, bumper ? chrome[x < cx ? 3 : 2] : paint[y === Math.floor(H - 10 * u) ? 4 : x < cx - half * 0.6 ? 3 : x > cx + half * 0.6 ? 1 : 2]);
+  const fine = H >= 12;
+  // Tyres beneath, their tops lit.
+  for (const side of [-1, 1]) {
+    for (let y = Math.floor(H - 3 * u); y < H; y++) for (let x = 0; x < Math.max(1, 3 * u); x++) g.set(Math.floor(cx + side * 9 * u - 1.5 * u + x), y, tyre[y === Math.floor(H - 3 * u) ? 3 : 1]);
+  }
+  // The body below the waist: rounded at the shoulders, lit from the left, a checker band along it.
+  const waist = Math.floor(H - 10 * u);
+  const bumper = H - 4 * u;
+  for (let y = waist; y < Math.floor(H - 2 * u); y++) {
+    const inset = y === waist ? Math.max(1, Math.round(0.6 * u)) : 0;
+    for (let x = Math.floor(cx - half) + inset; x <= Math.floor(cx + half - 0.01) - inset; x++) {
+      const nx = (x + 0.5 - cx) / half;
+      if (y >= bumper) g.set(x, y, chrome[nx < 0 ? 3 : 2]);
+      else if (fine && Math.abs(y - (H - 7.6 * u)) < 0.6 * u) g.set(x, y, (x + y) % 2 === 0 ? checker : paint[3]);
+      else if (y >= bumper - 1 && Math.abs(Math.abs(nx) - 0.72) < 0.18) g.set(x, y, paint[0]);
+      else g.set(x, y, panelShade(paint, nx, y === waist));
     }
   }
-  // Cabin and glass, tapering to the roof.
-  for (let y = Math.floor(H - 16 * u); y < Math.floor(H - 10 * u); y++) {
+  // The cabin tapering to the roof: pillars in paint, the glass darkening downwards.
+  const roof = Math.floor(H - 16 * u);
+  for (let y = roof; y < waist; y++) {
     const t = (y - (H - 16 * u)) / (6 * u);
     const w = half * (0.66 + 0.26 * t);
     for (let x = Math.floor(cx - w); x <= Math.floor(cx + w - 0.01); x++) {
       const pillar = x < cx - w + 1.2 * u || x > cx + w - 1.2 * u || y < H - 15.2 * u;
-      g.set(x, y, pillar ? paint[2] : glass[x < cx - w * 0.3 && y < H - 12 * u ? 3 : 2]);
+      const nx = (x + 0.5 - cx) / w;
+      g.set(x, y, pillar ? panelShade(paint, nx, y === roof) : glass[t < 0.35 ? 1 : 2]);
     }
   }
+  if (fine) {
+    // Someone behind the glass: the driver (on the left, nose-on) or a passenger in the back.
+    driver(g, cx + (back ? 2.5 : -3) * u, H - 12.6 * u, u * 0.8, figure, back ? figure : skin);
+    // A streak of reflection across the glass.
+    for (let k = 0; k < 3 * u; k++) g.set(Math.floor(cx + 2 * u + k), Math.floor(H - 10.8 * u - k), glass[4]);
+    // Wing mirrors.
+    for (const side of [-1, 1]) g.set(Math.floor(cx + side * (half * 0.92 + 0.5 * u)), Math.floor(H - 10.4 * u), paint[1]);
+    // The number plate.
+    for (let x = Math.floor(cx - 2 * u); x <= Math.floor(cx + 2 * u); x++) g.set(x, Math.floor(H - 3.2 * u), sign[4]);
+  }
   // Roof sign.
-  for (let y = Math.floor(H - 18 * u); y < Math.floor(H - 16 * u); y++) for (let x = Math.floor(cx - 3 * u); x <= Math.floor(cx + 3 * u); x++) g.set(x, y, sign[2]);
+  for (let y = Math.floor(H - 18 * u); y < Math.floor(H - 16 * u); y++) for (let x = Math.floor(cx - 3 * u); x <= Math.floor(cx + 3 * u); x++) g.set(x, y, sign[x < cx ? 3 : 2]);
   lamps.push({ x: cx, y: H - 17 * u, color: 'yellow', size: Math.max(1, 1.5 * u) });
   if (back) {
     for (const side of [-1, 1]) {
-      for (let y = Math.floor(H - 8.5 * u); y < Math.floor(H - 6 * u); y++) for (let x = 0; x < Math.max(1, 2.5 * u); x++) g.set(Math.floor(cx + side * 10.5 * u - 1.2 * u + x), y, palette.ramp(0xc8282a)[2]);
+      for (let y = Math.floor(H - 8.5 * u); y < Math.floor(H - 6 * u); y++) for (let x = 0; x < Math.max(1, 2.5 * u); x++) g.set(Math.floor(cx + side * 10.5 * u - 1.2 * u + x), y, tail[y === Math.floor(H - 8.5 * u) ? 3 : 2]);
       lamps.push({ x: cx + side * 10.5 * u, y: H - 7.3 * u, color: 'red', size: Math.max(1, 1.2 * u) });
     }
   } else {
     // Headlamps and grille.
-    for (let x = Math.floor(cx - 5 * u); x <= Math.floor(cx + 5 * u); x++) g.set(x, Math.floor(H - 6 * u), chrome[1]);
+    for (let x = Math.floor(cx - 5 * u); x <= Math.floor(cx + 5 * u); x++) g.set(x, Math.floor(H - 6 * u), chrome[(x & 1) === 0 ? 1 : 3]);
     for (const side of [-1, 1]) {
-      for (let y = Math.floor(H - 8.5 * u); y < Math.floor(H - 6 * u); y++) for (let x = 0; x < Math.max(1, 3 * u); x++) g.set(Math.floor(cx + side * 9.5 * u - 1.5 * u + x), y, sign[3]);
+      for (let y = Math.floor(H - 8.5 * u); y < Math.floor(H - 6 * u); y++) for (let x = 0; x < Math.max(1, 3 * u); x++) g.set(Math.floor(cx + side * 9.5 * u - 1.5 * u + x), y, sign[x === 0 ? 4 : 3]);
       lamps.push({ x: cx + side * 9.5 * u, y: H - 7.3 * u, color: 'white', size: Math.max(1, 1.6 * u) });
     }
   }

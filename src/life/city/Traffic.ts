@@ -5,6 +5,7 @@ import {
   drawPushcart,
   drawRider,
   drawSweeper,
+  SWEEPER_BRUSH,
   drawTaxi,
   LAMP_COLORS,
   randomRiderLook,
@@ -221,7 +222,7 @@ export class Traffic {
   }
 
   private texture(v: Vehicle, height: number): { texture: Texture; drawn: DrawnVehicle } {
-    const frame = v.kind === 'bike' ? Math.floor(v.stride / 6) % 2 : v.kind === 'sweeper' ? Math.floor(v.stride / 2) % 2 : v.kind === 'cart' ? Math.floor(v.stride / 8) % 2 : 0;
+    const frame = v.kind === 'bike' ? Math.floor(v.stride / 6) % 2 : v.kind === 'sweeper' ? Math.floor(v.stride / 2) % SWEEPER_BRUSH : v.kind === 'cart' ? Math.floor(v.stride / 8) % 2 : 0;
     // Riders each have their own look; the rest share their textures.
     const key = `${v.kind === 'bike' || v.kind === 'scooter' ? `v${v.id}/` : ''}${v.kind}:${v.facing}:${frame}:${height}`;
     let t = this.textures.get(key);
