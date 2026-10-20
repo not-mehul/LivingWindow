@@ -1,4 +1,4 @@
-import { Application, Container, Sprite, Texture, TextureStyle } from 'pixi.js';
+import { Application, Container, RenderTexture, Sprite, Texture, TextureStyle } from 'pixi.js';
 // Eval-free shader and uniform code paths, so the strict Content-Security-Policy
 // served by the Docker image (no 'unsafe-eval') can stay in place.
 import 'pixi.js/unsafe-eval';
@@ -10,7 +10,7 @@ import { quality } from './core/quality';
 import { ScreenWakeLock } from './core/wakeLock';
 import { Viewport } from './core/Viewport';
 import { createLandscape, loadLandscapeChoice, preloadLandscape, saveLandscapeChoice } from './landscapes/registry';
-import type { Landscape, LandscapeId, LandscapeLayers } from './landscapes/types';
+import { LANDSCAPE_IDS, type Landscape, type LandscapeId, type LandscapeLayers } from './landscapes/types';
 import type { Environment } from './scene/Environment';
 import { computeLighting, interiorTint, type Daylight } from './scene/lighting';
 import { guessLocation, moonAge, sunTimes, winterness, type GeoLocation } from './sim/sun';
@@ -96,8 +96,8 @@ interface Mounted {
   layers: LandscapeLayers;
 }
 
-/** Seconds for each half of the fade between landscapes. */
-const FADE_SECONDS = 0.35;
+/** Seconds for one landscape to dissolve into the next. */
+const CROSSFADE_SECONDS = 2.5;
 
 async function boot(): Promise<void> {
   // Every texture in the project is pixel art: never smooth it.
@@ -190,8 +190,6 @@ async function boot(): Promise<void> {
   nearLayer.eventMode = 'none';
   /** Lightning briefly lights up the room too. */
   const roomFlash = new Sprite({ texture: Texture.WHITE, blendMode: 'add', tint: 0xdfe4ff, alpha: 0 });
-  /** Darkens the view while switching landscapes. */
-  const fade = new Sprite({ texture: Texture.WHITE, tint: 0x0c0a12, alpha: 0 });
 
   app.stage.addChild(
     viewport.view,
@@ -203,7 +201,6 @@ async function boot(): Promise<void> {
     decor.front,
     tablet.container,
     roomFlash,
-    fade,
   );
   // The stage itself is hit-testable so it can show a grab cursor when the
   // view can be panned; interactive children (sashes, bowl) override it.
@@ -211,7 +208,7 @@ async function boot(): Promise<void> {
   app.stage.hitArea = app.screen;
   // Purely decorative layers must opt out, or (under a static stage) their
   // full-screen bounds would swallow taps meant for the sashes and bowl.
-  for (const decorative of [viewport.view, frame.container, frame.sillContainer, decor.back, decor.front, roomFlash, fade]) {
+  for (const decorative of [viewport.view, frame.container, frame.sillContainer, decor.back, decor.front, roomFlash]) {
     decorative.eventMode = 'none';
   }
   const interior = [sashes.container, frame.container, frame.sillContainer, bowl.container, decor.back, decor.front];
@@ -277,12 +274,32 @@ async function boot(): Promise<void> {
   };
   show(current);
 
-  /** Pending switch: fade out (while the new landscape loads), swap, fade back in. */
-  let transition: { to: LandscapeId; t: number; swapped: boolean; ready: Mounted | null; failed: boolean } | null = null;
+  /**
+   * Pending switch: the current view stays while the new landscape loads,
+   * then a snapshot of it dissolves away over the new one.
+   */
+  let transition: { to: LandscapeId; ready: Mounted | null; failed: boolean } | null = null;
+  /** The last frame of the old view, fading out over the new. */
+  let veil: { sprite: Sprite; t: number } | null = null;
+  /** Real seconds since the place last changed (for changing it on a timer). */
+  let sincePlaceChange = 0;
+  const coverWithSnapshot = () => {
+    const l = viewport.layout;
+    const texture = RenderTexture.create({ width: l.screenWidth, height: l.screenHeight, resolution: l.devicePixelRatio });
+    // The stage as last drawn (an earlier veil included, so quick switches stay seamless).
+    app.renderer.render({ container: app.stage, target: texture });
+    const previous = veil;
+    const sprite = new Sprite(texture);
+    sprite.eventMode = 'none';
+    app.stage.addChild(sprite);
+    veil = { sprite, t: 0 };
+    if (previous) previous.sprite.destroy({ texture: true, textureSource: true });
+  };
   const landscapeListeners = new Set<(id: LandscapeId) => void>();
   const setLandscape = (id: LandscapeId, rebuild = false) => {
     if (id === current.landscape.id && !transition && !rebuild) return;
-    const pending = { to: id, t: 0, swapped: false, ready: null as Mounted | null, failed: false };
+    const pending = { to: id, ready: null as Mounted | null, failed: false };
+    sincePlaceChange = 0;
     transition = pending;
     void mount(id).then(
       (m) => (pending.ready = m),
@@ -336,8 +353,8 @@ async function boot(): Promise<void> {
     const visibleLeft = Math.max(0, l.opening.x);
     const visibleRight = Math.min(l.screenWidth, l.opening.x + l.opening.width);
     tablet.layout(frame.sillSurface, frame.nearness, visibleRight, curtainWidth((visibleRight - visibleLeft) / l.frameScale));
-    roomFlash.width = fade.width = l.screenWidth;
-    roomFlash.height = fade.height = l.screenHeight;
+    roomFlash.width = l.screenWidth;
+    roomFlash.height = l.screenHeight;
   };
   layout();
 
@@ -453,27 +470,26 @@ async function boot(): Promise<void> {
     roomFlash.alpha = lightning.flash * (mood.calm ? 0.07 : 0.12);
 
     if (transition) {
-      transition.t += dt / FADE_SECONDS;
-      if (!transition.swapped && transition.t >= 1) {
-        // Hold on the dark frame until the landscape has finished loading.
-        transition.t = 1;
-        if (transition.ready) {
-          transition.swapped = true;
-          show(transition.ready);
-        } else if (transition.failed) {
-          // Couldn't load (offline?): fade back into the current view.
-          transition.swapped = true;
-          const failedTo = current.landscape.id;
-          for (const listener of landscapeListeners) listener(failedTo);
-        }
-      }
-      fade.alpha = transition.swapped ? Math.max(0, 2 - transition.t) : Math.min(1, transition.t);
-      if (transition.t >= 2) {
+      if (transition.ready) {
+        coverWithSnapshot();
+        show(transition.ready);
         transition = null;
-        fade.alpha = 0;
+      } else if (transition.failed) {
+        // Couldn't load (offline?): stay where we are.
+        transition = null;
+        const stayed = current.landscape.id;
+        for (const listener of landscapeListeners) listener(stayed);
       }
     }
-
+    if (veil) {
+      veil.t += dt / CROSSFADE_SECONDS;
+      const t = Math.min(1, veil.t);
+      veil.sprite.alpha = 1 - t * t * (3 - 2 * t);
+      if (veil.t >= 1) {
+        veil.sprite.destroy({ texture: true, textureSource: true });
+        veil = null;
+      }
+    }
     viewport.update(dt);
     sashes.update();
     bowl.update(dt);
@@ -501,6 +517,13 @@ async function boot(): Promise<void> {
     const wallDt = Math.max(0, (now - lastFrame) / 1000);
     lastFrame = now;
     simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS), wallDt);
+    // Changing place on a timer, if chosen: on to the next landscape in turn.
+    const rotate = preferences.get('rotateMinutes');
+    sincePlaceChange += wallDt;
+    if (rotate > 0 && !transition && sincePlaceChange >= rotate * 60) {
+      const ids = LANDSCAPE_IDS;
+      setLandscape(ids[(ids.indexOf(current.landscape.id) + 1) % ids.length]);
+    }
     viewport.render(app.renderer);
     sashes.render(app.renderer);
     overlay?.tick();
@@ -526,7 +549,7 @@ async function boot(): Promise<void> {
         /** Resolves once a landscape switch has finished. */
         landscapeReady: () =>
           new Promise<void>((resolve) => {
-            const check = () => (transition ? requestAnimationFrame(check) : resolve());
+            const check = () => (transition || veil ? requestAnimationFrame(check) : resolve());
             check();
           }),
         get landscape() {

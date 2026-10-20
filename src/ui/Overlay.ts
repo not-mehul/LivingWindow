@@ -187,6 +187,12 @@ export class Overlay {
             </span>
           </div>
           <div class="list__row">
+            <span>Change place <small>move on to the next one now and then</small></span>
+            <span class="segmented segmented--inline" role="radiogroup" aria-label="Change place every" data-choice="rotateMinutes">
+              <button type="button" role="radio" data-value="0">Off</button><button type="button" role="radio" data-value="30">30m</button><button type="button" role="radio" data-value="60">1h</button><button type="button" role="radio" data-value="120">2h</button>
+            </span>
+          </div>
+          <div class="list__row">
             <span>Sun <small data-sun-note></small></span>
             <button type="button" class="text-btn" data-action="locate">Use my location</button>
           </div>

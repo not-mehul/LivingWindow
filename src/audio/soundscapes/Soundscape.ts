@@ -23,7 +23,7 @@ export abstract class Soundscape {
     this.bed = ctx.createGain();
     // Fade in rather than popping on.
     this.bed.gain.setValueAtTime(0, ctx.currentTime);
-    this.bed.gain.setTargetAtTime(1, ctx.currentTime, 0.6);
+    this.bed.gain.setTargetAtTime(1, ctx.currentTime, 1.2);
     this.bed.connect(engine.inputs.ambience);
     // A little of the bed in the landscape's reverb, so it sits in the same space as the calls.
     const send = ctx.createGain();
@@ -45,7 +45,8 @@ export abstract class Soundscape {
     this.disposed = true;
     const ctx = this.engine.context;
     this.bed.gain.cancelScheduledValues(ctx.currentTime);
-    this.bed.gain.setTargetAtTime(0, ctx.currentTime, 0.2);
+    // Cross-fades with the next landscape's sound, as the views dissolve.
+    this.bed.gain.setTargetAtTime(0, ctx.currentTime, 0.8);
     window.setTimeout(() => {
       for (const stop of this.stops) stop();
       for (const source of this.sources) {
@@ -57,7 +58,7 @@ export abstract class Soundscape {
         source.disconnect();
       }
       this.bed.disconnect();
-    }, 1200);
+    }, 4500);
   }
 
   /** A looping noise source that is stopped on dispose. */
