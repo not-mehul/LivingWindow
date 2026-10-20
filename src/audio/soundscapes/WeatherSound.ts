@@ -1,5 +1,7 @@
 import type { Environment } from '../../scene/Environment';
+import type { AcousticsId } from '../acoustics';
 import type { AudioEngine } from '../AudioEngine';
+import { glassDrop, grassDrop, leafDrop, runoff, shoreDrop, streetDrop, TextureLayer, type Grain } from '../textures';
 import { thunderParams } from '../spatial';
 import { rand } from '../../core/random';
 
@@ -10,22 +12,44 @@ export interface WeatherRecordings {
   thunder?: AudioBuffer[];
 }
 
+/** What the rain lands on, per landscape. */
+const SURFACES: Record<AcousticsId, Grain> = {
+  city: streetDrop,
+  forest: leafDrop,
+  meadows: grassDrop,
+  beach: shoreDrop,
+};
+
+/** Drops per second in the light patter and the heavy downpour layers. */
+const PATTER_DENSITY = 45;
+const DOWNPOUR_DENSITY = 220;
+
 /**
- * Weather audio: rain and wind beds outside (muffled by the window), thunder
- * that follows each flash, and — when the window is shut — rain tapping on
- * the glass, which is heard indoors and stays crisp.
+ * Weather audio:
+ * - rain as a distant wash plus seamless drop textures for whatever it falls
+ *   on (leaves, grass, streets, sand), light patter rising into a downpour;
+ * - rain striking the glass and running down it, heard indoors with the
+ *   window shut;
+ * - wind that follows the weather's gusts, with a whistle in strong ones;
+ * - thunder after each flash, delayed by distance, rolling around the sky;
+ * - snow: a deep hush over everything outside.
  */
 export class WeatherSound {
-  private readonly rainBody: GainNode;
-  private readonly rainBodyFilter: BiquadFilterNode;
-  private readonly rainPatter: GainNode;
+  private readonly wash: GainNode;
+  private readonly washFilter: BiquadFilterNode;
+  private readonly sizzle: GainNode;
   private readonly snowHush: GainNode;
   private readonly wind: GainNode;
   private readonly windFilter: BiquadFilterNode;
   private readonly windPan: StereoPannerNode;
   private readonly whistle: GainNode;
   private readonly whistleFilter: BiquadFilterNode;
-  private tapBudget = 0;
+  private readonly glass: TextureLayer;
+  private readonly trickle: TextureLayer;
+  private surface: AcousticsId | null = null;
+  private patter: TextureLayer | null = null;
+  private downpour: TextureLayer | null = null;
+  private rain = 0;
 
   constructor(
     private readonly engine: AudioEngine,
@@ -33,87 +57,123 @@ export class WeatherSound {
   ) {
     const ctx = engine.context;
     const out = engine.inputs.weather;
-    const node = <T extends AudioNode>(n: T) => n;
+    const mod = engine.modulators;
+    const filter = (type: BiquadFilterType, frequency: number, q = 0.7) => {
+      const f = ctx.createBiquadFilter();
+      f.type = type;
+      f.frequency.value = frequency;
+      f.Q.value = q;
+      return f;
+    };
 
-    // Rain: a broad wash plus a crackly high patter whose level jitters.
-    this.rainBodyFilter = node(ctx.createBiquadFilter());
-    this.rainBodyFilter.type = 'lowpass';
-    this.rainBodyFilter.frequency.value = 1400;
-    this.rainBody = this.silentGain();
-    const rainSource = recordings.rain ? this.loop(recordings.rain) : engine.noise.source('pink');
-    rainSource.connect(this.rainBodyFilter).connect(this.rainBody).connect(out);
-
-    const patterFilter = ctx.createBiquadFilter();
-    patterFilter.type = 'highpass';
-    patterFilter.frequency.value = 3500;
-    this.rainPatter = this.silentGain();
-    engine.noise.source('white').connect(patterFilter).connect(this.rainPatter).connect(out);
+    // Rain far and wide: a soft roar that swells and eases on its own.
+    this.washFilter = filter('lowpass', 1400, 0.5);
+    this.wash = this.silentGain();
+    const washSource = recordings.rain ? this.loop(recordings.rain) : engine.noise.source('pink');
+    washSource
+      .connect(filter('highpass', recordings.rain ? 20 : 180))
+      .connect(this.washFilter)
+      .connect(mod.flutter(0.18, 0.15))
+      .connect(this.wash)
+      .connect(out);
+    // The fine sizzle of countless drops close by.
+    this.sizzle = this.silentGain();
+    engine.noise.source('white').connect(filter('bandpass', 6500, 0.4)).connect(mod.flutter(0.3, 0.6)).connect(this.sizzle).connect(out);
 
     // Falling snow is nearly silent: just a soft, dampened hush.
-    const hushFilter = ctx.createBiquadFilter();
-    hushFilter.type = 'bandpass';
-    hushFilter.frequency.value = 900;
-    hushFilter.Q.value = 0.5;
     this.snowHush = this.silentGain();
-    engine.noise.source('pink').connect(hushFilter).connect(this.snowHush).connect(out);
+    engine.noise.source('pink').connect(filter('bandpass', 700, 0.5)).connect(mod.flutter(0.3, 0.1)).connect(this.snowHush).connect(out);
 
-    // Wind: band-passed brown noise that brightens and swells with gusts.
-    this.windFilter = ctx.createBiquadFilter();
-    this.windFilter.type = 'bandpass';
-    this.windFilter.Q.value = 0.6;
-    this.windFilter.frequency.value = 300;
+    // Wind: band-passed noise that brightens and swells with the gusts; on
+    // top, a slow wander in colour and strength of its own.
+    this.windFilter = filter('bandpass', 300, 0.55);
+    mod.wander(this.windFilter.detune, 450, 0.2);
     this.windPan = ctx.createStereoPanner();
+    mod.wander(this.windPan.pan, 0.25, 0.08);
     this.wind = this.silentGain();
     const windSource = recordings.wind ? this.loop(recordings.wind) : engine.noise.source('brown');
-    windSource.connect(this.windFilter).connect(this.wind).connect(this.windPan).connect(out);
-
+    windSource.connect(this.windFilter).connect(mod.flutter(0.35, 0.18)).connect(this.wind).connect(this.windPan).connect(out);
     // A thin whistle that only appears in strong wind.
-    this.whistleFilter = ctx.createBiquadFilter();
-    this.whistleFilter.type = 'bandpass';
-    this.whistleFilter.Q.value = 14;
+    this.whistleFilter = filter('bandpass', 700, 16);
+    mod.wander(this.whistleFilter.detune, 300, 0.35);
     this.whistle = this.silentGain();
-    engine.noise.source('white').connect(this.whistleFilter).connect(this.whistle).connect(this.windPan);
+    engine.noise.source('white').connect(this.whistleFilter).connect(mod.flutter(0.6, 0.3)).connect(this.whistle).connect(this.windPan);
+
+    // On the pane itself: drops, and water running down.
+    this.glass = new TextureLayer(ctx, engine.prerender, engine.noise, engine.inputs.glass, { density: 60, grain: glassDrop, width: 0.85 }, 31);
+    this.trickle = new TextureLayer(ctx, engine.prerender, engine.noise, engine.inputs.glass, { density: 7, grain: runoff, width: 0.7 }, 47);
   }
 
-  update(dt: number, env: Environment, glassExposure: number): void {
+  /** Change what the rain falls on (when the landscape changes). */
+  setSurface(id: AcousticsId): void {
+    if (id === this.surface) return;
+    this.surface = id;
+    const ctx = this.engine.context;
+    for (const old of [this.patter, this.downpour]) {
+      if (!old) continue;
+      old.set(0, 0.3);
+      window.setTimeout(() => old.stop(), 2000);
+    }
+    const grain = SURFACES[id];
+    const out = this.engine.inputs.weather;
+    this.patter = new TextureLayer(ctx, this.engine.prerender, this.engine.noise, out, { density: PATTER_DENSITY, grain }, 11 + id.length);
+    this.downpour = new TextureLayer(ctx, this.engine.prerender, this.engine.noise, out, { density: DOWNPOUR_DENSITY, grain }, 23 + id.length);
+    this.applyRain(this.rain, 0.5);
+  }
+
+  update(_dt: number, env: Environment, glassExposure: number): void {
     if (!this.engine.running) return;
     const { weather } = env;
     const now = this.engine.context.currentTime;
-    const smooth = (param: AudioParam, value: number, tau = 0.4) => param.setTargetAtTime(value, now, tau);
+    const smooth = (param: AudioParam, value: number, tau = 0.6) => param.setTargetAtTime(value, now, tau);
 
-    const rain = weather.kind === 'rain' ? weather.precipitation : 0;
+    this.rain = weather.kind === 'rain' ? weather.precipitation : 0;
     const snow = weather.kind === 'snow' ? weather.precipitation : 0;
-    smooth(this.rainBody.gain, 0.55 * rain ** 0.7);
-    smooth(this.rainBodyFilter.frequency, 900 + 2200 * rain);
-    // Fast random jitter gives the patter its texture of individual drops.
-    smooth(this.rainPatter.gain, 0.12 * rain * (0.3 + Math.random()), 0.02);
-    smooth(this.snowHush.gain, 0.05 * snow);
+    this.applyRain(this.rain);
+    smooth(this.washFilter.frequency, 900 + 2600 * this.rain, 1.5);
+    smooth(this.snowHush.gain, 0.035 * snow, 2);
+    this.engine.setHush(snow);
 
     const wind = Math.abs(weather.wind);
-    smooth(this.wind.gain, 0.45 * wind ** 1.4 + 0.015);
-    smooth(this.windFilter.frequency, 220 + 700 * wind, 0.6);
-    smooth(this.windPan.pan, Math.max(-0.5, Math.min(0.5, weather.wind * 0.5)), 1.5);
-    smooth(this.whistle.gain, 0.12 * Math.max(0, wind - 0.5));
-    smooth(this.whistleFilter.frequency, 650 + 600 * wind, 0.8);
+    smooth(this.wind.gain, 0.4 * wind ** 1.5 + 0.012, 0.8);
+    smooth(this.windFilter.frequency, 200 + 650 * wind, 0.9);
+    smooth(this.windPan.pan, Math.max(-0.5, Math.min(0.5, weather.wind * 0.5)), 2);
+    smooth(this.whistle.gain, 0.05 * Math.max(0, wind - 0.6) ** 1.2, 1);
+    smooth(this.whistleFilter.frequency, 650 + 500 * wind, 1.2);
 
-    // Drops tapping the pane, only where glass faces the rain.
-    this.tapBudget += dt * 26 * rain * glassExposure;
-    while (this.tapBudget >= 1) {
-      this.tapBudget -= 1;
-      this.glassTap(now + Math.random() * dt);
-    }
+    // The pane only gets wet where it faces the rain, and is only heard shut.
+    const onGlass = this.rain * glassExposure;
+    this.glass.set(0.9 * onGlass ** 0.6, 0.5);
+    this.trickle.set(0.35 * Math.min(1, Math.max(0, onGlass - 0.1) * 2), 2);
   }
 
-  /** Thunder after a flash: delayed and softened by distance, panned to the strike. */
+  private applyRain(rain: number, tau = 1.2): void {
+    const now = this.engine.context.currentTime;
+    this.wash.gain.setTargetAtTime(0.3 * rain ** 0.8, now, tau);
+    this.sizzle.gain.setTargetAtTime(0.018 * rain ** 1.3, now, tau);
+    this.patter?.set(0.6 * Math.min(1, rain * 2.2) ** 0.8, tau);
+    this.downpour?.set(0.75 * Math.max(0, (rain - 0.35) / 0.65) ** 1.2, tau);
+  }
+
+  /**
+   * Thunder after a flash, delayed by its distance. A strike is many
+   * stretches of lightning at different distances, so the rumble is built
+   * from overlapping bursts, each further one later, duller and softer,
+   * rolling across the sky; close strikes open with a tearing crack.
+   */
   thunder(intensity: number, distance: number, pan: number): void {
     if (!this.engine.running) return;
     const ctx = this.engine.context;
     const p = thunderParams(intensity, distance);
     const when = ctx.currentTime + p.delay;
 
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = pan * 0.8;
-    panner.connect(this.engine.inputs.weather);
+    const out = ctx.createGain();
+    out.gain.value = 1;
+    out.connect(this.engine.inputs.weather);
+    const send = ctx.createGain();
+    send.gain.value = 0.35 + 0.5 * distance;
+    out.connect(send).connect(this.engine.sends.weather);
+
     const recorded = this.recordings.thunder;
     if (recorded && recorded.length > 0) {
       const src = ctx.createBufferSource();
@@ -124,55 +184,73 @@ export class WeatherSound {
       lowpass.frequency.value = p.cutoff * 4;
       const amp = ctx.createGain();
       amp.gain.value = p.gain;
-      src.connect(lowpass).connect(amp).connect(panner);
+      const panner = ctx.createStereoPanner();
+      panner.pan.value = pan * 0.8;
+      src.connect(lowpass).connect(amp).connect(panner).connect(out);
       src.start(when);
+      window.setTimeout(() => out.disconnect(), (p.delay + src.buffer.duration + 4) * 1000);
       return;
     }
 
-    const src = ctx.createBufferSource();
-    src.buffer = this.engine.noise.get('brown');
-    const lowpass = ctx.createBiquadFilter();
-    lowpass.type = 'lowpass';
-    lowpass.frequency.setValueAtTime(p.cutoff, when);
-    lowpass.frequency.exponentialRampToValueAtTime(Math.max(120, p.cutoff * 0.35), when + p.duration);
-    const amp = ctx.createGain();
-    amp.gain.setValueAtTime(0, when);
-    // A rolling rumble: a few overlapping swells, each weaker than the last.
-    const swells = 3 + Math.floor(Math.random() * 3);
-    let t = when;
-    for (let i = 0; i < swells; i++) {
-      const peak = p.gain * 1.6 * (1 - i / (swells + 1));
-      amp.gain.linearRampToValueAtTime(peak, t + rand(0.05, 0.25));
-      t += rand(0.4, 1.1);
-      amp.gain.linearRampToValueAtTime(peak * 0.35, t);
+    // The rolling rumble.
+    const bursts = 5 + Math.floor(Math.random() * 4);
+    for (let i = 0; i < bursts; i++) {
+      const lag = (i / bursts) * p.duration * 0.55 + rand(0, 0.4);
+      const far = Math.min(1, distance + (i / bursts) * 0.4);
+      const t = when + lag;
+      const length = rand(1.2, 2.6) + far * 1.5;
+      const src = ctx.createBufferSource();
+      src.buffer = this.engine.noise.get('brown');
+      const lowpass = ctx.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.Q.value = 0.6;
+      lowpass.frequency.setValueAtTime(p.cutoff * (1 - 0.5 * (far - distance)), t);
+      lowpass.frequency.exponentialRampToValueAtTime(Math.max(70, p.cutoff * 0.3), t + length);
+      const amp = ctx.createGain();
+      const peak = p.gain * 0.75 * (1 - 0.55 * (i / bursts)) * rand(0.6, 1);
+      amp.gain.setValueAtTime(0, t);
+      amp.gain.linearRampToValueAtTime(peak, t + rand(0.08, 0.35));
+      amp.gain.setTargetAtTime(0, t + length * 0.3, length * 0.3);
+      const panner = ctx.createStereoPanner();
+      const from = Math.max(-1, Math.min(1, pan * 0.8 + rand(-0.3, 0.3)));
+      panner.pan.setValueAtTime(from, t);
+      panner.pan.linearRampToValueAtTime(Math.max(-1, Math.min(1, from + rand(-0.5, 0.5))), t + length);
+      src.connect(lowpass).connect(amp).connect(panner).connect(out);
+      src.start(t, Math.random() * 8, length * 1.6 + 0.2);
     }
-    amp.gain.exponentialRampToValueAtTime(0.0001, when + p.duration);
-    src.connect(lowpass).connect(amp).connect(panner);
-    src.start(when, Math.random() * 5, p.duration + 0.2);
 
-    // Close strikes start with a sharp crack.
+    // The deep sub of a big strike, felt more than heard.
+    const sub = ctx.createBufferSource();
+    sub.buffer = this.engine.noise.get('brown');
+    const subFilter = ctx.createBiquadFilter();
+    subFilter.type = 'lowpass';
+    subFilter.frequency.value = 70;
+    const subAmp = ctx.createGain();
+    subAmp.gain.setValueAtTime(0, when);
+    subAmp.gain.linearRampToValueAtTime(p.gain * 0.9, when + 0.3);
+    subAmp.gain.setTargetAtTime(0, when + 0.6, p.duration * 0.25);
+    sub.connect(subFilter).connect(subAmp).connect(out);
+    sub.start(when, Math.random() * 8, p.duration + 0.5);
+
+    // Close strikes tear the air first: a ragged crack of a few rapid snaps.
     if (distance < 0.35) {
-      const crack = ctx.createBufferSource();
-      crack.buffer = this.engine.noise.get('white');
-      const hp = ctx.createBiquadFilter();
-      hp.type = 'highpass';
-      hp.frequency.value = 1500;
-      const crackAmp = ctx.createGain();
-      crackAmp.gain.setValueAtTime(p.gain * 0.5, when);
-      crackAmp.gain.exponentialRampToValueAtTime(0.0001, when + 0.35);
-      crack.connect(hp).connect(crackAmp).connect(panner);
-      crack.start(when, Math.random() * 5, 0.4);
+      const nearness = 1 - distance / 0.35;
+      for (let i = 0; i < 4; i++) {
+        const t = when + i * rand(0.015, 0.05);
+        const crack = ctx.createBufferSource();
+        crack.buffer = this.engine.noise.get('white');
+        const band = ctx.createBiquadFilter();
+        band.type = 'bandpass';
+        band.frequency.value = rand(1200, 3200);
+        band.Q.value = 0.5;
+        const crackAmp = ctx.createGain();
+        crackAmp.gain.setValueAtTime(p.gain * 0.35 * nearness * (1 - i * 0.18), t);
+        crackAmp.gain.exponentialRampToValueAtTime(0.0001, t + rand(0.12, 0.3));
+        crack.connect(band).connect(crackAmp).connect(out);
+        crack.start(t, Math.random() * 8, 0.35);
+      }
     }
-    window.setTimeout(() => panner.disconnect(), (p.delay + p.duration + 1) * 1000);
-  }
-
-  private glassTap(when: number): void {
-    const ctx = this.engine.context;
-    const panner = ctx.createStereoPanner();
-    panner.pan.value = rand(-0.85, 0.85);
-    panner.connect(this.engine.inputs.glass);
-    this.engine.sounds.play('glass-tap', panner, when, rand(0.15, 0.5), rand(0.85, 1.2));
-    window.setTimeout(() => panner.disconnect(), 500);
+    window.setTimeout(() => out.disconnect(), (p.delay + p.duration * 2 + 4) * 1000);
   }
 
   private silentGain(): GainNode {

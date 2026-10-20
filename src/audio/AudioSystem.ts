@@ -85,7 +85,10 @@ export class AudioSystem {
   /** Swap the landscape ambience (the old one fades out). */
   setSoundscape(create: (engine: AudioEngine, bed?: AudioBuffer) => Soundscape, bedKey: string): void {
     this.ambience?.dispose();
-    if (isAcousticsId(bedKey)) this.engine.setAcoustics(bedKey);
+    if (isAcousticsId(bedKey)) {
+      this.engine.setAcoustics(bedKey);
+      this.weather.setSurface(bedKey);
+    }
     this.ambience = create(this.engine, this.beds[bedKey]);
   }
 

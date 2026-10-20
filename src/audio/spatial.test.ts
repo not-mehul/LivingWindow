@@ -47,4 +47,13 @@ describe('thunderParams', () => {
     expect(far.cutoff).toBeLessThan(close.cutoff);
     expect(far.duration).toBeGreaterThan(close.duration);
   });
+
+  it('waits longer the further away the strike is', () => {
+    let last = -1;
+    for (let d = 0; d <= 1; d += 0.1) {
+      const { delay } = thunderParams(1, d);
+      expect(delay).toBeGreaterThan(last);
+      last = delay;
+    }
+  });
 });

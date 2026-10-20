@@ -34,19 +34,42 @@ export class Prerender {
     this.ready.delete(key);
   }
 
-  async render(seconds: number, build: (ctx: OfflineAudioContext) => number | void, channels = 1): Promise<AudioBuffer | null> {
+  async render(seconds: number, build: (ctx: OfflineAudioContext) => number | void, channels = 1, trim = true): Promise<AudioBuffer | null> {
     if (typeof OfflineAudioContext === 'undefined') return null;
     try {
       const length = Math.ceil(seconds * this.sampleRate);
       const ctx = new OfflineAudioContext(channels, length, this.sampleRate);
       const used = build(ctx);
       const rendered = await ctx.startRendering();
+      if (!trim) return rendered;
       const keep = trimmedLength(rendered, typeof used === 'number' ? used : seconds);
       return keep >= rendered.length ? rendered : copyStart(rendered, keep);
     } catch {
       return null;
     }
   }
+
+  /**
+   * A seamless looping texture `seconds` long: `scatter` places grains
+   * anywhere in [0, seconds), and whatever rings past the end is folded back
+   * onto the start, so the loop point is inaudible.
+   */
+  async loop(seconds: number, scatter: (ctx: OfflineAudioContext) => void, tail = 1.5): Promise<AudioBuffer | null> {
+    const rendered = await this.render(seconds + tail, scatter, 2, false);
+    if (!rendered) return null;
+    const length = Math.floor(seconds * this.sampleRate);
+    const out = new AudioBuffer({ length, numberOfChannels: 2, sampleRate: this.sampleRate });
+    for (let ch = 0; ch < 2; ch++) out.copyToChannel(foldTail(rendered.getChannelData(ch), length), ch);
+    return out;
+  }
+}
+
+/** The first `length` samples of `data`, with everything after them added back onto the start. */
+export function foldTail(data: Float32Array, length: number): Float32Array<ArrayBuffer> {
+  const out = new Float32Array(length);
+  out.set(data.subarray(0, length));
+  for (let i = length; i < data.length; i++) out[(i - length) % length] += data[i];
+  return out;
 }
 
 /**

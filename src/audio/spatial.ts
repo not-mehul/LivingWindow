@@ -55,9 +55,11 @@ export interface ThunderParams {
 export function thunderParams(intensity: number, distance: number): ThunderParams {
   const d = clamp(distance, 0, 1);
   return {
-    delay: 0.25 + d * 5,
+    // Sound travels about a kilometre every three seconds; squeezed so the
+    // furthest storms still answer their flash within ten seconds.
+    delay: 0.25 + d * 9,
     gain: clamp(intensity, 0, 1) * (1 - 0.6 * d),
     cutoff: 1400 * (240 / 1400) ** d,
-    duration: 3.5 + d * 3,
+    duration: 4.5 + d * 5,
   };
 }

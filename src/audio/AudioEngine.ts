@@ -75,6 +75,7 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
   private readonly reverbOut: GainNode;
   private convolver: ConvolverNode | null = null;
   private acousticsId: AcousticsId | null = null;
+  private readonly hush: BiquadFilterNode;
   private readonly windowFilter: BiquadFilterNode;
   private readonly windowGain: GainNode;
   private readonly roomTone: GainNode;
@@ -127,15 +128,22 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
     this.windowFilter.Q.value = 0.5;
     this.windowGain = gain();
     this.windowFilter.connect(this.windowGain).connect(glue).connect(this.master);
+    // Snow soaks up sound: a shelf that dulls the whole outdoors as it settles.
+    this.hush = ctx.createBiquadFilter();
+    this.hush.type = 'highshelf';
+    this.hush.frequency.value = 2500;
+    this.hush.gain.value = 0;
+    this.hush.connect(this.windowFilter);
 
     this.reverbIn = gain();
     this.reverbOut = gain();
-    this.reverbOut.connect(this.windowFilter);
+    this.reverbOut.connect(this.hush);
 
     const wildlife = gain();
     const ambience = gain();
     const weather = gain();
-    for (const bus of [wildlife, ambience, weather]) bus.connect(this.windowFilter);
+    for (const bus of [wildlife, ambience]) bus.connect(this.hush);
+    weather.connect(this.windowFilter);
     this.sends = { wildlife: gain(), ambience: gain(), weather: gain() };
     for (const send of Object.values(this.sends)) send.connect(this.reverbIn);
 
@@ -279,6 +287,11 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
   /** How strongly sounds at depth `z` feed the current landscape's reverb. */
   sendLevel(z: number): number {
     return reverbSend(z, ACOUSTICS[this.acousticsId ?? 'city'].send);
+  }
+
+  /** How much fresh snow is muffling the world outside, 0..1. */
+  setHush(amount: number): void {
+    this.hush.gain.setTargetAtTime(-9 * clamp01(amount), this.context.currentTime, 4);
   }
 
   /** Sweep the exterior filter as the sash slides. */
