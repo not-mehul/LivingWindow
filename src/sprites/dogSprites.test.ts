@@ -34,6 +34,28 @@ describe('the dog at the window', () => {
     expect(pawRow('reach')!).toBeLessThan(pawRow('away')!);
   });
 
+  it('has a real muzzle in profile, reaching well out beyond the skull, and a face as wide as it is long', () => {
+    const extent = (pose: DogPose) => {
+      const { grid } = drawWindowDog(look('husky'), pose);
+      // The band of rows through the eyes and muzzle, below the ears.
+      let right = 0;
+      let left = grid.width;
+      for (let y = Math.round(38 * 1.45); y < Math.round(50 * 1.45); y++) {
+        for (let x = 0; x < grid.width; x++) {
+          if (!grid.get(x, y)) continue;
+          right = Math.max(right, x);
+          left = Math.min(left, x);
+        }
+      }
+      return { left, right };
+    };
+    const side = extent('side');
+    const face = extent('face');
+    expect(side.right).toBeGreaterThan(Math.round((48 + 18) * 1.45));
+    expect(side.right - DOG_WIDTH / 2).toBeGreaterThan(DOG_WIDTH / 2 - side.left);
+    expect(Math.abs(face.right - DOG_WIDTH / 2 - (DOG_WIDTH / 2 - face.left))).toBeLessThan(4);
+  });
+
   it('animates: panting frames, blinks and head turns all differ', () => {
     const key = (pose: DogPose) => drawWindowDog(look('collie'), pose).grid.data.join();
     expect(new Set(DOG_PANT_FACE.map(key)).size).toBe(3);
