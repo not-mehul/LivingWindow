@@ -16,10 +16,8 @@ import { computeLighting } from '../scene/lighting';
 import type { BreakEvent } from '../sim/waves';
 import { formatClock } from '../state/timeOfDay';
 import { Weather, WEATHER_LABELS, WEATHER_TYPES, type WeatherType } from '../state/Weather';
-import { loadUiFont } from '../ui/fontBuilder';
+import { createReviewPage, type PageRow } from './reviewPage';
 import { LOOPS, oneShotGroups, PET_SOUNDS, ROOM_SOUNDS, soundLabel } from './soundCatalog';
-import { loadReviews, reviewReport, saveReviews, tally, type ReviewItem, type Verdict } from './soundReview';
-import './soundPreview.css';
 
 /**
  * A page for listening to every sound in the app, one at a time, and noting
@@ -28,9 +26,7 @@ import './soundPreview.css';
  * dev server at /sounds.html.
  */
 
-interface Row {
-  item: ReviewItem;
-  detail?: string;
+interface Row extends PageRow {
   /** Play it once, or switch it on or off. */
   play: () => void;
   /** For things that keep playing: whether it's on now. */
@@ -38,8 +34,6 @@ interface Row {
   /** More buttons after the play button. */
   extra?: Array<{ label: string; run: () => void }>;
 }
-
-type Filter = 'all' | 'unrated' | 'work' | 'good';
 
 /** No landscape: only the weather, the radio and whatever is previewed. */
 class Quiet extends Soundscape {
@@ -61,7 +55,6 @@ const SOUNDSCAPES: Record<LandscapeId, (engine: AudioEngine, shore: Shore, bed?:
 };
 
 async function start(root: HTMLElement): Promise<void> {
-  void loadUiFont();
   const audio = await AudioSystem.create(true);
   if (!audio) {
     root.textContent = 'This browser has no Web Audio, so there is nothing to preview.';
@@ -77,14 +70,12 @@ async function start(root: HTMLElement): Promise<void> {
 
   const scene = { landscape: null as LandscapeId | null, hours: 12, activity: 0.5, windowOpen: true, distance: 0.3, pan: 0 };
   const loops = new Map<string, TextureLayer>();
-  let reviews = loadReviews();
-  let filter: Filter = 'all';
 
   /** Browsers start audio only from a tap; every control goes through this. */
   const withSound = (run: () => void) => () => {
     void engine.unlock().then(() => {
       run();
-      refresh();
+      page.refresh();
     });
   };
 
@@ -181,126 +172,48 @@ async function start(root: HTMLElement): Promise<void> {
     },
   );
   let thunderDistance = 0.1;
-  const items = rows.map((r) => r.item);
 
-  // The page.
-  root.innerHTML = `
-    <header class="sp-head">
-      <h1>Living Window · sounds</h1>
-      <p class="sp-tally" data-tally></p>
-      <div class="sp-actions">
-        <label>Show <select data-filter>
-          <option value="all">all</option><option value="unrated">not rated</option><option value="work">needs work</option><option value="good">good</option>
-        </select></label>
-        <button type="button" data-copy>Copy report</button>
-        <button type="button" data-stop>Stop all</button>
-        <button type="button" data-clear>Clear marks</button>
-      </div>
-    </header>
-    <section class="sp-controls" aria-label="Listening conditions">
+  const page = createReviewPage(root, {
+    heading: 'Living Window · sounds',
+    reportTitle: 'Sound review',
+    storageKey: 'livingWindow.soundReview',
+    noun: 'sounds',
+    rows,
+    actions: '<button type="button" data-stop>Stop all</button>',
+    controlsLabel: 'Listening conditions',
+    controls: `
       <label>Time <input type="range" min="0" max="23.75" step="0.25" value="12" data-hours /> <output data-hours-out></output></label>
       <label>Activity <input type="range" min="0" max="1" step="0.05" value="0.5" data-activity /></label>
       <label>Distance <input type="range" min="0" max="1" step="0.05" value="0.3" data-distance /></label>
       <label>Pan <input type="range" min="-1" max="1" step="0.1" value="0" data-pan /></label>
       <label><input type="checkbox" checked data-window /> Window open</label>
-      <span class="sp-meter" title="Output level"><span data-meter></span></span>
-    </section>
-    <main data-groups></main>
-    <details class="sp-report"><summary>Report</summary><textarea readonly rows="14" data-report></textarea></details>
-  `;
-  const $ = <T extends HTMLElement>(selector: string) => root.querySelector<T>(selector)!;
-  const groups = $('[data-groups]');
-  const rowEls = new Map<string, HTMLElement>();
-  let section: HTMLElement | null = null;
-  let current = '';
-  for (const row of rows) {
-    if (row.item.group !== current) {
-      current = row.item.group;
-      section = document.createElement('section');
-      section.className = 'sp-group';
-      section.innerHTML = `<h2>${current}</h2>`;
-      groups.appendChild(section);
-    }
-    const el = document.createElement('div');
-    el.className = 'sp-row';
-    el.innerHTML = `
-      <button type="button" class="sp-play" aria-label="Play ${row.item.label}"></button>
-      <div class="sp-name">${row.item.label}<small>${row.item.kind}${row.detail ? ` · <span data-detail>${row.detail}</span>` : ''}</small></div>
-      <span class="sp-extra"></span>
-      <span class="sp-verdict" role="group" aria-label="Verdict on ${row.item.label}">
-        <button type="button" data-verdict="good">Good</button><button type="button" data-verdict="work">Needs work</button>
-      </span>
-      <input type="text" class="sp-note" placeholder="What's wrong with it?" aria-label="Note on ${row.item.label}" />
-    `;
-    el.querySelector<HTMLButtonElement>('.sp-play')!.addEventListener('click', withSound(row.play));
-    for (const extra of row.extra ?? []) {
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = extra.label;
-      button.addEventListener('click', withSound(extra.run));
-      el.querySelector('.sp-extra')!.appendChild(button);
-    }
-    for (const button of el.querySelectorAll<HTMLButtonElement>('[data-verdict]')) {
-      button.addEventListener('click', () => {
-        const verdict = button.dataset.verdict as Verdict;
-        const review = { ...reviews[row.item.id] };
-        review.verdict = review.verdict === verdict ? undefined : verdict;
-        reviews = { ...reviews, [row.item.id]: review };
-        saveReviews(reviews);
-        refresh();
-      });
-    }
-    const note = el.querySelector<HTMLInputElement>('.sp-note')!;
-    note.value = reviews[row.item.id]?.note ?? '';
-    note.addEventListener('input', () => {
-      reviews = { ...reviews, [row.item.id]: { ...reviews[row.item.id], note: note.value } };
-      saveReviews(reviews);
-      refreshReport();
-    });
-    section!.appendChild(el);
-    rowEls.set(row.item.id, el);
-  }
-
-  const report = $<HTMLTextAreaElement>('[data-report]');
-  const refreshReport = () => {
-    const counts = tally(items, reviews);
-    $('[data-tally]').textContent = `${items.length} sounds · ${counts.work} need work · ${counts.good} good · ${counts.unrated} not rated`;
-    report.value = reviewReport(items, reviews);
-  };
-  const refresh = () => {
-    for (const row of rows) {
-      const el = rowEls.get(row.item.id)!;
-      const verdict = reviews[row.item.id]?.verdict;
+      <span class="sp-meter" title="Output level"><span data-meter></span></span>`,
+    build: (row, el) => {
+      const play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'sp-play';
+      play.setAttribute('aria-label', `Play ${row.item.label}`);
+      play.addEventListener('click', withSound(row.play));
+      el.lead.appendChild(play);
+      for (const extra of row.extra ?? []) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = extra.label;
+        button.addEventListener('click', withSound(extra.run));
+        el.extra.appendChild(button);
+      }
+    },
+    update: (row, el) => {
       const on = row.active?.() ?? false;
-      const play = el.querySelector<HTMLButtonElement>('.sp-play')!;
+      const play = el.lead.querySelector<HTMLButtonElement>('.sp-play')!;
       play.textContent = on ? '■' : '▶';
       play.setAttribute('aria-pressed', String(on));
-      el.classList.toggle('is-on', on);
-      for (const button of el.querySelectorAll<HTMLButtonElement>('[data-verdict]')) button.setAttribute('aria-pressed', String(button.dataset.verdict === verdict));
-      el.hidden = filter !== 'all' && (filter === 'unrated' ? Boolean(verdict) : verdict !== filter);
-      if (row.item.id === 'radio') el.querySelector('[data-detail]')!.textContent = radio.isOn ? radio.title : 'generated live';
-    }
-    for (const s of groups.querySelectorAll<HTMLElement>('.sp-group')) s.hidden = ![...s.querySelectorAll<HTMLElement>('.sp-row')].some((r) => !r.hidden);
-    $('[data-hours-out]').textContent = formatClock(scene.hours);
-    refreshReport();
-  };
-
-  $<HTMLSelectElement>('[data-filter]').addEventListener('change', (e) => {
-    filter = (e.target as HTMLSelectElement).value as Filter;
-    refresh();
+      el.row.classList.toggle('is-on', on);
+      if (row.item.id === 'radio' && el.detail) el.detail.textContent = radio.isOn ? radio.title : 'generated live';
+    },
   });
-  $('[data-copy]').addEventListener('click', () => {
-    const done = (text: string) => ($('[data-copy]').textContent = text);
-    navigator.clipboard?.writeText(report.value).then(
-      () => done('Copied'),
-      () => {
-        $<HTMLDetailsElement>('.sp-report').open = true;
-        report.select();
-        done('Select and copy below');
-      },
-    );
-    window.setTimeout(() => done('Copy report'), 2000);
-  });
+  const { $ } = page;
+  const refresh = page.refresh;
   $('[data-stop]').addEventListener('click', () => {
     for (const [id, layer] of loops) {
       layer.stop();
@@ -311,19 +224,17 @@ async function start(root: HTMLElement): Promise<void> {
     radio.setOn(false);
     refresh();
   });
-  $('[data-clear]').addEventListener('click', () => {
-    if (!window.confirm('Clear every mark and note?')) return;
-    reviews = {};
-    saveReviews(reviews);
-    for (const note of root.querySelectorAll<HTMLInputElement>('.sp-note')) note.value = '';
-    refresh();
-  });
   const slider = (selector: string, set: (v: number) => void) =>
     $<HTMLInputElement>(selector).addEventListener('input', (e) => {
       set(Number((e.target as HTMLInputElement).value));
       refresh();
     });
-  slider('[data-hours]', (v) => (scene.hours = v));
+  const showHours = () => ($('[data-hours-out]').textContent = formatClock(scene.hours));
+  slider('[data-hours]', (v) => {
+    scene.hours = v;
+    showHours();
+  });
+  showHours();
   slider('[data-activity]', (v) => (scene.activity = v));
   slider('[data-distance]', (v) => (scene.distance = v));
   slider('[data-pan]', (v) => (scene.pan = v));

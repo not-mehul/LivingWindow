@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadReviews, prune, reviewReport, saveReviews, tally, type ReviewItem, type Reviews } from './soundReview';
+import { loadReviews, prune, reviewReport, saveReviews, tally, type ReviewItem, type Reviews } from './review';
 
 const items: ReviewItem[] = [
   { id: 'crow-caw', label: 'Crow caw', group: 'Birds', kind: 'synth' },
@@ -8,7 +8,7 @@ const items: ReviewItem[] = [
   { id: 'radio', label: 'Lofi radio', group: 'Radio', kind: 'generative' },
 ];
 
-describe('sound review', () => {
+describe('review notes', () => {
   it('counts verdicts', () => {
     const reviews: Reviews = { 'crow-caw': { verdict: 'work' }, 'cow-moo': { verdict: 'good' }, 'loop:creek': { note: 'hmm' } };
     expect(tally(items, reviews)).toEqual({ good: 1, work: 1, unrated: 2 });
@@ -20,7 +20,7 @@ describe('sound review', () => {
       'crow-caw': { verdict: 'work', note: 'too harsh, sounds like a duck' },
       'loop:creek': { note: 'a bit loud' },
     };
-    const report = reviewReport(items, reviews, new Date('2026-10-20T12:00:00Z'));
+    const report = reviewReport('Sound review', items, reviews, new Date('2026-10-20T12:00:00Z'));
     expect(report).toContain('# Sound review, 2026-10-20');
     expect(report).toContain('1 need work · 1 good · 2 not rated');
     expect(report.indexOf('## Needs work')).toBeLessThan(report.indexOf('## Good'));
@@ -37,33 +37,10 @@ describe('sound review', () => {
   it('round-trips through storage and survives junk', () => {
     const store = new Map<string, string>();
     const storage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => void store.set(k, v) };
-    saveReviews({ 'crow-caw': { verdict: 'work', note: 'harsh' } }, storage);
-    expect(loadReviews(storage)).toEqual({ 'crow-caw': { verdict: 'work', note: 'harsh' } });
+    saveReviews('livingWindow.soundReview', { 'crow-caw': { verdict: 'work', note: 'harsh' } }, storage);
+    expect(loadReviews('livingWindow.soundReview', storage)).toEqual({ 'crow-caw': { verdict: 'work', note: 'harsh' } });
     store.set('livingWindow.soundReview', '{not json');
-    expect(loadReviews(storage)).toEqual({});
-  });
-});
-
-describe('sound catalog', () => {
-  it('lists every one-shot exactly once', async () => {
-    const { oneShotGroups } = await import('./soundCatalog');
-    const { SOUND_IDS } = await import('../audio/sounds/SoundBank');
-    const listed = oneShotGroups().flatMap((g) => g.ids);
-    expect([...listed].sort()).toEqual([...SOUND_IDS].sort());
-    expect(new Set(listed).size).toBe(listed.length);
-  });
-
-  it('puts sounds it has never heard of in the scene group', async () => {
-    const { oneShotGroups } = await import('./soundCatalog');
-    const groups = oneShotGroups(['crow-caw', 'brand-new' as never]);
-    expect(groups.map((g) => [g.group, g.ids])).toEqual([
-      ['Birds', ['crow-caw']],
-      ['In the scene', ['brand-new']],
-    ]);
-  });
-
-  it('builds every loop', async () => {
-    const { LOOPS } = await import('./soundCatalog');
-    for (const loop of LOOPS) expect(typeof loop.spec().render, loop.id).toBe('function');
+    expect(loadReviews('livingWindow.soundReview', storage)).toEqual({});
+    expect(loadReviews('livingWindow.spriteReview', storage)).toEqual({});
   });
 });

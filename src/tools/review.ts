@@ -1,6 +1,6 @@
 /**
- * The sound preview page's notes: a verdict and a comment per sound, kept in
- * the browser, and turned into a report to hand back for fixing.
+ * The preview pages' notes (sounds, sprites): a verdict and a comment per
+ * item, kept in the browser, and turned into a report to hand back for fixing.
  */
 
 export type Verdict = 'good' | 'work';
@@ -12,29 +12,27 @@ export interface Review {
 
 export type Reviews = Record<string, Review>;
 
-/** A sound as the report names it. */
+/** An item as the report names it. */
 export interface ReviewItem {
   id: string;
   label: string;
   group: string;
-  /** e.g. "synth", "recording ×3", "loop". */
+  /** e.g. "synth", "recording ×3", "6 frames". */
   kind: string;
 }
 
-const STORAGE_KEY = 'livingWindow.soundReview';
-
-export function loadReviews(storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): Reviews {
+export function loadReviews(key: string, storage: Pick<Storage, 'getItem'> | undefined = globalThis.localStorage): Reviews {
   try {
-    const parsed = JSON.parse(storage?.getItem(STORAGE_KEY) ?? '{}') as unknown;
+    const parsed = JSON.parse(storage?.getItem(key) ?? '{}') as unknown;
     return parsed && typeof parsed === 'object' ? (parsed as Reviews) : {};
   } catch {
     return {};
   }
 }
 
-export function saveReviews(reviews: Reviews, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
+export function saveReviews(key: string, reviews: Reviews, storage: Pick<Storage, 'setItem'> | undefined = globalThis.localStorage): void {
   try {
-    storage?.setItem(STORAGE_KEY, JSON.stringify(prune(reviews)));
+    storage?.setItem(key, JSON.stringify(prune(reviews)));
   } catch {
     // Not persisted (private window, storage full); the page still works.
   }
@@ -61,8 +59,8 @@ export function tally(items: readonly ReviewItem[], reviews: Reviews): { good: n
   return { good, work, unrated: items.length - good - work };
 }
 
-/** A Markdown report: what needs work (with notes) first, then what's good, then what's still unheard. */
-export function reviewReport(items: readonly ReviewItem[], reviews: Reviews, date = new Date()): string {
+/** A Markdown report: what needs work (with notes) first, then what's good, then what's still unreviewed. */
+export function reviewReport(title: string, items: readonly ReviewItem[], reviews: Reviews, date = new Date()): string {
   const line = (item: ReviewItem) => {
     const note = reviews[item.id]?.note?.trim();
     return `- **${item.label}** (${item.group}, ${item.kind}, \`${item.id}\`)${note ? `: ${note}` : ''}`;
@@ -73,7 +71,7 @@ export function reviewReport(items: readonly ReviewItem[], reviews: Reviews, dat
   const unrated = by(undefined);
   const counts = tally(items, reviews);
   const out = [
-    `# Sound review, ${date.toISOString().slice(0, 10)}`,
+    `# ${title}, ${date.toISOString().slice(0, 10)}`,
     '',
     `${counts.work} need work · ${counts.good} good · ${counts.unrated} not rated`,
   ];
