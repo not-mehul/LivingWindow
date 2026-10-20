@@ -45,6 +45,11 @@ export class SoundBank {
     if (buffers.length > 0) this.samples.set(id, [...(this.samples.get(id) ?? []), ...buffers]);
   }
 
+  /** Recordings registered for a sound (empty when it is synthesized). */
+  samplesOf(id: SoundId): readonly AudioBuffer[] {
+    return this.samples.get(id) ?? [];
+  }
+
   /** Play a sound into `out`. Returns its duration in seconds. */
   play(id: SoundId, out: AudioNode, when: number, gain: number, rate: number): number {
     const variants = this.samples.get(id) ?? (isCall(id) ? this.callTakes(id) : this.synthTakes(id));

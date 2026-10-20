@@ -13,12 +13,13 @@ export const BUS_LABELS: Record<BusId, string> = {
   radio: 'Lofi Radio',
 };
 
+/** Balanced for calm listening: the landscape carries the scene, creatures and weather sit in it. */
 export const DEFAULT_VOLUMES: Readonly<Record<BusId, number>> = {
   master: 0.8,
-  wildlife: 0.7,
-  weather: 0.7,
-  ambience: 0.6,
-  radio: 0.55,
+  wildlife: 0.62,
+  weather: 0.65,
+  ambience: 0.72,
+  radio: 0.5,
 };
 
 export interface AudioSettings {

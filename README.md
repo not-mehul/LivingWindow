@@ -55,27 +55,44 @@ for the full vision and roadmap.
 
 **Step 3 — Audio engine & lofi radio** ✅
 
-- **Web Audio mixer** in two acoustic zones. Exterior buses (wildlife, landscape
-  ambience, weather) pass through the **window filter**: closing the window
-  sweeps a low-pass from 20 kHz to 450 Hz and drops it 8 dB over 0.6 s, in step
-  with the sash. Interior sounds (radio, rain tapping the glass, room foley)
-  stay crisp. A limiter guards the output.
+- **Web Audio mixer** in acoustic zones. Exterior buses (wildlife, landscape
+  ambience, weather) share each landscape's **outdoor reverb** (procedural
+  spaces: city slap-back, a long forest tail, open meadow and shore) and pass
+  through the **window**: closing it sweeps a low-pass from 20 kHz to 700 Hz
+  and drops it 13 dB in step with the sash, and a faint room tone takes over.
+  Indoors (the dog, rain on the glass, room foley) and the radio stay clear.
+  An exterior glue compressor, then a fast limiter and soft clipper, keep
+  thunder in check without pumping the radio. Muting suspends audio entirely.
 - **Five volume sliders**: Master, Wildlife & Birds, Weather, Landscape and Lofi
   Radio, plus mute (`M`). Settings persist in the browser.
 - **`playSpatialSound(id, screenX, depthZ)`** pans a one-shot to its screen
-  position (−1…1), makes distant sounds quieter and duller, and gives every play
-  a random ±8% pitch and ±15% gain so nothing repeats exactly.
-- **Weather audio**: rain and wind follow the live weather, with gust whistles,
-  thunder delayed and softened by distance and panned to the strike, and drops
-  tapping the glass when the window is shut.
-- **City ambience**: a low hum, cars passing below (rush hour busy, 3 AM quiet,
-  hissing on wet roads), the odd distant horn, birdsong by day with a dawn
-  chorus, and snow muffling it all.
+  position (−1…1), makes distant sounds quieter, duller and more reverberant,
+  and gives every play a random ±8% pitch and ±15% gain so nothing repeats
+  exactly. One-shots are capped per bus.
+- **Textures, not static**: rain, creeks, foam, insects, frogs, distant birds
+  and crowds are synthesized sample by sample from thousands of small events
+  (drops, bubbles, chirps, syllables) into seamless loops, so they sound like
+  many things happening rather than filtered noise, and cost one buffer each.
+  Slow variation runs on the audio clock, so nothing steps with the frame rate
+  or freezes in a background tab.
+- **Weather audio**: a distant wash plus drops on whatever the rain hits
+  (leaves, grass, streets and awnings, wet sand), swelling from patter to
+  downpour; drops clicking on the glass and trickling down it when the window
+  is shut; wind that follows the gusts, whistling only in strong ones; thunder
+  delayed by the strike's distance, rolling across the sky with a deep sub and
+  a crack for close strikes; and snow that hushes the whole world.
+- **Creature voices**: birdsong built from syllables (pitch contours,
+  harmonics, vibrato, buzz and breath) in each species' own patterns, and
+  mammal calls through gliding vowel formants. The birds in view share a song
+  budget, so they sing in bouts with quiet between, most at the dawn chorus.
 - **Lofi radio** (`R`): plays an internet stream URL or a local playlist through
-  a warm "small radio in the room" chain (band-limited, mid bump, soft
-  saturation, room reverb, slightly left of centre). With neither configured,
-  the built-in **Living Window FM** generates endless lofi tracks: jazzy chord
-  progressions, bass, lazy swung drums, vinyl crackle and tape wobble.
+  a warm "small radio in the room" chain (gentle roll-offs, mid warmth and
+  presence, soft saturation, its own compressor, room reverb, slightly left of
+  centre). With neither configured, the built-in **Living Window FM** writes
+  endless tracks with a song form (intro, A, B, outro) in major, dorian or
+  aeolian keys: voice-led electric piano, walking bass, a swung kit with ghost
+  notes and fills, a guitar or bell motif, a quiet pad, fresh vinyl crackle
+  per record and tape wobble; each track hands over to the next as it fades.
 - **Everything is synthesized**, so no assets are needed. Real recordings can
   replace any sound: see [`public/audio/README.md`](./public/audio/README.md).
 - Browsers start audio only after a gesture: the first tap or key press anywhere
@@ -124,21 +141,23 @@ for the full vision and roadmap.
   light shafts through canopy gaps that follow the sun; falling leaves; deer
   walking between the trunk layers, grazing, looking up and bounding off at a
   fright; squirrels climbing trunks, plus one that raids the sill bowl. The
-  soundscape has wind in the canopy, rustling leaves, creaking trunks, distant
-  calls and crickets.
+  soundscape has the canopy's roar and leaf shimmer in each gust, creaking
+  trunks, distant calls, and crickets, katydids and tree-cricket trills at night.
 - **The Beach**: a sea that takes its colour from the sky, with swells that
   roll in, break, wash up the sand and drain away (leaving wet sand that slowly
   dries); a glitter path under the sun or moon; a boids fish school in the
   shallows that scatters when a gull dives on it; sandpipers chasing the
   waves; sea turtles hauling out (mostly at night); dolphins breaching at the
-  horizon; gulls on the groyne posts and the sill. The soundscape has distant
-  swells, each wave's crash and backwash, a breeze and gulls.
+  horizon; gulls on the groyne posts and the sill. The soundscape has the open
+  sea's roar and each wave in layers (crash and thump, foam fizzing up the
+  sand, backwash rattling through the shingle), gulls, and crickets at night.
 - **The Meadows**: hills, a tree line and an old oak that sway; a herd of cows
   that graze, wander, moo and lie down at night; hens pecking round the hen
   house who go in at dusk; rabbits darting between bushes; a clear stream seen
   side-on with fish holding against the current (tap to make them dart);
-  fireflies on dry nights. The soundscape has a babbling stream, grass in the
-  breeze, songbirds and crickets.
+  fireflies on dry nights. The soundscape has a babbling creek, grass in the
+  breeze, grasshoppers and bees by day, songbirds, frogs at dusk and crickets
+  at night.
 
 **Step 6 — Mobile, performance and deployment** ✅
 
@@ -482,12 +501,15 @@ src/
     common/paint.ts         Value noise, ordered dither and colour ramps
     weather/                Rain/snow particles, lightning, rain on the glass
   audio/
-    AudioEngine.ts          Buses, window filter, limiter, playSpatialSound
+    AudioEngine.ts          Zones, reverb, window, limiter, playSpatialSound
     AudioSystem.ts          Assembles engine, radio and soundscapes
     mixer.ts, spatial.ts    Volume/settings and spatial maths (unit tested)
-    sounds/                 Synthesized voices + recorded-sample bank
-    soundscapes/            Weather sound and city ambience
-    radio/                  Radio chain, generative lofi station, music theory
+    acoustics.ts            Procedural outdoor reverb per landscape
+    synth.ts, textures.ts   Sample-level synth and seamless texture loops
+    modulation.ts           Audio-clock wander for slow variation
+    sounds/                 Animal calls, other voices, recorded-sample bank
+    soundscapes/            Weather and each landscape's ambience
+    radio/                  Radio chain, lofi station, instruments, music theory
     manifest.ts             Optional recordings from public/audio/manifest.json
   ui/
     Overlay.ts              Auto-hiding control panel

@@ -1,5 +1,5 @@
 import { createRng } from '../core/random';
-import { addBubble, addNoiseBurst, Biquad, poissonTimes, Stereo } from './synth';
+import { addBubble, addNoiseBurst, Biquad, panGains, poissonTimes, Stereo } from './synth';
 
 /** Every texture loop is levelled to this RMS, so layer gains mean the same thing for each. */
 const TEXTURE_RMS = 0.1;
@@ -23,6 +23,29 @@ export function scattered(density: number, grain: Grain, width = 0.9, seconds?: 
       for (const t of poissonTimes(out.seconds, density, rng)) grain(out, t, (rng() * 2 - 1) * width, rng);
     },
   };
+}
+
+/**
+ * A texture scattered from recordings: each grain is one of `buffers`
+ * (their first channel), at a random level and a slightly random speed.
+ */
+export function sampled(density: number, buffers: readonly { getChannelData(ch: number): Float32Array; length: number }[], width = 0.85): TextureSpec {
+  return scattered(
+    density,
+    (out, t, pan, rng) => {
+      const data = buffers[Math.floor(rng() * buffers.length)].getChannelData(0);
+      const rate = 0.9 + rng() * 0.2;
+      const gain = 0.3 + rng() * 0.7;
+      const [gl, gr] = panGains(pan);
+      const start = Math.round(t * out.sampleRate);
+      for (let i = 0; i * rate < data.length - 1; i++) {
+        const x = i * rate;
+        const k = Math.floor(x);
+        out.add(start + i, (data[k] + (data[k + 1] - data[k]) * (x - k)) * gain, gl, gr);
+      }
+    },
+    width,
+  );
 }
 
 /** Synthesize a texture into a fresh, levelled stereo buffer. */
@@ -141,7 +164,7 @@ export const grassDrop: Grain = (out, t, pan, rng) => {
 /** Rain in town: ticks on stone and roofs, pings off metal, plips in the puddles. */
 export const streetDrop: Grain = (out, t, pan, rng) => {
   const roll = rng();
-  if (roll < 0.12) burst(out, t, pan, rng, 'bandpass', 1800 + rng() * 2600, 18, 2.5, 0.06 + rng() * 0.05);
+  if (roll < 0.12) burst(out, t, pan, rng, 'bandpass', 1800 + rng() * 2200, 14, 1.3, 0.06 + rng() * 0.05);
   else if (roll < 0.3) plip(out, t, pan, rng, 900, 2600, 0.5);
   else burst(out, t, pan, rng, 'highpass', 2500 + rng() * 2500, 0.7, 0.3 + rng() * 0.5, 0.006 + rng() * 0.01);
 };

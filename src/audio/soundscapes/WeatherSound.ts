@@ -1,7 +1,7 @@
 import type { Environment } from '../../scene/Environment';
 import type { AcousticsId } from '../acoustics';
 import type { AudioEngine } from '../AudioEngine';
-import { glassDrop, grassDrop, leafDrop, runoff, scattered, shoreDrop, streetDrop, TextureLayer, type Grain } from '../textures';
+import { glassDrop, grassDrop, leafDrop, runoff, sampled, scattered, shoreDrop, streetDrop, TextureLayer, type Grain } from '../textures';
 import { thunderParams } from '../spatial';
 import { rand } from '../../core/random';
 
@@ -100,7 +100,9 @@ export class WeatherSound {
     engine.noise.source('white').connect(this.whistleFilter).connect(mod.flutter(0.6, 0.3)).connect(this.whistle).connect(this.windPan);
 
     // On the pane itself: drops, and water running down.
-    this.glass = new TextureLayer(ctx, engine.inputs.glass, scattered(60, glassDrop, 0.85), 31);
+    // Recorded glass taps, if the manifest lists any, are scattered into the same texture.
+    const taps = engine.sounds.samplesOf('glass-tap');
+    this.glass = new TextureLayer(ctx, engine.inputs.glass, taps.length > 0 ? sampled(60, taps) : scattered(60, glassDrop, 0.85), 31);
     this.trickle = new TextureLayer(ctx, engine.inputs.glass, scattered(7, runoff, 0.7), 47);
   }
 

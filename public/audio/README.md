@@ -34,12 +34,18 @@ Anything listed replaces its synthesized version; anything left out keeps the sy
 }
 ```
 
-- **Sound ids**: `sparrow-chirp`, `pigeon-coo`, `crow-caw`, `woodpecker-drum`,
-  `jay-call`, `chickadee-call`, `finch-song`, `bluebird-song`, `robin-song`,
-  `gull-cry`, `sandpiper-peep`, `owl-hoot`, `eagle-cry`, `wing-flap`,
+- **Sound ids**: birds `sparrow-chirp`, `pigeon-coo`, `crow-caw`,
+  `raven-croak`, `woodpecker-drum`, `jay-call`, `chickadee-call`,
+  `finch-song`, `bluebird-song`, `robin-song`, `gull-cry`, `sandpiper-peep`,
+  `owl-hoot`, `eagle-cry`, `nightjar-churr`, `wing-flap`; animals `cat-meow`,
+  `cat-purr`, `dog-boof`, `dog-howl`, `squirrel-chatter`, `deer-snort`,
+  `cow-moo`, `sheep-baa`, `horse-whinny`, `chicken-cluck`, `fox-bark`,
+  `wolf-howl`, `elk-bugle`, `bear-huff`, `bee-buzz`, `dolphin-blow`; and
   `glass-tap`, `seed-pour`, `window-creak`, `window-thunk`, `car-horn`,
-  `cat-meow`, `cat-purr`, `squirrel-chatter`, `deer-snort`, `cow-moo`,
-  `chicken-cluck`, `splash`.
+  `siren-far`, `applause`, `guitar-strum`, `firework-pop`, `wood-creak`,
+  `coconut-thud`, `splash`.
+- **`glass-tap`** recordings are scattered into the rain-on-the-glass texture
+  (several short taps work best).
 - **One-shots** with several variants are picked at random, and every play
   still gets the ±8% pitch / ±15% gain variation.
 - **Beds** should loop seamlessly; levels follow the weather and time of day.

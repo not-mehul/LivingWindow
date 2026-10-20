@@ -48,12 +48,13 @@ export class ForestSoundscape extends Soundscape {
     const snow = env.weather.kind === 'snow' ? env.weather.precipitation : 0;
     const quiet = (1 - Math.min(1, rain * 1.6)) * (1 - snow);
 
-    this.roar.gain.setTargetAtTime(0.04 + 0.3 * wind ** 1.3, now, 1);
+    this.roar.gain.setTargetAtTime(0.14 + 0.3 * wind ** 1.3, now, 1);
     this.roarBand.frequency.setTargetAtTime(300 + 500 * wind, now, 1.5);
-    this.leaves.gain.setTargetAtTime((0.004 + 0.05 * wind ** 1.5) * (1 - snow * 0.8), now, 0.8);
+    this.leaves.gain.setTargetAtTime((0.008 + 0.05 * wind ** 1.5) * (1 - snow * 0.8), now, 0.8);
 
     const night = nightInsects(env.lighting.darkness) * quiet;
-    this.chorus.set(0.2 * dawnChorus(hours) * quiet, 4);
+    // A forest is never without birds somewhere: the far chorus carries the day as well as the dawn.
+    this.chorus.set(0.32 * Math.max(0.6 * birdActivity(hours), dawnChorus(hours)) * quiet, 4);
     this.crickets.set(0.22 * night, 4);
     this.katydids.set(0.14 * night, 5);
     this.trill.set(0.05 * night, 6);

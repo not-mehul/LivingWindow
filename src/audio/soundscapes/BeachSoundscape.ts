@@ -48,7 +48,7 @@ export class BeachSoundscape extends Soundscape {
     if (!this.engine.running || this.isDisposed) return;
     const now = this.engine.context.currentTime;
     const wind = Math.abs(env.weather.wind);
-    this.surf.gain.setTargetAtTime((0.2 + 0.15 * wind) * (1 - this.darkness * 0.15), now, 2);
+    this.surf.gain.setTargetAtTime((0.2 + 0.15 * wind) * (1 - this.darkness * 0.25), now, 2);
     this.surfHiss.gain.setTargetAtTime(0.07 + 0.05 * wind, now, 2);
     this.darkness = env.lighting.darkness;
     const rain = env.weather.kind === 'rain' ? Math.min(1, env.weather.precipitation * 2) : 0;
@@ -67,7 +67,7 @@ export class BeachSoundscape extends Soundscape {
     const ctx = this.engine.context;
     const when = ctx.currentTime + 0.02;
     const size = Math.min(1, amplitude / 26);
-    const level = size * (1 - this.darkness * 0.25);
+    const level = size * (1 - this.darkness * 0.35);
     const panner = ctx.createStereoPanner();
     panner.pan.value = pan;
     panner.connect(this.bed);

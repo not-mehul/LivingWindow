@@ -76,6 +76,7 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
   private convolver: ConvolverNode | null = null;
   private acousticsId: AcousticsId | null = null;
   private readonly hush: BiquadFilterNode;
+  private readonly hushLevel: GainNode;
   private readonly windowFilter: BiquadFilterNode;
   private readonly windowGain: GainNode;
   private readonly roomTone: GainNode;
@@ -133,7 +134,8 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
     this.hush.type = 'highshelf';
     this.hush.frequency.value = 2500;
     this.hush.gain.value = 0;
-    this.hush.connect(this.windowFilter);
+    this.hushLevel = gain();
+    this.hush.connect(this.hushLevel).connect(this.windowFilter);
 
     this.reverbIn = gain();
     this.reverbOut = gain();
@@ -291,7 +293,9 @@ export class AudioEngine extends Emitter<AudioEngineEvents> {
 
   /** How much fresh snow is muffling the world outside, 0..1. */
   setHush(amount: number): void {
-    this.hush.gain.setTargetAtTime(-9 * clamp01(amount), this.context.currentTime, 4);
+    const now = this.context.currentTime;
+    this.hush.gain.setTargetAtTime(-9 * clamp01(amount), now, 4);
+    this.hushLevel.gain.setTargetAtTime(dbToGain(-5 * clamp01(amount)), now, 4);
   }
 
   /** Sweep the exterior filter as the sash slides. */

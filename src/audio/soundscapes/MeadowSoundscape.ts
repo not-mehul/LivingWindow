@@ -60,8 +60,8 @@ export class MeadowSoundscape extends Soundscape {
     this.trickle?.gain.setTargetAtTime(0.05 + 0.04 * rain, now, 5);
     this.bubbles?.set(0.32 + 0.12 * rain, 5);
     this.hoppers.set(0.22 * dayInsects(hours) * quiet * (1 - wind * 0.6), 3);
-    this.frogs.set(0.3 * frogChorus(hours) * (1 - snow), 4);
-    this.crickets.set(0.3 * nightInsects(env.lighting.darkness) * quiet, 4);
+    this.frogs.set(0.26 * frogChorus(hours) * (1 - snow), 4);
+    this.crickets.set(0.24 * nightInsects(env.lighting.darkness) * quiet, 4);
     this.chorus.set(0.16 * dawnChorus(hours) * quiet, 4);
 
     this.callTimer -= dt;
