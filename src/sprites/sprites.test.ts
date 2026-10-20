@@ -314,9 +314,11 @@ describe('farm animals', () => {
       for (const pose of ['run-1', 'run-2', 'trot-1', 'trot-2', 'crouch', 'sit', 'lie'] as const) expect(drawDogSized(pose, h).grid.isEmpty()).toBe(false);
       for (const pose of ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'swish'] as const) expect(drawHorseSized(pose, h).grid.isEmpty()).toBe(false);
     }
-    for (const n of [6, 10, 14]) {
-      for (const f of [0, 1]) expect(drawHedgehog(f, n).grid.isEmpty()).toBe(false);
+    for (const n of [6, 10, 14, 18]) {
+      for (const f of [0, 1, 2, 3]) expect(drawHedgehog(f, n).grid.isEmpty()).toBe(false);
       expect(drawHedgehog(0, n, true).grid.isEmpty()).toBe(false);
     }
+    // A four-beat shuffle, every beat different.
+    expect(new Set([0, 1, 2, 3].map((f) => Array.from(drawHedgehog(f, 18).grid.data).join(','))).size).toBe(4);
   });
 });

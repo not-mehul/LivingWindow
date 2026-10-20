@@ -5,7 +5,7 @@ import { meadowCreek } from '../../sim/meadowGeometry';
 import { FOCAL } from '../../sim/groundPlane';
 import { butterflyActivity, hedgehogActivity, roeDeerOut } from '../../sim/wildlife';
 import { drawDeerSized } from '../../sprites/forestSprites';
-import { drawHedgehog, DrawnCache } from '../../sprites/wildSprites';
+import { drawHedgehog, DrawnCache, HEDGEHOG_SHUFFLE } from '../../sprites/wildSprites';
 import { rand as r } from '../../core/random';
 import { hazeTint } from '../../scene/lighting';
 
@@ -93,7 +93,7 @@ export class Hedgehog {
       return;
     }
     const curled = this.curled > 0;
-    const frame = Math.floor(this.stride) % 2;
+    const frame = Math.floor(this.stride) % HEDGEHOG_SHUFFLE;
     this.sprite.texture = this.sprites.get(`${curled}:${frame}`, () => drawHedgehog(frame, 18, curled));
     this.sprite.scale.x = this.dir;
     this.sprite.position.set(Math.round(this.x), this.y);

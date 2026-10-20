@@ -687,36 +687,108 @@ export function drawMushroom(kind: MushroomKind, size: number): Drawn {
 
 // --- Hedgehog ----------------------------------------------------------------------
 
-/** A hedgehog snuffling along, `size` px long: a dome of spines, a pointed snout, little feet (frames 0–1), or rolled into a ball. */
+/** The hedgehog's four-beat shuffle. */
+export const HEDGEHOG_SHUFFLE = 4;
+
+/**
+ * A hedgehog snuffling along, `size` px long and facing right: a dome of
+ * spines swept back, streaked dark and pale-tipped, lit from above with
+ * its top edge bristling; a pale furry face with a round ear, a bright
+ * dark eye and a long snout ending in a wet black nose; and four short
+ * legs shuffling through a four-beat walk (frames 0–3). Curled, it's a
+ * bristling ball with just the tip of its snout tucked in. Authored 16 long.
+ */
 export function drawHedgehog(frame: number, size: number, curled = false): Drawn {
   const W = Math.max(5, Math.round(size));
-  const H = Math.max(3, Math.round(W * 0.6));
+  const H = Math.max(3, Math.round(W * 0.62));
   const g = new PixelGrid(W, H);
   const s = W / 16;
   const palette = new Palette();
-  const spines = palette.ramp(0x8a6a4c, 1.1);
+  const spines = palette.ramp(0x7a5c42, 1);
   const tips = palette.add(0xe8dcc0);
-  const face = palette.ramp(0xd4b490);
-  const nose = palette.add(0x1a1210);
+  const face = palette.ramp(0xc8a886, 0.45);
+  const nose = palette.add(0x140e0c);
+  const glint = palette.add(0xf4ece0);
+  const fine = W >= 12;
+  /** The spines at a pixel inside a dome or ball: swept back, streaked dark, lit from the upper left, the rim pale-tipped. */
+  const spine = (x: number, y: number, u: number, v: number, d: number) => {
+    const lit = -u * 0.4 - v * 0.8;
+    const base = lit > 0.35 ? 3 : lit > -0.1 ? 2 : 1;
+    if (fine && (x * 2 + y) % 3 === 0 && pixelHash(x, y, 19) < 0.7) return spines[Math.max(0, base - 1)];
+    if (pixelHash(x, y, 21) < (d > 0.85 ? 0.3 : 0.06) + Math.max(0, lit) * 0.12) return tips;
+    return spines[base];
+  };
+  /** Bristles standing up off the top edge, every other pixel. */
+  const bristle = () => {
+    if (!fine) return;
+    for (let x = 1; x < W - 1; x++) {
+      let top = -1;
+      for (let y = 0; y < H; y++) {
+        if (g.get(x, y) === 0) continue;
+        top = y;
+        break;
+      }
+      if (top > 0 && x % 2 === 0 && [spines[1], spines[2], spines[3], tips, spines[0]].includes(g.get(x, top))) g.set(x - 1, top - 1, pixelHash(x, top, 23) < 0.5 ? tips : spines[1]);
+    }
+  };
   if (curled) {
-    g.ellipse(W / 2, H - 4.4 * s, 4.6 * s, 4.2 * s, (u, v, x, y) => (pixelHash(x, y, 21) < 0.35 ? tips : spines[-u - v > 0.3 ? 3 : 1]));
+    const r = Math.min(W * 0.36, H * 0.5);
+    const cx = W / 2;
+    const cy = H - r - 0.2;
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const u = (x + 0.5 - cx) / r;
+        const v = (y + 0.5 - cy) / r;
+        const d = Math.hypot(u, v);
+        if (d <= 1) g.set(x, y, spine(x, y, u, v, d));
+      }
+    }
+    // The tip of its snout, tucked in at the front.
+    g.set(Math.floor(cx + r * 0.5), Math.floor(cy + r * 0.6), face[2]);
+    if (fine) g.set(Math.floor(cx + r * 0.5) + 1, Math.floor(cy + r * 0.6), nose);
+    bristle();
     if (W >= 10) selOut(g, palette, { bottomHeavy: true });
     return { grid: g, palette };
   }
-  // Snout and face, poking out in front.
-  limb(g, [[9.5 * s, H - 3 * s], [14.6 * s, H - 2 * s]], 3.6 * s, 1.4 * s, face);
-  g.set(Math.floor(14.8 * s), Math.floor(H - 2.2 * s), nose);
-  // The dome of spines, their pale tips catching the light.
-  g.ellipse(7 * s, H - 3.6 * s, 6.6 * s, 4.6 * s, (u, v, x, y) => {
-    if (v > 0.6) return 0;
-    if (pixelHash(x, y, 21) < 0.32 - v * 0.2) return tips;
-    return spines[-u * 0.5 - v * 0.7 > 0.3 ? 3 : 2];
-  });
-  // Little feet shuffling.
-  const step = frame % 2;
-  g.set(Math.floor((4 + step) * s), H - 1, face[1]);
-  g.set(Math.floor((10 - step) * s), H - 1, face[1]);
+  const f = ((frame % HEDGEHOG_SHUFFLE) + HEDGEHOG_SHUFFLE) % HEDGEHOG_SHUFFLE;
+  const ground = H - 1;
+  // Four short legs in a shuffling walk: the far pair darker, behind.
+  const swing = [0, 1, 0, -1][f];
+  // Snuffling: the snout dips to the ground and lifts again through the beat.
+  const sniff = [0.7, 0, -0.5, 0][f] * s;
+  for (const [lx, far, phase] of [[4.2, true, 1], [10.8, true, -1], [5.4, false, -1], [12, false, 1]] as const) {
+    const x = Math.floor((lx + swing * phase * 0.6) * s);
+    const lift = swing * phase > 0 && W >= 14 ? 1 : 0;
+    g.set(x, ground - lift, far ? face[0] : spines[0]);
+    if (W >= 14) g.set(x, ground - 1 - lift, far ? face[0] : face[1]);
+  }
+  // The pale face and its long snout.
+  const hx = 12 * s;
+  const hy = H - 3.3 * s;
+  shadedEllipse(g, hx, hy, Math.max(1, 2.9 * s), Math.max(1, 2.3 * s), face, { dither: false });
+  limb(g, [[hx + 1.4 * s, hy + 0.2 * s], [15.3 * s, H - 2.2 * s + sniff]], Math.max(1, 2.4 * s), Math.max(1, 1 * s), face, { bias: 0.3 });
+  // The dome of spines over its back.
+  const dx = 7 * s;
+  const dy = H - 2.4 * s;
+  const rx = 7 * s;
+  const ry = 6 * s;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const u = (x + 0.5 - dx) / rx;
+      const v = (y + 0.5 - dy) / ry;
+      const d = Math.hypot(u, v);
+      if (d > 1 || v > 0.3) continue;
+      // The spines run forward over the brow, leaving the face clear.
+      if (u > 0.72 && v > -0.25) continue;
+      g.set(x, y, spine(x, y, u, v, d));
+    }
+  }
+  bristle();
   if (W >= 10) selOut(g, palette, { bottomHeavy: true });
-  if (W >= 10) g.set(Math.floor(11.8 * s), Math.floor(H - 3.6 * s), nose);
+  // The round ear, bright eye and black nose, over the outline.
+  if (W >= 12) g.set(Math.floor(hx - 0.8 * s), Math.floor(hy - 2.1 * s), face[1]);
+  if (W >= 16) eye(g, hx + 0.9 * s, hy - 0.9 * s, 2, nose, glint);
+  else if (W >= 8) g.set(Math.floor(hx + 0.9 * s), Math.floor(hy - 0.8 * s), nose);
+  g.set(Math.min(W - 1, Math.floor(15.4 * s)), Math.min(H - 1, Math.floor(H - 2.4 * s + sniff)), nose);
   return { grid: g, palette };
 }

@@ -124,6 +124,11 @@ function sections(): Section[] {
     rows: (['monarch', 'white', 'blue', 'brimstone'] as ButterflyKind[]).map((kind) => [4, 6, 9, 12].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `${kind[0]}${n}/${f}`, draw: () => drawButterfly(kind, f, n) })))),
   });
 
+  out.push({
+    title: 'Hedgehog',
+    rows: [10, 14, 18, 24].map((n) => [0, 1, 2, 3].map((f) => ({ label: `hog ${n}/${f}`, draw: () => drawHedgehog(f, n) })).concat([{ label: `ball ${n}`, draw: () => drawHedgehog(0, n, true) }])),
+  });
+
   const cows: Item[][] = [];
   const cowPoses: CowPose[] = ['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'lie'];
   for (const coat of ['holstein', 'jersey', 'brown'] as CowCoat[]) {
@@ -140,7 +145,6 @@ function sections(): Section[] {
       [8, 12, 18, 24].flatMap((h) => (['run-1', 'run-2', 'trot-1', 'trot-2', 'crouch', 'sit', 'lie'] as DogPose[]).map((pose) => ({ label: `${pose} ${h}`, draw: () => drawDogSized(pose, h) }))),
       [10, 14, 20, 30, 40].map((h) => ({ label: `horse ${h}`, draw: () => drawHorseSized('stand', h) })),
       (['walk-1', 'walk-2', 'walk-3', 'walk-4', 'graze-1', 'graze-2', 'stand', 'swish'] as HorsePose[]).map((pose) => ({ label: pose, draw: () => drawHorseSized(pose, 40) })),
-      [6, 10, 14, 18].flatMap((n) => [0, 1].map((f) => ({ label: `hog ${n}/${f}`, draw: () => drawHedgehog(f, n) })).concat([{ label: 'ball', draw: () => drawHedgehog(0, n, true) }])),
     ],
   });
 
