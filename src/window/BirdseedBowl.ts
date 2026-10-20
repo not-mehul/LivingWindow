@@ -159,8 +159,8 @@ interface FallingSeed {
   color: number;
 }
 
-/** Fraction of the sill's usable width at which the bowl sits. */
-const BOWL_POSITION = 0.72;
+/** Fraction of the sill's usable width at which the bowl sits: well to the right, near the tablet, balancing the plant. */
+const BOWL_POSITION = 0.9;
 /** Sill rows below the standing line where the dish's foot rests: right at the front lip. */
 const FOOT_ROWS = 5;
 const POUR_SECONDS = 0.55;
