@@ -35,23 +35,31 @@ export function panGains(pan: number): [number, number] {
   return [Math.cos(a), Math.sin(a)];
 }
 
+export type FilterType = 'lowpass' | 'highpass' | 'bandpass';
+
 /** An RBJ-cookbook biquad filter, processed one sample at a time. */
 export class Biquad {
+  private b0 = 0;
+  private b1 = 0;
+  private b2 = 0;
+  private a1 = 0;
+  private a2 = 0;
   private x1 = 0;
   private x2 = 0;
   private y1 = 0;
   private y2 = 0;
 
-  private constructor(
-    private readonly b0: number,
-    private readonly b1: number,
-    private readonly b2: number,
-    private readonly a1: number,
-    private readonly a2: number,
-  ) {}
+  private constructor(private readonly sampleRate: number) {}
 
-  static make(type: 'lowpass' | 'highpass' | 'bandpass', frequency: number, q: number, sampleRate: number): Biquad {
-    const w = (2 * Math.PI * Math.min(frequency, sampleRate * 0.45)) / sampleRate;
+  static make(type: FilterType, frequency: number, q: number, sampleRate: number): Biquad {
+    const filter = new Biquad(sampleRate);
+    filter.tune(type, frequency, q);
+    return filter;
+  }
+
+  /** Change the filter's response, keeping its state so a moving filter doesn't click. */
+  tune(type: FilterType, frequency: number, q: number): void {
+    const w = (2 * Math.PI * Math.min(frequency, this.sampleRate * 0.45)) / this.sampleRate;
     const cos = Math.cos(w);
     const alpha = Math.sin(w) / (2 * q);
     const a0 = 1 + alpha;
@@ -72,7 +80,11 @@ export class Biquad {
       b1 = 0;
       b2 = -alpha;
     }
-    return new Biquad(b0 / a0, b1 / a0, b2 / a0, (-2 * cos) / a0, (1 - alpha) / a0);
+    this.b0 = b0 / a0;
+    this.b1 = b1 / a0;
+    this.b2 = b2 / a0;
+    this.a1 = (-2 * cos) / a0;
+    this.a2 = (1 - alpha) / a0;
   }
 
   process(x: number): number {

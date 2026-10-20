@@ -47,6 +47,7 @@ const BATHE: readonly BirdPose[] = ['peck-down', 'fluff', 'peck-down', 'fluff', 
 const ROOSTERS: readonly SpeciesId[] = ['pigeon', 'sparrow', 'finch', 'chickadee', 'robin', 'bluebird'];
 import { sillWidth, type Ledge, type LifeSoundSink, type SillState, sillScreenX } from './types';
 import { sillContacts } from '../window/sillContacts';
+import { SongBudget } from './songBudget';
 import { roostTime, wakeTime } from '../sim/interplay';
 
 /** Below this depth birds are drawn in screen space, at the window's pixel scale. */
@@ -221,6 +222,7 @@ export class BirdSystem {
   private flockTimer = 8;
   private sill: SillState | null = null;
   private env: Environment | null = null;
+  private readonly songs = new SongBudget();
   private wasRaining = false;
   /** Seconds since the rain stopped (birds shake themselves off and preen), or Infinity. */
   private sinceRain = Infinity;
@@ -247,6 +249,7 @@ export class BirdSystem {
 
   update(dt: number, env: Environment, sill: SillState): void {
     this.env = env;
+    this.songs.tick(dt, birdActivity(env.lighting.hours));
     this.sill = sill;
     const activity = this.activity(env);
 
@@ -926,6 +929,8 @@ export class BirdSystem {
   // --- Sound ----------------------------------------------------------
 
   private voice(bird: Bird): void {
+    // Birds sing in bouts: past the flock's budget, a chirp is only seen, not heard.
+    if (!this.songs.take()) return;
     this.sound(bird, SPECIES_VOICE[bird.species]);
   }
 
