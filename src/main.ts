@@ -23,6 +23,7 @@ import { BirdseedState } from './state/BirdseedState';
 import { Clock } from './state/Clock';
 import { mood } from './state/mood';
 import { Preferences } from './state/Preferences';
+import { parseUrlPreset, presetUrl } from './state/urlPresets';
 import { Weather } from './state/Weather';
 import { WindowState } from './state/WindowState';
 import { Overlay } from './ui/Overlay';
@@ -129,29 +130,39 @@ async function boot(): Promise<void> {
   const clock = new Clock(localHours());
   const weather = new Weather({ initial: 'clear' });
   const preferences = new Preferences();
+  // A bookmarked view (?place=…&time=…) applies for this visit without changing saved choices.
+  const preset = parseUrlPreset(window.location.search);
+  if (preset.clockMode) preferences.set('clockMode', preset.clockMode, false);
+  if (preset.calm !== undefined) preferences.set('calm', preset.calm, false);
+  if (preset.rotateMinutes !== undefined) preferences.set('rotateMinutes', preset.rotateMinutes, false);
   /** Hand the viewer's mood choices to everything that reads them. */
   const applyMood = () => {
     mood.calm = preferences.get('calm');
-    weather.setClimate({ winter: winterness(new Date(), location().latitude), calm: mood.calm });
+    weather.setClimate({ winter: winterness(new Date(), geo().latitude), calm: mood.calm });
   };
   /** Where the window is: the viewer's chosen place, or a guess from their time zone. */
-  const location = (): GeoLocation =>
+  const geo = (): GeoLocation =>
     preferences.get('location') ?? guessLocation(Intl.DateTimeFormat().resolvedOptions().timeZone, -new Date().getTimezoneOffset() / 60);
   /** Today's sun and moon for the window's place. */
-  let daylight: Daylight = { sun: sunTimes(new Date(), location()), moonAge: moonAge(new Date()) };
+  let daylight: Daylight = { sun: sunTimes(new Date(), geo()), moonAge: moonAge(new Date()) };
   let today = new Date().toDateString();
   const refreshDaylight = () => {
     const now = new Date();
-    daylight = { sun: sunTimes(now, location()), moonAge: moonAge(now) };
+    daylight = { sun: sunTimes(now, geo()), moonAge: moonAge(now) };
     applyMood();
   };
   const applyClockMode = () => clock.setRealTime(preferences.get('clockMode') === 'real' ? localHours : null);
   applyMood();
   applyClockMode();
+  if (preset.time !== undefined) clock.setTime(preset.time);
+  if (preset.weather === 'auto') weather.unlock();
+  else if (preset.weather) weather.restore(preset.weather, true);
   preferences.on('change', ({ key }) => {
     if (key === 'calm') applyMood();
     if (key === 'location') refreshDaylight();
     if (key === 'clockMode') applyClockMode();
+    if (key === 'drift') viewport.setDrift(preferences.get('drift'));
+    if (key === 'hideTablet') tablet.setAutoHide(preferences.get('hideTablet'));
   });
 
   // --- World (native 840×360 pixels, rendered off-screen) ----------------
@@ -171,6 +182,9 @@ async function boot(): Promise<void> {
   /** The settings tablet on the sill; `overlay` is set up further down. */
   let overlay: Overlay | null = null;
   const tablet = new SillTablet(() => !viewport.didDrag, () => overlay?.open());
+  tablet.setAutoHide(preferences.get('hideTablet'));
+  if (preset.hideUi) tablet.setHidden(true);
+  viewport.setDrift(preferences.get('drift'));
   // The sashes would sweep the bowl off the sill: it's taken in as they
   // start to close and set back out once the window is fully open.
   windowState.on('toggle', ({ open }) => {
@@ -256,7 +270,7 @@ async function boot(): Promise<void> {
     return entry;
   };
 
-  let current: Mounted = await mount(loadLandscapeChoice()).catch(() => mount('city'));
+  let current: Mounted = await mount(preset.place ?? loadLandscapeChoice()).catch(() => mount('city'));
   const show = (next: Mounted) => {
     for (const m of all) {
       const active = m === next;
@@ -287,7 +301,10 @@ async function boot(): Promise<void> {
     const l = viewport.layout;
     const texture = RenderTexture.create({ width: l.screenWidth, height: l.screenHeight, resolution: l.devicePixelRatio });
     // The stage as last drawn (an earlier veil included, so quick switches stay seamless).
+    const shift = app.stage.position.clone();
+    app.stage.position.set(0, 0);
     app.renderer.render({ container: app.stage, target: texture });
+    app.stage.position.copyFrom(shift);
     const previous = veil;
     const sprite = new Sprite(texture);
     sprite.eventMode = 'none';
@@ -395,6 +412,15 @@ async function boot(): Promise<void> {
   overlay = new Overlay(document.body, {
     preferences,
     daylight: () => ({ ...daylight.sun, guessed: preferences.get('location') === null }),
+    shareUrl: () =>
+      presetUrl(window.location.href, {
+        place: current.landscape.id,
+        time: clock.isRealTime && !clock.isOffset ? undefined : clock.hours,
+        weather: weather.locked ? weather.type : undefined,
+        clockMode: preferences.get('clockMode'),
+        calm: preferences.get('calm'),
+        rotateMinutes: preferences.get('rotateMinutes') || undefined,
+      }),
     onActivity: () => tablet.nudge(),
     tabletRect: () => tablet.screenBounds(),
     onOpenChange: (open) => tablet.setLifted(open),
@@ -517,6 +543,10 @@ async function boot(): Promise<void> {
     const wallDt = Math.max(0, (now - lastFrame) / 1000);
     lastFrame = now;
     simulate(Math.min(ticker.deltaMS / 1000, MAX_FRAME_SECONDS), wallDt);
+    // Against screen burn-in: everything wanders a pixel or two in a slow loop.
+    const t = now / 1000;
+    const step = 1 / dpr;
+    app.stage.position.set(Math.round((1.5 * Math.sin((2 * Math.PI * t) / 470)) / step) * step, Math.round((1.5 * Math.sin((2 * Math.PI * t) / 610 + 1)) / step) * step);
     // Changing place on a timer, if chosen: on to the next landscape in turn.
     const rotate = preferences.get('rotateMinutes');
     sincePlaceChange += wallDt;

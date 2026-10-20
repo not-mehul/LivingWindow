@@ -18,6 +18,10 @@ export interface ViewportEvents {
 const PAN_FRICTION = 5;
 /** Below this speed (world px / s) inertia stops. */
 const MIN_INERTIA_SPEED = 4;
+/** Drift: wait this long after the viewer last panned, move this fast (world px/s), rest this long at each end. */
+const DRIFT_DELAY_SECONDS = 60;
+const DRIFT_SPEED = 0.6;
+const DRIFT_DWELL_SECONDS = 45;
 /** A release this long after the last movement carries no inertia. */
 const INERTIA_RELEASE_WINDOW_MS = 90;
 
@@ -47,6 +51,13 @@ export class Viewport extends Emitter<ViewportEvents> {
   private dragLastTime = 0;
   private dragging = false;
   private _didDrag = false;
+  /** Drifting slowly across the view on its own while nobody's looking around. */
+  private drifting = false;
+  /** Seconds since the viewer last panned. */
+  private sinceInput = 0;
+  private driftDirection = 1;
+  /** A pause at each end of the drift (s). */
+  private driftDwell = 0;
 
   constructor(screenWidth: number, screenHeight: number, devicePixelRatio: number) {
     super();
@@ -116,17 +127,25 @@ export class Viewport extends Emitter<ViewportEvents> {
 
   /** Pan by a distance in world pixels (positive looks further right). */
   panBy(deltaWorldX: number): void {
+    this.sinceInput = 0;
     this.setPan(this._panX + deltaWorldX);
   }
 
   /** Add pan momentum in world pixels per second (keyboard / wheel flicks). */
   nudge(velocity: number): void {
+    this.sinceInput = 0;
     if (!this.isPannable) return;
     this.velocity = clamp(this.velocity + velocity, -2000, 2000);
   }
 
+  /** Let the view drift slowly from side to side when it's left alone (only where it can pan). */
+  setDrift(enabled: boolean): void {
+    this.drifting = enabled;
+  }
+
   beginDrag(pointerId: number, screenX: number, timeMs: number): void {
     if (this.dragPointerId !== null) return;
+    this.sinceInput = 0;
     this.dragPointerId = pointerId;
     this.dragStartX = screenX;
     this.dragLastX = screenX;
@@ -167,12 +186,39 @@ export class Viewport extends Emitter<ViewportEvents> {
   }
 
   update(deltaSeconds: number): void {
-    if (this.dragging || this.velocity === 0) return;
+    this.sinceInput += deltaSeconds;
+    if (this.dragging) return;
+    if (this.velocity === 0) {
+      this.drift(deltaSeconds);
+      return;
+    }
     const before = this._panX;
     this.panBy(this.velocity * deltaSeconds);
     const hitEdge = this._panX === before;
     this.velocity *= Math.exp(-PAN_FRICTION * deltaSeconds);
     if (hitEdge || Math.abs(this.velocity) < MIN_INERTIA_SPEED) this.velocity = 0;
+  }
+
+  /**
+   * The slow drift: after a minute without panning, the view eases across
+   * the hidden part of the panorama at a walking pace for the eye (a full
+   * crossing takes several minutes), rests at each end, and turns back.
+   */
+  private drift(dt: number): void {
+    const max = this._layout.maxPanX;
+    if (!this.drifting || max <= 0 || this.sinceInput < DRIFT_DELAY_SECONDS) return;
+    if (this.driftDwell > 0) {
+      this.driftDwell -= dt;
+      return;
+    }
+    const ahead = this.driftDirection > 0 ? max - this._panX : this._panX;
+    // Ease in and out near the ends.
+    const speed = DRIFT_SPEED * clamp(ahead / 24, 0.12, 1);
+    this.setPan(this._panX + this.driftDirection * speed * dt);
+    if (ahead <= 0.05) {
+      this.driftDirection = -this.driftDirection;
+      this.driftDwell = DRIFT_DWELL_SECONDS;
+    }
   }
 
   /** Draw the world into its native-resolution render texture. */

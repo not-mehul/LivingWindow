@@ -24,6 +24,11 @@ export interface TabletStatus {
  * left alone and brightens when you move. Tap it to pick it up: the panel
  * grows out of its screen; put it down and it's back on the sill.
  */
+/** Seconds of stillness before the screen goes to sleep, and before the tablet fades away. */
+const SCREEN_SLEEP_SECONDS = 30;
+const HIDE_AFTER_SECONDS = 120;
+const FADE_AWAY_SECONDS = 5;
+
 export class SillTablet {
   readonly container = new Container({ label: 'sill-tablet' });
   private readonly body = new Sprite({ anchor: { x: 0.5, y: 1 } });
@@ -35,6 +40,14 @@ export class SillTablet {
   private lastKey = '';
   private wake = 0;
   private lifted = false;
+  /** Seconds since the viewer last moved. */
+  private idle = 0;
+  /** How present the tablet is: 1 on the sill, 0 faded away while nobody's about. */
+  private presence = 1;
+  private autoHide = true;
+  private hidden = false;
+  /** The screen's backlight, easing between off (0) and on (1). */
+  private screenLevel = 1;
 
   constructor(
     private readonly canTap: () => boolean,
@@ -51,12 +64,24 @@ export class SillTablet {
   /** Brighten the screen for a moment (the viewer moved): a hint it can be picked up. */
   nudge(): void {
     this.wake = 3;
+    this.idle = 0;
+  }
+
+  /** Keep it off the sill altogether (a view bookmarked with ui=hidden; S still opens the panel). */
+  setHidden(hidden: boolean): void {
+    this.hidden = hidden;
+  }
+
+  /** Let the tablet fade away after a while with nothing moving (it comes back at a touch). */
+  setAutoHide(enabled: boolean): void {
+    this.autoHide = enabled;
   }
 
   /** Hide it while it's lifted up as the open panel. */
   setLifted(lifted: boolean): void {
     this.lifted = lifted;
     this.container.visible = !lifted;
+    this.idle = 0;
   }
 
   /**
@@ -100,6 +125,13 @@ export class SillTablet {
   /** `room` is the room's light, which falls on the tablet's case (its screen makes its own). */
   update(dt: number, status: TabletStatus, room = 0xffffff): void {
     this.wake = Math.max(0, this.wake - dt);
+    this.idle += dt;
+    // Left alone, the screen goes to sleep; later the whole tablet fades from view.
+    const asleep = this.idle > SCREEN_SLEEP_SECONDS;
+    const away = this.hidden || (this.autoHide && this.idle > HIDE_AFTER_SECONDS);
+    this.presence = away ? Math.max(0, this.presence - dt / FADE_AWAY_SECONDS) : Math.min(1, this.presence + dt / 0.4);
+    this.container.alpha = this.presence;
+    this.container.visible = !this.lifted && this.presence > 0.001;
     const minute = Math.floor(status.hours * 60);
     const key = `${minute}:${status.weather}:${this.screenRect.w}`;
     if (key !== this.lastKey && this.screenRect.w > 0) {
@@ -109,10 +141,12 @@ export class SillTablet {
     }
     // The screen's own light: dim when idle, bright when woken; it glows into the dark.
     const awake = Math.min(1, this.wake);
-    this.screen.tint = lerpColor(0x6a6a78, 0xffffff, 0.45 + awake * 0.55);
+    this.screenLevel += ((asleep ? 0 : 1) - this.screenLevel) * Math.min(1, dt * 1.5);
+    const on = this.screenLevel;
+    this.screen.tint = lerpColor(0x15151b, lerpColor(0x6a6a78, 0xffffff, 0.45 + awake * 0.55), on);
     const dark = 0.25 + status.nightness * 0.75;
-    this.glow.alpha = (0.1 + awake * 0.3) * dark;
-    this.spill.alpha = (0.15 + awake * 0.35) * status.nightness;
+    this.glow.alpha = (0.1 + awake * 0.3) * dark * on;
+    this.spill.alpha = (0.15 + awake * 0.35) * status.nightness * on;
     this.body.tint = room;
   }
 }

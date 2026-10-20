@@ -39,6 +39,8 @@ export interface OverlayOptions {
   onOpenChange?: (open: boolean) => void;
   /** Today's sunrise and sunset at the window's place (clock hours), and whether the place is a guess. */
   daylight?: () => { sunrise: number; sunset: number; guessed: boolean };
+  /** The address of the view as it is now, for bookmarking. */
+  shareUrl?: () => string;
 }
 
 /** Choice rows: a preference and the values its buttons stand for. */
@@ -195,6 +197,12 @@ export class Overlay {
           <div class="list__row">
             <span>Sun <small data-sun-note></small></span>
             <button type="button" class="text-btn" data-action="locate">Use my location</button>
+          </div>
+          <button type="button" class="list__row" role="switch" data-pref="drift"><span>Slow drift <small>wander across the view when left alone</small></span><span class="switch" aria-hidden="true"></span></button>
+          <button type="button" class="list__row" role="switch" data-pref="hideTablet"><span>Tuck the tablet away <small>it fades out after two quiet minutes</small></span><span class="switch" aria-hidden="true"></span></button>
+          <div class="list__row">
+            <span>Link to this view <small data-link-note>bookmark the place, time and weather</small></span>
+            <button type="button" class="text-btn" data-action="link">Copy</button>
           </div>
         </div>
       </details>
@@ -428,6 +436,16 @@ export class Overlay {
       }
     }
     this.query('[data-action="now"]').addEventListener('click', () => this.options.clock.resetToNow());
+    const link = this.query<HTMLButtonElement>('[data-action="link"]');
+    const linkNote = this.query('[data-link-note]');
+    if (!this.options.shareUrl) link.closest('.list__row')?.setAttribute('hidden', '');
+    link.addEventListener('click', () => {
+      const url = this.options.shareUrl?.();
+      if (!url) return;
+      const done = (text: string) => (linkNote.textContent = text);
+      if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => done('copied: paste it into a bookmark'), () => done(url));
+      else done(url);
+    });
     const locate = this.query<HTMLButtonElement>('[data-action="locate"]');
     if (!('geolocation' in navigator)) locate.hidden = true;
     locate.addEventListener('click', () => {
