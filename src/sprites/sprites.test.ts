@@ -5,7 +5,7 @@ import { CAT_COATS, CAT_HEIGHT, CAT_POSES, CAT_STALK, CAT_WALK, CAT_WIDTH, drawC
 import { PixelGrid } from './raster';
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized } from './beachSprites';
 import { drawDeerSized, drawSquirrelSized } from './forestSprites';
-import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
+import { drawScarecrow, drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, TOP_FISH_HEADINGS } from './meadowSprites';
 import { drawBusker, drawPerson, randomLook } from './people';
 import { drawBlimp, drawHelicopter, drawPadDrone } from './skySprites';
 import { drawPushcart, drawRider, drawSweeper, drawTaxi, randomRiderLook } from './vehicleSprites';
@@ -286,6 +286,14 @@ describe('wild creatures', () => {
     };
     expect(glint('idle')).toBe(true);
     expect(glint('sleep')).toBe(false);
+  });
+
+  it('draws the scarecrow at every size, its sleeves flapping through three frames', () => {
+    for (const h of [9, 15, 22, 40]) {
+      const frames = [0, 1, 2].map((f) => drawScarecrow(h, f).grid);
+      for (const g of frames) expect(g.height).toBe(Math.max(9, h) + 2);
+      expect(new Set(frames.map((g) => Array.from(g.data).join(','))).size).toBe(3);
+    }
   });
 
   it('soars the eagle with wings that flex, and folds them to stoop', () => {

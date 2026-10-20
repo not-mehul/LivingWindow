@@ -1,5 +1,6 @@
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { DrawnCache } from '../../sprites/cache';
+import { DrawnCache, gridToTexture } from '../../sprites/cache';
+import { drawScarecrow } from '../../sprites/meadowSprites';
 import { lerpColor } from '../../core/color';
 import { PixelBuffer } from '../../core/pixelBuffer';
 import type { Environment } from '../../scene/Environment';
@@ -102,7 +103,10 @@ export class Farmstead {
     this.container.zIndex = farm.houseBaseY + 0.5;
     midground.addChild(this.container);
 
-    this.scareFrames = [0, 1, 2].map((f) => scarecrowArt(farm.scarecrow.height, f).toTexture());
+    this.scareFrames = [0, 1, 2].map((f) => {
+      const { grid, palette } = drawScarecrow(farm.scarecrow.height, f);
+      return gridToTexture(grid, palette.colors);
+    });
     this.scarecrow.texture = this.scareFrames[0];
     this.scarecrow.position.set(farm.scarecrow.x, farm.scarecrow.baseY);
     this.scarecrow.zIndex = farm.scarecrow.baseY;
@@ -370,51 +374,4 @@ function paneTexture(w: number, h: number): Texture {
   const p = new PixelBuffer(w, h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) p.set(x, y, y === Math.floor(h / 2) && h > 2 ? 0xd88a3a : 0xffd27a);
   return p.toTexture();
-}
-
-/** The scarecrow, `h` px tall: a post and crossbar, an old checked coat, a sacking face under a straw hat; frames 1-2 flap its sleeves. */
-function scarecrowArt(h: number, frame: number): PixelBuffer {
-  const H = Math.max(9, h);
-  const s = H / 40;
-  const W = Math.round(34 * s) + 4;
-  const p = new PixelBuffer(W, H + 2);
-  const cx = Math.round(W / 2);
-  const post = 0x6a5034;
-  // The post, down into the soil.
-  for (let y = Math.round(16 * s); y < H + 1; y++) p.set(cx, y, post);
-  // The coat: checked red, buttoned, hanging off the crossbar.
-  const coatTop = Math.round(14 * s);
-  const coatBottom = Math.round(29 * s);
-  const half = Math.max(2, Math.round(5 * s));
-  for (let y = coatTop; y < coatBottom; y++) {
-    const flare = Math.round(((y - coatTop) / (coatBottom - coatTop)) * 1.5 * s);
-    for (let x = cx - half - flare; x <= cx + half + flare; x++) p.set(x, y, (x + y) % 3 === 0 ? 0x6a2a24 : (x * 2 + y) % 5 === 0 ? 0x3a3a5a : 0xa83a2e);
-  }
-  // Sleeves along the crossbar, their cuffs fluttering, straw poking out.
-  const armY = coatTop + 1;
-  const reach = Math.round(15 * s);
-  for (const side of [-1, 1]) {
-    for (let k = half; k <= reach; k++) {
-      const droop = frame === 0 ? Math.round((k / reach) * 1.2) : frame === 1 ? (side < 0 ? -1 : 1) * Math.round((k / reach) * 1.6) : -(side < 0 ? -1 : 1) * Math.round((k / reach) * 1.6);
-      const thick = Math.max(1, Math.round(2.4 * s));
-      for (let t = 0; t < thick; t++) p.set(cx + side * k, armY + droop + t, (k + t) % 3 === 0 ? 0x6a2a24 : 0x983428);
-      if (k === reach) for (let t = -1; t <= thick; t++) p.set(cx + side * (k + 1), armY + droop + t, 0xe0c060);
-    }
-  }
-  // Straw at the hem, and the trouser legs tied off on the post.
-  for (let x = cx - half - 1; x <= cx + half + 1; x += 2) p.set(x, coatBottom, 0xe0c060);
-  // The head: sacking, a stitched grin, under a wide straw hat.
-  const hy = Math.round(9 * s);
-  const hr = Math.max(2, Math.round(3.6 * s));
-  for (let y = -hr; y <= hr; y++) for (let x = -hr; x <= hr; x++) if (x * x + y * y <= hr * hr + 1) p.set(cx + x, hy + y, x < 0 ? 0xd8c094 : 0xc0a678);
-  if (H >= 14) {
-    p.set(cx - 1, hy - 1, 0x2a2018);
-    p.set(cx + 1, hy - 1, 0x2a2018);
-    for (let x = -1; x <= 1; x++) p.set(cx + x, hy + 1, 0x5a4030);
-  }
-  const brim = hr + Math.max(2, Math.round(3 * s));
-  for (let x = -brim; x <= brim; x++) p.set(cx + x, hy - hr + 1, 0xd8b050);
-  for (let y = hy - hr - Math.max(1, Math.round(2.5 * s)); y <= hy - hr; y++) for (let x = -hr + 1; x <= hr - 1; x++) p.set(cx + x, y, 0xe8c460);
-  p.outline(0x2a1e14);
-  return p;
 }

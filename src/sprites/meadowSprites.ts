@@ -689,3 +689,88 @@ export function drawHorseSized(pose: HorsePose, height: number): Drawn {
   return { grid: g, palette };
 }
 
+
+// --- Scarecrow ----------------------------------------------------------------
+
+/**
+ * The scarecrow in the vegetable patch, `height` px to the soil (the box is
+ * 2 px deeper, the post sunk in it): a red plaid coat in checks big enough
+ * to read, lit from the left and flaring at the hem with straw poking out;
+ * sleeves along the crossbar ending in straw tufts, drooping (frame 0) or
+ * flapping one way and the other (1, 2) in the wind; a stuffed sacking head
+ * with stitched eyes and grin; and a wide straw hat with a red band.
+ */
+export function drawScarecrow(height: number, frame: number): Drawn {
+  const H = Math.max(9, Math.round(height));
+  const s = H / 40;
+  const W = Math.round(34 * s) + 4;
+  const g = new PixelGrid(W, H + 2);
+  const palette = new Palette();
+  const wood = palette.ramp(0x6a5034, 0.8);
+  const coat = palette.ramp(0xa83a2e, 0.8);
+  const navy = palette.add(0x2e3248);
+  const straw = palette.ramp(0xd8b850, 0.7);
+  const sack = palette.ramp(0xc8ae80, 0.6);
+  const stitch = palette.add(0x2a2018);
+  const band = palette.add(0x7a2420);
+  const cx = Math.round(W / 2);
+  const plaid = Math.max(2, Math.round(2.6 * s));
+  /** The coat's plaid at a pixel, shaded by how far round the body it is (−1 left … 1 right). */
+  const cloth = (x: number, y: number, nx: number) => {
+    const shade = nx < -0.45 ? 3 : nx > 0.5 ? 1 : 2;
+    const check = (Math.floor(x / plaid) + Math.floor(y / plaid)) % 2 === 0;
+    if (H >= 20 ? x % (plaid * 2) === 0 || y % (plaid * 2) === 0 : (x + y) % 3 === 0) return navy;
+    // Small, the checks go lighter rather than darker so the coat stays red.
+    return coat[H >= 20 ? Math.max(0, shade - (check ? 1 : 0)) : Math.min(4, shade + (check ? 1 : 0))];
+  };
+  // The post, down into the soil.
+  limb(g, [[cx + 0.5, 16 * s], [cx + 0.5, H + 1.5]], Math.max(1, 1.6 * s), Math.max(1, 1.4 * s), wood);
+  // Sleeves along the crossbar, drooping or flapping, straw tufts at the cuffs.
+  const coatTop = Math.round(14 * s);
+  const coatBottom = Math.round(29 * s);
+  const half = Math.max(2, Math.round(5 * s));
+  const armY = coatTop + 1;
+  const reach = Math.round(15 * s);
+  const thick = Math.max(1, Math.round(2.4 * s));
+  for (const side of [-1, 1]) {
+    const lift = frame === 0 ? 1.2 : (frame === 1 ? side : -side) * -1.6;
+    const cuff: [number, number] = [cx + 0.5 + side * reach, armY + thick / 2 + lift];
+    const elbow: [number, number] = [cx + 0.5 + side * reach * 0.55, armY + thick / 2 + lift * 0.4];
+    const mask = new PixelGrid(W, H + 2);
+    limb(mask, [[cx + 0.5 + side * half * 0.6, armY + thick / 2], elbow, cuff], thick + 0.6, thick, [1, 1, 1, 1, 1]);
+    for (let y = 0; y < H + 2; y++) for (let x = 0; x < W; x++) if (mask.get(x, y)) g.set(x, y, cloth(x, y, y < armY + thick / 2 ? -0.6 : 0.6));
+    for (const [dx, dy] of [[1, -1], [1, 0], [1, 1], [2, 0]] as const) g.set(Math.round(cuff[0] + side * dx - 0.5), Math.round(cuff[1] + dy - 0.5), straw[dy === 0 ? 3 : 2]);
+  }
+  // The coat, flaring to the hem.
+  for (let y = coatTop; y < coatBottom; y++) {
+    const flare = ((y - coatTop) / (coatBottom - coatTop)) * 1.5 * s;
+    const w = half + flare;
+    for (let x = Math.round(cx - w); x <= Math.round(cx + w); x++) g.set(x, y, cloth(x, y, (x + 0.5 - cx) / w));
+  }
+  if (H >= 24) for (let y = coatTop + 2; y < coatBottom - 1; y += Math.max(2, plaid)) g.set(cx, y, straw[4]);
+  // Straw at the hem, hanging in wisps.
+  for (let x = Math.round(cx - half - 1); x <= Math.round(cx + half + 1); x++) {
+    if ((x + frame) % 2 === 0) continue;
+    g.set(x, coatBottom, straw[3]);
+    if (H >= 20 && x % 3 === 0) g.set(x, coatBottom + 1, straw[2]);
+  }
+  // The stuffed sacking head, stitched eyes and grin.
+  const hy = 9 * s;
+  const hr = Math.max(2.4, 3.7 * s);
+  shadedEllipse(g, cx + 0.5, hy, hr, hr * 1.05, sack, { dither: H >= 30 });
+  if (H >= 14) {
+    const ey = Math.round(hy - 0.2 * s);
+    for (const side of [-1, 1]) g.set(Math.round(cx + side * Math.max(1, 1.3 * s)), ey, stitch);
+    if (H >= 22) for (let k = -1; k <= 1; k++) g.set(Math.round(cx + k * 1.2 * s), Math.round(hy + 1.6 * s) - (k === 0 ? 0 : 1), stitch);
+  }
+  // The wide straw hat: brim lit along its top, the crown shaded, a red band round it.
+  const brim = hr + Math.max(2, 3 * s);
+  const brimY = Math.round(hy - hr + (H >= 20 ? 1 : 0.4));
+  for (let x = Math.round(cx - brim); x <= Math.round(cx + brim); x++) g.set(x, brimY, straw[x < cx ? 3 : 2]);
+  const crownTop = Math.round(hy - hr - Math.max(1, 2.5 * s));
+  for (let y = crownTop; y < brimY; y++) {
+    for (let x = Math.round(cx - hr + 1); x <= Math.round(cx + hr - 1); x++) g.set(x, y, y === brimY - 1 && H >= 18 ? band : straw[x < cx ? 4 : 2]);
+  }
+  selOut(g, palette, { bottomHeavy: true });
+  return { grid: g, palette };
+}

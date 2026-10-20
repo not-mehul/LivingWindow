@@ -9,6 +9,7 @@ import { DOG_BREEDS, DOG_POSES, drawWindowDog, type DogLook } from '../sprites/d
 import { DOLPHIN_FRAMES, drawCrab, drawDolphinSized, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, drawTurtleSized, type PelicanPose } from '../sprites/beachSprites';
 import { drawEgret, drawFishingBoat, drawFrigatebird, drawGull, drawJumpFish, drawNightjar, drawSailboat, drawSandpiper, NIGHTJAR_FRAMES, JUMP_FRAMES, SANDPIPER_FLY, SANDPIPER_RUN, type EgretPose, type GullPose, type SandpiperPose } from '../sprites/shoreSprites';
 import { drawDeerSized, drawSquirrelSized, type DeerKind, type DeerPose, type SquirrelPose } from '../sprites/forestSprites';
+import { drawScarecrow } from '../sprites/meadowSprites';
 import { drawChickenSized, drawCowSized, drawDogSized, drawHorseSized, drawRabbitSized, drawSheepSized, drawTopFishSized, type ChickenCoat, type CowCoat, type CowPose, type DogPose, type HorsePose, type RabbitPose, type SheepPose } from '../sprites/meadowSprites';
 import { drawBat, drawBear, drawEagleSoar, EAGLE_STOOP, drawButterfly, drawFox, drawHedgehog, drawMushroom, drawWoodpeckerCling, type BearPose, type ButterflyKind, type FoxPose, type MushroomKind, drawWolf, type WolfPose } from '../sprites/wildSprites';
 import { drawBlimp, drawHelicopter, drawPadDrone } from '../sprites/skySprites';
@@ -132,6 +133,10 @@ function sections(): Section[] {
     rows: (['monarch', 'white', 'blue', 'brimstone'] as ButterflyKind[]).map((kind) => [4, 6, 9, 12].flatMap((n) => [0, 1, 2, 3].map((f) => ({ label: `${kind[0]}${n}/${f}`, draw: () => drawButterfly(kind, f, n) })))),
   });
 
+  out.push({
+    title: 'Scarecrow',
+    rows: [[14, 20, 30, 44].flatMap((h) => [0, 1, 2].map((f) => ({ label: `${h}/${f}`, draw: () => drawScarecrow(h, f) })))],
+  });
   out.push({
     title: 'Hedgehog',
     rows: [10, 14, 18, 24].map((n) => [0, 1, 2, 3].map((f) => ({ label: `hog ${n}/${f}`, draw: () => drawHedgehog(f, n) })).concat([{ label: `ball ${n}`, draw: () => drawHedgehog(0, n, true) }])),
