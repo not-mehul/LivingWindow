@@ -16,8 +16,9 @@ const FADE = 0.15;
 /**
  * The diegetic lofi radio on the sill: a source (stream URL, local playlist or
  * the generative station) fed through a "small speaker in a cosy room" chain
- * — band-limited, a gentle mid bump, soft saturation and a touch of room
- * reverb — into the interior bus, so it is never muffled by the window.
+ * — gently band-limited, a little mid warmth, soft saturation, its own
+ * compressor and a touch of room reverb — into the interior bus, so it is
+ * never muffled by the window.
  */
 export class Radio extends Emitter<RadioEvents> {
   private readonly input: GainNode;
@@ -40,17 +41,26 @@ export class Radio extends Emitter<RadioEvents> {
     this.input = ctx.createGain();
     this.input.gain.value = 0;
 
+    // A small speaker that still has some bass: rolled off below 65 Hz, a
+    // touch of mid warmth and presence, and the highs eased off rather than cut.
     const highpass = ctx.createBiquadFilter();
     highpass.type = 'highpass';
-    highpass.frequency.value = 140;
+    highpass.frequency.value = 65;
+    highpass.Q.value = 0.6;
     const body = ctx.createBiquadFilter();
     body.type = 'peaking';
-    body.frequency.value = 1100;
-    body.Q.value = 0.9;
-    body.gain.value = 3;
+    body.frequency.value = 900;
+    body.Q.value = 0.8;
+    body.gain.value = 2;
+    const presence = ctx.createBiquadFilter();
+    presence.type = 'peaking';
+    presence.frequency.value = 2800;
+    presence.Q.value = 0.7;
+    presence.gain.value = 2.5;
     const lowpass = ctx.createBiquadFilter();
     lowpass.type = 'lowpass';
-    lowpass.frequency.value = 5200;
+    lowpass.frequency.value = 11000;
+    lowpass.Q.value = 0.5;
     const saturation = ctx.createWaveShaper();
     const curve = new Float32Array(1024);
     for (let i = 0; i < curve.length; i++) curve[i] = Math.tanh(((i / (curve.length - 1)) * 2 - 1) * 1.6) / Math.tanh(1.6);
@@ -63,11 +73,18 @@ export class Radio extends Emitter<RadioEvents> {
     const wet = ctx.createGain();
     wet.gain.value = 0.22;
 
-    this.input.connect(highpass).connect(body).connect(lowpass).connect(saturation).connect(panner);
+    // Its own gentle compressor, so the radio stays even whatever's outside.
+    const glue = ctx.createDynamicsCompressor();
+    glue.threshold.value = -18;
+    glue.knee.value = 8;
+    glue.ratio.value = 3;
+    glue.attack.value = 0.01;
+    glue.release.value = 0.25;
+    this.input.connect(highpass).connect(body).connect(presence).connect(lowpass).connect(saturation).connect(glue).connect(panner);
     panner.connect(engine.inputs.radio);
     panner.connect(room).connect(wet).connect(engine.inputs.radio);
 
-    this.generator = new LofiGenerator(ctx, engine.noise);
+    this.generator = new LofiGenerator(ctx, engine.modulators);
     this.generator.output.connect(this.input);
     this.generator.onTrack = (track) => {
       if (this.source === 'generative') this.setTitle(`${track.title} · Living Window FM`);
