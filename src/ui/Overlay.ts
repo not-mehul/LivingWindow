@@ -201,6 +201,12 @@ export class Overlay {
           <button type="button" class="list__row" role="switch" data-pref="drift"><span>Slow drift <small>wander across the view when left alone</small></span><span class="switch" aria-hidden="true"></span></button>
           <button type="button" class="list__row" role="switch" data-pref="hideTablet"><span>Tuck the tablet away <small>it fades out after two quiet minutes</small></span><span class="switch" aria-hidden="true"></span></button>
           <div class="list__row">
+            <span>Frame rate <small>lower is lighter on the battery</small></span>
+            <span class="segmented segmented--inline" role="radiogroup" aria-label="Frame rate" data-choice="frameRate">
+              <button type="button" role="radio" data-value="60">60</button><button type="button" role="radio" data-value="30">30</button><button type="button" role="radio" data-value="20">20</button>
+            </span>
+          </div>
+          <div class="list__row">
             <span>Link to this view <small data-link-note>bookmark the place, time and weather</small></span>
             <button type="button" class="text-btn" data-action="link">Copy</button>
           </div>

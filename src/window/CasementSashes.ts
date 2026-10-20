@@ -178,6 +178,8 @@ export class CasementSashes {
 
   private readonly parts: SashParts[];
   private dropsTexture: RenderTexture | null = null;
+  /** The drops texture was cleared with no drops on the glass: nothing to redraw until it's wet again. */
+  private dry = false;
   private geometry: CasementGeometry | null = null;
   private wood: WoodPalette = RUSTIC_THEME.wood;
   private flatWidth = 0;
@@ -234,6 +236,7 @@ export class CasementSashes {
     );
 
     this.dropsTexture?.destroy(true);
+    this.dry = false;
     this.dropsTexture = RenderTexture.create({
       width: this.flatWidth,
       height: this.flatHeight,
@@ -286,10 +289,15 @@ export class CasementSashes {
     }
   }
 
-  /** Draw the drops onto the flat glass texture. Call once per frame. */
-  render(renderer: Renderer): void {
-    if (!this.dropsTexture) return;
+  /**
+   * Draw the drops onto the flat glass texture. Call once per frame with how
+   * many drops there are: a dry pane (fair weather, or an open window that
+   * has dried off) is cleared once and then left alone.
+   */
+  render(renderer: Renderer, drops: number): void {
+    if (!this.dropsTexture || (drops === 0 && this.dry)) return;
     renderer.render({ container: this.glassDrops, target: this.dropsTexture, clear: true });
+    this.dry = drops === 0;
   }
 
   private redraw(): void {

@@ -24,6 +24,7 @@ import { Clock } from './state/Clock';
 import { mood } from './state/mood';
 import { Preferences } from './state/Preferences';
 import { parseUrlPreset, presetUrl } from './state/urlPresets';
+import { loadSession, saveSession } from './state/session';
 import { Weather } from './state/Weather';
 import { WindowState } from './state/WindowState';
 import { Overlay } from './ui/Overlay';
@@ -40,6 +41,8 @@ const MAX_DEVICE_PIXEL_RATIO = 3;
 const MAX_FRAME_SECONDS = 0.1;
 /** How often the sky's place-and-date facts (sun times, moon, season) are refreshed (ms). */
 const DAYLIGHT_REFRESH_MS = 5 * 60 * 1000;
+/** A landscape out of view this long is let go to free its memory (ms). */
+const UNMOUNT_AFTER_MS = 3 * 60 * 1000;
 
 function currentDevicePixelRatio(): number {
   return Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
@@ -107,6 +110,7 @@ async function boot(): Promise<void> {
   const host = document.getElementById('app');
   if (!host) throw new Error('Missing #app element');
 
+  const preferences = new Preferences();
   let dpr = currentDevicePixelRatio();
   const app = new Application();
   await app.init({
@@ -121,15 +125,18 @@ async function boot(): Promise<void> {
     background: '#1a1626',
   });
   host.appendChild(app.canvas);
+  // Drawing faster than needed only costs power: 60, 30 or 20 frames a second, as chosen.
+  app.ticker.maxFPS = preferences.get('frameRate');
   // iOS Safari ignores user-scalable=no; stop pinch-zoom from scaling the page.
   document.addEventListener('gesturestart', (event) => event.preventDefault());
 
   // --- Simulation state -------------------------------------------------
-  const windowState = new WindowState(true);
+  // Where the window was left last time (weather, the 6× clock, the sash).
+  const session = loadSession();
+  const windowState = new WindowState(session?.windowOpen ?? true);
   const birdseed = new BirdseedState();
   const clock = new Clock(localHours());
   const weather = new Weather({ initial: 'clear' });
-  const preferences = new Preferences();
   // A bookmarked view (?place=…&time=…) applies for this visit without changing saved choices.
   const preset = parseUrlPreset(window.location.search);
   if (preset.clockMode) preferences.set('clockMode', preset.clockMode, false);
@@ -154,14 +161,25 @@ async function boot(): Promise<void> {
   const applyClockMode = () => clock.setRealTime(preferences.get('clockMode') === 'real' ? localHours : null);
   applyMood();
   applyClockMode();
+  if (session) {
+    weather.restore(session.weather, session.locked);
+    if (!clock.isRealTime) clock.setTime(session.hours);
+  }
   if (preset.time !== undefined) clock.setTime(preset.time);
   if (preset.weather === 'auto') weather.unlock();
   else if (preset.weather) weather.restore(preset.weather, true);
+  const remember = () => saveSession({ weather: weather.type, locked: weather.locked, hours: clock.hours, windowOpen: windowState.isOpen });
+  window.setInterval(remember, 30_000);
+  window.addEventListener('pagehide', remember);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') remember();
+  });
   preferences.on('change', ({ key }) => {
     if (key === 'calm') applyMood();
     if (key === 'location') refreshDaylight();
     if (key === 'clockMode') applyClockMode();
     if (key === 'drift') viewport.setDrift(preferences.get('drift'));
+    if (key === 'frameRate') app.ticker.maxFPS = preferences.get('frameRate');
     if (key === 'hideTablet') tablet.setAutoHide(preferences.get('hideTablet'));
   });
 
@@ -239,6 +257,8 @@ async function boot(): Promise<void> {
     return pending;
   };
   const all: Mounted[] = [];
+  /** When each landscape out of view was last seen (they're let go after a while). */
+  const hiddenSince = new Map<Mounted, number>();
   /** The latest build of each landscape (a new day replaces it with a fresh one). */
   const latest = new Map<LandscapeId, Mounted>();
   const build = async (id: LandscapeId): Promise<Mounted> => {
@@ -283,6 +303,8 @@ async function boot(): Promise<void> {
     audio?.setSoundscape(next.landscape.createSoundscape, next.landscape.id);
     const previous = current;
     current = next;
+    hiddenSince.delete(next);
+    if (previous !== next) hiddenSince.set(previous, performance.now());
     // A landscape replaced by a fresh build of itself (a new day) is let go at once.
     if (previous !== next && previous.landscape.id === next.landscape.id) unmount(previous);
   };
@@ -334,6 +356,7 @@ async function boot(): Promise<void> {
       mounted.delete(m.landscape.id);
     }
     all.splice(all.indexOf(m), 1);
+    hiddenSince.delete(m);
     for (const layer of Object.values(m.layers)) layer.destroy({ children: true });
     m.lightning.overlay.destroy();
     m.landscape.scene.container.destroy({ children: true });
@@ -525,6 +548,16 @@ async function boot(): Promise<void> {
     tablet.update(dt, { hours: clock.hours, weather: weather.type, nightness: env.lighting.nightness }, interiorTint(env.lighting));
   };
 
+  // Landscapes left a few minutes ago are let go, freeing their memory; going
+  // back to one rebuilds it (a moment's wait, behind the cross-fade).
+  const releaseHidden = (afterMs = UNMOUNT_AFTER_MS) => {
+    const now = performance.now();
+    for (const [m, since] of hiddenSince) {
+      if (now - since >= afterMs && m.landscape.id !== transition?.to) unmount(m);
+    }
+  };
+  window.setInterval(releaseHidden, 15_000);
+
   // A new day: the sun's times and the moon move on, and each landscape is
   // rebuilt for its new date (crops grow, tides turn) at the next quiet moment.
   window.setInterval(() => {
@@ -555,7 +588,7 @@ async function boot(): Promise<void> {
       setLandscape(ids[(ids.indexOf(current.landscape.id) + 1) % ids.length]);
     }
     viewport.render(app.renderer);
-    sashes.render(app.renderer);
+    sashes.render(app.renderer, glass.sim.drops.length);
     overlay?.tick();
     app.stage.cursor = viewport.isDragging ? 'grabbing' : viewport.isPannable ? 'grab' : 'default';
   });
@@ -592,6 +625,13 @@ async function boot(): Promise<void> {
           return current.lightning;
         },
         audio: () => audio,
+        /** Let go of landscapes out of view (normally after three minutes) and say how many are still built. */
+        releaseHidden: (afterMs = 0) => {
+          releaseHidden(afterMs);
+          return all.length;
+        },
+        /** Rebuild everything as on a new day. */
+        newDay: () => refreshForNewDay(),
         /** The interactions this landscape can set going with `stage`. */
         get stages() {
           return current.landscape.life.stages ?? [];
@@ -605,6 +645,11 @@ async function boot(): Promise<void> {
       },
     });
   }
+}
+
+// Offline: a service worker keeps the window opening without a connection (built site only).
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => void navigator.serviceWorker.register('./sw.js').catch(() => undefined));
 }
 
 if (location.hash.startsWith('#gallery')) void import('./dev/gallery').then((m) => m.showGallery());
