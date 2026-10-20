@@ -29,12 +29,15 @@ for the full vision and roadmap.
 
 **Step 2 — Chronos clock & weather engine** ✅
 
-- **Simulated clock** running at 6× (a full day every 4 real hours, one
-  simulated hour every 10 real minutes), starting from your local time. Pause
-  it, scrub it with the slider or `[` / `]`, or jump to Dawn, Morning, Midday,
-  Golden Hour, Dusk, Night or 2–4 AM; it carries on from wherever you leave it.
+- **Clock**: Real time by default (it follows your own clock, and catches up
+  at once after a sleeping laptop or a background tab), or 6× (a full day
+  every 4 real hours). Pause it, scrub it with the slider or `[` / `]`, or
+  jump to Dawn, Morning, Midday, Golden Hour, Dusk, Night or 2–4 AM; it
+  carries on from wherever you leave it, and Now returns to the present.
 - **Lighting**: a 24-hour palette of keyframes drives a dithered pixel sky,
-  sun and moon arcs with glows, twinkling stars and tinted clouds. Every
+  sun and moon arcs with glows, twinkling stars and tinted clouds. Sunrise
+  and sunset are the real ones for your place and the date (guessed from the
+  time zone, or set with Use my location), and the moon shows its real phase. Every
   scene layer is authored in daylight and multiplied by an ambient tint, with
   extra haze on distant layers. The room itself picks up daylight by day and a
   warm lamp glow at night.
@@ -43,8 +46,10 @@ for the full vision and roadmap.
   flicker on individually at dusk.
 - **Weather engine**: a Markov chain moves between Clear, Overcast, Light Rain,
   Thunderstorm and Snow on simulated time, while simplex noise drives gusts,
-  downpour swells and lightning bursts so nothing repeats. Pick the weather by
-  hand to lock it, or choose Auto to hand it back.
+  downpour swells and lightning bursts so nothing repeats. It knows the
+  season (no snow in summer, mirrored in the southern hemisphere) and blends
+  over minutes. Pick the weather by hand to lock it, or choose Auto to hand it
+  back. The weather, the window and the 6× clock are remembered between visits.
 - **Weather rendering**: rain streaks that follow the wind and snowflakes that
   sway, in two depth layers (behind and in front of the nearest towers), with
   splashes on the street. Lightning flashes the world and the room, with
@@ -184,6 +189,32 @@ for the full vision and roadmap.
   `prefers-reduced-motion`.
 - **Docker**: one command to host it on your network (see
   [Deployment](#deployment)).
+
+**For leaving it on screen** ✅
+
+The tablet's Viewing section holds the choices for a window you mostly just
+look at:
+
+- **Calm** (on by default): the automatic weather never brews a storm (Storm
+  can still be chosen), lightning is gentler, the dog, cat, squirrel and sill
+  birds visit less often and pass more slowly, and the city at night is
+  cosier: warmer windows, softer neon, steady holograms, slower billboards, no
+  fireworks or searchlight, fewer drones.
+- **Change place** every 30 minutes, hourly or every two hours. Switching
+  place dissolves one view into the next instead of dipping to black.
+- **Slow drift** across the parts of the panorama a 16:9 screen can't show,
+  after a minute without panning; everything also wanders a pixel or two to
+  spare OLED and TV screens from burn-in.
+- **Tuck the tablet away**: its screen sleeps after half a minute of
+  stillness and the tablet fades from the sill after two; any movement
+  brings it back.
+- **Frame rate** 60, 30 or 20, lighter on the battery. Landscapes left for a
+  few minutes are freed from memory, and a dry pane isn't redrawn.
+- **Works offline** once visited (a service worker in the built site).
+- **Bookmarkable views**: `?place=forest&time=21:30&weather=rain&clock=real`
+  `&calm=1&rotate=60&ui=hidden` sets the window up for that visit without
+  changing saved choices; Link to this view copies the current one.
+  `ui=hidden` keeps the tablet off the sill (`S` still opens the panel).
 
 **Interface — neon HUD**
 
