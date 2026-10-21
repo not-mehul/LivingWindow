@@ -459,9 +459,18 @@ work. Open them while the dev server is running:
   to hold it. Each row lets you pick its coat, breed or species and its size.
   The page's controls set the zoom, speed, background and a moonlit tint.
 
-On both pages, mark each item **Good** or **Needs work** and add a note; the
-marks are kept in the browser. **Copy report** puts them on the clipboard as a
-Markdown list, needs-work first. Both pages are for development only and
+On both pages, mark each item **Good** or **Needs work**:
+
+- **Needs work** opens a notes section. It has quick tags naming common
+  problems ("too loud", "foot slide"…) and a note box for what's wrong and
+  what would be better. **＋ Note** adds a note without a verdict.
+- Marks are kept in the browser.
+- **Copy report** puts them on the clipboard as a Markdown list, needs-work
+  first.
+- **Export** downloads the report as `.md`, or every item with its marks as
+  `.json`.
+- **Import…** reads an exported `.json` back in, for example to move your
+  marks to another browser or restore them after clearing. Both pages are for development only and
 aren't part of the built site. The older stills sheet is still at
 `index.html#gallery`.
 

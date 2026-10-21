@@ -150,6 +150,8 @@ function start(root: HTMLElement): void {
   const page = createReviewPage(root, {
     heading: 'Living Window · sprites',
     reportTitle: 'Sprite review',
+    page: 'sprite',
+    tags: ['proportions', 'outline', 'colours', 'shading', 'stiff motion', 'foot slide', 'too fast', 'too slow', 'flicker', 'reads poorly small'],
     storageKey: 'livingWindow.spriteReview',
     noun: 'animations',
     rows,

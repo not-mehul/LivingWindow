@@ -176,6 +176,8 @@ async function start(root: HTMLElement): Promise<void> {
   const page = createReviewPage(root, {
     heading: 'Living Window · sounds',
     reportTitle: 'Sound review',
+    page: 'sound',
+    tags: ['too loud', 'too quiet', 'harsh', 'thin', 'fake-sounding', 'clicks or pops', 'too often', 'too long', 'wrong pitch'],
     storageKey: 'livingWindow.soundReview',
     noun: 'sounds',
     rows,

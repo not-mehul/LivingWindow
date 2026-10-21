@@ -129,7 +129,7 @@ button:active {
 
 .sp-row {
   display: grid;
-  grid-template-columns: 40px minmax(140px, 1fr) auto auto minmax(140px, 1.2fr);
+  grid-template-columns: 40px minmax(140px, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   padding: 6px 10px;
@@ -188,11 +188,80 @@ button:active {
   color: var(--sunk);
 }
 
-.sp-note {
-  min-width: 0;
-  padding: 4px 8px;
-  border: 0;
+.sp-add-note {
+  margin-left: 6px;
+  color: var(--muted);
+  background: none;
+  box-shadow: none;
+  font-size: 15px;
+}
+
+.sp-add-note:hover {
+  color: var(--accent);
+}
+
+.sp-add-note[hidden] {
+  display: none;
+}
+
+/* The notes: quick tags naming the problem, and a note that grows as it's written. */
+.sp-notes {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 8px;
   background: var(--sunk);
+}
+
+.sp-notes[hidden] {
+  display: none;
+}
+
+.sp-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sp-tags button {
+  padding: 1px 8px 3px;
+  font-size: 15px;
+  color: var(--muted);
+  background: var(--card);
+}
+
+.sp-tags button[aria-pressed='true'] {
+  background: var(--work);
+  color: var(--sunk);
+}
+
+.sp-note {
+  width: 100%;
+  min-height: 2.6em;
+  padding: 6px 8px;
+  border: 0;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.3 'Living Window Pixel', ui-monospace, monospace;
+}
+
+.sp-note::placeholder {
+  color: var(--muted);
+}
+
+.sp-export {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sp-export__label {
+  margin-right: 6px;
+}
+
+.sp-status {
+  color: var(--good);
   font-size: 15px;
 }
 
@@ -222,7 +291,7 @@ button:active {
     'lead name'
     'lead extra'
     'lead verdict'
-    'lead note';
+    'lead notes';
   align-items: start;
   align-content: start;
   padding: 10px;
@@ -251,8 +320,8 @@ button:active {
   grid-area: verdict;
 }
 
-.sp-row--wide .sp-note {
-  grid-area: note;
+.sp-row--wide .sp-notes {
+  grid-area: notes;
 }
 
 .sp-stage {
@@ -315,7 +384,7 @@ button:active {
 @media (max-width: 640px) {
   .sp-row--wide {
     grid-template-columns: 1fr;
-    grid-template-areas: 'lead' 'name' 'extra' 'verdict' 'note';
+    grid-template-areas: 'lead' 'name' 'extra' 'verdict' 'notes';
   }
 
   .sp-row--wide .sp-lead {
@@ -336,10 +405,6 @@ button:active {
 
   .sp-row:not(.sp-row--wide) .sp-verdict {
     grid-column: 2 / -1;
-  }
-
-  .sp-row:not(.sp-row--wide) .sp-note {
-    grid-column: 1 / -1;
   }
 
   .sp-meter {
