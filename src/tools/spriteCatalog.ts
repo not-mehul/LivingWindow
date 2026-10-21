@@ -2,6 +2,7 @@ import { PixelBuffer } from '../core/pixelBuffer';
 import { createRng } from '../core/random';
 import { ADS, drawAd, type AdId } from '../scene/city/ads';
 import { idolArt, koiArt } from '../scene/city/Holograms';
+import { drawLoco, drawVehicle, drawWagon } from '../scene/city/DistantTransit';
 import { drawPalm, flattenPalm } from '../scene/beach/beachGenerator';
 import { rustleFrames } from '../scene/common/rustle';
 import { BROADLEAF, CONIFER, drawBroadleaf, drawConifer, drawOak, drawTallPine } from '../scene/common/trees';
@@ -323,6 +324,20 @@ for (const id of Object.keys(AD_SIZES) as AdId[]) {
 }
 add({ id: 'hologram:koi', label: 'Hologram · koi', group: 'City', frames: () => [0, 1, 2, 3].map((f) => ({ buffer: koiArt(f) })), seconds: 1 / 3 });
 add({ id: 'hologram:idol', label: 'Hologram · idol', group: 'City', frames: () => [0, 1].map((f) => ({ buffer: idolArt(f) })), seconds: 1 / 0.9 });
+
+stills({
+  id: 'transit:vehicles',
+  label: 'Distant highway · cars, vans, lorries',
+  group: 'City',
+  frames: () => (['car', 'van', 'truck'] as const).flatMap((kind) => [0xdedcd4, 0x9a3a36, 0x3c5a88].map((color) => ({ buffer: drawVehicle(kind, color).body }))),
+  detail: 'far off; lights shown at night',
+});
+stills({
+  id: 'transit:freight',
+  label: 'Freight train · locomotive and wagons',
+  group: 'City',
+  frames: () => [{ buffer: drawLoco().body }, ...(['container', 'tank', 'hopper', 'flat'] as const).map((kind) => ({ buffer: drawWagon(kind, kind === 'container' ? 0xa0442e : kind === 'tank' ? 0x2e2e32 : 0x6a5a46) }))],
+});
 
 // ---------------------------------------------------------------- Window and room
 

@@ -364,6 +364,13 @@ look straight down a market street in one-point perspective.
   vanishing point, roofs below eye level show their tops, and distance adds
   haze. An ink pass draws a line wherever two buildings or faces meet, echoing
   the drawing's line work.
+- **A super highway and a freight line, far off** (`scene/city/DistantTransit.ts`).
+  An elevated highway on tall pillars crosses the skyline. Fast traffic streams
+  both ways on it: cars, vans and lorries, busiest at rush hour and a trickle
+  in the small hours. After dark they show headlights and tail-lights under a
+  row of sodium lamps. On a steel viaduct just below, a long freight train of
+  mixed wagons rolls through every few minutes. It's all too far off to hear,
+  and it hazes and goes violet at night with the distance.
 - **Our rooftop.** A terrace with a pipe railing runs along the left, and our
   own roof's coping sweeps across the lower right, as in the drawing. Pigeons
   strut on both and on the sill; other birds perch on the rail, the

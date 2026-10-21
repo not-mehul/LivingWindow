@@ -11,6 +11,7 @@ import { PixelBuffer } from '../../core/pixelBuffer';
 import { bayer } from '../common/paint';
 import { generateCity, poolFalloff, POOL_REACH, type CityLayerName, type CityLayout } from './cityGenerator';
 import { Billboards } from './Billboards';
+import { DistantTransit } from './DistantTransit';
 import { Holograms } from './Holograms';
 import { RoofAmbience } from './RoofAmbience';
 import { StreetLamps } from './StreetLamps';
@@ -46,7 +47,7 @@ const WINDOW_BRIGHTNESS: Record<CityLayerName, number> = { far: 0.45, mid: 0.8, 
  * with a railing at left, our own parapet sweeping across the lower right,
  * tall towers rising off the top of the view, rooftops below with plant,
  * pipes and billboards, a skybridge over the street, and the skyline beyond
- * with its great spire. At night the windows, signs, lamps and market light up.
+ * with its great spire, a super highway and a freight line threading it. At night the windows, signs, lamps and market light up.
  */
 export class CityScene implements WorldScene {
   readonly container = new Container({ label: 'city-scene' });
@@ -85,6 +86,8 @@ export class CityScene implements WorldScene {
   private readonly billboards: Billboards;
   private readonly roofAmbience: RoofAmbience;
   private readonly holograms = new Holograms();
+  /** The super highway and freight line, far off across the city. */
+  readonly transit = new DistantTransit();
   /** Smog hanging over the skyline: amber by day, lit violet from below by the city at night. */
   private readonly smog: Sprite;
   private readonly smogVeil: Sprite;
@@ -136,6 +139,7 @@ export class CityScene implements WorldScene {
       sprites.far.container,
       lightsByLayer.far.sprite,
       this.billboards.layers.far,
+      this.transit.container,
       this.smogVeil,
       this.holograms.container,
       this.skyLife,
@@ -174,6 +178,7 @@ export class CityScene implements WorldScene {
     this.layers.near.update(tints.near, lighting);
     this.over.update(tints.over, lighting);
     this.billboards.update(dt, lighting, tints);
+    this.transit.update(dt, env, tints.far);
     this.roofAmbience.update(dt, env);
     this.holograms.update(dt, env);
     // Calm mode's cosier city: a softer, dusky-rose night haze instead of neon magenta smog.
