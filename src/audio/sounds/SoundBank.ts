@@ -16,7 +16,7 @@ function isCall(id: SoundId): id is CallId {
 /** Voices that must stay live (they carry state from one play to the next). */
 const LIVE_ONLY: ReadonlySet<SynthId> = new Set(['guitar-strum']);
 /** Rendered takes kept per synth voice, and the chance a play renders a fresh one. */
-const TAKES = 5;
+const TAKES = 8;
 const REFRESH = 0.2;
 /** Longest any synth voice runs (s). */
 const MAX_VOICE_SECONDS = 7;
