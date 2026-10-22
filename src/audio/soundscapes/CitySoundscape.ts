@@ -13,7 +13,9 @@ const CAR_SPEED = 13;
 
 /**
  * Landscape ambience for the downtown rooftop, heard from high up: the far,
- * soft rumble of traffic across the whole city, cars passing on the street
+ * soft rumble of traffic across the whole city, swelling now on one side and
+ * now the other, with the odd heavy truck rolling along an avenue and the
+ * faint hiss of the city's air over it all; cars passing on the street
  * below (busier at rush hour, hissing on wet roads), the murmur of people
  * when the street fills, a rare soft horn and, very rarely, a siren many
  * streets away. Background birds by day.
@@ -21,17 +23,22 @@ const CAR_SPEED = 13;
 export class CitySoundscape extends Soundscape {
   private readonly rumble: GainNode;
   private readonly traffic: GainNode;
+  /** The city's wide roar, one side and the other, each swelling in its own time. */
+  private readonly roar: GainNode[] = [];
+  private readonly air: GainNode;
   private readonly recorded: GainNode | null = null;
   private readonly murmur: TextureLayer;
   private carTimer = rand(1, 4);
   private hornTimer = rand(60, 150);
   private sirenTimer = rand(500, 1200);
   private birdTimer = rand(2, 6);
+  private rollTimer = rand(6, 20);
 
   constructor(engine: AudioEngine, city?: AudioBuffer) {
     super(engine);
     this.rumble = this.gain();
     this.traffic = this.gain();
+    this.air = this.gain();
     if (city) {
       this.recorded = this.gain();
       this.loop(city).connect(this.recorded).connect(this.bed);
@@ -39,6 +46,20 @@ export class CitySoundscape extends Soundscape {
       // The whole city's traffic, far off: a deep rumble and a softer, wider roar.
       this.noise('brown').connect(this.filter('lowpass', 140, 0.5)).connect(this.flutter(0.2, 0.08)).connect(this.rumble).connect(this.bed);
       this.noise('pink').connect(this.filter('bandpass', 420, 0.5)).connect(this.flutter(0.3, 0.12)).connect(this.traffic).connect(this.bed);
+      for (const side of [-0.75, 0.75]) {
+        const roar = this.gain();
+        const pan = this.engine.context.createStereoPanner();
+        pan.pan.value = side;
+        this.noise('pink')
+          .connect(this.filter('highpass', 90, 0.5))
+          .connect(this.filter('lowpass', 1100, 0.5))
+          .connect(this.flutter(0.4, 0.05 + Math.random() * 0.04))
+          .connect(roar)
+          .connect(pan)
+          .connect(this.bed);
+        this.roar.push(roar);
+      }
+      this.noise('pink').connect(this.filter('bandpass', 2400, 0.4)).connect(this.flutter(0.2, 0.08)).connect(this.air).connect(this.bed);
     }
     this.murmur = this.texture(murmur());
   }
@@ -55,6 +76,8 @@ export class CitySoundscape extends Soundscape {
     this.bed.gain.setTargetAtTime(1 - 0.45 * snow, now, 2);
     this.rumble.gain.setTargetAtTime(0.1 + 0.08 * busy, now, 3);
     this.traffic.gain.setTargetAtTime(0.012 + 0.03 * busy + 0.02 * rain, now, 3);
+    for (const roar of this.roar) roar.gain.setTargetAtTime(0.025 + 0.05 * busy + 0.015 * rain, now, 3);
+    this.air.gain.setTargetAtTime(0.006 + 0.008 * busy, now, 3);
     this.recorded?.gain.setTargetAtTime(0.5 + 0.35 * busy, now, 3);
     this.murmur.set((0.04 + 0.3 * crowd) * (1 - rain * 0.7) * (1 - snow * 0.5), 2);
 
@@ -62,6 +85,12 @@ export class CitySoundscape extends Soundscape {
     if (this.carTimer <= 0) {
       this.carTimer = rand(2.5, 7) / Math.max(0.08, busy);
       this.carPass(rain);
+    }
+
+    this.rollTimer -= dt;
+    if (this.rollTimer <= 0 && !this.recorded) {
+      this.rollTimer = rand(12, 40) / Math.max(0.15, busy);
+      this.distantRoll(busy);
     }
 
     this.hornTimer -= dt;
@@ -86,6 +115,31 @@ export class CitySoundscape extends Soundscape {
         this.engine.playSpatialSound(id, rand(-1, 1), rand(0.75, 1), 'ambience');
       }
     }
+  }
+
+  /**
+   * A heavy truck or bus rolling along an avenue a few blocks off: a deep,
+   * slow swell of road noise drifting across, too far to hear its engine.
+   */
+  private distantRoll(busy: number): void {
+    const ctx = this.engine.context;
+    const when = ctx.currentTime + 0.05;
+    const duration = rand(6, 11);
+    const direction = Math.random() < 0.5 ? -1 : 1;
+    const pan = ctx.createStereoPanner();
+    pan.pan.setValueAtTime(-0.7 * direction, when);
+    pan.pan.linearRampToValueAtTime(0.7 * direction, when + duration);
+    const amp = ctx.createGain();
+    amp.gain.setValueAtTime(0, when);
+    amp.gain.setTargetAtTime(rand(0.04, 0.08) * (0.5 + 0.5 * busy), when, duration * 0.2);
+    amp.gain.setTargetAtTime(0, when + duration * 0.55, duration * 0.15);
+    const noise = ctx.createBufferSource();
+    noise.buffer = this.engine.noise.get('brown');
+    noise.loop = true;
+    const band = this.filter('bandpass', rand(160, 280), 0.8);
+    noise.connect(band).connect(amp).connect(pan).connect(this.bed);
+    noise.start(when, Math.random() * 8, duration);
+    window.setTimeout(() => pan.disconnect(), (duration + 1) * 1000);
   }
 
   /**

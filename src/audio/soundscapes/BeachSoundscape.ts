@@ -72,7 +72,8 @@ export class BeachSoundscape extends Soundscape {
     panner.pan.value = pan;
     panner.connect(this.bed);
 
-    // The curl falling over: a roar that opens, then darkens as it spends itself.
+    // The curl falling over: a roar that surges up, then darkens and draws out as it
+    // spends itself (after a recording: a rise of most of a second, a long fall).
     const crash = ctx.createBufferSource();
     crash.buffer = this.engine.noise.get('pink');
     // The noise loops seamlessly, so a long sound started late in it never cuts out.
@@ -80,15 +81,15 @@ export class BeachSoundscape extends Soundscape {
     const crashFilter = ctx.createBiquadFilter();
     crashFilter.type = 'lowpass';
     crashFilter.Q.value = 0.5;
-    crashFilter.frequency.setValueAtTime(900, when);
-    crashFilter.frequency.linearRampToValueAtTime(1800 + 2200 * size, when + 0.35);
-    crashFilter.frequency.exponentialRampToValueAtTime(420, when + 2.6);
+    crashFilter.frequency.setValueAtTime(700, when);
+    crashFilter.frequency.linearRampToValueAtTime(1600 + 2400 * size, when + 0.7);
+    crashFilter.frequency.exponentialRampToValueAtTime(450, when + 4);
     const crashAmp = ctx.createGain();
     crashAmp.gain.setValueAtTime(0, when);
-    crashAmp.gain.linearRampToValueAtTime(0.75 * level, when + 0.3);
-    crashAmp.gain.setTargetAtTime(0, when + 0.5, 0.7);
+    crashAmp.gain.setTargetAtTime(0.75 * level, when, 0.25);
+    crashAmp.gain.setTargetAtTime(0, when + 0.8, 1.1);
     crash.connect(crashFilter).connect(crashAmp).connect(panner);
-    crash.start(when, Math.random() * 8, 3.4);
+    crash.start(when, Math.random() * 8, 6);
 
     // The weight of water landing: a low thump under the crash.
     const thump = ctx.createBufferSource();
@@ -99,15 +100,15 @@ export class BeachSoundscape extends Soundscape {
     thumpFilter.type = 'lowpass';
     thumpFilter.frequency.value = 160;
     const thumpAmp = ctx.createGain();
-    thumpAmp.gain.setValueAtTime(0, when + 0.15);
-    thumpAmp.gain.linearRampToValueAtTime(0.45 * level * size, when + 0.3);
-    thumpAmp.gain.setTargetAtTime(0, when + 0.4, 0.35);
+    thumpAmp.gain.setValueAtTime(0, when + 0.2);
+    thumpAmp.gain.linearRampToValueAtTime(0.4 * level * size, when + 0.55);
+    thumpAmp.gain.setTargetAtTime(0, when + 0.6, 0.45);
     thump.connect(thumpFilter).connect(thumpAmp).connect(panner);
     thump.start(when, Math.random() * 8, 2);
 
     // Foam spreading up the sand, then the backwash rattling back down.
-    swell(this.foam.gain.gain, when + 0.5, 0.7 * level, 0.9, 1.4);
-    swell(this.shingle.gain.gain, when + 2.4, 0.45 * level, 1.2, 1.1);
+    swell(this.foam.gain.gain, when + 0.6, 0.7 * level, 1, 1.6);
+    swell(this.shingle.gain.gain, when + 2.4, 0.5 * level, 1.2, 1.4);
     const hiss = ctx.createBufferSource();
     hiss.buffer = this.engine.noise.get('white');
     // The noise loops seamlessly, so a long sound started late in it never cuts out.
@@ -124,7 +125,7 @@ export class BeachSoundscape extends Soundscape {
     hissAmp.gain.linearRampToValueAtTime(0, start + 3.2);
     hiss.connect(hissFilter).connect(hissAmp).connect(panner);
     hiss.start(start, Math.random() * 8, 3.4);
-    window.setTimeout(() => panner.disconnect(), 7000);
+    window.setTimeout(() => panner.disconnect(), 8000);
   }
 }
 
