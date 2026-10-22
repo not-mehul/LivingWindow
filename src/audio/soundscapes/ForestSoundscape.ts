@@ -35,7 +35,7 @@ export class ForestSoundscape extends Soundscape {
     this.noise('white').connect(this.filter('bandpass', 4200, 0.6)).connect(this.flutter(0.6, 2)).connect(this.leaves).connect(this.bed);
     this.chorus = this.texture(distantBirds());
     this.crickets = this.texture(crickets(6));
-    this.katydids = this.texture(katydids(3));
+    this.katydids = this.texture(katydids(2));
     this.trill = this.texture(trill());
   }
 
@@ -57,7 +57,7 @@ export class ForestSoundscape extends Soundscape {
     // A forest is never without birds somewhere: the far chorus carries the day as well as the dawn.
     this.chorus.set(0.32 * Math.max(0.6 * birdActivity(hours), dawnChorus(hours)) * quiet, 4);
     this.crickets.set(0.22 * night, 4);
-    this.katydids.set(0.14 * night, 5);
+    this.katydids.set(0.2 * night, 5);
     this.trill.set(0.05 * night, 6);
 
     this.creakTimer -= dt;

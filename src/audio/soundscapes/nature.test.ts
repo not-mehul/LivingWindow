@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderTexture, glassDrop, grassDrop, leafDrop, runoff, scattered, shoreDrop, streetDrop } from '../textures';
+import { GLASS, GRASS, LEAVES, rainOn, renderTexture, runoff, SAND, scattered, STREET } from '../textures';
 import { creek, crickets, distantBirds, foam, frogs, grasshoppers, katydids, murmur, shingle, trill } from './nature';
 
 const RATE = 16000;
@@ -14,11 +14,11 @@ const TEXTURES = {
   distantBirds: distantBirds(),
   murmur: murmur(),
   grasshoppers: grasshoppers(),
-  leaves: scattered(45, leafDrop),
-  grass: scattered(45, grassDrop),
-  street: scattered(45, streetDrop),
-  shore: scattered(45, shoreDrop),
-  glass: scattered(60, glassDrop),
+  leaves: rainOn(45, LEAVES),
+  grass: rainOn(45, GRASS),
+  street: rainOn(45, STREET),
+  shore: rainOn(45, SAND),
+  glass: rainOn(60, GLASS),
   runoff: scattered(7, runoff),
 };
 
@@ -45,5 +45,26 @@ describe('landscape textures', () => {
     const a = renderTexture(crickets(3), RATE, 3);
     const b = renderTexture(crickets(3), RATE, 3);
     expect(a.left).toEqual(b.left);
+  });
+});
+
+/** How peaky a signal is (3 for smooth noise; a crackle of lone ticks runs far higher). */
+function kurtosis(data: Float32Array): number {
+  let m2 = 0;
+  let m4 = 0;
+  for (const v of data) {
+    m2 += v * v;
+    m4 += v ** 4;
+  }
+  return (m4 / data.length) / (m2 / data.length) ** 2;
+}
+
+describe('no crackle', () => {
+  it('fizzes and rattles the shore smoothly, as the recording does, not tick by tick', () => {
+    for (const spec of [foam(), shingle()]) expect(kurtosis(renderTexture(spec, RATE, 3).left)).toBeLessThan(6);
+  });
+
+  it('lays a hush under the rain so no drop stands out of silence', () => {
+    for (const surface of [LEAVES, GRASS, STREET, SAND, GLASS]) expect(kurtosis(renderTexture(rainOn(45, surface), RATE, 3).left)).toBeLessThan(18);
   });
 });

@@ -75,7 +75,7 @@ export interface LoopEntry {
 
 export const LOOPS: readonly LoopEntry[] = [
   { id: 'loop:crickets', label: 'Crickets', where: 'night, everywhere', spec: () => crickets(6), level: 0.24 },
-  { id: 'loop:katydids', label: 'Katydids', where: 'forest at night', spec: () => katydids(3), level: 0.2 },
+  { id: 'loop:katydids', label: 'Katydids', where: 'forest at night', spec: () => katydids(2), level: 0.28 },
   { id: 'loop:trill', label: 'Insect trill', where: 'forest at night', spec: trill, level: 0.18 },
   { id: 'loop:frogs', label: 'Frogs', where: 'meadow pond, dusk', spec: () => frogs(6), level: 0.26 },
   { id: 'loop:grasshoppers', label: 'Grasshoppers', where: 'meadow by day', spec: grasshoppers, level: 0.22 },

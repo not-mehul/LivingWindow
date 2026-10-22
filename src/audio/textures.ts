@@ -1,5 +1,5 @@
 import { createRng } from '../core/random';
-import { addBubble, addNoiseBurst, Biquad, panGains, poissonTimes, Stereo } from './synth';
+import { addBubble, addNoiseBurst, Biquad, panGains, poissonTimes, Stereo, type FilterType } from './synth';
 
 /** Every texture loop is levelled to this RMS, so layer gains mean the same thing for each… */
 const TEXTURE_RMS = 0.1;
@@ -30,6 +30,62 @@ export function scattered(density: number, grain: Grain, width = 0.9, seconds?: 
       for (const t of poissonTimes(out.seconds, density, rng)) grain(out, t, (rng() * 2 - 1) * width, rng);
     },
   };
+}
+
+/**
+ * Lay a continuous stream of sound, sample by sample from `source`, across
+ * the whole loop at `pan`. It runs a little past the end and fades across
+ * the join, so the loop has no seam.
+ */
+export function wash(out: Stereo, pan: number, source: () => number): void {
+  const join = Math.round(0.25 * out.sampleRate);
+  const [gl, gr] = panGains(pan);
+  for (let i = 0; i < out.length + join; i++) {
+    const v = source();
+    const fade = i < join ? Math.sin((Math.PI / 2) * (i / join)) : i >= out.length ? Math.cos((Math.PI / 2) * ((i - out.length) / join)) : 1;
+    out.add(i, v * fade, gl, gr);
+  }
+}
+
+/** What rain falls on: the sound of one drop, and the band of the hush of countless finer ones under them. */
+export interface Surface {
+  drop: Grain;
+  hush: readonly [FilterType, number, number];
+}
+
+/** How loud the hush is beside the drops it lies under (RMS ratio). */
+const HUSH = 0.7;
+
+/**
+ * Rain on a surface: its drops at `density` a second, over a soft hush of
+ * the countless smaller ones too fine to hear apart. The hush is what real
+ * rain sounds like between the drops; without it each drop stands out of
+ * silence as a click.
+ */
+export function rainOn(density: number, surface: Surface, width = 0.9): TextureSpec {
+  const drops = scattered(density, surface.drop, width);
+  return {
+    render: (out, rng) => {
+      drops.render(out, rng);
+      const hush = new Stereo(out.length, out.sampleRate);
+      for (const pan of [-0.7, 0.7]) {
+        const [type, f, q] = surface.hush;
+        const filter = Biquad.make(type, f, q, out.sampleRate);
+        wash(hush, pan, () => filter.process(rng() * 2 - 1));
+      }
+      const scale = (HUSH * rms(out)) / Math.max(1e-9, rms(hush));
+      for (let i = 0; i < out.length; i++) {
+        out.left[i] += hush.left[i] * scale;
+        out.right[i] += hush.right[i] * scale;
+      }
+    },
+  };
+}
+
+function rms(s: Stereo): number {
+  let sum = 0;
+  for (let i = 0; i < s.length; i++) sum += s.left[i] ** 2 + s.right[i] ** 2;
+  return Math.sqrt(sum / (2 * s.length));
 }
 
 /**
@@ -147,8 +203,9 @@ export function burst(
   q: number,
   peak: number,
   length: number,
+  attack?: number,
 ): void {
-  addNoiseBurst(out, t, length, Biquad.make(type, frequency, q, out.sampleRate), peak, pan, rng);
+  addNoiseBurst(out, t, length, Biquad.make(type, frequency, q, out.sampleRate), peak, pan, rng, attack);
 }
 
 /** A drop into water: the "plip" of a bubble, pitched somewhere in [low, high] Hz. */
@@ -157,41 +214,52 @@ export function plip(out: Stereo, t: number, pan: number, rng: () => number, low
   addBubble(out, t, f, 0.012 + 0.035 * rng() * Math.sqrt(900 / f), peak * (0.3 + rng() * 0.7), pan, 1.3 + rng() * 0.6);
 }
 
-/** Rain on leaves: soft, bright ticks, with now and then a heavier drip off the canopy. */
+/*
+ * The drops are soft-edged on purpose: a real drop's tap takes a few
+ * milliseconds to bloom, and anything quicker or brighter reads as a crackle.
+ */
+
+/** Rain on leaves: soft, bright pats, with now and then a heavier drip off the canopy. */
 export const leafDrop: Grain = (out, t, pan, rng) => {
-  if (rng() < 0.08) burst(out, t, pan, rng, 'bandpass', 700 + rng() * 900, 1.4, 1.4, 0.05);
-  else burst(out, t, pan, rng, 'bandpass', 2200 + rng() * 3200, 1.1, 0.4 + rng() * 0.6, 0.01 + rng() * 0.02);
+  if (rng() < 0.08) burst(out, t, pan, rng, 'bandpass', 700 + rng() * 900, 1.4, 0.8, 0.06 + rng() * 0.03, 0.006);
+  else burst(out, t, pan, rng, 'bandpass', 2200 + rng() * 3000, 1.1, 0.3 + rng() * 0.5, 0.015 + rng() * 0.02, 0.005);
 };
 
 /** Rain on grass: a dense, hushed patter, darker than leaves. */
 export const grassDrop: Grain = (out, t, pan, rng) => {
-  burst(out, t, pan, rng, 'bandpass', 1400 + rng() * 2200, 0.8, 0.3 + rng() * 0.5, 0.012 + rng() * 0.015);
+  burst(out, t, pan, rng, 'bandpass', 1400 + rng() * 2200, 0.8, 0.3 + rng() * 0.5, 0.015 + rng() * 0.015, 0.005);
 };
 
-/** Rain in town: ticks on stone and roofs, pings off metal, plips in the puddles. */
+/** Rain in town: pats on stone and roofs, a ring off metal now and then, plips in the puddles. */
 export const streetDrop: Grain = (out, t, pan, rng) => {
   const roll = rng();
-  if (roll < 0.12) burst(out, t, pan, rng, 'bandpass', 1800 + rng() * 2200, 14, 1.3, 0.06 + rng() * 0.05);
-  else if (roll < 0.3) plip(out, t, pan, rng, 900, 2600, 0.5);
-  else burst(out, t, pan, rng, 'highpass', 2500 + rng() * 2500, 0.7, 0.3 + rng() * 0.5, 0.006 + rng() * 0.01);
+  if (roll < 0.1) burst(out, t, pan, rng, 'bandpass', 1800 + rng() * 2200, 8, 0.6, 0.06 + rng() * 0.05, 0.004);
+  else if (roll < 0.3) plip(out, t, pan, rng, 900, 2600, 0.3);
+  else burst(out, t, pan, rng, 'bandpass', 2000 + rng() * 2500, 0.8, 0.3 + rng() * 0.4, 0.014 + rng() * 0.014, 0.005);
 };
 
 /** Rain at the shore: muffled taps on wet sand and tiny plips on the water. */
 export const shoreDrop: Grain = (out, t, pan, rng) => {
-  if (rng() < 0.35) plip(out, t, pan, rng, 1800, 4200, 0.25);
-  else burst(out, t, pan, rng, 'lowpass', 1600 + rng() * 1200, 0.7, 0.4 + rng() * 0.4, 0.015 + rng() * 0.02);
+  if (rng() < 0.35) plip(out, t, pan, rng, 1800, 4200, 0.18);
+  else burst(out, t, pan, rng, 'lowpass', 1600 + rng() * 1200, 0.7, 0.4 + rng() * 0.4, 0.015 + rng() * 0.02, 0.005);
 };
 
 /**
- * A drop striking the window pane, heard from inside: a hard little click
- * that rings briefly at the glass's high resonance, over a soft thump of the
- * pane itself.
+ * A drop striking the window pane, heard from inside: a little tap that
+ * rings briefly at the glass's resonance, over a soft thump of the pane itself.
  */
 export const glassDrop: Grain = (out, t, pan, rng) => {
   const big = rng() < 0.15;
-  burst(out, t, pan, rng, 'bandpass', 3000 + rng() * 4500, 9 + rng() * 10, (big ? 3 : 1.3) * (0.4 + rng() * 0.6), 0.015 + rng() * 0.02);
-  burst(out, t, pan, rng, 'lowpass', 380 + rng() * 260, 1.2, big ? 0.5 : 0.15, 0.03);
+  burst(out, t, pan, rng, 'bandpass', 2500 + rng() * 3000, 5 + rng() * 4, (big ? 1.6 : 1) * (0.4 + rng() * 0.6), 0.02 + rng() * 0.02, 0.003);
+  burst(out, t, pan, rng, 'lowpass', 380 + rng() * 260, 1.2, big ? 0.5 : 0.15, 0.04, 0.005);
 };
+
+/** The surfaces rain falls on. */
+export const LEAVES: Surface = { drop: leafDrop, hush: ['bandpass', 3000, 0.5] };
+export const GRASS: Surface = { drop: grassDrop, hush: ['bandpass', 2000, 0.5] };
+export const STREET: Surface = { drop: streetDrop, hush: ['bandpass', 2500, 0.6] };
+export const SAND: Surface = { drop: shoreDrop, hush: ['lowpass', 2500, 0.5] };
+export const GLASS: Surface = { drop: glassDrop, hush: ['bandpass', 2800, 0.7] };
 
 /** Water running down the glass and dripping off the frame: slow, quiet bubbles. */
 export const runoff: Grain = (out, t, pan, rng) => plip(out, t, pan, rng, 500, 1400, 0.4);

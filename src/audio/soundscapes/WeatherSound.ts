@@ -1,7 +1,7 @@
 import type { Environment } from '../../scene/Environment';
 import type { AcousticsId } from '../acoustics';
 import type { AudioEngine } from '../AudioEngine';
-import { glassDrop, grassDrop, leafDrop, runoff, sampled, scattered, shoreDrop, streetDrop, TextureLayer, type Grain } from '../textures';
+import { GLASS, GRASS, LEAVES, rainOn, runoff, SAND, sampled, scattered, STREET, TextureLayer, type Surface } from '../textures';
 import { thunderParams } from '../spatial';
 import { rand } from '../../core/random';
 
@@ -13,11 +13,11 @@ export interface WeatherRecordings {
 }
 
 /** What the rain lands on, per landscape. */
-const SURFACES: Record<AcousticsId, Grain> = {
-  city: streetDrop,
-  forest: leafDrop,
-  meadows: grassDrop,
-  beach: shoreDrop,
+const SURFACES: Record<AcousticsId, Surface> = {
+  city: STREET,
+  forest: LEAVES,
+  meadows: GRASS,
+  beach: SAND,
 };
 
 /** Drops per second in the light patter and the heavy downpour layers. */
@@ -102,7 +102,7 @@ export class WeatherSound {
     // On the pane itself: drops, and water running down.
     // Recorded glass taps, if the manifest lists any, are scattered into the same texture.
     const taps = engine.sounds.samplesOf('glass-tap');
-    this.glass = new TextureLayer(ctx, engine.inputs.glass, taps.length > 0 ? sampled(60, taps) : scattered(60, glassDrop, 0.85), 31);
+    this.glass = new TextureLayer(ctx, engine.inputs.glass, taps.length > 0 ? sampled(60, taps) : rainOn(60, GLASS, 0.85), 31);
     this.trickle = new TextureLayer(ctx, engine.inputs.glass, scattered(7, runoff, 0.7), 47);
   }
 
@@ -116,10 +116,10 @@ export class WeatherSound {
       old.set(0, 0.3);
       window.setTimeout(() => old.stop(), 2000);
     }
-    const grain = SURFACES[id];
+    const surface = SURFACES[id];
     const out = this.engine.inputs.weather;
-    this.patter = new TextureLayer(ctx, out, scattered(PATTER_DENSITY, grain), 11 + id.length);
-    this.downpour = new TextureLayer(ctx, out, scattered(DOWNPOUR_DENSITY, grain), 23 + id.length);
+    this.patter = new TextureLayer(ctx, out, rainOn(PATTER_DENSITY, surface), 11 + id.length);
+    this.downpour = new TextureLayer(ctx, out, rainOn(DOWNPOUR_DENSITY, surface), 23 + id.length);
     this.applyRain(this.rain, 0.5);
   }
 
