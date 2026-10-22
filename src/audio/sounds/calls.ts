@@ -1,4 +1,5 @@
 import { addNoiseBurst, Biquad, panGains, type Stereo } from '../synth';
+import { breathe, smooth, vocalise } from './voice';
 
 /*
  * Animal calls, synthesized sample by sample. Birdsong is built from
@@ -232,48 +233,86 @@ const crow: CallVoice = (out, rng) => {
   return t;
 };
 
-/** Raven: deep, hollow "kronk"s with a gurgle in them. */
+/** Raven: deep, rough "kraa"s and "kronk"s, after a recording: a low voice buried in gravel and rasp. */
 const raven: CallVoice = (out, rng) => {
-  const croaks = 1 + Math.floor(rng() * 3);
+  const croaks = 1 + Math.floor(rng() * rng() * 3.5);
   let t = 0;
   for (let i = 0; i < croaks; i++) {
-    const f = r(rng, 260, 320);
-    const length = r(rng, 0.26, 0.36);
-    sing(
-      out,
-      t,
-      { length, pitch: [[0, f], [1, f * 0.85]], harmonics: [0.9, 0.7, 0.5, 0.35, 0.2], buzz: [r(rng, 28, 36), 0.5], breath: 0.2, formants: [[750, 2.5, 1], [1500, 3, 0.4]], amp: swell(0.1, 0.4) },
-      0.4,
-      rng,
-    );
-    t += length + r(rng, 0.25, 0.4);
+    const f = r(rng, 300, 420);
+    const length = r(rng, 0.38, 0.62);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f * 0.94], [0.25, f], [1, f * r(rng, 0.8, 0.9)]],
+      envelope: smooth(r(rng, 0.08, 0.14), r(rng, 0.3, 0.45)),
+      tilt: 0.5,
+      ceiling: 6500,
+      jitter: r(rng, 0.03, 0.05),
+      shimmer: 0.35,
+      sub: r(rng, 0.5, 0.8),
+      breath: r(rng, 0.18, 0.3),
+      breathBand: [1100, 4000],
+      pulsedBreath: 0.8,
+      formants: [[0, [{ f: 1700, q: 3, gain: 1 }, { f: 2950, q: 4, gain: 0.55 }, { f: 3850, q: 5, gain: 0.3 }]], [1, [{ f: 1550, q: 3, gain: 1 }, { f: 2800, q: 4, gain: 0.5 }, { f: 3700, q: 5, gain: 0.25 }]]],
+      dry: 0.03,
+    }, 1, rng);
+    t += length + r(rng, 0.22, 0.4);
   }
   return t;
 };
 
-/** Blue jay: two or three loud, descending "jeer"s. */
+/** Blue jay: a harsh, nasal "jaay", after a recording: usually twice, sometimes once or three times. */
 const jay: CallVoice = (out, rng) => {
-  const calls = 2 + Math.floor(rng() * 2);
+  const roll = rng();
+  const calls = roll < 0.7 ? 2 : roll < 0.85 ? 1 : 3;
   let t = 0;
   for (let i = 0; i < calls; i++) {
-    const f = r(rng, 2200, 2600);
-    harshCall(out, t, 0.24, [[0, f], [0.2, f * 1.05], [1, f * 0.7]], [[2400, 2, 1], [4200, 3, 0.4]], 0.3, rng, 0.15);
-    t += 0.33;
+    const f = r(rng, 760, 900);
+    const length = r(rng, 0.3, 0.42);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f * 0.92], [0.15, f * 1.04], [0.65, f], [1, f * r(rng, 0.78, 0.86)]],
+      envelope: smooth(0.08, 0.3),
+      tilt: 0.72,
+      ceiling: 10000,
+      jitter: 0.025,
+      shimmer: 0.2,
+      sub: 0.15,
+      breath: r(rng, 0.08, 0.14),
+      breathBand: [3000, 9000],
+      formants: [[0, [{ f: 3600, q: 2.5, gain: 1 }, { f: 5200, q: 3, gain: 0.8 }, { f: 7000, q: 3, gain: 0.45 }]], [1, [{ f: 3300, q: 2.5, gain: 1 }, { f: 4900, q: 3, gain: 0.7 }, { f: 6700, q: 3, gain: 0.4 }]]],
+      dry: 0.04,
+    }, 1, rng);
+    t += length + r(rng, 0.1, 0.22);
   }
   return t;
 };
 
-/** Herring gull: the "laugh": one long rising cry, then a run of shorter ones. */
+/**
+ * Herring gull: the laughing call, after a recording: a run of rough "kyow"s, each
+ * leaping up and sliding down, a full stack of harmonics, the first one longest.
+ */
 const gull: CallVoice = (out, rng) => {
-  const f = r(rng, 850, 1050);
+  const f = r(rng, 760, 900);
+  const notes = 3 + Math.floor(rng() * 6);
   let t = 0;
-  harshCall(out, t, 0.5, [[0, f * 0.8], [0.3, f * 1.4], [1, f * 0.95]], [[1700, 2.5, 1], [3000, 3, 0.4]], 0.32, rng, 0.1);
-  t += 0.62;
-  const kows = 2 + Math.floor(rng() * 4);
-  for (let i = 0; i < kows; i++) {
-    const k = 1 - i * 0.04;
-    harshCall(out, t, 0.2, [[0, f * k], [0.35, f * 1.25 * k], [1, f * 0.85 * k]], [[1600, 2.5, 1], [2900, 3, 0.35]], 0.28 * (1 - i * 0.08), rng, 0.1);
-    t += 0.27;
+  for (let i = 0; i < notes; i++) {
+    const length = i === 0 ? r(rng, 0.38, 0.5) : r(rng, 0.2, 0.32);
+    const k = 1 - i * 0.025 + r(rng, -0.04, 0.04);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f * 0.75 * k], [0.18, f * 1.2 * k], [0.4, f * 1.08 * k], [1, f * 0.72 * k]],
+      envelope: smooth(0.06, 0.35),
+      tilt: 0.62,
+      ceiling: 5600,
+      jitter: 0.012,
+      shimmer: 0.1,
+      sub: [[0, 0.2], [0.15, 0.02], [1, 0]],
+      breath: [[0, 0.05], [0.2, 0.015], [1, 0.015]],
+      breathBand: [1200, 5000],
+      formants: [[0, [{ f: 1500, q: 2.5, gain: 1 }, { f: 2700, q: 3, gain: 0.8 }, { f: 4100, q: 3, gain: 0.7 }]], [1, [{ f: 1300, q: 2.5, gain: 1 }, { f: 2500, q: 3, gain: 0.7 }, { f: 3900, q: 3, gain: 0.6 }]]],
+      dry: 0.08,
+    }, 1 - i * 0.05, rng);
+    t += length + r(rng, 0.12, 0.3);
   }
   return t;
 };
@@ -305,35 +344,94 @@ const owl: CallVoice = (out, rng) => {
   return t + 0.95;
 };
 
-/** Bald eagle: a thin, high, chittering series that tumbles downwards. */
+/** Bald eagle: thin, piping notes in quick clusters, after a recording: rising, chittering, tumbling. */
 const eagle: CallVoice = (out, rng) => {
-  const notes = 6 + Math.floor(rng() * 5);
+  const clusters = 2 + Math.floor(rng() * 3);
   let t = 0;
-  for (let i = 0; i < notes; i++) {
-    const f = r(rng, 3200, 3500) * (1 - i * 0.025);
-    sing(out, t, { length: 0.07, pitch: [[0, f * 1.05], [1, f * 0.9]], amp: sharp, harmonics: [0.2] }, 0.3, rng);
-    t += r(rng, 0.08, 0.11);
+  for (let c = 0; c < clusters; c++) {
+    const notes = 2 + Math.floor(rng() * 3);
+    const f = r(rng, 2300, 2700) * (1 - c * 0.04);
+    for (let i = 0; i < notes; i++) {
+      // The first note of a run is a drawn-out whistle; the rest are quick chitters.
+      const length = i === 0 && rng() < 0.5 ? r(rng, 0.3, 0.45) : r(rng, 0.07, 0.15);
+      vocalise(out, t, {
+        length,
+        pitch: [[0, f * 0.95], [0.3, f * 1.04], [1, f * 0.9]],
+        envelope: smooth(0.15, 0.45),
+        tilt: 0.35,
+        ceiling: 10000,
+        jitter: 0.01,
+        shimmer: 0.1,
+        breath: 0.06,
+        breathBand: [2000, 6000],
+        formants: [[0, [{ f: 2600, q: 2, gain: 1 }, { f: 5200, q: 3, gain: 0.35 }]]],
+        dry: 0.5,
+      }, 1, rng);
+      t += length + r(rng, 0.02, 0.06);
+    }
+    t += r(rng, 0.25, 0.55);
   }
   return t;
 };
 
-/** Nightjar: a long, dry, mechanical churr, about forty notes a second, that shifts gear now and then. */
+/**
+ * Nightjar, after a recording: a long, dry churr (a buzzing trill, nearly forty pulses a
+ * second, that shifts gear now and then and catches its breath), with a soft "chuck" or
+ * two between churrs, and now and then the clap of its wings.
+ */
 const nightjar: CallVoice = (out, rng) => {
-  const length = r(rng, 2.8, 4.5);
-  const rate = r(rng, 36, 42);
-  let high = rng() < 0.5;
-  let gear = r(rng, 0.4, 1.1);
-  for (let t = 0; t < length; t += 1 / rate) {
-    gear -= 1 / rate;
-    if (gear <= 0) {
+  let t = 0;
+  const churrs = 1 + Math.floor(rng() * 2);
+  for (let c = 0; c < churrs; c++) {
+    const length = r(rng, 1.6, 2.8);
+    const base = r(rng, 1550, 1750);
+    // Gear changes: the pitch steps between two levels.
+    const pitch: Array<[number, number]> = [[0, base]];
+    let u = 0;
+    let high = false;
+    while (u < 1) {
+      u += r(rng, 0.18, 0.4);
       high = !high;
-      gear = r(rng, 0.4, 1.1);
+      pitch.push([Math.min(1, u - 0.02), pitch[pitch.length - 1][1]], [Math.min(1, u), base * (high ? 1.12 : 1)]);
     }
-    const f = high ? 2100 : 1750;
-    const fade = Math.min(1, t / 0.25, (length - t) / 0.3);
-    sing(out, t, { length: 0.016, pitch: [[0, f], [1, f * 0.97]], amp: sharp, harmonics: [0.4, 0.2], breath: 0.2 }, 0.3 * fade, rng);
+    vocalise(out, t, {
+      length,
+      pitch,
+      envelope: smooth(0.04, 0.06),
+      tilt: 0.3,
+      ceiling: 5000,
+      jitter: 0.01,
+      shimmer: 0.2,
+      growl: [r(rng, 27, 32), 0.9],
+      sub: 0.35,
+      breath: 0.1,
+      breathBand: [1200, 3000],
+      formants: [[0, [{ f: 1800, q: 2.5, gain: 1 }, { f: 3500, q: 4, gain: 0.12 }]]],
+      dry: 0.3,
+    }, 1, rng);
+    t += length + r(rng, 0.25, 0.6);
+    // A soft "chuck" or two.
+    const chucks = Math.floor(rng() * 3);
+    for (let i = 0; i < chucks; i++) {
+      const f = r(rng, 1300, 1700);
+      vocalise(out, t, {
+        length: r(rng, 0.06, 0.1),
+        pitch: [[0, f * 1.15], [1, f * 0.85]],
+        envelope: smooth(0.2, 0.5),
+        tilt: 0.5,
+        breath: 0.2,
+        formants: [[0, [{ f: 2000, q: 3, gain: 1 }]]],
+        dry: 0.5,
+      }, 0.7, rng);
+      t += r(rng, 0.25, 0.5);
+    }
+    // The clap of its wings, now and then.
+    if (rng() < 0.3) {
+      breathe(out, t, { length: 0.05, envelope: smooth(0.1, 0.8), bands: [{ type: 'bandpass', f: [[0, 1400]], q: 0.8 }] }, 0.9, rng);
+      t += 0.3;
+    }
   }
-  return length;
+  return Math.min(t, 6.8);
 };
 
 /** Woodpecker drumming: a fast, slowing roll of hollow knocks on dead wood. */
@@ -352,15 +450,26 @@ const woodpecker: CallVoice = (out, rng) => {
   return t + 0.05;
 };
 
-/** Wings: a quick train of soft whooshes, fading as the bird climbs away. */
+/** Wings, after a recording: a run of soft, airy feather-swishes, slowing and fading as the bird climbs away. */
 const wings: CallVoice = (out, rng) => {
-  const flaps = 5 + Math.floor(rng() * 5);
-  const interval = 1 / r(rng, 10, 14);
+  const flaps = 4 + Math.floor(rng() * 7);
+  let interval = 1 / r(rng, 7, 10);
+  let t = 0;
   for (let i = 0; i < flaps; i++) {
-    const fade = 1 - i / flaps;
-    addNoiseBurst(out, i * interval, interval * 0.8, Biquad.make('bandpass', r(rng, 550, 850), 0.8, out.sampleRate), fade, 0, rng, interval * 0.3);
+    const fade = 1 - (i / flaps) * 0.7;
+    const length = interval * r(rng, 0.75, 0.95);
+    breathe(out, t, {
+      length,
+      envelope: smooth(r(rng, 0.25, 0.4), 0.55),
+      bands: [{ type: 'highpass', f: [[0, 180], [1, 260]], q: 0.6 }, { type: 'lowpass', f: [[0, 9000], [1, 6000]], q: 0.5 }],
+      // The downstroke's soft thump of air.
+      body: [r(rng, 160, 220), 0.18],
+      flutter: [r(rng, 60, 90), 0.25],
+    }, fade, rng);
+    t += interval;
+    interval *= r(rng, 1.02, 1.08);
   }
-  return flaps * interval;
+  return t + 0.05;
 };
 
 // --- Mammals -----------------------------------------------------------------
@@ -429,18 +538,31 @@ const dogHowl: CallVoice = (out, rng) => {
 
 /** Wolf: a long, pure, gliding howl; sometimes a second wolf answers a little higher. */
 const wolf: CallVoice = (out, rng) => {
-  const voices = rng() < 0.5 ? 2 : 1;
+  // After a recording: a rich, full-throated howl (many harmonics, no pure tone), sliding up
+  // from about 330 Hz to a held ~470, then sinking slowly; now and then a second wolf joins.
+  const voices = rng() < 0.4 ? 2 : 1;
   let end = 0;
   for (let v = 0; v < voices; v++) {
-    const t = v * r(rng, 0.8, 1.6);
-    const length = r(rng, 2.6, 3.4);
-    const f = r(rng, 300, 360) * (v ? 1.18 : 1);
-    vocal(out, t, length, [[0, f * 0.75], [0.28, f * 1.6], [0.7, f * 1.6], [1, f * 1.15]], [[500, 3, 1], [1000, 4, 0.2]], [[700, 3, 1], [1100, 4, 0.2]], 0.35, rng, {
-      vibrato: [r(rng, 4.5, 6), 0.02],
-      harmonics: [0.25, 0.1],
-      amp: swell(0.18, 0.35),
-      breath: 0.04,
-    });
+    const t = v * r(rng, 1, 2.2);
+    const length = r(rng, 3.2, 5.2);
+    const f = r(rng, 300, 350) * (v ? r(rng, 1.12, 1.3) : 1);
+    const top = r(rng, 1.3, 1.45);
+    const hold = r(rng, 0.32, 0.45);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f], [r(rng, 0.1, 0.16), f * top], [hold, f * top * r(rng, 0.98, 1.02)], [hold + 0.15, f * r(rng, 1.06, 1.12)], [1, f * r(rng, 0.98, 1.04)]],
+      envelope: smooth(r(rng, 0.06, 0.1), r(rng, 0.2, 0.3)),
+      tilt: r(rng, 0.17, 0.22),
+      ceiling: 7000,
+      jitter: 0.004,
+      shimmer: 0.04,
+      vibrato: [r(rng, 4, 5.5), 0.0025],
+      sub: [[0, 0.12], [0.08, 0], [0.92, 0], [1, 0.1]],
+      breath: [[0, 0.06], [0.12, 0.012], [1, 0.02]],
+      breathBand: [400, 1600],
+      formants: [[0, [{ f: 560, q: 3, gain: 1 }, { f: 1000, q: 4, gain: 0.3 }, { f: 2600, q: 5, gain: 0.04 }]], [0.3, [{ f: 820, q: 3, gain: 1 }, { f: 1350, q: 4, gain: 0.25 }, { f: 3000, q: 5, gain: 0.04 }]], [1, [{ f: 700, q: 3, gain: 1 }, { f: 1200, q: 4, gain: 0.22 }, { f: 2800, q: 5, gain: 0.03 }]]],
+      dry: 0.6,
+    }, v ? 0.7 : 1, rng);
     end = Math.max(end, t + length);
   }
   return end;
@@ -549,12 +671,12 @@ export const CALL_VOICES = {
   'bluebird-song': [bluebird, 0.17],
   'pigeon-coo': [pigeon, 0.28],
   'crow-caw': [crow, 0.3],
-  'raven-croak': [raven, 0.3],
+  'raven-croak': [raven, 0.42],
   'jay-call': [jay, 0.24],
   'gull-cry': [gull, 0.24],
   'sandpiper-peep': [sandpiper, 0.15],
   'owl-hoot': [owl, 0.3],
-  'eagle-cry': [eagle, 0.14],
+  'eagle-cry': [eagle, 0.28],
   'nightjar-churr': [nightjar, 0.25],
   'woodpecker-drum': [woodpecker, 0.45],
   'wing-flap': [wings, 0.18],
