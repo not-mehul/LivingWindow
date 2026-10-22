@@ -60,7 +60,10 @@ describe('voice', () => {
 
 describe('calls', () => {
   const ids = Object.keys(CALL_VOICES) as CallId[];
-  const SMOOTH: CallId[] = ['raven-croak', 'jay-call', 'gull-cry', 'eagle-cry', 'nightjar-churr', 'wing-flap', 'wolf-howl'];
+  const SMOOTH: CallId[] = [
+    'raven-croak', 'jay-call', 'gull-cry', 'eagle-cry', 'nightjar-churr', 'wing-flap', 'wolf-howl',
+    'cat-meow', 'dog-boof', 'dog-howl', 'elk-bugle', 'fox-bark', 'sheep-baa', 'horse-whinny', 'squirrel-chatter', 'chicken-cluck', 'deer-snort', 'bear-huff',
+  ];
 
   it('never pops out of silence', () => {
     // Sharp chips (a chickadee's, a sandpiper's) and a purr's pulses rise fast by nature; a pop rises faster still.

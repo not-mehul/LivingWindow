@@ -489,13 +489,33 @@ function vocal(
   sing(out, t, { length, pitch, harmonics: [0.8, 0.65, 0.5, 0.4, 0.3, 0.22, 0.15, 0.1], formants: from, formantsTo: to, breath: 0.08, amp: swell(0.12, 0.3), ...extra }, peak, rng);
 }
 
-/** Cat: a "mee-ow", pitch arching up and the mouth opening, then closing. */
+/**
+ * Cat, after a recording: a "meow" of about two-thirds of a second, a rich stack of
+ * harmonics on a voice near 600 Hz that lifts at the start, holds and sags at the end,
+ * the mouth opening from "mm" through "eee" to "ow".
+ */
 const meow: CallVoice = (out, rng) => {
-  const f = r(rng, 480, 620);
-  const length = r(rng, 0.5, 0.75);
-  vocal(out, 0, length * 0.45, [[0, f * 0.9], [1, f * 1.2]], [[500, 4, 1], [2200, 6, 0.4]], [[950, 4, 1], [1700, 6, 0.4]], 0.5, rng);
-  vocal(out, length * 0.4, length * 0.6, [[0, f * 1.2], [1, f * 0.78]], [[950, 4, 1], [1700, 6, 0.4]], [[600, 4, 1], [1100, 6, 0.4]], 0.5, rng, { amp: swell(0.05, 0.5) });
-  return length;
+  const f = r(rng, 560, 680);
+  const length = r(rng, 0.5, 0.8);
+  vocalise(out, 0, {
+    length,
+    pitch: [[0, f * 0.82], [0.12, f * 1.08], [0.3, f * r(rng, 1.02, 1.12)], [0.75, f], [1, f * r(rng, 0.78, 0.88)]],
+    envelope: smooth(0.12, 0.3),
+    tilt: 0.45,
+    ceiling: 6500,
+    jitter: 0.008,
+    shimmer: 0.06,
+    vibrato: [r(rng, 5, 7), 0.006],
+    breath: [[0, 0.03], [0.3, 0.01], [1, 0.03]],
+    breathBand: [1500, 6000],
+    formants: [
+      [0, [{ f: 1100, q: 3, gain: 0.6 }, { f: 1700, q: 3, gain: 0.5 }, { f: 3300, q: 4, gain: 0.25 }]],
+      [0.3, [{ f: 1500, q: 3, gain: 1 }, { f: 2100, q: 3, gain: 0.9 }, { f: 3400, q: 4, gain: 0.3 }]],
+      [1, [{ f: 1300, q: 3, gain: 1 }, { f: 1800, q: 3, gain: 0.6 }, { f: 3200, q: 4, gain: 0.15 }]],
+    ],
+    dry: 0.02,
+  }, 1, rng);
+  return length + 0.05;
 };
 
 /** Cat purring: breathing in and out, each a run of soft, low, pulsing rumbles. */
@@ -512,27 +532,58 @@ const purr: CallVoice = (out, rng) => {
   return length;
 };
 
-/** Dog: one or two soft, closed-mouth "boof"s, chesty and low. */
+/**
+ * Dog, after a recording: a deep, chesty "boof" from behind the glass, a low voice
+ * (around 100 Hz) mostly breath and rumble, with a mid formant giving the "oo"; once,
+ * or a couple in a row.
+ */
 const boof: CallVoice = (out, rng) => {
-  const boofs = rng() < 0.6 ? 1 : 2;
+  const count = rng() < 0.55 ? 1 : 2 + Math.floor(rng() * 2);
   let t = 0;
-  for (let i = 0; i < boofs; i++) {
-    const f = r(rng, 140, 180);
-    vocal(out, t, 0.17, [[0, f * 1.3], [1, f * 0.8]], [[400, 2, 1], [900, 3, 0.4]], [[520, 2, 1], [1000, 3, 0.4]], 0.6, rng, { amp: swell(0.08, 0.6), breath: 0.25 });
-    t += r(rng, 0.3, 0.42);
+  for (let i = 0; i < count; i++) {
+    const f = r(rng, 85, 125);
+    const length = r(rng, 0.22, 0.38);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f * 1.3], [0.2, f * 1.15], [1, f * 0.85]],
+      envelope: smooth(0.12, 0.6),
+      tilt: 0.35,
+      ceiling: 2000,
+      jitter: 0.03,
+      shimmer: 0.25,
+      sub: 0.3,
+      breath: [[0, 0.35], [0.4, 0.25], [1, 0.2]],
+      breathBand: [100, 900],
+      pulsedBreath: 0.7,
+      formants: [[0, [{ f: 380, q: 2, gain: 1 }, { f: 1250, q: 3, gain: 0.15 }]], [1, [{ f: 320, q: 2, gain: 1 }, { f: 1150, q: 3, gain: 0.1 }]]],
+      dry: 0.35,
+    }, 1, rng);
+    t += length + r(rng, 0.25, 0.45);
   }
   return t;
 };
 
-/** Dog joining in with something far off: a soft, rising, wavering "ooo-ooo". */
+/**
+ * Dog howling, after a recording: a yelp that drops into a long, steady, dark "ooooo"
+ * near 330 Hz (a few clear harmonics, no wobble), lifting a little before it fades.
+ */
 const dogHowl: CallVoice = (out, rng) => {
-  const f = r(rng, 330, 400);
-  const length = r(rng, 1.6, 2.3);
-  vocal(out, 0, length, [[0, f * 0.8], [0.3, f * 1.35], [0.65, f * 1.35], [1, f * 0.95]], [[450, 3, 1], [950, 4, 0.3]], [[650, 3, 1], [1100, 4, 0.3]], 0.45, rng, {
-    vibrato: [5.5, 0.025],
-    amp: swell(0.15, 0.3),
-    harmonics: [0.35, 0.15, 0.08],
-  });
+  const f = r(rng, 300, 360);
+  const length = r(rng, 2, 3.2);
+  vocalise(out, 0, {
+    length,
+    pitch: [[0, f * r(rng, 1.6, 1.9)], [0.04, f * 1.05], [0.1, f], [0.85, f * r(rng, 0.95, 1)], [1, f * r(rng, 1.04, 1.12)]],
+    envelope: smooth(0.03, 0.18),
+    tilt: 0.2,
+    ceiling: 2500,
+    jitter: 0.004,
+    shimmer: 0.04,
+    sub: [[0, 0.3], [0.06, 0], [1, 0]],
+    breath: [[0, 0.08], [0.08, 0.005], [1, 0.01]],
+    breathBand: [300, 2000],
+    formants: [[0, [{ f: 650, q: 3, gain: 1 }, { f: 1400, q: 4, gain: 0.2 }]], [0.1, [{ f: 640, q: 3, gain: 1 }, { f: 1300, q: 4, gain: 0.1 }]]],
+    dry: 0.3,
+  }, 1, rng);
   return length;
 };
 
@@ -568,28 +619,94 @@ const wolf: CallVoice = (out, rng) => {
   return end;
 };
 
-/** Bull elk: a rising whistle breaking into a high, piercing bugle, then a few grunts. */
+/**
+ * Bull elk, after a recording: a low grunt, then a whistle that climbs in steps from
+ * about 1 kHz to a piercing 2.2–2.5 kHz and holds, breaking at the end into a rough,
+ * falling squeal (the "tinge"), and a few chuckling grunts.
+ */
 const elk: CallVoice = (out, rng) => {
-  const length = r(rng, 1.6, 2.1);
-  const f = r(rng, 560, 640);
-  sing(out, 0, { length, pitch: [[0, f], [0.45, f * 3], [0.8, f * 3], [1, f * 2.2]], vibrato: [7, 0.02], harmonics: [0.2, 0.05], breath: 0.08, amp: swell(0.15, 0.25) }, 0.35, rng);
-  let t = length + 0.15;
-  for (let i = 0; i < 3; i++) {
-    vocal(out, t, 0.2, [[0, 110], [1, 82]], [[350, 2, 1], [800, 3, 0.4]], [[300, 2, 1], [700, 3, 0.4]], 0.35, rng, { breath: 0.3 });
-    t += 0.32;
+  let t = 0;
+  // The opening grunt.
+  vocalise(out, t, {
+    length: 0.12,
+    pitch: [[0, 140], [1, 110]],
+    envelope: smooth(0.2, 0.5),
+    tilt: 0.5,
+    sub: 0.5,
+    breath: 0.6,
+    breathBand: [200, 1500],
+    formants: [[0, [{ f: 500, q: 2, gain: 1 }]]],
+    dry: 0.4,
+  }, 0.5, rng);
+  t += 0.17;
+  const top = r(rng, 2150, 2450);
+  const climb = r(rng, 0.35, 0.55);
+  const hold = r(rng, 1, 1.6);
+  const fall = r(rng, 0.35, 0.55);
+  const length = climb + hold + fall;
+  const a = climb / length;
+  const b = (climb + hold) / length;
+  vocalise(out, t, {
+    length,
+    pitch: [[0, top * 0.42], [a * 0.45, top * 0.62], [a * 0.55, top * 0.8], [a, top * 0.97], [b * 0.97, top * r(rng, 1, 1.06)], [b, top * 1.02], [1, top * r(rng, 0.5, 0.6)]],
+    envelope: smooth(0.06, 0.12),
+    tilt: 0.42,
+    ceiling: 9000,
+    jitter: 0.006,
+    shimmer: 0.08,
+    vibrato: [r(rng, 6, 8), 0.008],
+    sub: [[0, 0.15], [a, 0], [b, 0.05], [Math.min(0.99, b + 0.05), 0.6], [1, 0.7]],
+    breath: [[0, 0.15], [a, 0.04], [b, 0.08], [1, 0.6]],
+    breathBand: [1000, 6000],
+    formants: [[0, [{ f: 1600, q: 2, gain: 1 }, { f: 3200, q: 3, gain: 0.3 }]], [b, [{ f: 2400, q: 2, gain: 1 }, { f: 4700, q: 3, gain: 0.35 }]], [1, [{ f: 1500, q: 2, gain: 1 }, { f: 3000, q: 3, gain: 0.5 }]]],
+    dry: 0.5,
+  }, 1, rng);
+  t += length + 0.15;
+  // Chuckles: a few deep, quick grunts.
+  const grunts = 2 + Math.floor(rng() * 4);
+  for (let i = 0; i < grunts; i++) {
+    vocalise(out, t, {
+      length: r(rng, 0.1, 0.16),
+      pitch: [[0, r(rng, 110, 140)], [1, r(rng, 80, 95)]],
+      envelope: smooth(0.15, 0.5),
+      tilt: 0.45,
+      sub: 0.5,
+      breath: 0.5,
+      breathBand: [150, 1500],
+      formants: [[0, [{ f: 450, q: 2, gain: 1 }, { f: 1100, q: 3, gain: 0.3 }]]],
+      dry: 0.4,
+    }, 0.45, rng);
+    t += r(rng, 0.22, 0.32);
   }
   return t;
 };
 
-/** Fox: a hoarse, rising-falling "wow-wow", two or three harsh yelps. */
+/**
+ * Red fox, after a recording: a hoarse, screaming bark (half voice, half rasp)
+ * falling as it goes; sometimes a second, shorter one.
+ */
 const fox: CallVoice = (out, rng) => {
-  const yelps = 2 + Math.floor(rng() * 2);
+  const count = rng() < 0.6 ? 1 : 2;
   let t = 0;
-  for (let i = 0; i < yelps; i++) {
-    const f = r(rng, 520, 640);
-    const length = r(rng, 0.15, 0.2);
-    vocal(out, t, length, [[0, f * 0.8], [0.35, f * 1.25], [1, f * 0.7]], [[900, 3, 1], [1800, 4, 0.5]], [[1300, 3, 1], [2200, 4, 0.5]], 0.4, rng, { breath: 0.35 });
-    t += length + r(rng, 0.18, 0.32);
+  for (let i = 0; i < count; i++) {
+    const f = r(rng, 900, 1150) * (i ? 0.92 : 1);
+    const length = i ? r(rng, 0.3, 0.45) : r(rng, 0.5, 0.75);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f * 0.85], [0.1, f * 1.1], [0.5, f], [1, f * 0.62]],
+      envelope: smooth(0.05, 0.5),
+      tilt: 0.55,
+      ceiling: 7000,
+      jitter: 0.04,
+      shimmer: 0.3,
+      sub: 0.15,
+      breath: 0.28,
+      breathBand: [1200, 5000],
+      pulsedBreath: 0.6,
+      formants: [[0, [{ f: 1900, q: 2.5, gain: 1 }, { f: 3600, q: 3, gain: 0.3 }, { f: 4800, q: 3, gain: 0.08 }]], [1, [{ f: 1700, q: 2.5, gain: 1 }, { f: 3300, q: 3, gain: 0.25 }, { f: 4500, q: 3, gain: 0.06 }]]],
+      dry: 0.08,
+    }, 1, rng);
+    t += length + r(rng, 0.35, 0.6);
   }
   return t;
 };
@@ -602,64 +719,240 @@ const moo: CallVoice = (out, rng) => {
   return length;
 };
 
-/** Sheep: a wavering "baa", nasal, with the bleat's fast tremble in pitch and loudness. */
+/**
+ * Sheep, after a recording: a bright, nasal, quavering "baa-aa" near 300 Hz (its
+ * pitch and loudness trembling together), once or twice.
+ */
 const baa: CallVoice = (out, rng) => {
-  const length = r(rng, 0.55, 0.9);
-  const f = r(rng, 280, 360);
-  vocal(out, 0, length, [[0, f], [0.25, f * 1.08], [1, f * 0.9]], [[750, 3, 1], [1300, 4, 0.5]], [[850, 3, 1], [1250, 4, 0.5]], 0.5, rng, {
-    vibrato: [r(rng, 7, 10), 0.05],
-    buzz: [r(rng, 7, 10), 0.4],
-    amp: swell(0.08, 0.35),
-  });
-  return length;
-};
-
-/** Horse: a high, quavering whinny tumbling down, ending in a snort. */
-const whinny: CallVoice = (out, rng) => {
-  const length = r(rng, 1, 1.35);
-  const f = r(rng, 850, 1050);
-  vocal(out, 0, length, [[0, f], [0.15, f * 1.1], [1, f * 0.35]], [[1500, 2, 1], [2600, 3, 0.4]], [[700, 2, 1], [1300, 3, 0.4]], 0.4, rng, { vibrato: [r(rng, 9, 12), 0.06], amp: swell(0.08, 0.3) });
-  addNoiseBurst(out, length * 0.95, 0.3, Biquad.make('bandpass', 500, 0.8, out.sampleRate), 0.8, 0, rng, 0.01);
-  return length + 0.35;
-};
-
-/** Squirrel: a rapid, scolding chatter of noisy "chuk"s and squeaky chips. */
-const squirrel: CallVoice = (out, rng) => {
-  const notes = 8 + Math.floor(rng() * 12);
+  const count = rng() < 0.5 ? 1 : 2;
   let t = 0;
-  for (let i = 0; i < notes; i++) {
-    if (rng() < 0.6) addNoiseBurst(out, t, 0.03, Biquad.make('bandpass', r(rng, 2200, 3400), 3, out.sampleRate), 1.5, 0, rng, 0.002);
-    else sing(out, t, { length: 0.04, pitch: [[0, r(rng, 3600, 4400)], [1, r(rng, 2600, 3200)]], amp: sharp, harmonics: [0.3, 0.15], breath: 0.3 }, 0.3, rng);
-    t += r(rng, 0.05, 0.075);
+  for (let i = 0; i < count; i++) {
+    const f = r(rng, 290, 340);
+    const length = r(rng, 0.7, 1.05);
+    const tremble = r(rng, 5, 7.5);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f * 0.7], [0.08, f * 1.02], [0.6, f], [1, f * 0.95]],
+      envelope: smooth(0.08, 0.3),
+      tilt: 0.72,
+      ceiling: 9000,
+      jitter: 0.015,
+      shimmer: 0.12,
+      vibrato: [tremble, 0.035],
+      growl: [tremble, 0.45],
+      breath: 0.4,
+      breathBand: [2500, 8000],
+      formants: [[0, [{ f: 1000, q: 3, gain: 0.25 }, { f: 1800, q: 3, gain: 0.8 }, { f: 3400, q: 3, gain: 0.9 }, { f: 4600, q: 3, gain: 0.8 }]], [0.25, [{ f: 1100, q: 3, gain: 0.3 }, { f: 1700, q: 3, gain: 0.9 }, { f: 3300, q: 3, gain: 1 }, { f: 4500, q: 3, gain: 0.9 }]]],
+      dry: 0.015,
+    }, 1, rng);
+    t += length + r(rng, 0.35, 0.55);
   }
   return t;
 };
 
-/** Hen: a few contented "buk"s, and now and then a rising "ba-GAWK". */
-const cluck: CallVoice = (out, rng) => {
-  const clucks = 2 + Math.floor(rng() * 4);
+/**
+ * Horse, after a recording: a high, quavering whinny that tumbles down from about
+ * 1.3 kHz, ending in a snort; and now and then a low, rumbling nicker or a grunt.
+ */
+const whinny: CallVoice = (out, rng) => {
   let t = 0;
-  const f = r(rng, 300, 380);
+  if (rng() < 0.9) {
+    const f = r(rng, 1150, 1400);
+    const length = r(rng, 1, 1.45);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, f * 0.85], [0.08, f], [0.3, f * 0.85], [0.7, f * 0.65], [1, f * 0.45]],
+      envelope: smooth(0.06, 0.25),
+      tilt: 0.5,
+      ceiling: 7000,
+      jitter: 0.015,
+      shimmer: 0.15,
+      vibrato: [r(rng, 9, 13), 0.06],
+      sub: [[0, 0], [0.6, 0.1], [1, 0.35]],
+      breath: 0.04,
+      breathBand: [1500, 6000],
+      formants: [[0, [{ f: 1800, q: 2.5, gain: 1 }, { f: 3400, q: 3, gain: 0.35 }]], [1, [{ f: 1300, q: 2.5, gain: 1 }, { f: 2600, q: 3, gain: 0.3 }]]],
+      dry: 0.45,
+    }, 1, rng);
+    t += length + r(rng, 0.15, 0.35);
+    // The snort that ends it.
+    breathe(out, t, { length: r(rng, 0.18, 0.28), envelope: smooth(0.1, 0.6), bands: [{ type: 'lowpass', f: [[0, 2600], [1, 1400]], q: 0.7 }], body: [r(rng, 60, 90), 0.6], flutter: [r(rng, 35, 50), 0.6] }, 0.9, rng);
+    t += 0.3;
+  }
+  if (t === 0 || rng() < 0.4) {
+    // A nicker: a low, fluttering rumble of quick voiced pulses; or a single grunt.
+    const nicker = rng() < 0.6;
+    const length = nicker ? r(rng, 0.5, 0.9) : r(rng, 0.15, 0.25);
+    vocalise(out, t, {
+      length,
+      pitch: [[0, r(rng, 110, 150)], [1, r(rng, 85, 110)]],
+      envelope: smooth(0.1, 0.4),
+      tilt: 0.5,
+      ceiling: 4000,
+      jitter: 0.03,
+      shimmer: 0.3,
+      sub: 0.4,
+      growl: nicker ? [r(rng, 14, 20), 0.85] : undefined,
+      breath: 0.25,
+      breathBand: [150, 2000],
+      formants: [[0, [{ f: 450, q: 2, gain: 1 }, { f: 1200, q: 3, gain: 0.35 }]]],
+      dry: 0.45,
+    }, 0.8, rng);
+    t += length;
+  }
+  return t + 0.05;
+};
+
+/**
+ * Squirrel, after a recording: a scolding run of "kuk"s (each a burst of rasping
+ * noise with a squeaky whistle in it, a couple a second), often breaking into a
+ * fast rattle, and sometimes a drawn-out, squealing "quaaa".
+ */
+const squirrel: CallVoice = (out, rng) => {
+  let t = 0;
+  const kuks = 3 + Math.floor(rng() * 6);
+  const whistle = r(rng, 2900, 3400);
+  const kuk = (at: number, length: number, level: number) => {
+    breathe(out, at, { length, envelope: smooth(0.12, 0.6), bands: [{ type: 'highpass', f: [[0, 2200]], q: 0.7 }, { type: 'lowpass', f: [[0, 10000]], q: 0.5 }] }, level, rng);
+    vocalise(out, at, {
+      length: length * 0.8,
+      pitch: [[0, whistle * 1.06], [1, whistle * 0.94]],
+      envelope: smooth(0.15, 0.6),
+      tilt: 0.4,
+      ceiling: 11000,
+      jitter: 0.02,
+      breath: 0.2,
+      breathBand: [3000, 9000],
+      formants: [[0, [{ f: whistle, q: 4, gain: 1 }, { f: whistle * 1.65, q: 4, gain: 0.7 }]]],
+      dry: 0.2,
+    }, level * 0.8, rng);
+  };
+  for (let i = 0; i < kuks; i++) {
+    kuk(t, r(rng, 0.09, 0.14), r(rng, 0.75, 1));
+    t += r(rng, 0.3, 0.5);
+  }
+  if (rng() < 0.6) {
+    // The rattle: quick, softer kuks, a dozen or more a second.
+    const rattle = 8 + Math.floor(rng() * 16);
+    const rate = r(rng, 11, 16);
+    for (let i = 0; i < rattle; i++) {
+      kuk(t, r(rng, 0.045, 0.06), 0.6 * (1 - (i / rattle) * 0.4));
+      t += 1 / rate;
+    }
+    t += 0.2;
+  }
+  if (rng() < 0.25) {
+    // A squeal.
+    vocalise(out, t, {
+      length: r(rng, 0.3, 0.5),
+      pitch: [[0, whistle * 0.9], [0.3, whistle * 1.05], [1, whistle * 0.8]],
+      envelope: smooth(0.1, 0.4),
+      tilt: 0.45,
+      ceiling: 11000,
+      jitter: 0.03,
+      sub: 0.3,
+      breath: 0.5,
+      breathBand: [2500, 9000],
+      formants: [[0, [{ f: whistle * 1.2, q: 2, gain: 1 }, { f: whistle * 1.8, q: 3, gain: 0.6 }]]],
+      dry: 0.2,
+    }, 0.6, rng);
+    t += 0.55;
+  }
+  return Math.min(t, 6.8);
+};
+
+/**
+ * Hen, after a recording: a contented run of low, short "buk"s (a resonance near
+ * 900 Hz, a few a second), and now and then a long, rising "ba-GAWK".
+ */
+const cluck: CallVoice = (out, rng) => {
+  const clucks = 3 + Math.floor(rng() * 6);
+  let t = 0;
+  const f = r(rng, 220, 300);
+  const buk = (at: number, length: number, level: number) =>
+    vocalise(out, at, {
+      length,
+      pitch: [[0, f * 1.15], [1, f * 0.85]],
+      envelope: smooth(0.12, 0.65),
+      tilt: 0.45,
+      ceiling: 6000,
+      jitter: 0.03,
+      shimmer: 0.25,
+      sub: 0.25,
+      breath: 0.2,
+      breathBand: [400, 3000],
+      formants: [[0, [{ f: r(rng, 850, 950), q: 2.5, gain: 1 }, { f: 2500, q: 3, gain: 0.2 }]]],
+      dry: 0.2,
+    }, level, rng);
   for (let i = 0; i < clucks; i++) {
-    vocal(out, t, 0.07, [[0, f * 1.1], [1, f * 0.85]], [[900, 3, 1], [1700, 4, 0.4]], [[750, 3, 1], [1500, 4, 0.4]], 0.45, rng, { amp: sharp, breath: 0.2 });
-    t += r(rng, 0.12, 0.22);
+    buk(t, r(rng, 0.05, 0.09), r(rng, 0.7, 1));
+    t += r(rng, 0.13, 0.24);
   }
   if (rng() < 0.3) {
-    vocal(out, t, 0.32, [[0, f], [0.3, f * 1.8], [1, f * 1.5]], [[800, 3, 1], [1600, 4, 0.4]], [[1100, 3, 1], [2000, 4, 0.4]], 0.45, rng, { amp: swell(0.1, 0.4), breath: 0.2 });
-    t += 0.36;
+    buk(t, 0.07, 0.9);
+    t += 0.12;
+    const g = f * r(rng, 1.9, 2.3);
+    vocalise(out, t, {
+      length: r(rng, 0.28, 0.38),
+      pitch: [[0, g * 0.85], [0.3, g * 1.05], [1, g * 0.9]],
+      envelope: smooth(0.08, 0.35),
+      tilt: 0.55,
+      ceiling: 8000,
+      jitter: 0.02,
+      shimmer: 0.15,
+      sub: 0.2,
+      breath: 0.25,
+      breathBand: [1000, 6000],
+      formants: [[0, [{ f: 1000, q: 2.5, gain: 1 }, { f: 2600, q: 3, gain: 0.5 }, { f: 4400, q: 3, gain: 0.25 }]]],
+      dry: 0.15,
+    }, 1, rng);
+    t += 0.42;
   }
   return t;
 };
 
-/** Breathy noises: a deer's snort, a bear's deep huff. */
+/**
+ * Deer, after a recording: a forceful snort, a blast of air through the nostrils
+ * (broad hiss, fluttering) over a deep rumble from the chest.
+ */
 const snort: CallVoice = (out, rng) => {
-  addNoiseBurst(out, 0, 0.3, Biquad.make('bandpass', r(rng, 600, 800), 1.2, out.sampleRate), 1.4, 0, rng, 0.02);
-  return 0.32;
+  const length = r(rng, 0.32, 0.48);
+  breathe(out, 0, {
+    length,
+    envelope: (u) => Math.min(1, u / 0.06) * (1 - u) ** 1.6,
+    bands: [{ type: 'highpass', f: [[0, 500], [1, 350]], q: 0.6 }, { type: 'lowpass', f: [[0, 9000], [1, 5000]], q: 0.5 }],
+    body: [r(rng, 75, 110), 0.45],
+    flutter: [r(rng, 25, 45), 0.35],
+  }, 1, rng);
+  return length + 0.05;
 };
+
+/**
+ * Bear: deep, breathy huffs (a short blast of air, rough with the lips, over a low
+ * voiced rumble), two to four in a row, and now and then a clack of the jaws.
+ */
 const huff: CallVoice = (out, rng) => {
-  addNoiseBurst(out, 0, 0.3, Biquad.make('lowpass', 320, 0.8, out.sampleRate), 1.6, 0, rng, 0.03);
-  addNoiseBurst(out, 0.45, 0.3, Biquad.make('lowpass', 300, 0.8, out.sampleRate), 1.3, 0, rng, 0.03);
-  return 0.8;
+  const count = 2 + Math.floor(rng() * 3);
+  let t = 0;
+  for (let i = 0; i < count; i++) {
+    const length = r(rng, 0.25, 0.45);
+    breathe(out, t, {
+      length,
+      envelope: (u) => Math.min(1, u / 0.08) * (1 - u) ** 1.3,
+      bands: [{ type: 'lowpass', f: [[0, 2600], [1, 1200]], q: 0.6 }, { type: 'highpass', f: [[0, 90]], q: 0.6 }],
+      body: [r(rng, 70, 100), 1.6],
+      flutter: [r(rng, 18, 30), 0.5],
+    }, 1 - i * 0.1, rng);
+    t += length + r(rng, 0.25, 0.5);
+  }
+  if (rng() < 0.3) {
+    // A jaw clack: two quick knocks.
+    for (const dt of [0, r(rng, 0.08, 0.12)]) {
+      breathe(out, t + dt, { length: 0.03, envelope: smooth(0.15, 0.8), bands: [{ type: 'bandpass', f: [[0, r(rng, 900, 1300)]], q: 3 }] }, 0.8, rng);
+    }
+    t += 0.2;
+  }
+  return t;
 };
 
 /** The calls synthesized here, by sound id, with the peak level each is played at. */
@@ -685,15 +978,15 @@ export const CALL_VOICES = {
   'dog-boof': [boof, 0.45],
   'dog-howl': [dogHowl, 0.3],
   'wolf-howl': [wolf, 0.24],
-  'elk-bugle': [elk, 0.18],
-  'fox-bark': [fox, 0.28],
+  'elk-bugle': [elk, 0.3],
+  'fox-bark': [fox, 0.38],
   'cow-moo': [moo, 0.4],
   'sheep-baa': [baa, 0.32],
   'horse-whinny': [whinny, 0.26],
-  'squirrel-chatter': [squirrel, 0.14],
+  'squirrel-chatter': [squirrel, 0.26],
   'chicken-cluck': [cluck, 0.3],
-  'deer-snort': [snort, 0.4],
-  'bear-huff': [huff, 0.5],
+  'deer-snort': [snort, 0.45],
+  'bear-huff': [huff, 0.62],
 } as const satisfies Record<string, readonly [CallVoice, number]>;
 
 export type CallId = keyof typeof CALL_VOICES;
