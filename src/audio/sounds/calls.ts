@@ -955,6 +955,134 @@ const huff: CallVoice = (out, rng) => {
   return t;
 };
 
+// --- Scene sounds -------------------------------------------------------------
+
+/**
+ * A dolphin surfacing, after a recording: a sharp, wet "pff!" of breath blown out
+ * (broad hiss over a low body), then the quick, softer draw back in; now and then
+ * a second blow.
+ */
+const dolphinBlow: CallVoice = (out, rng) => {
+  let t = 0;
+  const blows = rng() < 0.75 ? 1 : 2;
+  for (let i = 0; i < blows; i++) {
+    const exhale = r(rng, 0.14, 0.24);
+    breathe(out, t, {
+      length: exhale,
+      envelope: (u) => Math.min(1, u / 0.07) * (1 - u) ** 1.8,
+      bands: [{ type: 'highpass', f: [[0, 120]], q: 0.6 }, { type: 'lowpass', f: [[0, 2600], [1, 1400]], q: 0.6 }],
+      body: [r(rng, 70, 95), 1.2],
+      flutter: [r(rng, 30, 50), 0.25],
+    }, 1, rng);
+    t += exhale + r(rng, 0.08, 0.16);
+    const inhale = r(rng, 0.1, 0.16);
+    breathe(out, t, {
+      length: inhale,
+      envelope: smooth(0.4, 0.35),
+      bands: [{ type: 'bandpass', f: [[0, 1200], [1, 1700]], q: 0.8 }],
+    }, 0.4, rng);
+    t += inhale + r(rng, 0.6, 1.2);
+  }
+  return t;
+};
+
+/**
+ * A street crowd clapping, after a recording: a dozen or so people, each clapping
+ * at their own pace with their own hands (each clap a soft-edged slap of noise,
+ * tuned by the cupping of the hands), building quickly and tailing away as they stop.
+ */
+const applause: CallVoice = (out, rng) => {
+  const length = r(rng, 2.6, 4.2);
+  const people = 10 + Math.floor(rng() * 10);
+  const sr = out.sampleRate;
+  for (let p = 0; p < people; p++) {
+    const rate = r(rng, 3.6, 6.2);
+    const start = r(rng, 0, 0.35);
+    const stop = length * r(rng, 0.65, 1);
+    const tone = r(rng, 550, 1700);
+    const q = r(rng, 1.4, 2.6);
+    const level = r(rng, 0.4, 1);
+    const filter = Biquad.make('bandpass', tone, q, sr);
+    for (let t = start; t < stop; t += (1 / rate) * r(rng, 0.9, 1.1)) {
+      // Each joins in gently, and the crowd as a whole swells up out of the quiet.
+      const fade = Math.min(1, (t - start) / 0.3, (stop - t) / 0.5, (t / 0.8) ** 2);
+      addNoiseBurst(out, t, r(rng, 0.012, 0.02), filter, level * fade * r(rng, 0.7, 1), 0, rng, 0.003);
+    }
+  }
+  // The claps' echoes off the street, a wash that fills the gaps between them.
+  breathe(out, 0, { length, envelope: smooth(0.3, 0.4), bands: [{ type: 'bandpass', f: [[0, r(rng, 1000, 1500)]], q: 0.7 }] }, r(rng, 0.1, 0.14), rng);
+  return length;
+};
+
+/**
+ * A firework, after a recording: sometimes a rising whistle first, then the burst
+ * (a deep boom rolling off between the buildings) and a fading crackle of sparks.
+ */
+const fireworkPop: CallVoice = (out, rng) => {
+  let t = 0;
+  if (rng() < 0.35) {
+    // The whistle of the rocket climbing.
+    const f = r(rng, 1500, 2200);
+    const length = r(rng, 0.8, 1.4);
+    vocalise(out, 0, {
+      length,
+      pitch: [[0, f * 0.85], [1, f * r(rng, 1.05, 1.2)]],
+      envelope: smooth(0.15, 0.1),
+      tilt: 0.2,
+      jitter: 0.004,
+      breath: 0.5,
+      breathBand: [1000, 4000],
+    }, 0.25, rng);
+    t = length + 0.05;
+  }
+  // The boom: a deep, soft-edged thud and a long rumble.
+  breathe(out, t, {
+    length: r(rng, 1.2, 1.8),
+    envelope: (u) => Math.min(1, u / 0.01) * Math.exp(-5 * u),
+    bands: [{ type: 'lowpass', f: [[0, 1600], [0.2, 500], [1, 180]], q: 0.7 }],
+    body: [r(rng, 38, 55), 1.6],
+  }, 1, rng);
+  // The crack of the burst itself: broad, ringing off the buildings.
+  breathe(out, t, { length: r(rng, 0.3, 0.5), envelope: (u) => Math.min(1, u / 0.015) * Math.exp(-7 * u), bands: [{ type: 'lowpass', f: [[0, 5000], [1, 900]], q: 0.6 }] }, 0.9, rng);
+  // The crackle: a scatter of small sparks, softening as they fall.
+  const sparks = 25 + Math.floor(rng() * 50);
+  const begin = t + r(rng, 0.25, 0.5);
+  const span = r(rng, 0.9, 1.6);
+  for (let i = 0; i < sparks; i++) {
+    const at = begin + span * rng() ** 1.4;
+    const fade = 1 - (at - begin) / span;
+    addNoiseBurst(out, at, r(rng, 0.01, 0.025), Biquad.make('bandpass', r(rng, 1800, 5000), 1.2, out.sampleRate), r(rng, 0.12, 0.32) * fade, 0, rng, 0.003);
+  }
+  return begin + span + 0.3;
+};
+
+/**
+ * A trunk or bough groaning in the wind, after a recording. Wood creaks by
+ * stick-slip: the fibres catch and let go dozens of times a second, a rough,
+ * irregular train of slips whose rate drifts as the load changes, rung through
+ * the timber's low resonances; a creak rises, wavers and eases off.
+ */
+const woodCreak: CallVoice = (out, rng) => {
+  const length = r(rng, 1.2, 2.8);
+  const f = r(rng, 22, 45);
+  vocalise(out, 0, {
+    length,
+    pitch: [[0, f * 0.7], [r(rng, 0.25, 0.45), f * r(rng, 1.2, 1.6)], [r(rng, 0.6, 0.8), f * r(rng, 0.9, 1.3)], [1, f * 0.8]],
+    envelope: (u) => Math.sin(Math.PI * u) ** 0.6,
+    tilt: 0.85,
+    ceiling: 3200,
+    jitter: r(rng, 0.2, 0.3),
+    shimmer: 0.7,
+    sub: 0.5,
+    breath: 0.25,
+    breathBand: [200, 3000],
+    pulsedBreath: 0.9,
+    formants: [[0, [{ f: r(rng, 180, 260), q: 3, gain: 1 }, { f: r(rng, 1300, 1550), q: 5, gain: 0.4 }, { f: r(rng, 2700, 3100), q: 6, gain: 0.12 }]]],
+    dry: 0.1,
+  }, 1, rng);
+  return length;
+};
+
 /** The calls synthesized here, by sound id, with the peak level each is played at. */
 export const CALL_VOICES = {
   'sparrow-chirp': [sparrow, 0.22],
@@ -987,6 +1115,10 @@ export const CALL_VOICES = {
   'chicken-cluck': [cluck, 0.3],
   'deer-snort': [snort, 0.45],
   'bear-huff': [huff, 0.62],
+  'dolphin-blow': [dolphinBlow, 0.55],
+  applause: [applause, 0.4],
+  'firework-pop': [fireworkPop, 0.75],
+  'wood-creak': [woodCreak, 0.42],
 } as const satisfies Record<string, readonly [CallVoice, number]>;
 
 export type CallId = keyof typeof CALL_VOICES;

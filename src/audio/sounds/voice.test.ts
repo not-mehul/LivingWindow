@@ -63,6 +63,7 @@ describe('calls', () => {
   const SMOOTH: CallId[] = [
     'raven-croak', 'jay-call', 'gull-cry', 'eagle-cry', 'nightjar-churr', 'wing-flap', 'wolf-howl',
     'cat-meow', 'dog-boof', 'dog-howl', 'elk-bugle', 'fox-bark', 'sheep-baa', 'horse-whinny', 'squirrel-chatter', 'chicken-cluck', 'deer-snort', 'bear-huff',
+    'dolphin-blow', 'applause', 'firework-pop', 'wood-creak',
   ];
 
   it('never pops out of silence', () => {
