@@ -42,7 +42,7 @@ const ANIMALS: readonly SoundId[] = [
   'bear-huff',
 ];
 /** Sounds of the room itself: played centred and dry, as the app does. */
-export const ROOM_SOUNDS: ReadonlySet<SoundId> = new Set(['glass-tap', 'seed-pour', 'window-thunk', 'window-creak', 'wood-creak']);
+export const ROOM_SOUNDS: ReadonlySet<SoundId> = new Set(['glass-tap', 'seed-pour', 'window-thunk', 'wood-creak']);
 /** Pets in the room: heard close, never muffled by the window. */
 export const PET_SOUNDS: ReadonlySet<SoundId> = new Set(['cat-meow', 'cat-purr', 'dog-boof', 'dog-howl']);
 

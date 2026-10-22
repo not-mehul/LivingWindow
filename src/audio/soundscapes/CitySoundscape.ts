@@ -124,6 +124,8 @@ export class CitySoundscape extends Soundscape {
     // Tyres: a band of noise, brighter and louder on a wet road.
     const tyres = ctx.createBufferSource();
     tyres.buffer = this.engine.noise.get('pink');
+    // The noise loops seamlessly, so a long sound started late in it never cuts out.
+    tyres.loop = true;
     const band = ctx.createBiquadFilter();
     band.type = 'bandpass';
     band.Q.value = 0.7;

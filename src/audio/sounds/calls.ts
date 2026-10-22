@@ -557,7 +557,7 @@ export const CALL_VOICES = {
   'eagle-cry': [eagle, 0.14],
   'nightjar-churr': [nightjar, 0.25],
   'woodpecker-drum': [woodpecker, 0.45],
-  'wing-flap': [wings, 0.3],
+  'wing-flap': [wings, 0.18],
   'cat-meow': [meow, 0.35],
   'cat-purr': [purr, 0.3],
   'dog-boof': [boof, 0.45],

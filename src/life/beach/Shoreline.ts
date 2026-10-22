@@ -324,7 +324,6 @@ export class FishAndGulls {
         if (p >= 1) {
           this.scene.splash(h.x, target.y, 1.4);
           this.school.scare(centre.x, centre.y);
-          this.sound('splash', this.viewport.worldXToStereo(h.x), 0.65);
           h.phase = 'rise';
           h.t = 0;
           h.from = { x: h.x, y: h.y };
@@ -539,11 +538,8 @@ export class Dolphins {
       const nextX = last.x + last.size * 2.2;
       for (const b of this.pod) b.sprite.destroy();
       this.pod.length = 0;
-      // Now and then, a tail slapped down on the water: a smack and a fountain.
-      if (Math.random() < 0.3) {
-        this.scene.splash(nextX - last.size, last.y, (last.size / 24) * 1.6);
-        this.sound?.('splash', this.viewport.worldXToStereo(nextX), 0.25 * (last.size / 30));
-      }
+      // Now and then, a tail slapped down on the water: a fountain.
+      if (Math.random() < 0.3) this.scene.splash(nextX - last.size, last.y, (last.size / 24) * 1.6);
       if (--this.surfacings > 0) this.spawnPod(nextX, 0.8);
     }
   }

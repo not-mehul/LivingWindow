@@ -301,7 +301,7 @@ export class TrunkWoodpeckers {
         const other = this.birds.find((b) => b.drum <= 0 && b.pause > 0.5);
         if (other && Math.random() < 0.5) {
           other.drum = r(0.5, 0.9);
-          other.pause = r(2, 5);
+          other.pause = r(14, 40);
           this.sound('woodpecker-drum', this.viewport.worldXToStereo(other.trunk.x), other.trunk.layer === 'near' ? 0.7 : 0.4);
         } else this.sound('woodpecker-drum', this.answerPan, 0.2);
       }
@@ -320,21 +320,22 @@ export class TrunkWoodpeckers {
       else {
         b.pause -= dt;
         if (b.pause <= 0) {
-          // A drum roll, or a hitch up the bark.
-          if (Math.random() < 0.65) {
+          // A drum roll now and then (they spend far more time feeding), or a hitch up the bark.
+          if (Math.random() < 0.4) {
             b.drum = r(0.5, 0.9);
             const pan = this.viewport.worldXToStereo(b.trunk.x);
             this.sound('woodpecker-drum', pan, b.trunk.layer === 'near' ? 0.75 : 0.45);
             // Now and then it's answered from across the wood.
-            if (this.answerIn < 0 && Math.random() < 0.35) {
+            if (this.answerIn < 0 && Math.random() < 0.2) {
               this.answerIn = r(1.2, 2.6);
               this.answerPan = Math.max(-1, Math.min(1, -pan * 0.8 + r(-0.2, 0.2)));
             }
+            b.pause = r(14, 40);
           } else {
             b.y = Math.max(b.trunk.top + b.size, b.y - b.size * 0.4);
             b.hitch = 0.25;
+            b.pause = r(3, 8);
           }
-          b.pause = r(1.5, 5);
         }
       }
       const fade = Math.min(1, b.t / 0.4, Math.max(0, b.stay) / 0.4);

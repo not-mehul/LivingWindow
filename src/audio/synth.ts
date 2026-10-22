@@ -109,33 +109,49 @@ export function poissonTimes(seconds: number, density: number, rng: () => number
 }
 
 /**
+ * A grain's edges: a raised-cosine rise over `attack` samples and a short
+ * fall to exactly zero over the last few, so no grain starts or stops with
+ * a step (which the ear hears as a click, and a rain of them as crackle).
+ */
+export function grainEdges(i: number, n: number, attack: number): number {
+  const a = Math.max(1, Math.min(attack, Math.floor(n / 3)));
+  const rise = i < a ? 0.5 - 0.5 * Math.cos((Math.PI * i) / a) : 1;
+  const tail = Math.max(1, Math.min(Math.round(n / 4), 96));
+  const fall = n - i <= tail ? (n - i) / tail : 1;
+  return rise * fall;
+}
+
+/** The shortest attack a grain gets (s): quicker reads as a click. */
+const MIN_ATTACK = 0.003;
+
+/**
  * A water bubble at `t` (s): a sine whose pitch rises as it closes (the
- * Minnaert resonance), with a near-instant attack and exponential decay.
+ * Minnaert resonance), with a quick (but not instant) attack and exponential decay.
  */
 export function addBubble(out: Stereo, t: number, frequency: number, length: number, peak: number, pan: number, rise = 1.5): void {
   const sr = out.sampleRate;
   const start = Math.round(t * sr);
   const n = Math.round(length * sr);
   const [gl, gr] = panGains(pan);
-  const attack = Math.max(1, Math.round(0.0015 * sr));
+  const attack = Math.round(MIN_ATTACK * sr);
   let phase = 0;
   for (let i = 0; i < n; i++) {
     const u = i / n;
     phase += (2 * Math.PI * frequency * (1 + (rise - 1) * u)) / sr;
-    const env = (i < attack ? i / attack : 1) * Math.exp(-5 * u);
+    const env = grainEdges(i, n, attack) * Math.exp(-5 * u);
     out.add(start + i, Math.sin(phase) * env * peak, gl, gr);
   }
 }
 
-/** A burst of filtered noise at `t` (s): sharp attack, exponential decay over `length`. */
-export function addNoiseBurst(out: Stereo, t: number, length: number, filter: Biquad, peak: number, pan: number, rng: () => number, attack = 0.0015): void {
+/** A burst of filtered noise at `t` (s): a quick attack, exponential decay over `length`. */
+export function addNoiseBurst(out: Stereo, t: number, length: number, filter: Biquad, peak: number, pan: number, rng: () => number, attack = MIN_ATTACK): void {
   const sr = out.sampleRate;
   const start = Math.round(t * sr);
   const n = Math.round(length * sr);
-  const a = Math.max(1, Math.round(attack * sr));
+  const a = Math.round(Math.max(attack, MIN_ATTACK) * sr);
   const [gl, gr] = panGains(pan);
   for (let i = 0; i < n; i++) {
-    const env = (i < a ? i / a : 1) * Math.exp((-6.9 * i) / n);
+    const env = grainEdges(i, n, a) * Math.exp((-6.9 * i) / n);
     out.add(start + i, filter.process(rng() * 2 - 1) * env * peak, gl, gr);
   }
 }

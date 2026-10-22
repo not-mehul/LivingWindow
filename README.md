@@ -238,8 +238,7 @@ Rebuilt after a hand-drawn reference (the landscapes follow one at a time):
   cracks and nails, and the wall's depth showing inside them. Two sashes, each
   with two panes, a glazing bar, iron butt hinges and a D-handle, **swing
   outward** on their hinges in true perspective. Tap a sash (or the meeting
-  stiles when shut), press `W`, or use the panel. Hinges creak, and the latch
-  thunks shut.
+  stiles when shut), press `W`, or use the panel. The latch thunks shut.
 - **Rain and snow on the glass** run on the closed pane and swing with the
   sashes.
 - **Deep sill** with a worn top. A **terracotta seed dish** sits on it, among

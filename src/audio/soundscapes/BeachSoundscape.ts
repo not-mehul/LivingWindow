@@ -75,6 +75,8 @@ export class BeachSoundscape extends Soundscape {
     // The curl falling over: a roar that opens, then darkens as it spends itself.
     const crash = ctx.createBufferSource();
     crash.buffer = this.engine.noise.get('pink');
+    // The noise loops seamlessly, so a long sound started late in it never cuts out.
+    crash.loop = true;
     const crashFilter = ctx.createBiquadFilter();
     crashFilter.type = 'lowpass';
     crashFilter.Q.value = 0.5;
@@ -91,6 +93,8 @@ export class BeachSoundscape extends Soundscape {
     // The weight of water landing: a low thump under the crash.
     const thump = ctx.createBufferSource();
     thump.buffer = this.engine.noise.get('brown');
+    // The noise loops seamlessly, so a long sound started late in it never cuts out.
+    thump.loop = true;
     const thumpFilter = ctx.createBiquadFilter();
     thumpFilter.type = 'lowpass';
     thumpFilter.frequency.value = 160;
@@ -106,6 +110,8 @@ export class BeachSoundscape extends Soundscape {
     swell(this.shingle.gain.gain, when + 2.4, 0.45 * level, 1.2, 1.1);
     const hiss = ctx.createBufferSource();
     hiss.buffer = this.engine.noise.get('white');
+    // The noise loops seamlessly, so a long sound started late in it never cuts out.
+    hiss.loop = true;
     const hissFilter = ctx.createBiquadFilter();
     hissFilter.type = 'bandpass';
     hissFilter.Q.value = 0.6;

@@ -62,8 +62,9 @@ export class ForestSoundscape extends Soundscape {
 
     this.creakTimer -= dt;
     if (this.creakTimer <= 0) {
-      this.creakTimer = rand(10, 35) / (0.3 + wind);
-      if (wind > 0.15) this.engine.playSpatialSound('wood-creak', rand(-0.9, 0.9), rand(0.2, 0.7), 'ambience');
+      // Now and then a trunk creaks in the wind: rarely, but clearly.
+      this.creakTimer = rand(40, 120) / (0.3 + wind);
+      if (wind > 0.15) this.engine.playSpatialSound('wood-creak', rand(-0.9, 0.9), rand(0.15, 0.45), 'ambience');
     }
 
     this.callTimer -= dt;
@@ -71,7 +72,8 @@ export class ForestSoundscape extends Soundscape {
       const birds = birdActivity(hours) * quiet;
       this.callTimer = rand(8, 24) / Math.max(0.1, birds);
       if (birds > 0.05) {
-        const calls: SoundId[] = ['chickadee-call', 'jay-call', 'woodpecker-drum', 'robin-song'];
+        // A distant drum only now and then; the woodpeckers in view do most of the drumming.
+        const calls: SoundId[] = ['chickadee-call', 'jay-call', 'robin-song', 'chickadee-call', 'robin-song', 'jay-call', 'woodpecker-drum'];
         this.engine.playSpatialSound(calls[Math.floor(Math.random() * calls.length)], rand(-1, 1), rand(0.75, 1), 'ambience');
       } else if (env.lighting.darkness > 0.7 && Math.random() < 0.3) {
         this.engine.playSpatialSound('owl-hoot', rand(-1, 1), 0.95, 'ambience');

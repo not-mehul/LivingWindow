@@ -14,7 +14,6 @@ Anything listed replaces its synthesized version; anything left out keeps the sy
     "wing-flap": [],
     "glass-tap": [],
     "seed-pour": [],
-    "window-creak": [],
     "window-thunk": [],
     "car-horn": []
   },
@@ -41,9 +40,9 @@ Anything listed replaces its synthesized version; anything left out keeps the sy
   `cat-purr`, `dog-boof`, `dog-howl`, `squirrel-chatter`, `deer-snort`,
   `cow-moo`, `sheep-baa`, `horse-whinny`, `chicken-cluck`, `fox-bark`,
   `wolf-howl`, `elk-bugle`, `bear-huff`, `bee-buzz`, `dolphin-blow`; and
-  `glass-tap`, `seed-pour`, `window-creak`, `window-thunk`, `car-horn`,
+  `glass-tap`, `seed-pour`, `window-thunk`, `car-horn`,
   `siren-far`, `applause`, `guitar-strum`, `firework-pop`, `wood-creak`,
-  `coconut-thud`, `splash`.
+  `coconut-thud`.
 - **`glass-tap`** recordings are scattered into the rain-on-the-glass texture
   (several short taps work best).
 - **One-shots** with several variants are picked at random, and every play

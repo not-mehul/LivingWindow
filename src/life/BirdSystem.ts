@@ -600,14 +600,15 @@ export class BirdSystem {
       case 'peck-seed':
         bird.peckTimer = 0;
         // Woodpeckers drum on wood rather than pecking the ground.
-        if (bird.species === 'woodpecker' && !bird.onSill && this.rng() < 0.6) this.sound(bird, 'woodpecker-drum');
+        if (bird.species === 'woodpecker' && !bird.onSill && this.rng() < 0.12) this.sound(bird, 'woodpecker-drum');
         if (bird.onSill && sill && this.atBowl(bird, sill)) bird.facing = bird.sillX < sill.bowlX ? 1 : -1;
         break;
       case 'chirp':
         this.voice(bird);
         break;
       case 'take-off':
-        this.sound(bird, 'wing-flap');
+        // Only some take-offs are close and hurried enough to hear the wings.
+        if (this.rng() < 0.35) this.sound(bird, 'wing-flap');
         break;
     }
   }

@@ -92,7 +92,9 @@ export class SoundBank {
     const scale = max > 0 ? peak / max : 0;
     const buffer = this.context.createBuffer(1, length, sr);
     const channel = buffer.getChannelData(0);
-    for (let i = 0; i < length; i++) channel[i] = data[i] * scale;
+    // A short fade where the take is trimmed, so it never ends on a step.
+    const fade = Math.min(length, Math.round(0.005 * sr));
+    for (let i = 0; i < length; i++) channel[i] = data[i] * scale * Math.min(1, (length - i) / fade);
     return buffer;
   }
 

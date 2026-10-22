@@ -469,7 +469,6 @@ async function boot(): Promise<void> {
     overlay?.attachAudio(system);
     windowState.on('toggle', ({ open, durationSeconds }) => {
       system.engine.setWindowOpen(open, durationSeconds);
-      system.engine.playUi('window-creak');
     });
     windowState.on('settled', ({ open }) => {
       if (!open) system.engine.playUi('window-thunk');

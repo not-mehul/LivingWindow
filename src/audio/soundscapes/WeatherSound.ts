@@ -203,6 +203,8 @@ export class WeatherSound {
       const length = rand(1.2, 2.6) + far * 1.5;
       const src = ctx.createBufferSource();
       src.buffer = this.engine.noise.get('brown');
+      // The noise loops seamlessly, so a long sound started late in it never cuts out.
+      src.loop = true;
       const lowpass = ctx.createBiquadFilter();
       lowpass.type = 'lowpass';
       lowpass.Q.value = 0.6;
@@ -224,6 +226,8 @@ export class WeatherSound {
     // The deep sub of a big strike, felt more than heard.
     const sub = ctx.createBufferSource();
     sub.buffer = this.engine.noise.get('brown');
+    // The noise loops seamlessly, so a long sound started late in it never cuts out.
+    sub.loop = true;
     const subFilter = ctx.createBiquadFilter();
     subFilter.type = 'lowpass';
     subFilter.frequency.value = 70;
@@ -241,6 +245,8 @@ export class WeatherSound {
         const t = when + i * rand(0.015, 0.05);
         const crack = ctx.createBufferSource();
         crack.buffer = this.engine.noise.get('white');
+        // The noise loops seamlessly, so a long sound started late in it never cuts out.
+        crack.loop = true;
         const band = ctx.createBiquadFilter();
         band.type = 'bandpass';
         band.frequency.value = rand(1200, 3200);

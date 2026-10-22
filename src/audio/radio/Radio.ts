@@ -224,6 +224,8 @@ export class Radio extends Emitter<RadioEvents> {
     const when = ctx.currentTime;
     const src = ctx.createBufferSource();
     src.buffer = this.engine.noise.get('white');
+    // The noise loops seamlessly, so a long sound started late in it never cuts out.
+    src.loop = true;
     const band = ctx.createBiquadFilter();
     band.type = 'bandpass';
     band.Q.value = 3;

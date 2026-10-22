@@ -1,8 +1,15 @@
 import { createRng } from '../core/random';
 import { addBubble, addNoiseBurst, Biquad, panGains, poissonTimes, Stereo } from './synth';
 
-/** Every texture loop is levelled to this RMS, so layer gains mean the same thing for each. */
+/** Every texture loop is levelled to this RMS, so layer gains mean the same thing for each… */
 const TEXTURE_RMS = 0.1;
+/**
+ * …unless that would push its loudest moment past this many times the RMS.
+ * A sparse texture (light rain, a few pebbles) is mostly silence: raising
+ * it to the full RMS would make every tick in it a sharp crackle, so it is
+ * left quieter instead.
+ */
+const MAX_CREST = 4;
 
 /** Draw a whole texture into `out` (its times wrap at the end, so it loops seamlessly). */
 export type TextureRender = (out: Stereo, rng: () => number) => void;
@@ -52,7 +59,7 @@ export function sampled(density: number, buffers: readonly { getChannelData(ch: 
 export function renderTexture(spec: TextureSpec, sampleRate: number, seed: number): Stereo {
   const out = new Stereo(Math.floor((spec.seconds ?? 9) * sampleRate), sampleRate);
   spec.render(out, createRng(seed));
-  normalize({ numberOfChannels: 2, getChannelData: (ch) => (ch ? out.right : out.left) }, TEXTURE_RMS);
+  normalize({ numberOfChannels: 2, getChannelData: (ch) => (ch ? out.right : out.left) }, TEXTURE_RMS, TEXTURE_RMS * MAX_CREST);
   return out;
 }
 
@@ -107,8 +114,8 @@ export class TextureLayer {
   }
 }
 
-/** Scale `buffer` to the given RMS, without letting any peak pass 0.95. */
-export function normalize(buffer: { numberOfChannels: number; getChannelData(ch: number): Float32Array }, rms: number): void {
+/** Scale `buffer` to the given RMS, without letting any peak pass `ceiling`. */
+export function normalize(buffer: { numberOfChannels: number; getChannelData(ch: number): Float32Array }, rms: number, ceiling = 0.95): void {
   let sum = 0;
   let peak = 0;
   let count = 0;
@@ -120,7 +127,7 @@ export function normalize(buffer: { numberOfChannels: number; getChannelData(ch:
     count += buffer.getChannelData(ch).length;
   }
   if (sum === 0) return;
-  const scale = Math.min(rms / Math.sqrt(sum / count), 0.95 / peak);
+  const scale = Math.min(rms / Math.sqrt(sum / count), ceiling / peak);
   for (let ch = 0; ch < buffer.numberOfChannels; ch++) {
     const data = buffer.getChannelData(ch);
     for (let i = 0; i < data.length; i++) data[i] *= scale;

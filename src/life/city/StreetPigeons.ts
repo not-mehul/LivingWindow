@@ -191,7 +191,7 @@ export class StreetPigeons {
     }
     if (any) {
       const b = this.birds[0];
-      if (b) this.options.sound('wing-flap', this.options.pan(this.options.project(b.gx, b.depth).x), 0.5);
+      if (b) this.options.sound('wing-flap', this.options.pan(this.options.project(b.gx, b.depth).x), 0.35);
     }
   }
 }

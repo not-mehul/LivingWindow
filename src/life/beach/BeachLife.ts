@@ -75,7 +75,7 @@ export class BeachLife implements SceneLife {
     this.dolphins = new Dolphins(scene, deps.viewport, deps.sound);
     this.crabs = new Crabs(scene);
     this.hermits = new HermitCrabs(scene);
-    this.pelican = new Pelican(scene, this.sea, deps.viewport, deps.sound);
+    this.pelican = new Pelican(scene, this.sea, deps.viewport);
     this.jellyfish = new Jellyfish(scene);
     this.hatchlings = new Hatchlings(scene);
     this.glow = new Bioluminescence(scene);

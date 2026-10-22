@@ -10,7 +10,6 @@ import { BREAK_S, SHALLOWS_S, shorePoint } from '../../sim/shore';
 import { bioluminescenceLevel, bioluminescenceNight, crabActivity, hatchlingNight, hatchlingTime, hermitActivity, pelicanActivity } from '../../sim/wildlife';
 import { drawCrab, drawHatchling, drawHermitCrab, drawJellyfish, drawPelican, type PelicanPose } from '../../sprites/beachSprites';
 import { DrawnCache } from '../../sprites/wildSprites';
-import type { LifeSoundSink } from '../types';
 import type { FishAndGulls } from './Shoreline';
 import type { Tracks } from './Tracks';
 import { rand as r } from '../../core/random';
@@ -236,7 +235,6 @@ export class Pelican {
     private readonly scene: BeachScene,
     private readonly sea: FishAndGulls,
     private readonly viewport: Viewport,
-    private readonly sound: LifeSoundSink,
   ) {
     this.sprite.visible = false;
     scene.birdsMid.addChild(this.sprite);
@@ -295,7 +293,6 @@ export class Pelican {
         if (p >= 1) {
           this.scene.splash(this.x, target.y, 2);
           this.sea.scatterSchool();
-          this.sound('splash', this.viewport.worldXToStereo(this.x), 0.75);
           this.phase = 'float';
           this.t = 0;
         }

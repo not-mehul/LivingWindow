@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { normalize, renderTexture, sampled } from './textures';
+import { addNoiseBurst, Biquad, grainEdges, Stereo } from './synth';
+import { burst, normalize, renderTexture, sampled, scattered } from './textures';
 
 describe('texture levels', () => {
   it('levels a loop to the target RMS', () => {
@@ -22,5 +23,25 @@ describe('texture levels', () => {
     const out = renderTexture(sampled(30, [{ length: tap.length, getChannelData: () => tap }]), 8000, 2);
     expect(out.left.some((v) => Math.abs(v) > 0.05)).toBe(true);
     expect(out.right.some((v) => Math.abs(v) > 0.05)).toBe(true);
+  });
+});
+
+describe('no crackle', () => {
+  it('leaves a sparse texture quieter rather than making every tick a sharp crackle', () => {
+    const sparse = renderTexture(scattered(3, (out, t, pan, rng) => burst(out, t, pan, rng, 'bandpass', 3000, 2, 1, 0.02)), 22050, 4);
+    let peak = 0;
+    for (const v of [...sparse.left, ...sparse.right]) peak = Math.max(peak, Math.abs(v));
+    expect(peak).toBeLessThanOrEqual(0.4 + 1e-6);
+  });
+
+  it('starts and ends every grain at silence', () => {
+    expect(grainEdges(0, 400, 66)).toBe(0);
+    expect(grainEdges(399, 400, 66)).toBeLessThan(0.02);
+    expect(grainEdges(200, 400, 66)).toBe(1);
+    const out = new Stereo(2000, 22050);
+    addNoiseBurst(out, 0, 0.05, Biquad.make('bandpass', 2000, 1, 22050), 1, 0, () => 0.9);
+    const n = Math.round(0.05 * 22050);
+    expect(Math.abs(out.left[0])).toBeLessThan(1e-3);
+    expect(Math.abs(out.left[n - 1])).toBeLessThan(0.02);
   });
 });

@@ -46,6 +46,8 @@ function noiseBurst(
 ): void {
   const src = ctx.createBufferSource();
   src.buffer = noise.get('white');
+  // The noise loops seamlessly, so a long sound started late in it never cuts out.
+  src.loop = true;
   const bq = ctx.createBiquadFilter();
   bq.type = filter.type;
   bq.frequency.value = filter.frequency;
@@ -74,44 +76,6 @@ const seedPour: SynthVoice = (ctx, out, when, gain, rate, noise) => {
     noiseBurst(ctx, noise, out, t, 0.004, { type: 'highpass', frequency: 2500 * rate }, rand(0.08, 0.3) * gain);
   }
   noiseBurst(ctx, noise, out, when, duration, { type: 'bandpass', frequency: 3200 * rate, Q: 0.7 }, 0.06 * gain, 0.08);
-  return duration;
-};
-
-/** Iron hinges turning: a dry, rising squeal with a woody groan underneath. */
-const windowCreak: SynthVoice = (ctx, out, when, gain, rate, noise) => {
-  const duration = 0.9;
-  // The squeal: a sawtooth whose pitch wanders as the hinge sticks and slips.
-  const [osc, amp] = tone(ctx, 'sawtooth', out);
-  const band = ctx.createBiquadFilter();
-  band.type = 'bandpass';
-  band.Q.value = 6;
-  band.frequency.value = 1400 * rate;
-  osc.disconnect();
-  osc.connect(band).connect(amp);
-  const start = rand(520, 640) * rate;
-  osc.frequency.setValueAtTime(start, when);
-  for (let t = 0.06; t < duration; t += 0.06) {
-    osc.frequency.linearRampToValueAtTime(start * (1 + t * 0.5) * rand(0.94, 1.06), when + t);
-  }
-  amp.gain.setValueAtTime(0, when);
-  for (let t = 0.03; t < duration; t += 0.045) {
-    amp.gain.linearRampToValueAtTime(gain * 0.09 * rand(0.2, 1), when + t);
-  }
-  amp.gain.linearRampToValueAtTime(0, when + duration);
-  osc.start(when);
-  osc.stop(when + duration + 0.05);
-  // Wood flexing against wood.
-  const src = ctx.createBufferSource();
-  src.buffer = noise.get('brown');
-  const low = ctx.createBiquadFilter();
-  low.type = 'lowpass';
-  low.frequency.value = 380 * rate;
-  const groan = ctx.createGain();
-  groan.gain.setValueAtTime(0, when);
-  groan.gain.linearRampToValueAtTime(gain * 0.35, when + 0.2);
-  groan.gain.linearRampToValueAtTime(0, when + duration);
-  src.connect(low).connect(groan).connect(out);
-  src.start(when, Math.random() * 5, duration + 0.05);
   return duration;
 };
 
@@ -161,12 +125,6 @@ const applause: SynthVoice = (ctx, out, when, gain, rate, noise) => {
     noiseBurst(ctx, noise, out, when + t, 0.025, { type: 'bandpass', frequency: rand(1400, 2600) * rate, Q: 1.4 }, rand(0.08, 0.18) * swell * gain, 0.001);
   }
   return length;
-};
-
-const splash: SynthVoice = (ctx, out, when, gain, rate, noise) => {
-  noiseBurst(ctx, noise, out, when, 0.45, { type: 'highpass', frequency: 1200 * rate }, 0.4 * gain, 0.005);
-  noiseBurst(ctx, noise, out, when, 0.2, { type: 'lowpass', frequency: 500 }, 0.3 * gain, 0.003);
-  return 0.5;
 };
 
 /** Chords the busker cycles through (semitones above the root). */
@@ -352,10 +310,8 @@ export const SYNTH_VOICES = {
   'glass-tap': glassTap,
   'seed-pour': seedPour,
   'window-thunk': windowThunk,
-  'window-creak': windowCreak,
   'car-horn': carHorn,
   applause,
   'guitar-strum': guitarStrum,
   'firework-pop': fireworkPop,
-  splash,
 } satisfies Record<string, SynthVoice>;
