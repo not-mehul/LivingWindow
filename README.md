@@ -78,6 +78,9 @@ for the full vision and roadmap.
   and crowds are synthesized sample by sample from thousands of small events
   (drops, bubbles, chirps, syllables) into seamless loops, so they sound like
   many things happening rather than filtered noise, and cost one buffer each.
+  Their grain is matched to recordings: foam and shingle are as smooth as the
+  real shore, rain lies over a hush of finer drops, and every grain eases in
+  so none clicks.
   Slow variation runs on the audio clock, so nothing steps with the frame rate
   or freezes in a background tab.
 - **Weather audio**: a distant wash plus drops on whatever the rain hits
@@ -87,9 +90,15 @@ for the full vision and roadmap.
   delayed by the strike's distance, rolling across the sky with a deep sub and
   a crack for close strikes; and snow that hushes the whole world.
 - **Creature voices**: birdsong built from syllables (pitch contours,
-  harmonics, vibrato, buzz and breath) in each species' own patterns, and
-  mammal calls through gliding vowel formants. The birds in view share a song
-  budget, so they sing in bouts with quiet between, most at the dawn chorus.
+  harmonics, vibrato, buzz and breath) in each species' own patterns. Calls
+  that need a real throat (ravens, gulls, jays, howls, barks, bleats, the elk's
+  bugle) come from a glottal voice: a band-limited harmonic buzz with
+  cycle-to-cycle jitter and shimmer, rough subharmonics, pulsed breath and
+  moving formants, tuned against real recordings (pitch, formants, spectrum
+  and rhythm were measured; no recording ships). Every take draws its own
+  pitch, length, timing and roughness, so no two calls are alike. The birds in
+  view share a song budget, so they sing in bouts with quiet between, most at
+  the dawn chorus.
 - **Lofi radio** (`R`): plays an internet stream URL or a local playlist through
   a warm "small radio in the room" chain (gentle roll-offs, mid warmth and
   presence, soft saturation, its own compressor, room reverb, slightly left of
